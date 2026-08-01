@@ -43,12 +43,14 @@ ENV NODE_ENV=production \
   SESSION_DRIVER=cookie
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile --config.minimumReleaseAge=360
+RUN --mount=type=cache,id=mymcps-pnpm-store,target=/pnpm/store,sharing=locked \
+  pnpm install --frozen-lockfile --config.minimumReleaseAge=360
 
 COPY . .
 # Assemble a standalone prod tree outside the workspace root so pnpm does not
 # walk up to /app (which would skip creating node_modules next to the build).
-RUN pnpm run build \
+RUN --mount=type=cache,id=mymcps-pnpm-store,target=/pnpm/store,sharing=locked \
+  pnpm run build \
   && mkdir -p /prod \
   && cp -a build/. /prod/ \
   && cp pnpm-workspace.yaml /prod/ \
