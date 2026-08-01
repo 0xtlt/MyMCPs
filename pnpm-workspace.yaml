@@ -1,4 +1,5 @@
 confirmModulesPurge: false
+minimumReleaseAge: 360
 
 allowBuilds:
   '@astryxdesign/cli': true
