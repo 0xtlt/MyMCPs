@@ -7,7 +7,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type Mcp from '#models/mcp'
 import type { UpstreamTool } from '#services/upstream/http_client'
-import { asToolInputSchema } from '#services/unknown'
 
 export type ConnectedDenoUpstream = {
   client: Client
@@ -119,7 +118,7 @@ export async function listDenoTools(mcp: Mcp): Promise<UpstreamTool[]> {
     return (result.tools ?? []).map((tool) => ({
       name: tool.name,
       description: tool.description,
-      inputSchema: asToolInputSchema(tool.inputSchema),
+      inputSchema: tool.inputSchema,
     }))
   } finally {
     await connected.close()

@@ -11,7 +11,7 @@ import {
   listDenoTools,
   type ConnectedDenoUpstream,
 } from '#services/upstream/deno_runner'
-import { sanitizeErrorMessage } from '#services/unknown'
+import { sanitizeErrorMessage } from '#services/error_message'
 
 export type ConnectedUpstream = ConnectedHttpUpstream | ConnectedDenoUpstream
 

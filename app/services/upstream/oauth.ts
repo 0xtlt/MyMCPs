@@ -1,16 +1,17 @@
 import { randomBytes, createHash } from 'node:crypto'
 import { DateTime } from 'luxon'
 import type { HttpContext } from '@adonisjs/core/http'
+import type { Infer } from '@vinejs/vine/types'
 import env from '#start/env'
 import Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
-import { isRecord, sanitizeErrorMessage } from '#services/unknown'
+import { sanitizeErrorMessage } from '#services/error_message'
+import {
+  oauthSessionValidator,
+  oauthTokenResponseValidator,
+} from '#validators/oauth'
 
-type OauthSession = {
-  mcpId: number
-  codeVerifier: string
-  state: string
-}
+type OauthSession = Infer<typeof oauthSessionValidator>
 
 type OauthTokenResponse = {
   accessToken: string
@@ -26,29 +27,16 @@ function pkceChallenge(verifier: string) {
   return base64Url(createHash('sha256').update(verifier).digest())
 }
 
-function isOauthSession(value: unknown): value is OauthSession {
-  if (!isRecord(value)) {
-    return false
-  }
-  return (
-    typeof value.mcpId === 'number' &&
-    Number.isFinite(value.mcpId) &&
-    typeof value.codeVerifier === 'string' &&
-    value.codeVerifier.length > 0 &&
-    typeof value.state === 'string' &&
-    value.state.length > 0
-  )
-}
-
-function parseOauthTokenResponse(value: unknown): OauthTokenResponse {
-  if (!isRecord(value) || typeof value.access_token !== 'string' || !value.access_token) {
+async function parseOauthTokenResponse(value: unknown): Promise<OauthTokenResponse> {
+  try {
+    const data = await oauthTokenResponseValidator.validate(value)
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresIn: data.expires_in,
+    }
+  } catch {
     throw new Error('OAuth token response did not include access_token')
-  }
-
-  return {
-    accessToken: value.access_token,
-    refreshToken: typeof value.refresh_token === 'string' ? value.refresh_token : undefined,
-    expiresIn: typeof value.expires_in === 'number' ? value.expires_in : undefined,
   }
 }
 
@@ -64,9 +52,14 @@ export function startOauthSession(session: HttpContext['session'], mcp: Mcp) {
   return payload
 }
 
-export function readOauthSession(session: HttpContext['session']): OauthSession | null {
-  const raw = session.get('mcp_oauth')
-  return isOauthSession(raw) ? raw : null
+export async function readOauthSession(
+  session: HttpContext['session']
+): Promise<OauthSession | null> {
+  try {
+    return await oauthSessionValidator.validate(session.get('mcp_oauth'))
+  } catch {
+    return null
+  }
 }
 
 export function clearOauthSession(session: HttpContext['session']) {
@@ -132,7 +125,7 @@ export async function exchangeAuthorizationCode(mcp: Mcp, code: string, codeVeri
     throw new Error(`OAuth token exchange failed (${response.status}): ${detail}`)
   }
 
-  const json = parseOauthTokenResponse(await response.json())
+  const json = await parseOauthTokenResponse(await response.json())
   mcp.oauthAccessToken = McpSecretStore.encrypt(json.accessToken)
   if (json.refreshToken) {
     mcp.oauthRefreshToken = McpSecretStore.encrypt(json.refreshToken)
@@ -183,7 +176,7 @@ export async function refreshOauthAccessToken(mcp: Mcp) {
     throw new Error(`OAuth refresh failed (${response.status}): ${detail}`)
   }
 
-  const json = parseOauthTokenResponse(await response.json())
+  const json = await parseOauthTokenResponse(await response.json())
   mcp.oauthAccessToken = McpSecretStore.encrypt(json.accessToken)
   if (json.refreshToken) {
     mcp.oauthRefreshToken = McpSecretStore.encrypt(json.refreshToken)

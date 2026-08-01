@@ -12,7 +12,6 @@ import {
   listNamespacedTools,
   parseNamespacedTool,
 } from '#services/upstream/manager'
-import { asToolArguments } from '#services/unknown'
 
 /**
  * Agent-facing MCP gateway: aggregate tools from allowed upstreams behind one URL.
@@ -58,11 +57,8 @@ export default class GatewayController {
       }
 
       try {
-        return await callUpstreamTool(
-          mcp,
-          parsed.toolName,
-          asToolArguments(request.params.arguments)
-        )
+        // CallToolRequestSchema already types arguments as Record<string, unknown> | undefined
+        return await callUpstreamTool(mcp, parsed.toolName, request.params.arguments)
       } catch (error) {
         logger.warn(
           { err: error, mcpId: mcp.id, tool: parsed.toolName },

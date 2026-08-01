@@ -1,14 +1,14 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { refreshOauthAccessToken } from '#services/upstream/oauth'
-import { asToolInputSchema } from '#services/unknown'
 
 export type UpstreamTool = {
   name: string
   description?: string
-  inputSchema: Record<string, unknown>
+  inputSchema: Tool['inputSchema']
 }
 
 export type ConnectedHttpUpstream = {
@@ -86,7 +86,7 @@ export async function listHttpTools(mcp: Mcp): Promise<UpstreamTool[]> {
     return (result.tools ?? []).map((tool) => ({
       name: tool.name,
       description: tool.description,
-      inputSchema: asToolInputSchema(tool.inputSchema),
+      inputSchema: tool.inputSchema,
     }))
   } finally {
     await connected.close()

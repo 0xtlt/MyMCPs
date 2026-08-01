@@ -10,9 +10,24 @@ import {
   readOauthSession,
   startOauthSession,
 } from '#services/upstream/oauth'
-import { asFiniteNumber, sanitizeErrorMessage } from '#services/unknown'
+import vine from '@vinejs/vine'
+import { sanitizeErrorMessage } from '#services/error_message'
 import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
+
+/**
+ * Flash values are untyped; only accept finite numbers or numeric strings (session may stringify).
+ */
+function flashNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim() !== '' && vine.helpers.isNumeric(value)) {
+    const parsed = vine.helpers.asNumber(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
 
 type McpPayload = Infer<typeof createMcpValidator>
 
@@ -103,7 +118,7 @@ async function uniqueSlug(name: string, excludeId?: number) {
 export default class McpsController {
   async index({ inertia, session }: HttpContext) {
     const mcps = await Mcp.query().orderBy('name', 'asc')
-    const editingMcpId = asFiniteNumber(session.flashMessages.get('editingMcpId')) ?? null
+    const editingMcpId = flashNumber(session.flashMessages.get('editingMcpId'))
     return inertia.render('mcps/index', {
       mcps: McpTransformer.transform(mcps),
       editingMcpId,
@@ -200,7 +215,7 @@ export default class McpsController {
   }
 
   async oauthCallback({ request, response, session }: HttpContext) {
-    const oauth = readOauthSession(session)
+    const oauth = await readOauthSession(session)
     clearOauthSession(session)
 
     const codeRaw = request.input('code')
