@@ -4,10 +4,7 @@ import AccessToken from '#models/access_token'
 import Invite from '#models/invite'
 import Mcp from '#models/mcp'
 import User from '#models/user'
-import {
-  beginTestTransaction,
-  rollbackTestTransaction,
-} from '#tests/helpers/database'
+import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import {
   createAccessToken,
   createAdmin,
@@ -81,7 +78,8 @@ test.group('invites and member administration', (group) => {
     const member = await User.findByOrFail('email', 'invited@example.com')
     assert.equal(member.fullName, 'Invited Member')
     assert.equal(member.role, 'member')
-    assert.isTrue((await Invite.findOrFail(invite.id)).isAccepted)
+    const acceptedInvite = await Invite.findOrFail(invite.id)
+    assert.isTrue(acceptedInvite.isAccepted)
   })
 
   test('rejects expired invites', async ({ client, assert }) => {
@@ -114,9 +112,12 @@ test.group('invites and member administration', (group) => {
     assertRedirectTo(assert, response, '/invites')
     response.assertFlashMessage('success', 'Member removed')
     assert.isNull(await User.find(member.id))
-    assert.equal((await Mcp.findOrFail(mcp.id)).createdBy, admin.id)
-    assert.equal((await AccessToken.findOrFail(token.token.id)).createdBy, admin.id)
-    assert.equal((await Invite.findOrFail(invite.id)).createdBy, admin.id)
+    const reassignedMcp = await Mcp.findOrFail(mcp.id)
+    const reassignedToken = await AccessToken.findOrFail(token.token.id)
+    const reassignedInvite = await Invite.findOrFail(invite.id)
+    assert.equal(reassignedMcp.createdBy, admin.id)
+    assert.equal(reassignedToken.createdBy, admin.id)
+    assert.equal(reassignedInvite.createdBy, admin.id)
   })
 
   test('prevents an admin from removing their own account', async ({ client, assert }) => {

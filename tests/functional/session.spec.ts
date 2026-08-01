@@ -1,9 +1,6 @@
 import { test } from '@japa/runner'
 import { createAdmin } from '#tests/helpers/factories'
-import {
-  beginTestTransaction,
-  rollbackTestTransaction,
-} from '#tests/helpers/database'
+import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { assertRedirectTo } from '#tests/helpers/http'
 
 test.group('session authentication', (group) => {
@@ -39,11 +36,7 @@ test.group('session authentication', (group) => {
   test('logs an authenticated user out', async ({ client, assert }) => {
     const admin = await createAdmin({ email: 'admin@example.com' })
 
-    const response = await client
-      .post('/logout')
-      .loginAs(admin)
-      .withCsrfToken()
-      .redirects(0)
+    const response = await client.post('/logout').loginAs(admin).withCsrfToken().redirects(0)
 
     response.assertStatus(302)
     assertRedirectTo(assert, response, '/login')

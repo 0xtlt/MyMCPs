@@ -1,8 +1,5 @@
 import { test } from '@japa/runner'
-import {
-  beginTestTransaction,
-  rollbackTestTransaction,
-} from '#tests/helpers/database'
+import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 
 test.group('gateway bearer authentication', (group) => {
   group.each.setup(beginTestTransaction)

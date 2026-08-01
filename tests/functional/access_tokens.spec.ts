@@ -1,9 +1,6 @@
 import { test } from '@japa/runner'
 import AccessToken from '#models/access_token'
-import {
-  beginTestTransaction,
-  rollbackTestTransaction,
-} from '#tests/helpers/database'
+import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { createAdmin, createMcp } from '#tests/helpers/factories'
 import { assertRedirectTo } from '#tests/helpers/http'
 
@@ -14,15 +11,10 @@ test.group('access tokens', (group) => {
   test('creates a token and flashes plaintext only once', async ({ client, assert }) => {
     const admin = await createAdmin()
 
-    const response = await client
-      .post('/tokens')
-      .loginAs(admin)
-      .withCsrfToken()
-      .redirects(0)
-      .form({
-        name: 'Production agent',
-        scopeMode: 'all',
-      })
+    const response = await client.post('/tokens').loginAs(admin).withCsrfToken().redirects(0).form({
+      name: 'Production agent',
+      scopeMode: 'all',
+    })
 
     response.assertStatus(302)
     assertRedirectTo(assert, response, '/tokens')
@@ -33,7 +25,7 @@ test.group('access tokens', (group) => {
 
     const plaintext = response.flashMessage('createdPlaintext')
     assert.isString(plaintext)
-    assert.match(plaintext, /^mcp_[A-Za-z0-9_-]{43}$/)
+    assert.match(String(plaintext), /^mcp_[A-Za-z0-9_-]{43}$/)
 
     const token = await AccessToken.findByOrFail('name', 'Production agent')
     assert.notEqual(token.tokenHash, plaintext)
@@ -63,15 +55,10 @@ test.group('access tokens', (group) => {
 
   test('revokes a token', async ({ client, assert }) => {
     const admin = await createAdmin()
-    const created = await client
-      .post('/tokens')
-      .loginAs(admin)
-      .withCsrfToken()
-      .redirects(0)
-      .form({
-        name: 'Revocable agent',
-        scopeMode: 'all',
-      })
+    const created = await client.post('/tokens').loginAs(admin).withCsrfToken().redirects(0).form({
+      name: 'Revocable agent',
+      scopeMode: 'all',
+    })
     const token = await AccessToken.findByOrFail('name', 'Revocable agent')
 
     const response = await client
@@ -84,6 +71,7 @@ test.group('access tokens', (group) => {
     response.assertStatus(302)
     assertRedirectTo(assert, response, '/tokens')
     response.assertFlashMessage('success', 'Token revoked')
-    assert.isTrue((await AccessToken.findOrFail(token.id)).isRevoked)
+    const revokedToken = await AccessToken.findOrFail(token.id)
+    assert.isTrue(revokedToken.isRevoked)
   })
 })

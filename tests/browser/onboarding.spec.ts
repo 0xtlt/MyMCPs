@@ -1,9 +1,6 @@
 import { test } from '@japa/runner'
 import User from '#models/user'
-import {
-  beginTestTransaction,
-  rollbackTestTransaction,
-} from '#tests/helpers/database'
+import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 
 test.group('onboarding browser flow', (group) => {
   group.each.setup(beginTestTransaction)

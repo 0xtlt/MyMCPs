@@ -1,9 +1,6 @@
 import { test } from '@japa/runner'
 import User from '#models/user'
-import {
-  beginTestTransaction,
-  rollbackTestTransaction,
-} from '#tests/helpers/database'
+import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { assertRedirectTo } from '#tests/helpers/http'
 
 test.group('onboarding', (group) => {
@@ -18,16 +15,12 @@ test.group('onboarding', (group) => {
   })
 
   test('creates the first user as an admin', async ({ client, assert }) => {
-    const response = await client
-      .post('/onboarding')
-      .withCsrfToken()
-      .redirects(0)
-      .form({
-        fullName: 'First Admin',
-        email: 'admin@example.com',
-        password: 'password123',
-        passwordConfirmation: 'password123',
-      })
+    const response = await client.post('/onboarding').withCsrfToken().redirects(0).form({
+      fullName: 'First Admin',
+      email: 'admin@example.com',
+      password: 'password123',
+      passwordConfirmation: 'password123',
+    })
 
     response.assertStatus(302)
     assertRedirectTo(assert, response, '/')
@@ -49,6 +42,7 @@ test.group('onboarding', (group) => {
 
     response.assertStatus(302)
     assertRedirectTo(assert, response, '/login')
-    assert.equal(await User.query().count('* as total').then(([row]) => row.$extras.total), 1)
+    const [row] = await User.query().count('* as total')
+    assert.equal(row.$extras.total, 1)
   })
 })
