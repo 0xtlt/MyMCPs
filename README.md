@@ -101,9 +101,8 @@ If the Coolify instance does not automatically apply `coolify.json`, select
 If a deployment stops during `pnpm install` with messages such as
 `error (23)`, `UND_ERR_SOCKET`, or `ERR_PNPM_FETCH_*`, the failure is occurring
 while the builder downloads packages from the npm registry. It is not an
-application compile or health-check failure. The Dockerfile limits concurrent
-requests and caches the pnpm store, but it cannot repair a registry connection
-problem on the VPS.
+application compile or health-check failure. The Dockerfile caches the pnpm
+store, but it cannot repair a registry connection problem on the VPS.
 
 Check the following before retrying:
 
