@@ -3,13 +3,9 @@ import { test } from '@japa/runner'
 import AccessTokenService from '#services/access_token_service'
 import McpSecretStore from '#services/mcp_secret_store'
 import { namespaceTool, parseNamespacedTool } from '#services/upstream/manager'
-import AccessToken from '#models/access_token'
 import Invite from '#models/invite'
 import Mcp from '#models/mcp'
-import {
-  beginTestTransaction,
-  rollbackTestTransaction,
-} from '#tests/helpers/database'
+import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import {
   createAccessToken,
   createAdmin,
@@ -41,12 +37,15 @@ test.group('domain services and models', (group) => {
       mcpIds: [enabledMcp.id, disabledMcp.id],
     })
 
+    const allowedForAllToken = await AccessTokenService.resolveAllowedMcps(allToken.token)
+    const allowedForSelectedToken = await AccessTokenService.resolveAllowedMcps(selectedToken.token)
+
     assert.deepEqual(
-      (await AccessTokenService.resolveAllowedMcps(allToken.token)).map((mcp) => mcp.id),
+      allowedForAllToken.map((mcp) => mcp.id),
       [enabledMcp.id]
     )
     assert.deepEqual(
-      (await AccessTokenService.resolveAllowedMcps(selectedToken.token)).map((mcp) => mcp.id),
+      allowedForSelectedToken.map((mcp) => mcp.id),
       [enabledMcp.id]
     )
     assert.equal(allToken.token.tokenHash, AccessTokenService.hash(allToken.plaintext))
@@ -57,16 +56,14 @@ test.group('domain services and models', (group) => {
     const admin = await createAdmin()
     const created = await createAccessToken(admin.id)
 
-    assert.equal(
-      (await AccessTokenService.findUsableByPlaintext(created.plaintext))?.id,
-      created.token.id
-    )
+    const found = await AccessTokenService.findUsableByPlaintext(created.plaintext)
+    assert.equal(found?.id, created.token.id)
 
     created.token.revokedAt = DateTime.utc()
     await created.token.save()
     assert.isNull(await AccessTokenService.findUsableByPlaintext(created.plaintext))
 
-    const expired = await createStoredAccessToken(admin.id, {
+    await createStoredAccessToken(admin.id, {
       tokenHash: AccessTokenService.hash('expired-token'),
       expiresAt: DateTime.utc().minus({ minutes: 1 }),
     })
@@ -79,9 +76,10 @@ test.group('domain services and models', (group) => {
     await AccessTokenService.touchLastUsed(recent)
     assert.equal(recent.lastUsedAt!.toMillis(), lastUsedAt)
 
-    recent.lastUsedAt = DateTime.utc().minus({ minutes: 6 })
+    const staleLastUsedAt = DateTime.utc().minus({ minutes: 6 })
+    recent.lastUsedAt = staleLastUsedAt
     await AccessTokenService.touchLastUsed(recent)
-    assert.isAbove(recent.lastUsedAt!.toMillis(), lastUsedAt)
+    assert.isAbove(recent.lastUsedAt!.toMillis(), staleLastUsedAt.toMillis())
   })
 
   test('encrypts MCP secrets and treats empty or corrupt values as missing', ({ assert }) => {
