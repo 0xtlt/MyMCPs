@@ -61,7 +61,7 @@ function mockNotionOAuthServer() {
       })
     }
 
-    if (url === 'https://mcp.notion.com/mcp' && body) {
+    if (url.startsWith('https://mcp.notion.com/mcp') && body) {
       const message = JSON.parse(body) as { id?: string | number; method?: string }
       if (message.method === 'initialize') {
         return new Response(
