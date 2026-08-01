@@ -5,6 +5,7 @@ import { type ReactElement, useEffect } from 'react'
 import { Form } from '@adonisjs/inertia/react'
 import { AppShell } from '@astryxdesign/core/AppShell'
 import { Button } from '@astryxdesign/core/Button'
+import { Center } from '@astryxdesign/core/Center'
 import { HStack } from '@astryxdesign/core/Layout'
 import { Icon } from '@astryxdesign/core/Icon'
 import { NavIcon } from '@astryxdesign/core/NavIcon'
@@ -89,7 +90,9 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
           />
         }
       >
-        {children}
+        <Center axis="horizontal" width="100%">
+          {children}
+        </Center>
       </AppShell>
       <Toaster position="top-center" richColors />
     </>
