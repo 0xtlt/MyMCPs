@@ -86,12 +86,13 @@ export default class InvitesController {
     }
 
     const actorId = auth.user!.id
+    const revokedAt = DateTime.utc().toSQL()!
     await db.transaction(async (trx) => {
       await Mcp.query({ client: trx }).where('created_by', member.id).update({ createdBy: actorId })
       await AccessToken.query({ client: trx })
         .where('created_by', member.id)
         .whereNull('revoked_at')
-        .update({ revokedAt: DateTime.utc() })
+        .update({ revokedAt })
       await AccessToken.query({ client: trx })
         .where('created_by', member.id)
         .update({ createdBy: actorId })
