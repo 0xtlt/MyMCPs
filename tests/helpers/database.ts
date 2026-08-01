@@ -26,7 +26,7 @@ export async function prepareTestDatabase() {
       throw migrator.error
     }
   } finally {
-    await migrator.close()
+    await db.manager.closeAll()
   }
 }
 
