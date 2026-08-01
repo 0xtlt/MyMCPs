@@ -1,5 +1,4 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import { DateTime } from 'luxon'
 import AccessToken from '#models/access_token'
 import Mcp from '#models/mcp'
 import AccessTokenService from '#services/access_token_service'
@@ -28,21 +27,6 @@ export default class AccessTokensController {
     const payload = await request.validateUsing(createAccessTokenValidator)
     const mcpIds = payload.mcpIds ?? []
 
-    if (payload.scopeMode === 'selected' && mcpIds.length === 0) {
-      session.flash('error', 'Select at least one MCP, or choose access to all MCPs')
-      return response.redirect().toRoute('tokens.index')
-    }
-
-    let expiresAt: DateTime | null = null
-    if (payload.expiresAt?.trim()) {
-      const parsed = DateTime.fromISO(payload.expiresAt)
-      if (!parsed.isValid) {
-        session.flash('error', 'Invalid expiration date')
-        return response.redirect().toRoute('tokens.index')
-      }
-      expiresAt = parsed.toUTC()
-    }
-
     if (payload.scopeMode === 'selected') {
       const existing = await Mcp.query().whereIn('id', mcpIds)
       if (existing.length !== mcpIds.length) {
@@ -55,7 +39,7 @@ export default class AccessTokensController {
       name: payload.name,
       scopeMode: payload.scopeMode,
       mcpIds: payload.scopeMode === 'selected' ? mcpIds : [],
-      expiresAt,
+      expiresAt: payload.expiresAt?.toUTC() ?? null,
       createdBy: auth.user!.id,
     })
 

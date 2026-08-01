@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { createMcpValidator, updateMcpValidator } from '#validators/mcp'
+import { oauthCallbackValidator } from '#validators/oauth'
 import { testAndUpdateStatus } from '#services/upstream/manager'
 import {
   buildAuthorizeRedirect,
@@ -59,7 +60,7 @@ async function assignMcpFromPayload(mcp: Mcp, payload: McpPayload, options?: { e
   mcp.httpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
   mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
   mcp.npmVersion = payload.transport === 'npm' ? (payload.npmVersion || null) : null
-  mcp.setNpmArgsList(payload.transport === 'npm' ? (payload.npmArgs ?? []) : [])
+  mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
   mcp.authType = payload.authType
   mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
   mcp.oauthAuthorizeUrl =
@@ -67,7 +68,7 @@ async function assignMcpFromPayload(mcp: Mcp, payload: McpPayload, options?: { e
   mcp.oauthTokenUrl = payload.authType === 'oauth' ? (payload.oauthTokenUrl ?? null) : null
   mcp.oauthScopes = payload.authType === 'oauth' ? (payload.oauthScopes || null) : null
   mcp.oauthClientId = payload.authType === 'oauth' ? (payload.oauthClientId ?? null) : null
-  mcp.enabled = payload.enabled === 'on'
+  mcp.enabled = payload.enabled ?? false
   clearUnusedAuthSecrets(mcp)
   applySecrets(mcp, payload)
 }
@@ -197,12 +198,7 @@ export default class McpsController {
     const oauth = await readOauthSession(session)
     clearOauthSession(session)
 
-    const codeRaw = request.input('code')
-    const stateRaw = request.input('state')
-    const oauthErrorRaw = request.input('error')
-    const code = typeof codeRaw === 'string' ? codeRaw : undefined
-    const state = typeof stateRaw === 'string' ? stateRaw : undefined
-    const oauthError = typeof oauthErrorRaw === 'string' ? oauthErrorRaw : undefined
+    const { code, state, error: oauthError } = await request.validateUsing(oauthCallbackValidator)
 
     if (oauthError) {
       session.flash('error', `OAuth error: ${oauthError}`)

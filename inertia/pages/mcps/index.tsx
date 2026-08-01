@@ -59,12 +59,6 @@ function endpointLabel(mcp: McpRow) {
   return mcp.transport === 'http' ? mcp.httpUrl || '—' : mcp.npmPackage || '—'
 }
 
-function shortError(message: string) {
-  const cleaned = message.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  if (cleaned.length <= 240) return cleaned
-  return `${cleaned.slice(0, 240)}…`
-}
-
 export default function McpsIndex({
   mcps,
   editingMcpId = null,
@@ -289,7 +283,7 @@ export default function McpsIndex({
                         <Banner
                           status="error"
                           title="Last connection error"
-                          description={shortError(editingMcp.lastError)}
+                          description={editingMcp.lastError}
                           container="card"
                         />
                       ) : null}

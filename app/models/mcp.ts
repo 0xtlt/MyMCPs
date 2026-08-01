@@ -8,6 +8,25 @@ export type McpTransport = 'http' | 'npm'
 export type McpAuthType = 'none' | 'bearer' | 'header' | 'oauth'
 export type McpStatus = 'draft' | 'ready' | 'error'
 
+/**
+ * The generated schema stores npm args as JSON text (`string | null`).
+ * Expose them as string[] through this accessor so callers never JSON.parse.
+ */
+function parseNpmArgsJson(value: string | null): string[] {
+  if (!value) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed.map((part) => String(part))
+  } catch {
+    return []
+  }
+}
+
 export default class Mcp extends McpSchema {
   declare transport: McpTransport
   declare authType: McpAuthType
@@ -25,19 +44,11 @@ export default class Mcp extends McpSchema {
   declare accessTokens: ManyToMany<typeof AccessToken>
 
   get npmArgsList(): string[] {
-    if (!this.npmArgs) {
-      return []
-    }
-    try {
-      const parsed = JSON.parse(this.npmArgs)
-      return Array.isArray(parsed) ? parsed.map(String) : []
-    } catch {
-      return []
-    }
+    return parseNpmArgsJson(this.npmArgs)
   }
 
-  setNpmArgsList(args: string[]) {
-    this.npmArgs = args.length ? JSON.stringify(args) : null
+  set npmArgsList(args: string[]) {
+    this.npmArgs = args.length > 0 ? JSON.stringify(args) : null
   }
 
   static slugify(name: string) {

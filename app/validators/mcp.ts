@@ -32,10 +32,11 @@ const mcpPayload = {
     .string()
     .trim()
     .maxLength(1000)
+    .nullable()
     .optional()
-    .transform((value) => {
+    .transform((value): string[] => {
       if (!value) {
-        return [] as string[]
+        return []
       }
       return value.split(/\s+/).map((part) => part.trim()).filter(Boolean)
     }),
@@ -65,7 +66,8 @@ const mcpPayload = {
     .optional()
     .requiredWhen('authType', '=', 'oauth'),
   oauthClientSecret: vine.string().trim().maxLength(4000).optional(),
-  enabled: vine.string().optional(),
+  /** CheckboxInput submits "on" when checked; omitted when unchecked. */
+  enabled: vine.boolean().optional(),
 }
 
 /**
@@ -86,7 +88,11 @@ export const createAccessTokenValidator = vine.create({
   scopeMode: vine.enum(['all', 'selected'] as const),
   mcpIds: vine
     .array(vine.number().withoutDecimals().min(1))
+    .minLength(1)
     .optional()
     .requiredWhen('scopeMode', '=', 'selected'),
-  expiresAt: vine.string().optional(),
+  expiresAt: vine
+    .date({ formats: ['iso8601'] })
+    .nullable()
+    .optional(),
 })

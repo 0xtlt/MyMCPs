@@ -1,5 +1,5 @@
 /**
- * Vine schemas for OAuth session payload and token endpoint JSON.
+ * Vine schemas for OAuth flows (session, provider JSON, browser callback).
  */
 import vine from '@vinejs/vine'
 
@@ -19,4 +19,13 @@ export const oauthTokenResponseValidator = vine.create({
   access_token: vine.string().minLength(1),
   refresh_token: vine.string().optional(),
   expires_in: vine.number().optional(),
+})
+
+/**
+ * Query params on `/mcps/oauth/callback` from the authorization server.
+ */
+export const oauthCallbackValidator = vine.create({
+  code: vine.string().optional(),
+  state: vine.string().optional(),
+  error: vine.string().optional(),
 })
