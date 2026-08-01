@@ -118,7 +118,7 @@ test.group('MCP OAuth routes', (group) => {
     const restoreFetch = mockNotionOAuthServer()
 
     try {
-      const admin = await createAdmin()
+      const admin = await createAdmin({ email: 'admin@example.com' })
       const mcp = await createMcp(admin.id, {
         name: 'Notion',
         authType: 'oauth',
@@ -126,10 +126,13 @@ test.group('MCP OAuth routes', (group) => {
         status: 'draft',
       })
 
-      const startResponse = await client
-        .get(`/mcps/${mcp.id}/oauth/start`)
-        .loginAs(admin)
+      await client
+        .post('/login')
+        .withCsrfToken()
         .redirects(0)
+        .form({ email: 'admin@example.com', password: 'password123' })
+
+      const startResponse = await client.get(`/mcps/${mcp.id}/oauth/start`).redirects(0)
 
       startResponse.assertStatus(302)
       const authorizationUrl = new URL(startResponse.header('location')!)
@@ -142,7 +145,6 @@ test.group('MCP OAuth routes', (group) => {
       callbackUrl.searchParams.set('state', authorizationUrl.searchParams.get('state')!)
       const callbackResponse = await client
         .get(`${callbackUrl.pathname}${callbackUrl.search}`)
-        .loginAs(admin)
         .redirects(0)
 
       callbackResponse.assertStatus(302)
