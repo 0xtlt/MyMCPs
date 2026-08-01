@@ -17,6 +17,7 @@ function mockNotionOAuthServer() {
   globalThis.fetch = async (input, init) => {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    const method = init?.method ?? 'GET'
     const body = String(init?.body ?? '')
 
     if (url.includes('/.well-known/oauth-protected-resource')) {
@@ -99,7 +100,7 @@ function mockNotionOAuthServer() {
       }
     }
 
-    return new Response('not found', { status: 404 })
+    return new Response(`not found: ${method} ${url} body=${body}`, { status: 404 })
   }
 
   return () => {
