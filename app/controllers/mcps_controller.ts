@@ -11,6 +11,7 @@ import {
   startOauthSession,
 } from '#services/upstream/oauth'
 import { asFiniteNumber, sanitizeErrorMessage } from '#services/unknown'
+import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
 
 type McpPayload = Infer<typeof createMcpValidator>
@@ -81,35 +82,6 @@ async function assignMcpFromPayload(mcp: Mcp, payload: McpPayload, options?: { e
   applySecrets(mcp, payload)
 }
 
-function serializeMcp(mcp: Mcp) {
-  return {
-    id: mcp.id,
-    name: mcp.name,
-    slug: mcp.slug,
-    description: mcp.description,
-    transport: mcp.transport,
-    httpUrl: mcp.httpUrl,
-    npmPackage: mcp.npmPackage,
-    npmVersion: mcp.npmVersion,
-    npmArgs: mcp.npmArgsList.join(' '),
-    authType: mcp.authType,
-    authHeaderName: mcp.authHeaderName,
-    hasAuthBearer: McpSecretStore.hasSecret(mcp.authBearer),
-    hasAuthHeaderValue: McpSecretStore.hasSecret(mcp.authHeaderValue),
-    oauthAuthorizeUrl: mcp.oauthAuthorizeUrl,
-    oauthTokenUrl: mcp.oauthTokenUrl,
-    oauthScopes: mcp.oauthScopes,
-    oauthClientId: mcp.oauthClientId,
-    hasOauthClientSecret: McpSecretStore.hasSecret(mcp.oauthClientSecret),
-    hasOauthAccessToken: McpSecretStore.hasSecret(mcp.oauthAccessToken),
-    status: mcp.status,
-    lastError: mcp.lastError,
-    enabled: mcp.enabled,
-    createdAt: mcp.createdAt.toISO(),
-    updatedAt: mcp.updatedAt?.toISO() ?? null,
-  }
-}
-
 async function uniqueSlug(name: string, excludeId?: number) {
   const base = Mcp.slugify(name)
   let candidate = base
@@ -133,7 +105,7 @@ export default class McpsController {
     const mcps = await Mcp.query().orderBy('name', 'asc')
     const editingMcpId = asFiniteNumber(session.flashMessages.get('editingMcpId')) ?? null
     return inertia.render('mcps/index', {
-      mcps: mcps.map(serializeMcp),
+      mcps: McpTransformer.transform(mcps),
       editingMcpId,
     })
   }

@@ -7,6 +7,8 @@ import Mcp from '#models/mcp'
 import AccessToken from '#models/access_token'
 import { acceptInviteValidator, createInviteValidator } from '#validators/user'
 import { publicAppUrl } from '#services/public_url'
+import InviteTransformer from '#transformers/invite_transformer'
+import MemberTransformer from '#transformers/member_transformer'
 
 export default class InvitesController {
   async index({ inertia, auth, request }: HttpContext) {
@@ -14,24 +16,8 @@ export default class InvitesController {
     const members = await User.query().orderBy('created_at', 'asc')
 
     return inertia.render('invites/index', {
-      invites: invites.map((invite) => ({
-        id: invite.id,
-        email: invite.email,
-        role: invite.role,
-        token: invite.token,
-        acceptedAt: invite.acceptedAt?.toISO() ?? null,
-        expiresAt: invite.expiresAt.toISO(),
-        createdAt: invite.createdAt.toISO(),
-        isUsable: invite.isUsable,
-      })),
-      members: members.map((member) => ({
-        id: member.id,
-        email: member.email,
-        fullName: member.fullName,
-        role: member.role,
-        createdAt: member.createdAt.toISO(),
-        isCurrentUser: member.id === auth.user!.id,
-      })),
+      invites: InviteTransformer.transform(invites),
+      members: MemberTransformer.transform(members, auth.user!.id),
       appUrl: publicAppUrl(request),
     })
   }

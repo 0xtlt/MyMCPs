@@ -5,21 +5,8 @@ import Mcp from '#models/mcp'
 import AccessTokenService from '#services/access_token_service'
 import { createAccessTokenValidator } from '#validators/mcp'
 import { publicAppUrl } from '#services/public_url'
-
-function serializeToken(token: AccessToken, mcpIds: number[] = []) {
-  return {
-    id: token.id,
-    name: token.name,
-    tokenPrefix: token.tokenPrefix,
-    scopeMode: token.scopeMode,
-    mcpIds,
-    expiresAt: token.expiresAt?.toISO() ?? null,
-    revokedAt: token.revokedAt?.toISO() ?? null,
-    lastUsedAt: token.lastUsedAt?.toISO() ?? null,
-    createdAt: token.createdAt.toISO(),
-    isUsable: token.isUsable,
-  }
-}
+import AccessTokenTransformer from '#transformers/access_token_transformer'
+import McpTransformer from '#transformers/mcp_transformer'
 
 export default class AccessTokensController {
   async index({ inertia, session, request }: HttpContext) {
@@ -30,13 +17,8 @@ export default class AccessTokensController {
     const createdPlaintext = typeof createdPlaintextRaw === 'string' ? createdPlaintextRaw : null
 
     return inertia.render('tokens/index', {
-      tokens: tokens.map((token) => serializeToken(token, token.mcps.map((m) => m.id))),
-      mcps: mcps.map((mcp) => ({
-        id: mcp.id,
-        name: mcp.name,
-        slug: mcp.slug,
-        enabled: mcp.enabled,
-      })),
+      tokens: AccessTokenTransformer.transform(tokens),
+      mcps: McpTransformer.transform(mcps).useVariant('toOption'),
       gatewayUrl: `${publicAppUrl(request)}/mcp`,
       createdPlaintext,
     })
