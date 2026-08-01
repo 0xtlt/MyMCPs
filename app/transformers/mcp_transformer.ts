@@ -30,6 +30,7 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
         'updatedAt',
       ]),
       npmArgs: this.resource.npmArgsList.join(' '),
+      npmEnv: this.resource.npmEnvEntries,
       hasAuthBearer: McpSecretStore.hasSecret(this.resource.authBearer),
       hasAuthHeaderValue: McpSecretStore.hasSecret(this.resource.authHeaderValue),
       hasOauthClientSecret: McpSecretStore.hasSecret(this.resource.oauthClientSecret),

@@ -64,6 +64,15 @@ export function buildDenoArgs(mcp: Mcp, sandboxDir: string) {
   ]
 }
 
+export function buildDenoEnv(mcp: Mcp, sandboxDir: string) {
+  return {
+    ...mcp.npmEnvMap,
+    HOME: sandboxDir,
+    TMPDIR: sandboxDir,
+    NO_COLOR: '1',
+  }
+}
+
 export async function connectDenoUpstream(mcp: Mcp): Promise<ConnectedDenoUpstream> {
   const sandboxDir = sandboxRootFor(mcp.id)
   await mkdir(sandboxDir, { recursive: true })
@@ -75,11 +84,7 @@ export async function connectDenoUpstream(mcp: Mcp): Promise<ConnectedDenoUpstre
     args,
     cwd: sandboxDir,
     stderr: 'pipe',
-    env: {
-      HOME: sandboxDir,
-      TMPDIR: sandboxDir,
-      NO_COLOR: '1',
-    },
+    env: buildDenoEnv(mcp, sandboxDir),
   })
 
   const client = new Client({ name: 'mymcps-gateway', version: '0.1.0' })

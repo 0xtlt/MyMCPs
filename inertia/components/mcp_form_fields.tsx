@@ -1,11 +1,18 @@
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
-import { HStack, VStack } from '@astryxdesign/core/Layout'
+import { Button } from '@astryxdesign/core/Button'
+import { HStack, StackItem, VStack } from '@astryxdesign/core/Layout'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Text } from '@astryxdesign/core/Text'
 
 export type McpAuthType = 'none' | 'bearer' | 'header' | 'oauth'
 export type McpTransport = 'http' | 'npm'
+
+export type McpNpmEnvEntry = {
+  name: string
+  value: string
+  hasValue?: boolean
+}
 
 export type McpFormSecrets = {
   hasAuthBearer?: boolean
@@ -22,6 +29,7 @@ export type McpFormValues = {
   npmPackage: string
   npmVersion: string
   npmArgs: string
+  npmEnv: McpNpmEnvEntry[]
   authType: McpAuthType
   authBearer: string
   authHeaderName: string
@@ -52,6 +60,7 @@ export function emptyMcpFormValues(): McpFormValues {
     npmPackage: '',
     npmVersion: '',
     npmArgs: '',
+    npmEnv: [],
     authType: 'none',
     authBearer: '',
     authHeaderName: '',
@@ -73,6 +82,7 @@ export function mcpFormValuesFromRow(mcp: {
   npmPackage: string | null
   npmVersion: string | null
   npmArgs: string
+  npmEnv: Array<{ name: string; hasValue: boolean }>
   authType: McpAuthType
   authHeaderName: string | null
   oauthAuthorizeUrl: string | null
@@ -90,6 +100,7 @@ export function mcpFormValuesFromRow(mcp: {
     npmPackage: mcp.npmPackage ?? '',
     npmVersion: mcp.npmVersion ?? '',
     npmArgs: mcp.npmArgs,
+    npmEnv: mcp.npmEnv.map(({ name, hasValue }) => ({ name, value: '', hasValue })),
     authType: mcp.authType,
     authHeaderName: mcp.authHeaderName ?? '',
     oauthAuthorizeUrl: mcp.oauthAuthorizeUrl ?? '',
@@ -178,6 +189,79 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
               width={320}
             />
           </HStack>
+          <VStack gap={2} hAlign="stretch">
+            <HStack gap={2} hAlign="between" vAlign="center">
+              <Text type="body" weight="bold">
+                Environment variables
+              </Text>
+              <Button
+                label="Add variable"
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  onChange({
+                    npmEnv: [...values.npmEnv, { name: '', value: '' }],
+                  })
+                }
+              />
+            </HStack>
+            <Text type="supporting" color="secondary">
+              Values are encrypted at rest. Leave an existing value blank to keep it unchanged.
+            </Text>
+            {values.npmEnv.map((entry, index) => {
+              const nameError = errors[`npmEnv.${index}.name`]
+              const valueError = errors[`npmEnv.${index}.value`]
+              return (
+                <HStack key={`npm-env-${index}`} gap={3} vAlign="end">
+                  <StackItem size="fill">
+                    <TextInput
+                      label="Variable name"
+                      htmlName={`npmEnv[${index}][name]`}
+                      value={entry.name}
+                      onChange={(name) =>
+                        onChange({
+                          npmEnv: values.npmEnv.map((current, currentIndex) =>
+                            currentIndex === index ? { ...current, name } : current
+                          ),
+                        })
+                      }
+                      placeholder="API_KEY"
+                      width="100%"
+                      status={nameError ? { type: 'error', message: nameError } : undefined}
+                    />
+                  </StackItem>
+                  <StackItem size="fill">
+                    <TextInput
+                      label={entry.hasValue ? 'Value (leave blank to keep)' : 'Value'}
+                      htmlName={`npmEnv[${index}][value]`}
+                      type="password"
+                      value={entry.value}
+                      onChange={(value) =>
+                        onChange({
+                          npmEnv: values.npmEnv.map((current, currentIndex) =>
+                            currentIndex === index ? { ...current, value } : current
+                          ),
+                        })
+                      }
+                      width="100%"
+                      isOptional={Boolean(entry.hasValue)}
+                      status={valueError ? { type: 'error', message: valueError } : undefined}
+                    />
+                  </StackItem>
+                  <Button
+                    label="Remove"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      onChange({
+                        npmEnv: values.npmEnv.filter((_, currentIndex) => currentIndex !== index),
+                      })
+                    }
+                  />
+                </HStack>
+              )
+            })}
+          </VStack>
         </VStack>
       )}
 

@@ -10,6 +10,17 @@ const headerName = vine
   .maxLength(120)
   .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/)
 
+const npmEnvName = vine
+  .string()
+  .trim()
+  .maxLength(128)
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+
+const npmEnvEntry = vine.object({
+  name: npmEnvName,
+  value: vine.string().maxLength(4000).nullable().optional(),
+})
+
 const mcpPayload = {
   name: vine.string().trim().minLength(1).maxLength(120),
   description: vine.string().trim().maxLength(500).optional(),
@@ -38,6 +49,7 @@ const mcpPayload = {
         .map((part) => part.trim())
         .filter(Boolean)
     }),
+  npmEnv: vine.array(npmEnvEntry).maxLength(32).distinct('name').optional(),
   authType,
   authBearer: vine.string().trim().maxLength(4000).optional(),
   authHeaderName: headerName.optional().requiredWhen('authType', '=', 'header'),

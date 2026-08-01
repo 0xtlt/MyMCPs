@@ -27,6 +27,32 @@ function applySecrets(mcp: Mcp, payload: McpPayload) {
   }
 }
 
+export function applyNpmEnv(
+  mcp: Mcp,
+  payload: Pick<McpPayload, 'transport' | 'npmEnv'>
+) {
+  if (payload.transport !== 'npm') {
+    mcp.npmEnvMap = {}
+    return
+  }
+
+  const current = mcp.npmEnvMap
+  const next: Record<string, string> = {}
+
+  for (const entry of payload.npmEnv ?? []) {
+    const hasExistingValue = Object.prototype.hasOwnProperty.call(current, entry.name)
+    if (entry.value === null || entry.value === undefined || entry.value === '') {
+      if (hasExistingValue) {
+        next[entry.name] = current[entry.name]
+      }
+      continue
+    }
+    next[entry.name] = entry.value
+  }
+
+  mcp.npmEnvMap = next
+}
+
 /**
  * Clear secrets that no longer apply to the selected auth type.
  */
@@ -90,6 +116,7 @@ async function assignMcpFromPayload(
   mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
   mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
   mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
+  applyNpmEnv(mcp, payload)
   mcp.authType = payload.authType
   mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
   mcp.oauthAuthorizeUrl = payload.authType === 'oauth' ? (payload.oauthAuthorizeUrl ?? null) : null

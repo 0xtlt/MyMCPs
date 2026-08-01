@@ -1,4 +1,5 @@
 import { McpSchema } from '#database/schema'
+import McpSecretStore from '#services/mcp_secret_store'
 import { belongsTo, manyToMany } from '@adonisjs/lucid/orm'
 import type { BelongsTo, ManyToMany } from '@adonisjs/lucid/types/relations'
 import User from '#models/user'
@@ -7,6 +8,7 @@ import AccessToken from '#models/access_token'
 export type McpTransport = 'http' | 'npm'
 export type McpAuthType = 'none' | 'bearer' | 'header' | 'oauth'
 export type McpStatus = 'draft' | 'ready' | 'error'
+export type McpNpmEnvMap = Record<string, string>
 
 /**
  * The generated schema stores npm args as JSON text (`string | null`).
@@ -24,6 +26,26 @@ function parseNpmArgsJson(value: string | null): string[] {
     return parsed.map((part) => String(part))
   } catch {
     return []
+  }
+}
+
+function parseNpmEnvJson(value: string | null): McpNpmEnvMap {
+  const decrypted = McpSecretStore.decrypt(value)
+  if (!decrypted) {
+    return {}
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(decrypted)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {}
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    )
+  } catch {
+    return {}
   }
 }
 
@@ -49,6 +71,19 @@ export default class Mcp extends McpSchema {
 
   set npmArgsList(args: string[]) {
     this.npmArgs = args.length > 0 ? JSON.stringify(args) : null
+  }
+
+  get npmEnvMap(): McpNpmEnvMap {
+    return parseNpmEnvJson(this.npmEnv)
+  }
+
+  set npmEnvMap(env: McpNpmEnvMap) {
+    this.npmEnv =
+      Object.keys(env).length > 0 ? McpSecretStore.encrypt(JSON.stringify(env)) : null
+  }
+
+  get npmEnvEntries(): Array<{ name: string; hasValue: boolean }> {
+    return Object.keys(this.npmEnvMap).map((name) => ({ name, hasValue: true }))
   }
 
   static slugify(name: string) {
