@@ -17,9 +17,9 @@
   position: absolute;
   left: 100%;
   top: 100%;
-  width: 48%;
+  width: 38%;
   height: auto;
-  transform: translate(-75%, -75%);
+  transform: translate(-75%, -75%) rotate(-15deg);
   pointer-events: none;
   user-select: none;
   z-index: 0;
