@@ -17,6 +17,7 @@ export default class AccessToken extends AccessTokenSchema {
     pivotTable: 'access_token_mcps',
     pivotForeignKey: 'access_token_id',
     pivotRelatedForeignKey: 'mcp_id',
+    pivotTimestamps: true,
   })
   declare mcps: ManyToMany<typeof Mcp>
 

@@ -48,7 +48,10 @@ export default class AccessTokensController {
   async store({ request, response, auth, session }: HttpContext) {
     const payload = await request.validateUsing(createAccessTokenValidator)
 
-    let mcpIds = (payload.mcpIds ?? []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+    const rawIds = request.input('mcpIds') ?? payload.mcpIds ?? []
+    const mcpIds = (Array.isArray(rawIds) ? rawIds : [rawIds])
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0)
 
     if (payload.scopeMode === 'selected' && mcpIds.length === 0) {
       session.flash('error', 'Select at least one MCP, or choose access to all MCPs')
