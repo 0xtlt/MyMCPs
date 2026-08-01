@@ -141,7 +141,11 @@ test.group('MCP OAuth routes', (group) => {
         .redirects(0)
 
       startResponse.assertStatus(302)
-      const authorizationUrl = new URL(startResponse.header('location')!)
+      const startLocation = startResponse.header('location')
+      if (!startLocation?.startsWith('http')) {
+        throw new Error(`OAuth start redirected to ${startLocation ?? 'nowhere'}`)
+      }
+      const authorizationUrl = new URL(startLocation)
       assert.equal(authorizationUrl.origin, 'https://auth.example')
       assert.equal(authorizationUrl.pathname, '/authorize')
       assert.equal(authorizationUrl.searchParams.get('client_id'), 'notion-client-123')
