@@ -4,6 +4,7 @@ import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { usePage } from '@inertiajs/react'
 import { type Data } from '@generated/data'
+import mcpNetworkUrl from '~/assets/mcp-network.png?w=440&format=webp'
 
 export default function Home() {
   const { props } = usePage<Data.SharedProps>()
@@ -19,8 +20,8 @@ export default function Home() {
         </Text>
       </VStack>
 
-      <Card padding={6} width="100%">
-        <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
+      <Card padding={6} width="100%" minHeight={220} className="mcp-hero-card">
+        <VStack gap={4} hAlign="start" className="mcp-hero-card__content">
           <VStack gap={1}>
             <Heading level={2}>MCPs</Heading>
             <Text type="body" color="secondary">
@@ -28,7 +29,12 @@ export default function Home() {
             </Text>
           </VStack>
           <Button label="Manage MCPs" variant="primary" href="/mcps" />
-        </HStack>
+        </VStack>
+        <img
+          src={mcpNetworkUrl}
+          alt=""
+          className="mcp-hero-card__art"
+        />
       </Card>
 
       <Card padding={6} width="100%">
