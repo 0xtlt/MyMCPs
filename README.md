@@ -37,6 +37,25 @@ Migrations run as part of a fresh scaffold; for an existing DB:
 node ace migration:run
 ```
 
+## Tests
+
+The project uses native AdonisJS test suites powered by Japa:
+
+```bash
+pnpm test
+pnpm test unit
+pnpm test functional
+pnpm test browser
+```
+
+Tests use `tmp/test.sqlite3`, which is isolated from the development database at `tmp/db.sqlite3` and reset for each test through a rolled-back database transaction. Browser tests run headless Chromium through Playwright. After installing dependencies on a new machine, install the browser once:
+
+```bash
+pnpm exec playwright install chromium
+```
+
+Add reusable records through the helpers in `tests/helpers/factories.ts`, and place fast logic tests in `tests/unit`, HTTP tests in `tests/functional`, and end-to-end UI tests in `tests/browser`.
+
 ## Docker
 
 The image bundles **Node.js 24**, production deps, and **Deno** (for npm MCP sandboxes). Persist `/app/tmp` so SQLite and sandbox caches survive restarts.
