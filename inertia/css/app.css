@@ -2,18 +2,18 @@
 @import '@astryxdesign/core/astryx.css';
 @import '@astryxdesign/theme-neutral/theme.css';
 
-.mcp-hero-card {
+.dashboard-art-card {
   position: relative;
   overflow: hidden;
 }
 
-.mcp-hero-card__content {
+.dashboard-art-card__content {
   max-width: 55%;
   position: relative;
   z-index: 1;
 }
 
-.mcp-hero-card__art {
+.dashboard-art-card__art {
   position: absolute;
   left: 100%;
   top: 100%;

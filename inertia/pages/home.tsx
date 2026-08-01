@@ -5,6 +5,7 @@ import { Heading, Text } from '@astryxdesign/core/Text'
 import { usePage } from '@inertiajs/react'
 import { type Data } from '@generated/data'
 import mcpNetworkUrl from '~/assets/data-blocks-sync-balanced-square.png?w=1254&format=png&quality=100'
+import accessTokensArtUrl from '~/assets/access-token-card-circular.png?w=1254&format=png&quality=100'
 
 export default function Home() {
   const { props } = usePage<Data.SharedProps>()
@@ -20,8 +21,8 @@ export default function Home() {
         </Text>
       </VStack>
 
-      <Card padding={6} width="100%" className="mcp-hero-card">
-        <VStack gap={4} hAlign="start" className="mcp-hero-card__content">
+      <Card padding={6} width="100%" className="dashboard-art-card">
+        <VStack gap={4} hAlign="start" className="dashboard-art-card__content">
           <VStack gap={1}>
             <Heading level={2}>MCPs</Heading>
             <Text type="body" color="secondary">
@@ -30,15 +31,11 @@ export default function Home() {
           </VStack>
           <Button label="Manage MCPs" variant="primary" href="/mcps" />
         </VStack>
-        <img
-          src={mcpNetworkUrl}
-          alt=""
-          className="mcp-hero-card__art"
-        />
+        <img src={mcpNetworkUrl} alt="" className="dashboard-art-card__art" />
       </Card>
 
-      <Card padding={6} width="100%">
-        <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
+      <Card padding={6} width="100%" className="dashboard-art-card">
+        <VStack gap={4} hAlign="start" className="dashboard-art-card__content">
           <VStack gap={1}>
             <Heading level={2}>Access tokens</Heading>
             <Text type="body" color="secondary">
@@ -46,7 +43,8 @@ export default function Home() {
             </Text>
           </VStack>
           <Button label="Manage tokens" variant="primary" href="/tokens" />
-        </HStack>
+        </VStack>
+        <img src={accessTokensArtUrl} alt="" className="dashboard-art-card__art" />
       </Card>
 
       {user?.isAdmin ? (
