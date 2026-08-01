@@ -206,9 +206,9 @@ export interface Registry {
       body: {}
       paramsTuple: []
       params: {}
-      query: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/oauth').oauthCallbackValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthCallback']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthCallback']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthCallback']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'mcps.show': {

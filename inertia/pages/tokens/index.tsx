@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Badge } from '@astryxdesign/core/Badge'
@@ -39,7 +39,12 @@ type McpOption = {
   enabled: boolean
 }
 
-function tokenStatus(token: TokenRow): { label: string; variant: 'success' | 'warning' | 'neutral' } {
+type CopyState = 'idle' | 'copied' | 'error'
+
+function tokenStatus(token: TokenRow): {
+  label: string
+  variant: 'success' | 'warning' | 'neutral'
+} {
   if (token.revokedAt) return { label: 'Revoked', variant: 'neutral' }
   if (token.isUsable) return { label: 'Active', variant: 'success' }
   return { label: 'Expired', variant: 'warning' }
@@ -67,13 +72,26 @@ export default function TokensIndex({
   const [scopeMode, setScopeMode] = useState('all')
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([])
   const [expiresAt, setExpiresAt] = useState('')
+  const [copyState, setCopyState] = useState<CopyState>('idle')
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  async function copyText(value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-    } catch {
-      // ignore
+  useEffect(() => {
+    return () => {
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
     }
+  }, [])
+
+  async function copyGatewayUrl() {
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
+
+    try {
+      await navigator.clipboard.writeText(gatewayUrl)
+      setCopyState('copied')
+    } catch {
+      setCopyState('error')
+    }
+
+    copyResetTimer.current = setTimeout(() => setCopyState('idle'), 2000)
   }
 
   function openCreate() {
@@ -181,10 +199,16 @@ export default function TokensIndex({
           <HStack gap={3} vAlign="center" wrap="wrap">
             <Text type="body">{gatewayUrl}</Text>
             <Button
-              label="Copy URL"
-              variant="secondary"
+              label={
+                copyState === 'copied'
+                  ? 'Copied!'
+                  : copyState === 'error'
+                    ? 'Copy failed'
+                    : 'Copy URL'
+              }
+              variant={copyState === 'copied' ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => copyText(gatewayUrl)}
+              clickAction={copyGatewayUrl}
             />
           </HStack>
           <Text type="supporting" color="secondary">
