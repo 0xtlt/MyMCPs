@@ -1,32 +1,24 @@
-import Invite from '#models/invite'
-import User from '#models/user'
-import { acceptInviteValidator, createInviteValidator } from '#validators/user'
 import type { HttpContext } from '@adonisjs/core/http'
-import env from '#start/env'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
+import Invite from '#models/invite'
+import User from '#models/user'
+import Mcp from '#models/mcp'
+import AccessToken from '#models/access_token'
+import { acceptInviteValidator, createInviteValidator } from '#validators/user'
+import { publicAppUrl } from '#services/public_url'
+import InviteTransformer from '#transformers/invite_transformer'
+import MemberTransformer from '#transformers/member_transformer'
 
 export default class InvitesController {
   async index({ inertia, auth, request }: HttpContext) {
-    const invites = await Invite.query()
-      .where('created_by', auth.user!.id)
-      .orderBy('created_at', 'desc')
-
-    const configured = env.get('APP_URL').replace(/\/$/, '')
-    const requestOrigin = `${request.protocol()}://${request.host()}`
+    const invites = await Invite.query().orderBy('created_at', 'desc')
+    const members = await User.query().orderBy('created_at', 'asc')
 
     return inertia.render('invites/index', {
-      invites: invites.map((invite) => ({
-        id: invite.id,
-        email: invite.email,
-        role: invite.role,
-        token: invite.token,
-        acceptedAt: invite.acceptedAt?.toISO() ?? null,
-        expiresAt: invite.expiresAt.toISO(),
-        createdAt: invite.createdAt.toISO(),
-        isUsable: invite.isUsable,
-      })),
-      appUrl: request.host()?.includes('localhost') ? requestOrigin : configured,
+      invites: InviteTransformer.transform(invites),
+      members: MemberTransformer.transform(members, auth.user!.id),
+      appUrl: publicAppUrl(request),
     })
   }
 
@@ -57,8 +49,54 @@ export default class InvitesController {
       createdBy: auth.user!.id,
       expiresAt: DateTime.utc().plus({ days: 7 }),
     })
-
     session.flash('success', 'Invite created')
+    return response.redirect().toRoute('invites.index')
+  }
+
+  async destroy({ params, response, session }: HttpContext) {
+    const invite = await Invite.find(params.id)
+    if (!invite) {
+      session.flash('error', 'Invite not found')
+      return response.redirect().toRoute('invites.index')
+    }
+
+    await invite.delete()
+    session.flash('success', 'Invite removed')
+    return response.redirect().toRoute('invites.index')
+  }
+
+  async destroyMember({ params, auth, response, session }: HttpContext) {
+    const member = await User.find(params.id)
+    if (!member) {
+      session.flash('error', 'Member not found')
+      return response.redirect().toRoute('invites.index')
+    }
+
+    if (member.id === auth.user!.id) {
+      session.flash('error', 'You cannot remove your own account')
+      return response.redirect().toRoute('invites.index')
+    }
+
+    if (member.role === 'admin') {
+      const adminCount = await User.query().where('role', 'admin').count('* as total')
+      if (Number(adminCount[0].$extras.total) <= 1) {
+        session.flash('error', 'Cannot remove the last admin')
+        return response.redirect().toRoute('invites.index')
+      }
+    }
+
+    const actorId = auth.user!.id
+    await db.transaction(async (trx) => {
+      await Mcp.query({ client: trx }).where('created_by', member.id).update({ createdBy: actorId })
+      await AccessToken.query({ client: trx })
+        .where('created_by', member.id)
+        .update({ createdBy: actorId })
+      await Invite.query({ client: trx }).where('created_by', member.id).update({ createdBy: actorId })
+      member.useTransaction(trx)
+      await member.delete()
+    })
+
+    session.flash('success', 'Member removed')
     return response.redirect().toRoute('invites.index')
   }
 

@@ -14,16 +14,20 @@ const corsConfig = defineConfig({
   enabled: true,
 
   /**
-   * In development, allow every origin to simplify local front/backend setup.
-   * In production, keep an explicit allowlist (empty by default, so no
-   * cross-origin browser access is allowed until configured).
+   * Session UI stays locked down in production.
+   * Only the bearer `/mcp` gateway reflects arbitrary origins (agents, no cookies).
    */
-  origin: app.inDev ? true : [],
+  origin: (requestOrigin, ctx) => {
+    if (ctx.request.url().startsWith('/mcp')) {
+      return requestOrigin || true
+    }
+    return app.inDev ? true : []
+  },
 
   /**
    * HTTP methods accepted for cross-origin requests.
    */
-  methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 
   /**
    * Reflect request headers by default. Use a string array to restrict

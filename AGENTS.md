@@ -35,7 +35,7 @@ MORE CLI:
 
 ## Cursor Cloud specific instructions
 
-Single AdonisJS 7 + Inertia/React app (MyMCPs). No Docker, Redis, or external DB — SQLite via `better-sqlite3` at `tmp/db.sqlite3`.
+Single AdonisJS 7 + Inertia/React app (MyMCPs). No Redis or external DB — SQLite via `better-sqlite3` at `tmp/db.sqlite3`. Production packaging: `Dockerfile` (+ `docker-compose.yml`) bundles Node 24 and Deno for npm MCP sandboxes; persist `/app/tmp`.
 
 ### Runtime
 - **Node.js ≥ 24** and **pnpm** are required (`package.json` `engines`). Use nvm Node 24; put it first on `PATH` (the VM may also ship an older `/exec-daemon/node`).

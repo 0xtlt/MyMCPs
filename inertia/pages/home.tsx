@@ -4,6 +4,8 @@ import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { usePage } from '@inertiajs/react'
 import { type Data } from '@generated/data'
+import mcpNetworkUrl from '~/assets/data-blocks-sync-balanced-square.png?w=1254&format=png&quality=100'
+import accessTokensArtUrl from '~/assets/access-token-card-circular.png?w=1254&format=png&quality=100'
 
 export default function Home() {
   const { props } = usePage<Data.SharedProps>()
@@ -14,10 +16,36 @@ export default function Home() {
       <VStack gap={2}>
         <Heading level={1}>Dashboard</Heading>
         <Text type="body" color="secondary">
-          Signed in as {user?.fullName || user?.email}. This instance is ready—connect upstream MCPs
-          next (coming soon).
+          Signed in as {user?.fullName || user?.email}. Register upstream MCPs and issue access
+          tokens for your agents.
         </Text>
       </VStack>
+
+      <Card padding={6} width="100%" className="dashboard-art-card">
+        <VStack gap={4} hAlign="start" className="dashboard-art-card__content">
+          <VStack gap={1}>
+            <Heading level={2}>MCPs</Heading>
+            <Text type="body" color="secondary">
+              Add HTTP or npm upstream servers, configure auth, and inspect connection status.
+            </Text>
+          </VStack>
+          <Button label="Manage MCPs" variant="primary" href="/mcps" />
+        </VStack>
+        <img src={mcpNetworkUrl} alt="" className="dashboard-art-card__art" />
+      </Card>
+
+      <Card padding={6} width="100%" className="dashboard-art-card">
+        <VStack gap={4} hAlign="start" className="dashboard-art-card__content">
+          <VStack gap={1}>
+            <Heading level={2}>Access tokens</Heading>
+            <Text type="body" color="secondary">
+              Create identifiers with access to all MCPs or a selected subset for the /mcp gateway.
+            </Text>
+          </VStack>
+          <Button label="Manage tokens" variant="primary" href="/tokens" />
+        </VStack>
+        <img src={accessTokensArtUrl} alt="" className="dashboard-art-card__art" />
+      </Card>
 
       {user?.isAdmin ? (
         <Card padding={6} width="100%">
@@ -28,7 +56,7 @@ export default function Home() {
                 Invite people to this instance. There is no public registration.
               </Text>
             </VStack>
-            <Button label="Manage invites" variant="primary" href="/invites" />
+            <Button label="Manage invites" variant="secondary" href="/invites" />
           </HStack>
         </Card>
       ) : null}

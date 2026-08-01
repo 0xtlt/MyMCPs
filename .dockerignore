@@ -1,0 +1,30 @@
+# Dependencies / build output
+node_modules
+build
+dist
+tmp
+.pnpm-store
+
+# Secrets & local env
+.env
+.env.*
+!.env.example
+
+# Git / IDE / CI
+.git
+.github
+.cursor
+.vscode
+.idea
+.fleet
+*.md
+!README.md
+
+# Logs & caches
+*.log
+.cache
+coverage
+public/assets
+
+# OS junk
+.DS_Store

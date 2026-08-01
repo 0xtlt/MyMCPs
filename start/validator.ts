@@ -3,16 +3,12 @@
 | Validator file
 |--------------------------------------------------------------------------
 |
-| The validator file is used for configuring global transforms for VineJS.
-| The transform below converts all VineJS date outputs from JavaScript
-| Date objects to Luxon DateTime instances, so that validated dates are
-| ready to use with Lucid models and other parts of the app that expect
-| Luxon DateTime.
+| Global VineJS configuration for this app.
 |
 */
 
+import vine, { VineDate } from '@vinejs/vine'
 import { DateTime } from 'luxon'
-import { VineDate } from '@vinejs/vine'
 
 declare module '@vinejs/vine/types' {
   interface VineGlobalTransforms {
@@ -20,4 +16,14 @@ declare module '@vinejs/vine/types' {
   }
 }
 
+/**
+ * HTML forms submit empty optional fields as "". Normalize them to null so
+ * `.nullable()` / `.optional()` schemas match database nullability.
+ * @see https://vinejs.dev/docs/html_forms_and_surprises
+ */
+vine.convertEmptyStringsToNull = true
+
+/**
+ * Validated dates become Luxon DateTime for Lucid and the rest of the app.
+ */
 VineDate.transform((value) => DateTime.fromJSDate(value))

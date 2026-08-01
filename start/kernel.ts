@@ -52,4 +52,5 @@ export const middleware = router.named({
   admin: () => import('#middleware/admin_middleware'),
   needsSetup: () => import('#middleware/needs_setup_middleware'),
   setupComplete: () => import('#middleware/setup_complete_middleware'),
+  mcpBearer: () => import('#middleware/mcp_bearer_middleware'),
 })

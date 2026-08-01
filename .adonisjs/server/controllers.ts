@@ -4,7 +4,10 @@
  */
 
 export const controllers = {
+  AccessTokens: () => import('#controllers/access_tokens_controller'),
+  Gateway: () => import('#controllers/gateway_controller'),
   Invites: () => import('#controllers/invites_controller'),
+  Mcps: () => import('#controllers/mcps_controller'),
   Onboarding: () => import('#controllers/onboarding_controller'),
   Session: () => import('#controllers/session_controller'),
 }
