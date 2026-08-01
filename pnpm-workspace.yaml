@@ -1,0 +1,8 @@
+allowBuilds:
+  '@astryxdesign/cli': set this to true or false
+  '@astryxdesign/core': set this to true or false
+  '@swc/core': true
+  better-sqlite3: true
+  esbuild: true
+onlyBuiltDependencies:
+  - better-sqlite3

@@ -1,0 +1,33 @@
+# Dependencies and AdonisJS build
+node_modules
+build
+dist
+tmp/*
+!tmp/.gitkeep
+
+# Local package manager store (should never live in the repo)
+.pnpm-store
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Frontend assets compiled code
+public/assets
+
+# Logs and caches
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+.cache
+coverage
+
+# Editors specific
+.fleet
+.idea
+.vscode
+
+# Platform specific
+.DS_Store
