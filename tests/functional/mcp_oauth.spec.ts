@@ -151,6 +151,9 @@ test.group('MCP OAuth routes', (group) => {
         '/mcps'
       )
       const saved = await Mcp.findOrFail(mcp.id)
+      if (!saved.oauthAccessToken) {
+        throw new Error(`OAuth callback failed: ${saved.lastError ?? 'unknown error'}`)
+      }
       assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'access-token')
       assert.equal(saved.status, 'ready')
     } finally {
