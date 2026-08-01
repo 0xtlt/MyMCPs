@@ -66,6 +66,10 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
+Compose binds the published port to `127.0.0.1` by default. If the container
+must be reachable outside the host, set `BIND_ADDRESS` only behind a
+TLS-terminating reverse proxy and use an HTTPS `APP_URL`.
+
 Or without Compose:
 
 ```bash

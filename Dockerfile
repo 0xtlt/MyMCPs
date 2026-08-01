@@ -9,7 +9,7 @@
 #           -v mymcps-data:/app/tmp mymcps
 
 ARG NODE_VERSION=24
-ARG PNPM_VERSION=11.18.0
+ARG PNPM_VERSION=10.33.3
 ARG DENO_VERSION=2.9.4
 
 # Official Deno binary only (multi-arch).
@@ -43,21 +43,17 @@ ENV NODE_ENV=production \
   SESSION_DRIVER=cookie
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Fresh lockfile packages can trip pnpm's default minimumReleaseAge gate.
-RUN pnpm config set minimumReleaseAge 0 \
-  && pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --config.minimumReleaseAge=1440
 
 COPY . .
 # Assemble a standalone prod tree outside the workspace root so pnpm does not
 # walk up to /app (which would skip creating node_modules next to the build).
-RUN pnpm config set minimumReleaseAge 0 \
-  && pnpm run build \
+RUN pnpm run build \
   && mkdir -p /prod \
   && cp -a build/. /prod/ \
   && cp pnpm-workspace.yaml /prod/ \
   && cd /prod \
-  && pnpm config set minimumReleaseAge 0 \
-  && pnpm install --frozen-lockfile --prod
+  && pnpm install --frozen-lockfile --prod --config.minimumReleaseAge=1440
 
 # ---------------------------------------------------------------------------
 # Runtime

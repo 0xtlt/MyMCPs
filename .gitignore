@@ -10,8 +10,9 @@ tmp/*
 
 # Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.test
 
 # Frontend assets compiled code
 public/assets
