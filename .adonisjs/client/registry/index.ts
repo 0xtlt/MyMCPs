@@ -133,7 +133,7 @@ const routes = {
     types: placeholder as Registry['mcps.probe']['types'],
   },
   'mcps.oauthStart': {
-    methods: ["POST"],
+    methods: ["GET","HEAD"],
     pattern: '/mcps/:id/oauth/start',
     tokens: [{"old":"/mcps/:id/oauth/start","type":0,"val":"mcps","end":""},{"old":"/mcps/:id/oauth/start","type":1,"val":"id","end":""},{"old":"/mcps/:id/oauth/start","type":0,"val":"oauth","end":""},{"old":"/mcps/:id/oauth/start","type":0,"val":"start","end":""}],
     types: placeholder as Registry['mcps.oauthStart']['types'],

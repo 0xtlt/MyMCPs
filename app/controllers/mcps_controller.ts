@@ -5,11 +5,10 @@ import { createMcpValidator, updateMcpValidator } from '#validators/mcp'
 import { oauthCallbackValidator } from '#validators/oauth'
 import { testAndUpdateStatus } from '#services/upstream/manager'
 import {
-  buildAuthorizeRedirect,
   clearOauthSession,
   exchangeAuthorizationCode,
   readOauthSession,
-  startOauthSession,
+  startOauthFlow,
 } from '#services/upstream/oauth'
 import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
@@ -48,7 +47,28 @@ function clearUnusedAuthSecrets(mcp: Mcp) {
     mcp.oauthAccessToken = null
     mcp.oauthRefreshToken = null
     mcp.oauthTokenExpiresAt = null
+    mcp.oauthIssuer = null
+    mcp.oauthResource = null
+    mcp.oauthRedirectUri = null
+    mcp.oauthClientAuthMethod = null
+    mcp.oauthTokenType = null
   }
+}
+
+function clearOAuthConnection(mcp: Mcp) {
+  mcp.oauthAuthorizeUrl = null
+  mcp.oauthTokenUrl = null
+  mcp.oauthScopes = null
+  mcp.oauthClientId = null
+  mcp.oauthClientSecret = null
+  mcp.oauthAccessToken = null
+  mcp.oauthRefreshToken = null
+  mcp.oauthTokenExpiresAt = null
+  mcp.oauthIssuer = null
+  mcp.oauthResource = null
+  mcp.oauthRedirectUri = null
+  mcp.oauthClientAuthMethod = null
+  mcp.oauthTokenType = null
 }
 
 async function assignMcpFromPayload(
@@ -56,11 +76,17 @@ async function assignMcpFromPayload(
   payload: McpPayload,
   options?: { excludeId?: number }
 ) {
+  const nextHttpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
+  const oauthServerChanged = mcp.transport !== payload.transport || mcp.httpUrl !== nextHttpUrl
+  if (oauthServerChanged) {
+    clearOAuthConnection(mcp)
+  }
+
   mcp.name = payload.name
   mcp.slug = await uniqueSlug(payload.name, options?.excludeId)
   mcp.description = payload.description || null
   mcp.transport = payload.transport
-  mcp.httpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
+  mcp.httpUrl = nextHttpUrl
   mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
   mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
   mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
@@ -117,6 +143,9 @@ export default class McpsController {
     await mcp.save()
 
     await testAndUpdateStatus(mcp)
+    if (payload.authType === 'oauth') {
+      session.flash('editingMcpId', mcp.id)
+    }
     session.flash('success', 'MCP created')
     return response.redirect().toRoute('mcps.index')
   }
@@ -143,6 +172,9 @@ export default class McpsController {
     await mcp.save()
 
     await testAndUpdateStatus(mcp)
+    if (payload.authType === 'oauth') {
+      session.flash('editingMcpId', mcp.id)
+    }
     session.flash('success', 'MCP updated')
     return response.redirect().toRoute('mcps.index')
   }
@@ -174,7 +206,7 @@ export default class McpsController {
     return response.redirect().toRoute('mcps.index')
   }
 
-  async oauthStart({ params, response, session }: HttpContext) {
+  async oauthStart({ params, request, response, session }: HttpContext) {
     const mcp = await Mcp.find(params.id)
     if (!mcp) {
       session.flash('error', 'MCP not found')
@@ -187,8 +219,7 @@ export default class McpsController {
     }
 
     try {
-      const oauth = startOauthSession(session, mcp)
-      return response.redirect(buildAuthorizeRedirect(mcp, oauth))
+      return response.redirect(await startOauthFlow(session, mcp, request))
     } catch (error) {
       session.flash('error', error instanceof Error ? error.message : 'Failed to start OAuth')
       session.flash('editingMcpId', mcp.id)
@@ -197,13 +228,15 @@ export default class McpsController {
   }
 
   async oauthCallback({ request, response, session }: HttpContext) {
-    const oauth = await readOauthSession(session)
-    clearOauthSession(session)
-
     const { code, state, error: oauthError } = await request.validateUsing(oauthCallbackValidator)
+    const oauth = await readOauthSession(session, state)
+    clearOauthSession(session, state)
 
     if (oauthError) {
       session.flash('error', `OAuth error: ${oauthError}`)
+      if (oauth) {
+        session.flash('editingMcpId', oauth.mcpId)
+      }
       return response.redirect().toRoute('mcps.index')
     }
 
@@ -219,7 +252,7 @@ export default class McpsController {
     }
 
     try {
-      await exchangeAuthorizationCode(mcp, code, oauth.codeVerifier)
+      await exchangeAuthorizationCode(mcp, oauth, code)
       await testAndUpdateStatus(mcp)
       session.flash('success', 'OAuth connected')
     } catch (error) {

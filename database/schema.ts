@@ -113,11 +113,16 @@ export class McpSchema extends BaseModel {
     'npmVersion',
     'oauthAccessToken',
     'oauthAuthorizeUrl',
+    'oauthClientAuthMethod',
     'oauthClientId',
     'oauthClientSecret',
+    'oauthIssuer',
+    'oauthRedirectUri',
     'oauthRefreshToken',
+    'oauthResource',
     'oauthScopes',
     'oauthTokenExpiresAt',
+    'oauthTokenType',
     'oauthTokenUrl',
     'slug',
     'status',
@@ -160,15 +165,25 @@ export class McpSchema extends BaseModel {
   @column()
   declare oauthAuthorizeUrl: string | null
   @column()
+  declare oauthClientAuthMethod: string | null
+  @column()
   declare oauthClientId: string | null
   @column()
   declare oauthClientSecret: string | null
   @column()
+  declare oauthIssuer: string | null
+  @column()
+  declare oauthRedirectUri: string | null
+  @column()
   declare oauthRefreshToken: string | null
+  @column()
+  declare oauthResource: string | null
   @column()
   declare oauthScopes: string | null
   @column.dateTime()
   declare oauthTokenExpiresAt: DateTime | null
+  @column()
+  declare oauthTokenType: string | null
   @column()
   declare oauthTokenUrl: string | null
   @column()

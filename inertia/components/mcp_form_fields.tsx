@@ -124,7 +124,14 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
         label="Transport"
         htmlName="transport"
         value={values.transport}
-        onChange={(transport) => onChange({ transport: transport as McpTransport })}
+        onChange={(transport) =>
+          onChange({
+            transport: transport as McpTransport,
+            ...(transport === 'npm' && values.authType === 'oauth'
+              ? { authType: 'none' as McpAuthType }
+              : {}),
+          })
+        }
         orientation="horizontal"
       >
         <RadioListItem value="http" label="HTTP" description="Remote Streamable HTTP URL" />
@@ -183,7 +190,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
         <RadioListItem value="none" label="None" />
         <RadioListItem value="bearer" label="Bearer token" />
         <RadioListItem value="header" label="Custom header" />
-        <RadioListItem value="oauth" label="OAuth" />
+        {values.transport === 'http' ? <RadioListItem value="oauth" label="OAuth" /> : null}
       </RadioList>
 
       {values.authType === 'bearer' ? (
@@ -223,33 +230,41 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
 
       {values.authType === 'oauth' ? (
         <VStack gap={3} hAlign="stretch">
+          <Text type="supporting" color="secondary">
+            OAuth endpoints and client registration are discovered automatically from the HTTP MCP
+            when you connect. The fields below are optional overrides for providers without standard
+            discovery.
+          </Text>
           <TextInput
-            label="Authorize URL"
+            label="Authorize URL (optional override)"
             htmlName="oauthAuthorizeUrl"
             value={values.oauthAuthorizeUrl}
             onChange={(oauthAuthorizeUrl) => onChange({ oauthAuthorizeUrl })}
             width="100%"
+            isOptional
           />
           <TextInput
-            label="Token URL"
+            label="Token URL (optional override)"
             htmlName="oauthTokenUrl"
             value={values.oauthTokenUrl}
             onChange={(oauthTokenUrl) => onChange({ oauthTokenUrl })}
             width="100%"
+            isOptional
           />
           <HStack gap={3} wrap="wrap">
             <TextInput
-              label="Client ID"
+              label="Client ID (optional override)"
               htmlName="oauthClientId"
               value={values.oauthClientId}
               onChange={(oauthClientId) => onChange({ oauthClientId })}
               width={240}
+              isOptional
             />
             <TextInput
               label={
                 secrets.hasOauthClientSecret
                   ? 'Client secret (leave blank to keep)'
-                  : 'Client secret'
+                  : 'Client secret (optional override)'
               }
               htmlName="oauthClientSecret"
               type="password"

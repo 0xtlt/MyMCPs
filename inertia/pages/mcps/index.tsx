@@ -310,9 +310,7 @@ export default function McpsIndex({
                             variant="secondary"
                             size="sm"
                             onClick={() =>
-                              router.post(`/mcps/${editingMcp.id}/oauth/start`, undefined, {
-                                preserveScroll: true,
-                              })
+                              window.location.assign(`/mcps/${editingMcp.id}/oauth/start`)
                             }
                           />
                         ) : null}
