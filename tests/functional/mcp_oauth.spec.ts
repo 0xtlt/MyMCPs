@@ -145,11 +145,7 @@ test.group('MCP OAuth routes', (group) => {
         .redirects(0)
 
       startResponse.assertStatus(302)
-      const startLocation = startResponse.header('location')
-      if (!startLocation?.startsWith('http')) {
-        throw new Error(`OAuth start redirected to ${startLocation ?? 'nowhere'}`)
-      }
-      const authorizationUrl = new URL(startLocation)
+      const authorizationUrl = new URL(startResponse.header('location')!)
       assert.equal(authorizationUrl.origin, 'https://auth.example')
       assert.equal(authorizationUrl.pathname, '/authorize')
       assert.equal(authorizationUrl.searchParams.get('client_id'), 'notion-client-123')
@@ -168,13 +164,7 @@ test.group('MCP OAuth routes', (group) => {
         '/mcps'
       )
       const saved = await Mcp.findOrFail(mcp.id)
-      if (!saved.oauthAccessToken) {
-        throw new Error(`OAuth callback failed: ${saved.lastError ?? 'unknown error'}`)
-      }
       assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'access-token')
-      if (saved.status !== 'ready') {
-        throw new Error(`MCP probe failed: ${saved.lastError ?? 'unknown error'}`)
-      }
       assert.equal(saved.status, 'ready')
     } finally {
       restoreFetch()
