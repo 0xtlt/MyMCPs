@@ -96,30 +96,6 @@ If the Coolify instance does not automatically apply `coolify.json`, select
 **Docker Compose**, set the Compose file to `/docker-compose.yml`, expose port
 `3333`, and add the same domain manually.
 
-### Coolify build troubleshooting
-
-If a deployment stops during `pnpm install` with messages such as
-`error (23)`, `UND_ERR_SOCKET`, or `ERR_PNPM_FETCH_*`, the failure is occurring
-while the builder downloads packages from the npm registry. It is not an
-application compile or health-check failure. The Dockerfile caches the pnpm
-store, but it cannot repair a registry connection problem on the VPS.
-
-Check the following before retrying:
-
-1. Confirm the resource is using the current commit and the Docker Compose build
-   pack with `/docker-compose.yml`, not a stale configuration or Nixpacks.
-2. Set the Coolify server deployment timeout high enough for a cold dependency
-   install, especially on a small or ARM64 VPS.
-3. From the Docker builder or helper container, verify DNS and HTTPS access to
-   `registry.npmjs.org`. Check proxy/firewall rules and unstable IPv6 routing;
-   configure Docker DNS or prefer IPv4 only when the server diagnosis supports
-   it.
-4. Check available disk space, inodes, memory, and Docker storage. A failed
-   write can also surface as error `23`.
-5. Retry after transient registry failures. Once a BuildKit cache is retained,
-   later builds can reuse the pnpm store instead of downloading all packages
-   again.
-
 ## Docker
 
 The image bundles **Node.js 24**, production deps, and **Deno** (for npm MCP sandboxes). Persist `/app/tmp` so SQLite and sandbox caches survive restarts.
