@@ -5,6 +5,7 @@ import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
 import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
+import { DateTimeInput, type ISODateTimeString } from '@astryxdesign/core/DateTimeInput'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import {
   HStack,
@@ -28,9 +29,9 @@ type TokenRow = {
   expiresAt: string | null
   revokedAt: string | null
   lastUsedAt: string | null
-  createdAt: string
+  createdAt: string | null
   isUsable: boolean
-} & Record<string, unknown>
+}
 
 type McpOption = {
   id: number
@@ -71,7 +72,7 @@ export default function TokensIndex({
   const [name, setName] = useState('')
   const [scopeMode, setScopeMode] = useState('all')
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([])
-  const [expiresAt, setExpiresAt] = useState('')
+  const [expiresAt, setExpiresAt] = useState<ISODateTimeString>()
   const [copyState, setCopyState] = useState<CopyState>('idle')
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -98,7 +99,7 @@ export default function TokensIndex({
     setName('')
     setScopeMode('all')
     setSelectedMcpIds([])
-    setExpiresAt('')
+    setExpiresAt(undefined)
     setIsCreateOpen(true)
   }
 
@@ -312,16 +313,15 @@ export default function TokensIndex({
                       </>
                     ) : null}
 
-                    <TextInput
+                    <DateTimeInput
                       label="Expires at"
-                      htmlName="expiresAt"
-                      type="datetime-local"
                       value={expiresAt}
                       onChange={setExpiresAt}
                       isOptional
                       description="Leave empty for no expiration. Time is interpreted in your local timezone."
                       width="100%"
                     />
+                    <input type="hidden" name="expiresAt" value={expiresAt ?? ''} />
                   </VStack>
                 </LayoutContent>
               }

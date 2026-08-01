@@ -69,7 +69,9 @@ router
 
         router.get('mcps', [controllers.Mcps, 'index']).as('mcps.index')
         router.post('mcps', [controllers.Mcps, 'store']).as('mcps.store')
-        router.get('mcps/oauth/callback', [controllers.Mcps, 'oauthCallback']).as('mcps.oauthCallback')
+        router
+          .get('mcps/oauth/callback', [controllers.Mcps, 'oauthCallback'])
+          .as('mcps.oauthCallback')
         router.get('mcps/:id', [controllers.Mcps, 'show']).as('mcps.show')
         router.put('mcps/:id', [controllers.Mcps, 'update']).as('mcps.update')
         router.delete('mcps/:id', [controllers.Mcps, 'destroy']).as('mcps.destroy')

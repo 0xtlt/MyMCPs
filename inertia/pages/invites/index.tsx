@@ -26,19 +26,19 @@ type InviteRow = {
   role: string
   token: string
   acceptedAt: string | null
-  expiresAt: string
-  createdAt: string
+  expiresAt: string | null
+  createdAt: string | null
   isUsable: boolean
-} & Record<string, unknown>
+}
 
 type MemberRow = {
   id: number
   email: string
   fullName: string | null
   role: string
-  createdAt: string
+  createdAt: string | null
   isCurrentUser: boolean
-} & Record<string, unknown>
+}
 
 export default function InvitesIndex({
   invites,
@@ -96,7 +96,7 @@ export default function InvitesIndex({
       width: proportional(2),
       renderCell: (invite) => (
         <Text type="supporting" color="secondary">
-          {new Date(invite.expiresAt).toLocaleString()}
+          {invite.expiresAt ? new Date(invite.expiresAt).toLocaleString() : '—'}
         </Text>
       ),
     },
@@ -171,7 +171,7 @@ export default function InvitesIndex({
       width: proportional(2),
       renderCell: (member) => (
         <Text type="supporting" color="secondary">
-          {new Date(member.createdAt).toLocaleString()}
+          {member.createdAt ? new Date(member.createdAt).toLocaleString() : '—'}
         </Text>
       ),
     },

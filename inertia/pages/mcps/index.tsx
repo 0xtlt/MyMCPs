@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -46,7 +46,12 @@ type McpRow = {
   status: 'draft' | 'ready' | 'error'
   lastError: string | null
   enabled: boolean
-} & Record<string, unknown>
+}
+
+type EditingOverride = {
+  sourceId: number | null
+  editingId: number | null
+}
 
 function statusVariant(status: McpRow['status']): 'success' | 'warning' | 'error' | 'neutral' {
   if (status === 'ready') return 'success'
@@ -67,26 +72,23 @@ export default function McpsIndex({
   editingMcpId?: number | null
 }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(editingMcpId)
+  const [editingOverride, setEditingOverride] = useState<EditingOverride | null>(null)
   const [createValues, setCreateValues] = useState<McpFormValues>(emptyMcpFormValues)
-  const [editValues, setEditValues] = useState<McpFormValues>(emptyMcpFormValues)
+  const [editValuesOverride, setEditValuesOverride] = useState<McpFormValues | null>(null)
+
+  const editingId =
+    editingOverride?.sourceId === editingMcpId ? editingOverride.editingId : editingMcpId
 
   const editingMcp = useMemo(
     () => mcps.find((mcp) => mcp.id === editingId) ?? null,
     [mcps, editingId]
   )
 
-  useEffect(() => {
-    if (editingMcpId) {
-      setEditingId(editingMcpId)
-    }
-  }, [editingMcpId])
-
-  useEffect(() => {
-    if (editingMcp) {
-      setEditValues(mcpFormValuesFromRow(editingMcp))
-    }
-  }, [editingMcp])
+  const defaultEditValues = useMemo(
+    () => (editingMcp ? mcpFormValuesFromRow(editingMcp) : emptyMcpFormValues()),
+    [editingMcp]
+  )
+  const editValues = editValuesOverride ?? defaultEditValues
 
   function openCreate() {
     setCreateValues(emptyMcpFormValues())
@@ -94,12 +96,13 @@ export default function McpsIndex({
   }
 
   function openEdit(mcp: McpRow) {
-    setEditValues(mcpFormValuesFromRow(mcp))
-    setEditingId(mcp.id)
+    setEditValuesOverride(mcpFormValuesFromRow(mcp))
+    setEditingOverride({ sourceId: editingMcpId, editingId: mcp.id })
   }
 
   function closeEdit() {
-    setEditingId(null)
+    setEditValuesOverride(null)
+    setEditingOverride({ sourceId: editingMcpId, editingId: null })
   }
 
   const columns: TableColumn<McpRow>[] = [
@@ -264,7 +267,6 @@ export default function McpsIndex({
           <Form
             route="mcps.update"
             routeParams={{ id: editingMcp.id }}
-            method="put"
             className="dialog-form-fill"
           >
             {({ errors, processing }) => (
@@ -317,7 +319,12 @@ export default function McpsIndex({
                       </HStack>
                       <McpFormFields
                         values={editValues}
-                        onChange={(patch) => setEditValues((current) => ({ ...current, ...patch }))}
+                        onChange={(patch) =>
+                          setEditValuesOverride((current) => ({
+                            ...(current ?? editValues),
+                            ...patch,
+                          }))
+                        }
                         errors={errors}
                         secrets={{
                           hasAuthBearer: editingMcp.hasAuthBearer,

@@ -51,21 +51,24 @@ function clearUnusedAuthSecrets(mcp: Mcp) {
   }
 }
 
-async function assignMcpFromPayload(mcp: Mcp, payload: McpPayload, options?: { excludeId?: number }) {
+async function assignMcpFromPayload(
+  mcp: Mcp,
+  payload: McpPayload,
+  options?: { excludeId?: number }
+) {
   mcp.name = payload.name
   mcp.slug = await uniqueSlug(payload.name, options?.excludeId)
   mcp.description = payload.description || null
   mcp.transport = payload.transport
   mcp.httpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
   mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
-  mcp.npmVersion = payload.transport === 'npm' ? (payload.npmVersion || null) : null
+  mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
   mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
   mcp.authType = payload.authType
   mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
-  mcp.oauthAuthorizeUrl =
-    payload.authType === 'oauth' ? (payload.oauthAuthorizeUrl ?? null) : null
+  mcp.oauthAuthorizeUrl = payload.authType === 'oauth' ? (payload.oauthAuthorizeUrl ?? null) : null
   mcp.oauthTokenUrl = payload.authType === 'oauth' ? (payload.oauthTokenUrl ?? null) : null
-  mcp.oauthScopes = payload.authType === 'oauth' ? (payload.oauthScopes || null) : null
+  mcp.oauthScopes = payload.authType === 'oauth' ? payload.oauthScopes || null : null
   mcp.oauthClientId = payload.authType === 'oauth' ? (payload.oauthClientId ?? null) : null
   mcp.enabled = payload.enabled ?? false
   clearUnusedAuthSecrets(mcp)
@@ -187,10 +190,7 @@ export default class McpsController {
       const oauth = startOauthSession(session, mcp)
       return response.redirect(buildAuthorizeRedirect(mcp, oauth))
     } catch (error) {
-      session.flash(
-        'error',
-        error instanceof Error ? error.message : 'Failed to start OAuth'
-      )
+      session.flash('error', error instanceof Error ? error.message : 'Failed to start OAuth')
       session.flash('editingMcpId', mcp.id)
       return response.redirect().toRoute('mcps.index')
     }

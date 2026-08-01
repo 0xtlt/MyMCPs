@@ -50,8 +50,7 @@ export async function probeUpstream(mcp: Mcp): Promise<UpstreamTool[]> {
 }
 
 export async function listNamespacedTools(mcps: Mcp[]) {
-  const tools: Array<UpstreamTool & { mcpId: number; mcpSlug: string; namespacedName: string }> =
-    []
+  const tools: Array<UpstreamTool & { mcpId: number; mcpSlug: string; namespacedName: string }> = []
 
   for (const mcp of mcps) {
     try {

@@ -1,5 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import AccessToken from '#models/access_token'
+import type AccessToken from '#models/access_token'
 import AccessTokenService from '#services/access_token_service'
 
 /**
