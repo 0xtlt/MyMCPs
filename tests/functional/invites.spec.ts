@@ -95,7 +95,10 @@ test.group('invites and member administration', (group) => {
     response.assertFlashMessage('error', 'This invite is invalid or has expired')
   })
 
-  test('reassigns owned records before removing a member', async ({ client, assert }) => {
+  test('reassigns owned records and revokes tokens before removing a member', async ({
+    client,
+    assert,
+  }) => {
     const admin = await createAdmin()
     const member = await createMember()
     const mcp = await createMcp(member.id)
@@ -117,6 +120,7 @@ test.group('invites and member administration', (group) => {
     const reassignedInvite = await Invite.findOrFail(invite.id)
     assert.equal(reassignedMcp.createdBy, admin.id)
     assert.equal(reassignedToken.createdBy, admin.id)
+    assert.isTrue(reassignedToken.isRevoked)
     assert.equal(reassignedInvite.createdBy, admin.id)
   })
 
