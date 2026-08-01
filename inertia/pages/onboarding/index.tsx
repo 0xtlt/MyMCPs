@@ -31,10 +31,7 @@ export default function Onboarding() {
                 <Banner
                   status="error"
                   title={
-                    errors.fullName ||
-                    errors.email ||
-                    errors.password ||
-                    'Unable to complete setup'
+                    errors.fullName || errors.email || errors.password || 'Unable to complete setup'
                   }
                   container="card"
                 />
@@ -56,7 +53,6 @@ export default function Onboarding() {
                 htmlName="email"
                 value={email}
                 onChange={setEmail}
-                autoComplete="email"
                 size="lg"
                 width="100%"
                 status={errors.email ? { type: 'error', message: errors.email } : undefined}
@@ -68,7 +64,6 @@ export default function Onboarding() {
                 htmlName="password"
                 value={password}
                 onChange={setPassword}
-                autoComplete="new-password"
                 size="lg"
                 width="100%"
                 status={errors.password ? { type: 'error', message: errors.password } : undefined}
@@ -80,7 +75,6 @@ export default function Onboarding() {
                 htmlName="passwordConfirmation"
                 value={passwordConfirmation}
                 onChange={setPasswordConfirmation}
-                autoComplete="new-password"
                 size="lg"
                 width="100%"
                 status={

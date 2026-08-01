@@ -8,7 +8,17 @@ import { BaseModel, column } from '@adonisjs/lucid/orm'
 import { DateTime } from 'luxon'
 
 export class InviteSchema extends BaseModel {
-  static $columns = ['acceptedAt', 'createdAt', 'createdBy', 'email', 'expiresAt', 'id', 'role', 'token', 'updatedAt'] as const
+  static $columns = [
+    'acceptedAt',
+    'createdAt',
+    'createdBy',
+    'email',
+    'expiresAt',
+    'id',
+    'role',
+    'token',
+    'updatedAt',
+  ] as const
   $columns = InviteSchema.$columns
   @column.dateTime()
   declare acceptedAt: DateTime | null
@@ -31,7 +41,15 @@ export class InviteSchema extends BaseModel {
 }
 
 export class UserSchema extends BaseModel {
-  static $columns = ['createdAt', 'email', 'fullName', 'id', 'password', 'role', 'updatedAt'] as const
+  static $columns = [
+    'createdAt',
+    'email',
+    'fullName',
+    'id',
+    'password',
+    'role',
+    'updatedAt',
+  ] as const
   $columns = UserSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime

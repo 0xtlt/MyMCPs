@@ -40,7 +40,6 @@ export default function Login() {
                   htmlName="email"
                   value={email}
                   onChange={setEmail}
-                  autoComplete="username"
                   size="lg"
                   width="100%"
                   status={errors.email ? { type: 'error', message: errors.email } : undefined}
@@ -52,7 +51,6 @@ export default function Login() {
                   htmlName="password"
                   value={password}
                   onChange={setPassword}
-                  autoComplete="current-password"
                   size="lg"
                   width="100%"
                   status={errors.password ? { type: 'error', message: errors.password } : undefined}

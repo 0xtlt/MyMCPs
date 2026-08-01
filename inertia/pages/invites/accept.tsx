@@ -51,7 +51,6 @@ export default function AcceptInvite({ token, email }: { token: string; email: s
                   htmlName="password"
                   value={password}
                   onChange={setPassword}
-                  autoComplete="new-password"
                   size="lg"
                   width="100%"
                   status={errors.password ? { type: 'error', message: errors.password } : undefined}
@@ -63,7 +62,6 @@ export default function AcceptInvite({ token, email }: { token: string; email: s
                   htmlName="passwordConfirmation"
                   value={passwordConfirmation}
                   onChange={setPasswordConfirmation}
-                  autoComplete="new-password"
                   size="lg"
                   width="100%"
                   status={
