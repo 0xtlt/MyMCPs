@@ -38,7 +38,7 @@ function buildAuthHeaders(mcp: Mcp): Record<string, string> {
   if (mcp.authType === 'oauth') {
     const token = McpSecretStore.decrypt(mcp.oauthAccessToken)
     if (token) {
-      headers.Authorization = `Bearer ${token}`
+      headers.Authorization = `${mcp.oauthTokenType || 'Bearer'} ${token}`
     }
   }
 
