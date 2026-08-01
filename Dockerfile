@@ -43,7 +43,7 @@ ENV NODE_ENV=production \
   SESSION_DRIVER=cookie
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile --config.minimumReleaseAge=1440
+RUN pnpm install --frozen-lockfile --config.minimumReleaseAge=360
 
 COPY . .
 # Assemble a standalone prod tree outside the workspace root so pnpm does not
@@ -53,7 +53,7 @@ RUN pnpm run build \
   && cp -a build/. /prod/ \
   && cp pnpm-workspace.yaml /prod/ \
   && cd /prod \
-  && pnpm install --frozen-lockfile --prod --config.minimumReleaseAge=1440
+  && pnpm install --frozen-lockfile --prod --config.minimumReleaseAge=360
 
 # ---------------------------------------------------------------------------
 # Runtime

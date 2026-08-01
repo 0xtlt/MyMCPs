@@ -39,7 +39,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies without lifecycle scripts
-        run: pnpm install --frozen-lockfile --ignore-scripts --config.minimumReleaseAge=1440
+        run: pnpm install --frozen-lockfile --ignore-scripts --config.minimumReleaseAge=360
 
       - name: Audit dependencies
         run: pnpm audit --audit-level=high
