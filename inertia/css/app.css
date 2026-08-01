@@ -19,7 +19,7 @@
   top: 100%;
   width: 38%;
   height: auto;
-  transform: translate(-75%, -75%) rotate(-15deg);
+  transform: translate(-60%, -75%) rotate(-10deg);
   pointer-events: none;
   user-select: none;
   z-index: 0;
