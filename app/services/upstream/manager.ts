@@ -1,4 +1,5 @@
 import type Mcp from '#models/mcp'
+import logger from '@adonisjs/core/services/logger'
 import {
   connectHttpUpstream,
   listHttpTools,
@@ -10,6 +11,7 @@ import {
   listDenoTools,
   type ConnectedDenoUpstream,
 } from '#services/upstream/deno_runner'
+import { sanitizeErrorMessage } from '#services/unknown'
 
 export type ConnectedUpstream = ConnectedHttpUpstream | ConnectedDenoUpstream
 
@@ -63,8 +65,11 @@ export async function listNamespacedTools(mcps: Mcp[]) {
           namespacedName: namespaceTool(mcp.slug, tool.name),
         })
       }
-    } catch {
-      // Skip unhealthy upstreams for aggregation; status is tracked separately.
+    } catch (error) {
+      logger.warn(
+        { err: error, mcpId: mcp.id, slug: mcp.slug },
+        'Skipping unhealthy upstream while listing gateway tools'
+      )
     }
   }
 
@@ -102,7 +107,7 @@ export async function testAndUpdateStatus(mcp: Mcp) {
     await mcp.save()
   } catch (error) {
     mcp.status = 'error'
-    mcp.lastError = error instanceof Error ? error.message : String(error)
+    mcp.lastError = sanitizeErrorMessage(error)
     await mcp.save()
   }
   return mcp

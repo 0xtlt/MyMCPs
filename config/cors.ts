@@ -1,3 +1,4 @@
+import app from '@adonisjs/core/services/app'
 import { defineConfig } from '@adonisjs/cors'
 
 /**
@@ -13,10 +14,15 @@ const corsConfig = defineConfig({
   enabled: true,
 
   /**
-   * Agents call /mcp from arbitrary hosts. Allow all origins for the gateway;
-   * auth is via Bearer access tokens, not cookies.
+   * Session UI stays locked down in production.
+   * Only the bearer `/mcp` gateway reflects arbitrary origins (agents, no cookies).
    */
-  origin: true,
+  origin: (requestOrigin, ctx) => {
+    if (ctx.request.url().startsWith('/mcp')) {
+      return requestOrigin || true
+    }
+    return app.inDev ? true : []
+  },
 
   /**
    * HTTP methods accepted for cross-origin requests.

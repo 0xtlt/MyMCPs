@@ -289,13 +289,13 @@ export default function TokensIndex({
                     ) : null}
 
                     <TextInput
-                      label="Expires at (UTC)"
+                      label="Expires at"
                       htmlName="expiresAt"
                       type="datetime-local"
                       value={expiresAt}
                       onChange={setExpiresAt}
                       isOptional
-                      description="Leave empty for no expiration"
+                      description="Leave empty for no expiration. Time is interpreted in your local timezone."
                       width="100%"
                     />
                   </VStack>

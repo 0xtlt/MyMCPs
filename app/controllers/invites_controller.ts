@@ -1,20 +1,17 @@
+import type { HttpContext } from '@adonisjs/core/http'
+import db from '@adonisjs/lucid/services/db'
+import { DateTime } from 'luxon'
 import Invite from '#models/invite'
 import User from '#models/user'
 import Mcp from '#models/mcp'
 import AccessToken from '#models/access_token'
 import { acceptInviteValidator, createInviteValidator } from '#validators/user'
-import type { HttpContext } from '@adonisjs/core/http'
-import env from '#start/env'
-import db from '@adonisjs/lucid/services/db'
-import { DateTime } from 'luxon'
+import { publicAppUrl } from '#services/public_url'
 
 export default class InvitesController {
   async index({ inertia, auth, request }: HttpContext) {
     const invites = await Invite.query().orderBy('created_at', 'desc')
     const members = await User.query().orderBy('created_at', 'asc')
-
-    const configured = env.get('APP_URL').replace(/\/$/, '')
-    const requestOrigin = `${request.protocol()}://${request.host()}`
 
     return inertia.render('invites/index', {
       invites: invites.map((invite) => ({
@@ -35,7 +32,7 @@ export default class InvitesController {
         createdAt: member.createdAt.toISO(),
         isCurrentUser: member.id === auth.user!.id,
       })),
-      appUrl: request.host()?.includes('localhost') ? requestOrigin : configured,
+      appUrl: publicAppUrl(request),
     })
   }
 

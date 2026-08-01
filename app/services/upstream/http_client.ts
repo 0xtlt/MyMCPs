@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { refreshOauthAccessToken } from '#services/upstream/oauth'
+import { asToolInputSchema } from '#services/unknown'
 
 export type UpstreamTool = {
   name: string
@@ -67,12 +68,12 @@ export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstre
       try {
         await client.close()
       } catch {
-        // ignore
+        // Connection teardown is best-effort.
       }
       try {
         await transport.close()
       } catch {
-        // ignore
+        // Connection teardown is best-effort.
       }
     },
   }
@@ -85,7 +86,7 @@ export async function listHttpTools(mcp: Mcp): Promise<UpstreamTool[]> {
     return (result.tools ?? []).map((tool) => ({
       name: tool.name,
       description: tool.description,
-      inputSchema: (tool.inputSchema as Record<string, unknown>) ?? { type: 'object' },
+      inputSchema: asToolInputSchema(tool.inputSchema),
     }))
   } finally {
     await connected.close()

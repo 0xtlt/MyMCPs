@@ -10,10 +10,14 @@ import {
   readOauthSession,
   startOauthSession,
 } from '#services/upstream/oauth'
+import { asFiniteNumber, sanitizeErrorMessage } from '#services/unknown'
+import type { Infer } from '@vinejs/vine/types'
 
-function parseNpmArgs(raw: string | undefined) {
+type McpPayload = Infer<typeof createMcpValidator>
+
+function parseNpmArgs(raw: string | undefined): string[] {
   if (!raw?.trim()) {
-    return [] as string[]
+    return []
   }
   return raw
     .split(/\s+/)
@@ -21,16 +25,60 @@ function parseNpmArgs(raw: string | undefined) {
     .filter(Boolean)
 }
 
-function applySecrets(mcp: Mcp, payload: Record<string, unknown>) {
-  if (typeof payload.authBearer === 'string' && payload.authBearer.length > 0) {
+function applySecrets(mcp: Mcp, payload: McpPayload) {
+  if (payload.authBearer && payload.authBearer.length > 0) {
     mcp.authBearer = McpSecretStore.encrypt(payload.authBearer)
   }
-  if (typeof payload.authHeaderValue === 'string' && payload.authHeaderValue.length > 0) {
+  if (payload.authHeaderValue && payload.authHeaderValue.length > 0) {
     mcp.authHeaderValue = McpSecretStore.encrypt(payload.authHeaderValue)
   }
-  if (typeof payload.oauthClientSecret === 'string' && payload.oauthClientSecret.length > 0) {
+  if (payload.oauthClientSecret && payload.oauthClientSecret.length > 0) {
     mcp.oauthClientSecret = McpSecretStore.encrypt(payload.oauthClientSecret)
   }
+}
+
+/**
+ * Clear secrets that no longer apply to the selected auth type.
+ */
+function clearUnusedAuthSecrets(mcp: Mcp) {
+  if (mcp.authType !== 'bearer') {
+    mcp.authBearer = null
+  }
+  if (mcp.authType !== 'header') {
+    mcp.authHeaderName = null
+    mcp.authHeaderValue = null
+  }
+  if (mcp.authType !== 'oauth') {
+    mcp.oauthAuthorizeUrl = null
+    mcp.oauthTokenUrl = null
+    mcp.oauthScopes = null
+    mcp.oauthClientId = null
+    mcp.oauthClientSecret = null
+    mcp.oauthAccessToken = null
+    mcp.oauthRefreshToken = null
+    mcp.oauthTokenExpiresAt = null
+  }
+}
+
+async function assignMcpFromPayload(mcp: Mcp, payload: McpPayload, options?: { excludeId?: number }) {
+  mcp.name = payload.name
+  mcp.slug = await uniqueSlug(payload.name, options?.excludeId)
+  mcp.description = payload.description || null
+  mcp.transport = payload.transport
+  mcp.httpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
+  mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
+  mcp.npmVersion = payload.transport === 'npm' ? (payload.npmVersion || null) : null
+  mcp.setNpmArgsList(payload.transport === 'npm' ? parseNpmArgs(payload.npmArgs) : [])
+  mcp.authType = payload.authType
+  mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
+  mcp.oauthAuthorizeUrl =
+    payload.authType === 'oauth' ? (payload.oauthAuthorizeUrl ?? null) : null
+  mcp.oauthTokenUrl = payload.authType === 'oauth' ? (payload.oauthTokenUrl ?? null) : null
+  mcp.oauthScopes = payload.authType === 'oauth' ? (payload.oauthScopes || null) : null
+  mcp.oauthClientId = payload.authType === 'oauth' ? (payload.oauthClientId ?? null) : null
+  mcp.enabled = payload.enabled === 'on'
+  clearUnusedAuthSecrets(mcp)
+  applySecrets(mcp, payload)
 }
 
 function serializeMcp(mcp: Mcp) {
@@ -80,38 +128,10 @@ async function uniqueSlug(name: string, excludeId?: number) {
   }
 }
 
-function validateTransportFields(payload: {
-  transport: string
-  httpUrl?: string
-  npmPackage?: string
-  authType: string
-  authHeaderName?: string
-  oauthAuthorizeUrl?: string
-  oauthTokenUrl?: string
-  oauthClientId?: string
-}) {
-  if (payload.transport === 'http' && !payload.httpUrl) {
-    return 'HTTP URL is required for HTTP transport'
-  }
-  if (payload.transport === 'npm' && !payload.npmPackage) {
-    return 'npm package is required for npm transport'
-  }
-  if (payload.authType === 'header' && !payload.authHeaderName) {
-    return 'Header name is required for header auth'
-  }
-  if (payload.authType === 'oauth') {
-    if (!payload.oauthAuthorizeUrl || !payload.oauthTokenUrl || !payload.oauthClientId) {
-      return 'OAuth authorize URL, token URL, and client ID are required'
-    }
-  }
-  return null
-}
-
 export default class McpsController {
   async index({ inertia, session }: HttpContext) {
     const mcps = await Mcp.query().orderBy('name', 'asc')
-    const editingMcpIdRaw = session.flashMessages.get('editingMcpId')
-    const editingMcpId = typeof editingMcpIdRaw === 'number' ? editingMcpIdRaw : null
+    const editingMcpId = asFiniteNumber(session.flashMessages.get('editingMcpId')) ?? null
     return inertia.render('mcps/index', {
       mcps: mcps.map(serializeMcp),
       editingMcpId,
@@ -120,32 +140,11 @@ export default class McpsController {
 
   async store({ request, response, auth, session }: HttpContext) {
     const payload = await request.validateUsing(createMcpValidator)
-    const error = validateTransportFields(payload)
-    if (error) {
-      session.flash('error', error)
-      return response.redirect().toRoute('mcps.index')
-    }
 
     const mcp = new Mcp()
-    mcp.name = payload.name
-    mcp.slug = await uniqueSlug(payload.name)
-    mcp.description = payload.description || null
-    mcp.transport = payload.transport
-    mcp.httpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
-    mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
-    mcp.npmVersion = payload.transport === 'npm' ? (payload.npmVersion || null) : null
-    mcp.setNpmArgsList(payload.transport === 'npm' ? parseNpmArgs(payload.npmArgs) : [])
-    mcp.authType = payload.authType
-    mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
-    mcp.oauthAuthorizeUrl =
-      payload.authType === 'oauth' ? (payload.oauthAuthorizeUrl ?? null) : null
-    mcp.oauthTokenUrl = payload.authType === 'oauth' ? (payload.oauthTokenUrl ?? null) : null
-    mcp.oauthScopes = payload.authType === 'oauth' ? (payload.oauthScopes || null) : null
-    mcp.oauthClientId = payload.authType === 'oauth' ? (payload.oauthClientId ?? null) : null
-    mcp.enabled = payload.enabled === 'on'
     mcp.status = 'draft'
     mcp.createdBy = auth.user!.id
-    applySecrets(mcp, payload)
+    await assignMcpFromPayload(mcp, payload)
     await mcp.save()
 
     await testAndUpdateStatus(mcp)
@@ -171,30 +170,7 @@ export default class McpsController {
     }
 
     const payload = await request.validateUsing(updateMcpValidator)
-    const error = validateTransportFields(payload)
-    if (error) {
-      session.flash('error', error)
-      session.flash('editingMcpId', mcp.id)
-      return response.redirect().toRoute('mcps.index')
-    }
-
-    mcp.name = payload.name
-    mcp.slug = await uniqueSlug(payload.name, mcp.id)
-    mcp.description = payload.description || null
-    mcp.transport = payload.transport
-    mcp.httpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
-    mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
-    mcp.npmVersion = payload.transport === 'npm' ? (payload.npmVersion || null) : null
-    mcp.setNpmArgsList(payload.transport === 'npm' ? parseNpmArgs(payload.npmArgs) : [])
-    mcp.authType = payload.authType
-    mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
-    mcp.oauthAuthorizeUrl =
-      payload.authType === 'oauth' ? (payload.oauthAuthorizeUrl ?? null) : null
-    mcp.oauthTokenUrl = payload.authType === 'oauth' ? (payload.oauthTokenUrl ?? null) : null
-    mcp.oauthScopes = payload.authType === 'oauth' ? (payload.oauthScopes || null) : null
-    mcp.oauthClientId = payload.authType === 'oauth' ? (payload.oauthClientId ?? null) : null
-    mcp.enabled = payload.enabled === 'on'
-    applySecrets(mcp, payload)
+    await assignMcpFromPayload(mcp, payload, { excludeId: mcp.id })
     await mcp.save()
 
     await testAndUpdateStatus(mcp)
@@ -245,7 +221,7 @@ export default class McpsController {
       const oauth = startOauthSession(session, mcp)
       return response.redirect(buildAuthorizeRedirect(mcp, oauth))
     } catch (error) {
-      session.flash('error', error instanceof Error ? error.message : 'OAuth start failed')
+      session.flash('error', sanitizeErrorMessage(error))
       session.flash('editingMcpId', mcp.id)
       return response.redirect().toRoute('mcps.index')
     }
@@ -284,7 +260,7 @@ export default class McpsController {
       session.flash('success', 'OAuth connected')
     } catch (error) {
       mcp.status = 'error'
-      mcp.lastError = error instanceof Error ? error.message : String(error)
+      mcp.lastError = sanitizeErrorMessage(error)
       await mcp.save()
       session.flash('error', mcp.lastError)
     }

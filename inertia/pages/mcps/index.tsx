@@ -313,7 +313,11 @@ export default function McpsIndex({
                             }
                             variant="secondary"
                             size="sm"
-                            href={`/mcps/${editingMcp.id}/oauth/start`}
+                            onClick={() =>
+                              router.post(`/mcps/${editingMcp.id}/oauth/start`, undefined, {
+                                preserveScroll: true,
+                              })
+                            }
                           />
                         ) : null}
                       </HStack>

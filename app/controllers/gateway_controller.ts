@@ -1,4 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
@@ -11,6 +12,7 @@ import {
   listNamespacedTools,
   parseNamespacedTool,
 } from '#services/upstream/manager'
+import { asToolArguments } from '#services/unknown'
 
 /**
  * Agent-facing MCP gateway: aggregate tools from allowed upstreams behind one URL.
@@ -56,20 +58,18 @@ export default class GatewayController {
       }
 
       try {
-        const result = await callUpstreamTool(
+        return await callUpstreamTool(
           mcp,
           parsed.toolName,
-          request.params.arguments as Record<string, unknown> | undefined
+          asToolArguments(request.params.arguments)
         )
-        return result
       } catch (error) {
+        logger.warn(
+          { err: error, mcpId: mcp.id, tool: parsed.toolName },
+          'Upstream tool call failed'
+        )
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: error instanceof Error ? error.message : String(error),
-            },
-          ],
+          content: [{ type: 'text' as const, text: 'Upstream tool call failed' }],
           isError: true,
         }
       }
@@ -86,7 +86,9 @@ export default class GatewayController {
     const body = ctx.request.all()
 
     nodeRes.on('finish', () => {
-      void server.close().catch(() => {})
+      void server.close().catch((error) => {
+        logger.debug({ err: error }, 'Gateway MCP server close failed')
+      })
     })
 
     await transport.handleRequest(nodeReq, nodeRes, body)

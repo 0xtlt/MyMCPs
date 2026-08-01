@@ -4,7 +4,7 @@ import AccessToken from '#models/access_token'
 import Mcp from '#models/mcp'
 import AccessTokenService from '#services/access_token_service'
 import { createAccessTokenValidator } from '#validators/mcp'
-import env from '#start/env'
+import { publicAppUrl } from '#services/public_url'
 
 function serializeToken(token: AccessToken, mcpIds: number[] = []) {
   return {
@@ -26,10 +26,6 @@ export default class AccessTokensController {
     const tokens = await AccessToken.query().preload('mcps').orderBy('created_at', 'desc')
     const mcps = await Mcp.query().orderBy('name', 'asc')
 
-    const configured = env.get('APP_URL').replace(/\/$/, '')
-    const requestOrigin = `${request.protocol()}://${request.host()}`
-    const appUrl = request.host()?.includes('localhost') ? requestOrigin : configured
-
     const createdPlaintextRaw = session.flashMessages.get('createdPlaintext')
     const createdPlaintext = typeof createdPlaintextRaw === 'string' ? createdPlaintextRaw : null
 
@@ -41,18 +37,14 @@ export default class AccessTokensController {
         slug: mcp.slug,
         enabled: mcp.enabled,
       })),
-      gatewayUrl: `${appUrl}/mcp`,
+      gatewayUrl: `${publicAppUrl(request)}/mcp`,
       createdPlaintext,
     })
   }
 
   async store({ request, response, auth, session }: HttpContext) {
     const payload = await request.validateUsing(createAccessTokenValidator)
-
-    const rawIds = request.input('mcpIds') ?? payload.mcpIds ?? []
-    const mcpIds = (Array.isArray(rawIds) ? rawIds : [rawIds])
-      .map((id) => Number(id))
-      .filter((id) => Number.isFinite(id) && id > 0)
+    const mcpIds = payload.mcpIds ?? []
 
     if (payload.scopeMode === 'selected' && mcpIds.length === 0) {
       session.flash('error', 'Select at least one MCP, or choose access to all MCPs')
@@ -61,12 +53,12 @@ export default class AccessTokensController {
 
     let expiresAt: DateTime | null = null
     if (payload.expiresAt?.trim()) {
-      const parsed = DateTime.fromISO(payload.expiresAt, { zone: 'utc' })
+      const parsed = DateTime.fromISO(payload.expiresAt)
       if (!parsed.isValid) {
         session.flash('error', 'Invalid expiration date')
         return response.redirect().toRoute('tokens.index')
       }
-      expiresAt = parsed
+      expiresAt = parsed.toUTC()
     }
 
     if (payload.scopeMode === 'selected') {

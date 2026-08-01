@@ -74,7 +74,7 @@ router
         router.put('mcps/:id', [controllers.Mcps, 'update']).as('mcps.update')
         router.delete('mcps/:id', [controllers.Mcps, 'destroy']).as('mcps.destroy')
         router.post('mcps/:id/probe', [controllers.Mcps, 'probe']).as('mcps.probe')
-        router.get('mcps/:id/oauth/start', [controllers.Mcps, 'oauthStart']).as('mcps.oauthStart')
+        router.post('mcps/:id/oauth/start', [controllers.Mcps, 'oauthStart']).as('mcps.oauthStart')
 
         router.get('tokens', [controllers.AccessTokens, 'index']).as('tokens.index')
         router.post('tokens', [controllers.AccessTokens, 'store']).as('tokens.store')

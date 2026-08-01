@@ -260,7 +260,7 @@ export interface Registry {
     }
   }
   'mcps.oauthStart': {
-    methods: ["GET","HEAD"]
+    methods: ["POST"]
     pattern: '/mcps/:id/oauth/start'
     types: {
       body: {}

@@ -4,11 +4,18 @@ import type { HttpContext } from '@adonisjs/core/http'
 import env from '#start/env'
 import Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
+import { isRecord, sanitizeErrorMessage } from '#services/unknown'
 
 type OauthSession = {
   mcpId: number
   codeVerifier: string
   state: string
+}
+
+type OauthTokenResponse = {
+  accessToken: string
+  refreshToken?: string
+  expiresIn?: number
 }
 
 function base64Url(buffer: Buffer) {
@@ -17,6 +24,32 @@ function base64Url(buffer: Buffer) {
 
 function pkceChallenge(verifier: string) {
   return base64Url(createHash('sha256').update(verifier).digest())
+}
+
+function isOauthSession(value: unknown): value is OauthSession {
+  if (!isRecord(value)) {
+    return false
+  }
+  return (
+    typeof value.mcpId === 'number' &&
+    Number.isFinite(value.mcpId) &&
+    typeof value.codeVerifier === 'string' &&
+    value.codeVerifier.length > 0 &&
+    typeof value.state === 'string' &&
+    value.state.length > 0
+  )
+}
+
+function parseOauthTokenResponse(value: unknown): OauthTokenResponse {
+  if (!isRecord(value) || typeof value.access_token !== 'string' || !value.access_token) {
+    throw new Error('OAuth token response did not include access_token')
+  }
+
+  return {
+    accessToken: value.access_token,
+    refreshToken: typeof value.refresh_token === 'string' ? value.refresh_token : undefined,
+    expiresIn: typeof value.expires_in === 'number' ? value.expires_in : undefined,
+  }
 }
 
 export function oauthCallbackUrl() {
@@ -31,8 +64,9 @@ export function startOauthSession(session: HttpContext['session'], mcp: Mcp) {
   return payload
 }
 
-export function readOauthSession(session: HttpContext['session']) {
-  return session.get('mcp_oauth') as OauthSession | null
+export function readOauthSession(session: HttpContext['session']): OauthSession | null {
+  const raw = session.get('mcp_oauth')
+  return isOauthSession(raw) ? raw : null
 }
 
 export function clearOauthSession(session: HttpContext['session']) {
@@ -55,6 +89,15 @@ export function buildAuthorizeRedirect(mcp: Mcp, oauth: OauthSession) {
     url.searchParams.set('scope', mcp.oauthScopes)
   }
   return url.toString()
+}
+
+async function readFailedOauthBody(response: Response) {
+  try {
+    const text = await response.text()
+    return sanitizeErrorMessage(text, 300)
+  } catch {
+    return 'unable to read response body'
+  }
 }
 
 export async function exchangeAuthorizationCode(mcp: Mcp, code: string, codeVerifier: string) {
@@ -85,32 +128,27 @@ export async function exchangeAuthorizationCode(mcp: Mcp, code: string, codeVeri
   })
 
   if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`OAuth token exchange failed (${response.status}): ${text.slice(0, 300)}`)
+    const detail = await readFailedOauthBody(response)
+    throw new Error(`OAuth token exchange failed (${response.status}): ${detail}`)
   }
 
-  const json = (await response.json()) as {
-    access_token?: string
-    refresh_token?: string
-    expires_in?: number
+  const json = parseOauthTokenResponse(await response.json())
+  mcp.oauthAccessToken = McpSecretStore.encrypt(json.accessToken)
+  if (json.refreshToken) {
+    mcp.oauthRefreshToken = McpSecretStore.encrypt(json.refreshToken)
   }
-
-  if (!json.access_token) {
-    throw new Error('OAuth token response did not include access_token')
-  }
-
-  mcp.oauthAccessToken = McpSecretStore.encrypt(json.access_token)
-  if (json.refresh_token) {
-    mcp.oauthRefreshToken = McpSecretStore.encrypt(json.refresh_token)
-  }
-  mcp.oauthTokenExpiresAt = json.expires_in
-    ? DateTime.utc().plus({ seconds: json.expires_in })
+  mcp.oauthTokenExpiresAt = json.expiresIn
+    ? DateTime.utc().plus({ seconds: json.expiresIn })
     : null
   mcp.status = 'ready'
   mcp.lastError = null
   await mcp.save()
 }
 
+/**
+ * Refresh the access token when expired (or about to expire).
+ * Throws when a refresh is required but fails so callers do not use a stale token.
+ */
 export async function refreshOauthAccessToken(mcp: Mcp) {
   const refresh = McpSecretStore.decrypt(mcp.oauthRefreshToken)
   if (!refresh || !mcp.oauthTokenUrl || !mcp.oauthClientId) {
@@ -141,25 +179,17 @@ export async function refreshOauthAccessToken(mcp: Mcp) {
   })
 
   if (!response.ok) {
-    return
+    const detail = await readFailedOauthBody(response)
+    throw new Error(`OAuth refresh failed (${response.status}): ${detail}`)
   }
 
-  const json = (await response.json()) as {
-    access_token?: string
-    refresh_token?: string
-    expires_in?: number
+  const json = parseOauthTokenResponse(await response.json())
+  mcp.oauthAccessToken = McpSecretStore.encrypt(json.accessToken)
+  if (json.refreshToken) {
+    mcp.oauthRefreshToken = McpSecretStore.encrypt(json.refreshToken)
   }
-
-  if (!json.access_token) {
-    return
-  }
-
-  mcp.oauthAccessToken = McpSecretStore.encrypt(json.access_token)
-  if (json.refresh_token) {
-    mcp.oauthRefreshToken = McpSecretStore.encrypt(json.refresh_token)
-  }
-  mcp.oauthTokenExpiresAt = json.expires_in
-    ? DateTime.utc().plus({ seconds: json.expires_in })
+  mcp.oauthTokenExpiresAt = json.expiresIn
+    ? DateTime.utc().plus({ seconds: json.expiresIn })
     : mcp.oauthTokenExpiresAt
   await mcp.save()
 }

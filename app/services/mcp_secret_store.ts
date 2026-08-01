@@ -18,18 +18,9 @@ export default class McpSecretStore {
     try {
       return encryption.decrypt(value)
     } catch {
+      // Corrupt or rotated APP_KEY ciphertext — treat as missing secret.
       return null
     }
-  }
-
-  static mask(value: string | null | undefined): string | null {
-    if (!value) {
-      return null
-    }
-    if (value.length <= 4) {
-      return '••••'
-    }
-    return `${'•'.repeat(Math.min(12, value.length - 4))}${value.slice(-4)}`
   }
 
   static hasSecret(value: string | null | undefined) {

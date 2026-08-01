@@ -19,7 +19,7 @@ This is **not** a public SaaS signup product. You install an instance, complete 
 
 ## Quick start
 
-Requirements: **Node.js ≥ 24**, **pnpm**. For **npm-transport MCPs**, also install [Deno](https://deno.land/) so packages run in a permission-sandboxed subprocess (they cannot read the Adonis SQLite DB or `.env`).
+Requirements: **Node.js ≥ 24**, **pnpm**. For **npm-transport MCPs**, also install [Deno](https://deno.land/). npm packages run in a Deno subprocess with filesystem access limited to a per-MCP sandbox directory (they cannot read the Adonis SQLite DB, `.env`, or app source). Network and env remain allowed so typical MCP packages can call APIs—treat installed packages as trusted software.
 
 ```bash
 pnpm install
@@ -50,7 +50,7 @@ node ace migration:run
 - [Astryx](https://astryx.atmeta.com/) — design system
 - SQLite by default (`tmp/db.sqlite3`)
 - [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) — client/server + Streamable HTTP
-- Deno — sandboxed runner for npm MCPs
+- Deno — sandboxed filesystem runner for npm MCPs (network/env still permitted)
 
 ## License
 

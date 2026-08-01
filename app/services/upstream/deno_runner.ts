@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type Mcp from '#models/mcp'
 import type { UpstreamTool } from '#services/upstream/http_client'
+import { asToolInputSchema } from '#services/unknown'
 
 export type ConnectedDenoUpstream = {
   client: Client
@@ -36,8 +37,11 @@ export function sandboxRootFor(mcpId: number) {
 }
 
 /**
- * Build Deno permission flags so the MCP cannot read the Adonis DB, .env, or app source.
- * Deno is deny-by-default: only the sandbox workdir is readable/writable.
+ * Build Deno permission flags for an npm MCP subprocess.
+ *
+ * Filesystem is deny-by-default outside `sandboxDir` (no Adonis DB / `.env` / app source).
+ * Network and env remain allowed because many MCP packages need outbound HTTP and process env;
+ * treat upstream packages as trusted software, not a full multi-tenant isolation boundary.
  */
 export function buildDenoArgs(mcp: Mcp, sandboxDir: string) {
   if (!mcp.npmPackage) {
@@ -97,12 +101,12 @@ export async function connectDenoUpstream(mcp: Mcp): Promise<ConnectedDenoUpstre
       try {
         await client.close()
       } catch {
-        // ignore
+        // Connection teardown is best-effort.
       }
       try {
         await transport.close()
       } catch {
-        // ignore
+        // Connection teardown is best-effort.
       }
     },
   }
@@ -115,7 +119,7 @@ export async function listDenoTools(mcp: Mcp): Promise<UpstreamTool[]> {
     return (result.tools ?? []).map((tool) => ({
       name: tool.name,
       description: tool.description,
-      inputSchema: (tool.inputSchema as Record<string, unknown>) ?? { type: 'object' },
+      inputSchema: asToolInputSchema(tool.inputSchema),
     }))
   } finally {
     await connected.close()

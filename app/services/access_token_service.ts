@@ -54,6 +54,9 @@ export default class AccessTokenService {
   }
 
   static async touchLastUsed(token: AccessToken) {
+    if (token.lastUsedAt && token.lastUsedAt > DateTime.utc().minus({ minutes: 5 })) {
+      return
+    }
     token.lastUsedAt = DateTime.utc()
     await token.save()
   }
