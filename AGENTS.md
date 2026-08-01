@@ -32,3 +32,21 @@ MORE CLI:
   swizzle <Name>     eject component source for deep customization
   upgrade --apply    run after any @astryxdesign/core bump
 <!-- ASTRYX:END -->
+
+## Cursor Cloud specific instructions
+
+Single AdonisJS 7 + Inertia/React app (MyMCPs). No Docker, Redis, or external DB — SQLite via `better-sqlite3` at `tmp/db.sqlite3`.
+
+### Runtime
+- **Node.js ≥ 24** and **pnpm** are required (`package.json` `engines`). Use nvm Node 24; put it first on `PATH` (the VM may also ship an older `/exec-daemon/node`).
+- Standard commands: see `README.md` and `package.json` scripts (`pnpm run dev`, `lint`, `typecheck`, `test`, `build`).
+- Dev server: `pnpm run dev` → `node ace serve --hmr` on **PORT 3333**. For cloud VMs bind with `HOST=0.0.0.0` in `.env` while keeping `APP_URL=http://localhost:3333` for redirects/cookies.
+- One-time (or empty DB): copy `.env.example` → `.env`, `node ace generate:key`, then `node ace migration:run`. Do not commit `.env`.
+
+### pnpm gotchas
+- `pnpm-workspace.yaml` must approve builds for `@astryxdesign/cli`, `@astryxdesign/core`, `@swc/core`, `better-sqlite3`, and `esbuild`. Placeholder `allowBuilds` values cause `ERR_PNPM_IGNORED_BUILDS` and make every `pnpm run *` fail before the script runs.
+- Fresh lockfile packages can trip pnpm’s `minimumReleaseAge` check; the update script passes `--config.minimumReleaseAge=0`. If a manual `pnpm install` fails the same way, use that flag.
+
+### Lint / typecheck / test today
+- `pnpm test` boots Japa but has **no specs yet** (`NO TESTS EXECUTED`).
+- `pnpm run lint` and `pnpm run typecheck` currently report **pre-existing** Prettier/Inertia/Astryx typing issues; they are not environment setup failures. `pnpm run build` still succeeds.
