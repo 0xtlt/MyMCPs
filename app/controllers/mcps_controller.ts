@@ -110,10 +110,11 @@ function validateTransportFields(payload: {
 export default class McpsController {
   async index({ inertia, session }: HttpContext) {
     const mcps = await Mcp.query().orderBy('name', 'asc')
-    const editingMcpId = session.flashMessages.get('editingMcpId') as number | undefined
+    const editingMcpIdRaw = session.flashMessages.get('editingMcpId')
+    const editingMcpId = typeof editingMcpIdRaw === 'number' ? editingMcpIdRaw : null
     return inertia.render('mcps/index', {
       mcps: mcps.map(serializeMcp),
-      editingMcpId: editingMcpId ?? null,
+      editingMcpId,
     })
   }
 
@@ -254,9 +255,12 @@ export default class McpsController {
     const oauth = readOauthSession(session)
     clearOauthSession(session)
 
-    const code = request.input('code') as string | undefined
-    const state = request.input('state') as string | undefined
-    const oauthError = request.input('error') as string | undefined
+    const codeRaw = request.input('code')
+    const stateRaw = request.input('state')
+    const oauthErrorRaw = request.input('error')
+    const code = typeof codeRaw === 'string' ? codeRaw : undefined
+    const state = typeof stateRaw === 'string' ? stateRaw : undefined
+    const oauthError = typeof oauthErrorRaw === 'string' ? oauthErrorRaw : undefined
 
     if (oauthError) {
       session.flash('error', `OAuth error: ${oauthError}`)

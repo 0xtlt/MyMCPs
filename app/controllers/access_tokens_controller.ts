@@ -30,7 +30,8 @@ export default class AccessTokensController {
     const requestOrigin = `${request.protocol()}://${request.host()}`
     const appUrl = request.host()?.includes('localhost') ? requestOrigin : configured
 
-    const createdPlaintext = session.flashMessages.get('createdPlaintext') as string | undefined
+    const createdPlaintextRaw = session.flashMessages.get('createdPlaintext')
+    const createdPlaintext = typeof createdPlaintextRaw === 'string' ? createdPlaintextRaw : null
 
     return inertia.render('tokens/index', {
       tokens: tokens.map((token) => serializeToken(token, token.mcps.map((m) => m.id))),
@@ -41,7 +42,7 @@ export default class AccessTokensController {
         enabled: mcp.enabled,
       })),
       gatewayUrl: `${appUrl}/mcp`,
-      createdPlaintext: createdPlaintext ?? null,
+      createdPlaintext,
     })
   }
 

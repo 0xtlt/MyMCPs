@@ -19,8 +19,10 @@ export default class InertiaMiddleware extends BaseInertiaMiddleware {
     /**
      * Fetching the first error from the flash messages
      */
-    const error = session?.flashMessages.get('error') as string
-    const success = session?.flashMessages.get('success') as string
+    const errorRaw = session?.flashMessages.get('error')
+    const successRaw = session?.flashMessages.get('success')
+    const error = typeof errorRaw === 'string' ? errorRaw : undefined
+    const success = typeof successRaw === 'string' ? successRaw : undefined
 
     /**
      * Data shared with all Inertia pages. Make sure you are using
