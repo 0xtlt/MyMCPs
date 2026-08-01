@@ -87,6 +87,11 @@ USER node
 
 EXPOSE 3333
 
+# Node is already present in the runtime image, so no curl/wget dependency is
+# needed for the liveness check.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || '3333') + '/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+
 # Persist SQLite (tmp/db.sqlite3) and Deno MCP sandboxes across restarts.
 VOLUME ["/app/tmp"]
 

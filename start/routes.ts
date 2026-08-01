@@ -12,6 +12,12 @@ import { controllers } from '#generated/controllers'
 import router from '@adonisjs/core/services/router'
 
 /**
+ * Public liveness endpoint for reverse proxies and container health checks.
+ * It intentionally does not depend on onboarding, auth, or application data.
+ */
+router.get('health', ({ response }) => response.ok({ status: 'ok' })).as('health')
+
+/**
  * First-run only. Once an admin exists, these redirect home.
  */
 router

@@ -48,9 +48,10 @@ register a callback URI manually.
 
 The provider must support MCP OAuth discovery and dynamic client registration.
 Providers without those capabilities can use the optional advanced OAuth
-overrides in the MCP form. In production, set `APP_URL` to the public HTTPS
+overrides in the MCP form. In production, `APP_URL` must be the public HTTPS
 origin of the MyMCPs instance so the browser callback and session cookie use the
-same host.
+same host. Coolify deployments derive it from the domain assigned to the
+service.
 
 ## Tests
 
@@ -71,19 +72,49 @@ pnpm exec playwright install chromium
 
 Add reusable records through the helpers in `tests/helpers/factories.ts`, and place fast logic tests in `tests/unit`, HTTP tests in `tests/functional`, and end-to-end UI tests in `tests/browser`.
 
+## Coolify
+
+The repository includes a Coolify deployment profile. To deploy a public
+repository:
+
+1. Create a new resource from **Public Repository** and paste the GitHub
+   repository URL.
+2. Use the checked-in `coolify.json` configuration and assign the domain that
+   should serve MyMCPs before deploying.
+3. Deploy the resource.
+
+The profile selects the Compose build pack, exposes the internal port `3333`,
+configures `/health`, and keeps SQLite, generated key material, and Deno
+sandboxes in the named `/app/tmp` volume. Coolify's
+`SERVICE_URL_MYMCPS_3333` value is promoted to `APP_URL`, so the domain entered
+in Coolify is used for redirects, invite links, gateway URLs, and OAuth
+callbacks. The container generates an `APP_KEY` on first start when one is not
+provided; the key is stored in the persistent volume. Set an explicit
+`APP_KEY` in Coolify if you prefer to manage it yourself.
+
+If the Coolify instance does not automatically apply `coolify.json`, select
+**Docker Compose**, set the Compose file to `/docker-compose.yml`, expose port
+`3333`, and add the same domain manually.
+
 ## Docker
 
 The image bundles **Node.js 24**, production deps, and **Deno** (for npm MCP sandboxes). Persist `/app/tmp` so SQLite and sandbox caches survive restarts.
 
 ```bash
 cp .env.example .env
-# set APP_KEY (e.g. node ace generate:key) and APP_URL to your public URL
-docker compose up --build -d
+# APP_KEY is generated and persisted by the container when omitted.
+# For a direct production deployment, set APP_URL to the public HTTPS URL.
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.local.yml \
+  up --build -d
 ```
 
-Compose binds the published port to `127.0.0.1` by default. If the container
-must be reachable outside the host, set `BIND_ADDRESS` only behind a
-TLS-terminating reverse proxy and use an HTTPS `APP_URL`.
+The optional local Compose override binds the published port to `127.0.0.1` by
+default. If the container must be reachable outside the host, set
+`BIND_ADDRESS` only behind a TLS-terminating reverse proxy and use an HTTPS
+`APP_URL`. Coolify uses its own proxy and the base `docker-compose.yml` does not
+publish a host port.
 
 Or without Compose:
 
