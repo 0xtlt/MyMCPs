@@ -1,0 +1,29 @@
+# Example self-host layout. Copy .env.example → .env, set APP_KEY / APP_URL, then:
+#   docker compose up --build -d
+#
+# Data (SQLite + Deno npm MCP sandboxes) lives in the named volume.
+
+services:
+  mymcps:
+    build: .
+    image: mymcps:local
+    ports:
+      - "${PORT:-3333}:3333"
+    environment:
+      TZ: UTC
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3333
+      APP_NAME: ${APP_NAME:-MyMCPs}
+      VITE_APP_NAME: ${VITE_APP_NAME:-MyMCPs}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_KEY: ${APP_KEY:?set APP_KEY in .env}
+      APP_URL: ${APP_URL:-http://localhost:3333}
+      SESSION_DRIVER: cookie
+      DENO_PATH: /usr/local/bin/deno
+    volumes:
+      - mymcps-data:/app/tmp
+    restart: unless-stopped
+
+volumes:
+  mymcps-data:

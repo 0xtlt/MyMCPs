@@ -37,6 +37,29 @@ Migrations run as part of a fresh scaffold; for an existing DB:
 node ace migration:run
 ```
 
+## Docker
+
+The image bundles **Node.js 24**, production deps, and **Deno** (for npm MCP sandboxes). Persist `/app/tmp` so SQLite and sandbox caches survive restarts.
+
+```bash
+cp .env.example .env
+# set APP_KEY (e.g. node ace generate:key) and APP_URL to your public URL
+docker compose up --build -d
+```
+
+Or without Compose:
+
+```bash
+docker build -t mymcps .
+docker run --rm -p 3333:3333 \
+  -e APP_KEY=... \
+  -e APP_URL=http://localhost:3333 \
+  -v mymcps-data:/app/tmp \
+  mymcps
+```
+
+`DENO_PATH` defaults to `/usr/local/bin/deno` inside the container.
+
 ## Product surfaces
 
 - **MCPs** — register HTTP (Streamable HTTP) or npm upstreams with none / bearer / header / OAuth auth
