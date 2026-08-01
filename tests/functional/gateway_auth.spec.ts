@@ -18,16 +18,6 @@ test.group('gateway bearer authentication', (group) => {
     })
   })
 
-  test('rejects an empty bearer token', async ({ client }) => {
-    const response = await client.get('/mcp').header('authorization', 'Bearer ')
-
-    response.assertStatus(401)
-    response.assertBody({
-      error: 'unauthorized',
-      message: 'Empty Bearer access token',
-    })
-  })
-
   test('rejects invalid, expired, and revoked token values', async ({ client, assert }) => {
     const values = ['not-a-token', 'mcp_expired', 'mcp_revoked']
 

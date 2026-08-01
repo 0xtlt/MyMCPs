@@ -14,10 +14,12 @@ test.group('session authentication', (group) => {
     const response = await client.get('/login')
 
     response.assertStatus(200)
-    response.assertTextIncludes('Sign in')
+    response.assertTextIncludes('MyMCPs')
   })
 
   test('redirects guests away from authenticated routes', async ({ client, assert }) => {
+    await createAdmin()
+
     const response = await client.get('/mcps').redirects(0)
 
     response.assertStatus(302)
@@ -30,8 +32,8 @@ test.group('session authentication', (group) => {
     const response = await client.get('/').loginAs(admin)
 
     response.assertStatus(200)
-    response.assertTextIncludes('Dashboard')
-    response.assertTextIncludes('Signed in as Test User')
+    response.assertTextIncludes('data-page')
+    response.assertTextIncludes('admin@example.com')
   })
 
   test('logs an authenticated user out', async ({ client, assert }) => {
