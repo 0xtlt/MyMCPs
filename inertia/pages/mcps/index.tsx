@@ -20,6 +20,7 @@ import {
   emptyMcpFormValues,
   mcpFormValuesFromRow,
   McpFormFields,
+  type McpFormPatch,
   type McpFormValues,
 } from '~/components/mcp_form_fields'
 
@@ -63,6 +64,13 @@ function statusVariant(status: McpRow['status']): 'success' | 'warning' | 'error
 
 function endpointLabel(mcp: McpRow) {
   return mcp.transport === 'http' ? mcp.httpUrl || '—' : mcp.npmPackage || '—'
+}
+
+function applyMcpFormPatch(current: McpFormValues, patch: McpFormPatch) {
+  return {
+    ...current,
+    ...(typeof patch === 'function' ? patch(current) : patch),
+  }
 }
 
 export default function McpsIndex({
@@ -228,7 +236,9 @@ export default function McpsIndex({
                 <LayoutContent isScrollable>
                   <McpFormFields
                     values={createValues}
-                    onChange={(patch) => setCreateValues((current) => ({ ...current, ...patch }))}
+                    onChange={(patch) =>
+                      setCreateValues((current) => applyMcpFormPatch(current, patch))
+                    }
                     errors={errors}
                   />
                 </LayoutContent>
@@ -319,10 +329,10 @@ export default function McpsIndex({
                       <McpFormFields
                         values={editValues}
                         onChange={(patch) =>
-                          setEditValuesOverride((current) => ({
-                            ...(current ?? editValues),
-                            ...patch,
-                          }))
+                          setEditValuesOverride((current) => {
+                            const base = current ?? editValues
+                            return applyMcpFormPatch(base, patch)
+                          })
                         }
                         errors={errors}
                         secrets={{

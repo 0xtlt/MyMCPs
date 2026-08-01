@@ -42,11 +42,14 @@ export type McpFormValues = {
   enabled: boolean
 }
 
+export type McpFormPatch =
+  Partial<McpFormValues> | ((current: McpFormValues) => Partial<McpFormValues>)
+
 type Errors = Partial<Record<string, string>>
 
 type Props = {
   values: McpFormValues
-  onChange: (patch: Partial<McpFormValues>) => void
+  onChange: (patch: McpFormPatch) => void
   errors?: Errors
   secrets?: McpFormSecrets
 }
@@ -199,9 +202,9 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                 variant="secondary"
                 size="sm"
                 onClick={() =>
-                  onChange({
-                    npmEnv: [...values.npmEnv, { name: '', value: '' }],
-                  })
+                  onChange((current) => ({
+                    npmEnv: [...current.npmEnv, { name: '', value: '' }],
+                  }))
                 }
               />
             </HStack>
@@ -219,11 +222,11 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                       htmlName={`npmEnv[${index}][name]`}
                       value={entry.name}
                       onChange={(name) =>
-                        onChange({
-                          npmEnv: values.npmEnv.map((current, currentIndex) =>
-                            currentIndex === index ? { ...current, name } : current
+                        onChange((current) => ({
+                          npmEnv: current.npmEnv.map((entry, entryIndex) =>
+                            entryIndex === index ? { ...entry, name } : entry
                           ),
-                        })
+                        }))
                       }
                       placeholder="API_KEY"
                       width="100%"
@@ -237,11 +240,11 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                       type="password"
                       value={entry.value}
                       onChange={(value) =>
-                        onChange({
-                          npmEnv: values.npmEnv.map((current, currentIndex) =>
-                            currentIndex === index ? { ...current, value } : current
+                        onChange((current) => ({
+                          npmEnv: current.npmEnv.map((entry, entryIndex) =>
+                            entryIndex === index ? { ...entry, value } : entry
                           ),
-                        })
+                        }))
                       }
                       width="100%"
                       isOptional={Boolean(entry.hasValue)}
@@ -253,9 +256,9 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                     variant="ghost"
                     size="sm"
                     onClick={() =>
-                      onChange({
-                        npmEnv: values.npmEnv.filter((_, currentIndex) => currentIndex !== index),
-                      })
+                      onChange((current) => ({
+                        npmEnv: current.npmEnv.filter((_, currentIndex) => currentIndex !== index),
+                      }))
                     }
                   />
                 </HStack>
