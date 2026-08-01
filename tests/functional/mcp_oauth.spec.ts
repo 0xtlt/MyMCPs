@@ -165,6 +165,9 @@ test.group('MCP OAuth routes', (group) => {
         throw new Error(`OAuth callback failed: ${saved.lastError ?? 'unknown error'}`)
       }
       assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'access-token')
+      if (saved.status !== 'ready') {
+        throw new Error(`MCP probe failed: ${saved.lastError ?? 'unknown error'}`)
+      }
       assert.equal(saved.status, 'ready')
     } finally {
       restoreFetch()
