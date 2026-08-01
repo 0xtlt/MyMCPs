@@ -79,17 +79,39 @@ export default function TokensIndex({
     }
   }, [])
 
+  function markUrlCopied() {
+    setUrlCopied(true)
+    if (urlCopiedTimeoutRef.current) {
+      clearTimeout(urlCopiedTimeoutRef.current)
+    }
+    urlCopiedTimeoutRef.current = setTimeout(() => {
+      setUrlCopied(false)
+      urlCopiedTimeoutRef.current = null
+    }, 2000)
+  }
+
   async function copyGatewayUrl() {
+    markUrlCopied()
+
     try {
-      await navigator.clipboard.writeText(gatewayUrl)
-      setUrlCopied(true)
-      if (urlCopiedTimeoutRef.current) {
-        clearTimeout(urlCopiedTimeoutRef.current)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(gatewayUrl)
+        return
       }
-      urlCopiedTimeoutRef.current = setTimeout(() => {
-        setUrlCopied(false)
-        urlCopiedTimeoutRef.current = null
-      }, 2000)
+    } catch {
+      // Fall through to execCommand fallback.
+    }
+
+    try {
+      const textarea = document.createElement('textarea')
+      textarea.value = gatewayUrl
+      textarea.setAttribute('readonly', '')
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
     } catch {
       // ignore clipboard failures
     }
