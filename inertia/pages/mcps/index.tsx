@@ -59,6 +59,12 @@ function endpointLabel(mcp: McpRow) {
   return mcp.transport === 'http' ? mcp.httpUrl || '—' : mcp.npmPackage || '—'
 }
 
+function shortError(message: string) {
+  const cleaned = message.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  if (cleaned.length <= 240) return cleaned
+  return `${cleaned.slice(0, 240)}…`
+}
+
 export default function McpsIndex({
   mcps,
   editingMcpId = null,
@@ -210,10 +216,9 @@ export default function McpsIndex({
         width={640}
         maxHeight="85vh"
       >
-        <Form route="mcps.store">
+        <Form route="mcps.store" className="dialog-form-fill">
           {({ errors, processing }) => (
             <Layout
-              height="auto"
               header={
                 <DialogHeader
                   title="Add MCP"
@@ -222,7 +227,7 @@ export default function McpsIndex({
                 />
               }
               content={
-                <LayoutContent>
+                <LayoutContent isScrollable>
                   <McpFormFields
                     values={createValues}
                     onChange={(patch) => setCreateValues((current) => ({ ...current, ...patch }))}
@@ -262,10 +267,14 @@ export default function McpsIndex({
         maxHeight="85vh"
       >
         {editingMcp ? (
-          <Form route="mcps.update" routeParams={{ id: editingMcp.id }} method="put">
+          <Form
+            route="mcps.update"
+            routeParams={{ id: editingMcp.id }}
+            method="put"
+            className="dialog-form-fill"
+          >
             {({ errors, processing }) => (
               <Layout
-                height="auto"
                 header={
                   <DialogHeader
                     title={`Edit ${editingMcp.name}`}
@@ -274,13 +283,13 @@ export default function McpsIndex({
                   />
                 }
                 content={
-                  <LayoutContent>
+                  <LayoutContent isScrollable>
                     <VStack gap={4} hAlign="stretch">
                       {editingMcp.lastError ? (
                         <Banner
                           status="error"
                           title="Last connection error"
-                          description={editingMcp.lastError}
+                          description={shortError(editingMcp.lastError)}
                           container="card"
                         />
                       ) : null}

@@ -227,10 +227,9 @@ export default function TokensIndex({
         width={520}
         maxHeight="85vh"
       >
-        <Form route="tokens.store">
+        <Form route="tokens.store" className="dialog-form-fill">
           {({ errors, processing }) => (
             <Layout
-              height="auto"
               header={
                 <DialogHeader
                   title="Create token"
@@ -239,7 +238,7 @@ export default function TokensIndex({
                 />
               }
               content={
-                <LayoutContent>
+                <LayoutContent isScrollable>
                   <VStack gap={4} hAlign="stretch">
                     <TextInput
                       label="Name"

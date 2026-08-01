@@ -60,6 +60,10 @@ router
           .group(() => {
             router.get('invites', [controllers.Invites, 'index']).as('invites.index')
             router.post('invites', [controllers.Invites, 'store']).as('invites.store')
+            router.delete('invites/:id', [controllers.Invites, 'destroy']).as('invites.destroy')
+            router
+              .delete('members/:id', [controllers.Invites, 'destroyMember'])
+              .as('members.destroy')
           })
           .use(middleware.admin())
 

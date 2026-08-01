@@ -20,8 +20,12 @@ export interface ApiDefinition {
     accept: typeof routes['invites.accept']
     index: typeof routes['invites.index']
     store: typeof routes['invites.store']
+    destroy: typeof routes['invites.destroy']
   }
   home: typeof routes['home']
+  members: {
+    destroy: typeof routes['members.destroy']
+  }
   mcps: {
     index: typeof routes['mcps.index']
     store: typeof routes['mcps.store']

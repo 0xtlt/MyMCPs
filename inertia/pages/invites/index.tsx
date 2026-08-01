@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Badge } from '@astryxdesign/core/Badge'
@@ -27,11 +28,22 @@ type InviteRow = {
   isUsable: boolean
 } & Record<string, unknown>
 
+type MemberRow = {
+  id: number
+  email: string
+  fullName: string | null
+  role: string
+  createdAt: string
+  isCurrentUser: boolean
+} & Record<string, unknown>
+
 export default function InvitesIndex({
   invites,
+  members,
   appUrl,
 }: {
   invites: InviteRow[]
+  members: MemberRow[]
   appUrl: string
 }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -63,7 +75,7 @@ export default function InvitesIndex({
     return { label: 'Expired', variant: 'neutral' }
   }
 
-  const columns: TableColumn<InviteRow>[] = [
+  const inviteColumns: TableColumn<InviteRow>[] = [
     {
       key: 'email',
       header: 'Email',
@@ -96,20 +108,90 @@ export default function InvitesIndex({
     {
       key: 'actions',
       header: 'Actions',
+      width: pixel(200),
+      align: 'end',
+      renderCell: (invite) => (
+        <HStack gap={2} hAlign="end">
+          {invite.isUsable ? (
+            <Button
+              label="Copy link"
+              variant="secondary"
+              size="sm"
+              onClick={() => copyLink(invite.token)}
+            />
+          ) : null}
+          <Button
+            label="Remove"
+            variant="destructive"
+            size="sm"
+            onClick={() =>
+              router.delete(`/invites/${invite.id}`, {
+                preserveScroll: true,
+              })
+            }
+          />
+        </HStack>
+      ),
+    },
+  ]
+
+  const memberColumns: TableColumn<MemberRow>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      width: proportional(2),
+      renderCell: (member) => (
+        <VStack gap={0}>
+          <Text type="body" weight="bold">
+            {member.fullName || member.email}
+          </Text>
+          {member.fullName ? (
+            <Text type="supporting" color="secondary">
+              {member.email}
+            </Text>
+          ) : null}
+        </VStack>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Role',
+      width: pixel(120),
+      renderCell: (member) => (
+        <Badge label={member.role} variant={member.role === 'admin' ? 'info' : 'neutral'} />
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Joined',
+      width: proportional(2),
+      renderCell: (member) => (
+        <Text type="supporting" color="secondary">
+          {new Date(member.createdAt).toLocaleString()}
+        </Text>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
       width: pixel(120),
       align: 'end',
-      renderCell: (invite) =>
-        invite.isUsable ? (
-          <Button
-            label="Copy link"
-            variant="secondary"
-            size="sm"
-            onClick={() => copyLink(invite.token)}
-          />
-        ) : (
+      renderCell: (member) =>
+        member.isCurrentUser ? (
           <Text type="supporting" color="secondary">
-            —
+            You
           </Text>
+        ) : (
+          <Button
+            label="Remove"
+            variant="destructive"
+            size="sm"
+            onClick={() =>
+              router.delete(`/members/${member.id}`, {
+                preserveScroll: true,
+              })
+            }
+          />
         ),
     },
   ]
@@ -121,42 +203,55 @@ export default function InvitesIndex({
           <VStack gap={2}>
             <Heading level={1}>Invites</Heading>
             <Text type="body" color="secondary">
-              Invite teammates with a link. There is no public registration—only people you invite can
-              join this instance.
+              Invite teammates with a link. There is no public registration—only people you invite
+              can join this instance.
             </Text>
           </VStack>
         </StackItem>
         <Button label="Create invite" variant="primary" onClick={openCreate} />
       </HStack>
 
-      {invites.length === 0 ? (
-        <Banner
-          status="info"
-          title="No invites yet"
-          description="Create an invite link to add a teammate."
-          container="card"
-        />
-      ) : (
-        <Table
-          data={invites}
-          columns={columns}
-          idKey="id"
-          hasHover
-          density="compact"
-          textOverflow="truncate"
-        />
-      )}
+      <VStack gap={3} hAlign="stretch">
+        <Heading level={2}>Members</Heading>
+        {members.length === 0 ? (
+          <Banner status="info" title="No members yet" container="card" />
+        ) : (
+          <Table
+            data={members}
+            columns={memberColumns}
+            idKey="id"
+            hasHover
+            density="compact"
+            textOverflow="truncate"
+          />
+        )}
+      </VStack>
 
-      <Dialog
-        isOpen={isCreateOpen}
-        onOpenChange={setIsCreateOpen}
-        purpose="form"
-        width={480}
-      >
-        <Form route="invites.store">
+      <VStack gap={3} hAlign="stretch">
+        <Heading level={2}>Invites</Heading>
+        {invites.length === 0 ? (
+          <Banner
+            status="info"
+            title="No invites yet"
+            description="Create an invite link to add a teammate."
+            container="card"
+          />
+        ) : (
+          <Table
+            data={invites}
+            columns={inviteColumns}
+            idKey="id"
+            hasHover
+            density="compact"
+            textOverflow="truncate"
+          />
+        )}
+      </VStack>
+
+      <Dialog isOpen={isCreateOpen} onOpenChange={setIsCreateOpen} purpose="form" width={480}>
+        <Form route="invites.store" className="dialog-form-fill">
           {({ errors, processing }) => (
             <Layout
-              height="auto"
               header={
                 <DialogHeader
                   title="Create invite"
@@ -165,7 +260,7 @@ export default function InvitesIndex({
                 />
               }
               content={
-                <LayoutContent>
+                <LayoutContent isScrollable>
                   <TextInput
                     label="Email"
                     type="email"

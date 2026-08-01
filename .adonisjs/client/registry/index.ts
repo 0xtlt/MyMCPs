@@ -78,6 +78,18 @@ const routes = {
     tokens: [{"old":"/invites","type":0,"val":"invites","end":""}],
     types: placeholder as Registry['invites.store']['types'],
   },
+  'invites.destroy': {
+    methods: ["DELETE"],
+    pattern: '/invites/:id',
+    tokens: [{"old":"/invites/:id","type":0,"val":"invites","end":""},{"old":"/invites/:id","type":1,"val":"id","end":""}],
+    types: placeholder as Registry['invites.destroy']['types'],
+  },
+  'members.destroy': {
+    methods: ["DELETE"],
+    pattern: '/members/:id',
+    tokens: [{"old":"/members/:id","type":0,"val":"members","end":""},{"old":"/members/:id","type":1,"val":"id","end":""}],
+    types: placeholder as Registry['members.destroy']['types'],
+  },
   'mcps.index': {
     methods: ["GET","HEAD"],
     pattern: '/mcps',

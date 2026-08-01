@@ -151,6 +151,30 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/invites_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
+  'invites.destroy': {
+    methods: ["DELETE"]
+    pattern: '/invites/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/invites_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/invites_controller').default['destroy']>>>
+    }
+  }
+  'members.destroy': {
+    methods: ["DELETE"]
+    pattern: '/members/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/invites_controller').default['destroyMember']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/invites_controller').default['destroyMember']>>>
+    }
+  }
   'mcps.index': {
     methods: ["GET","HEAD"]
     pattern: '/mcps'

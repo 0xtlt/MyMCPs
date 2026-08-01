@@ -16,6 +16,8 @@ export type ScannedRoutes = {
     'session.destroy': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'invites.store': { paramsTuple?: []; params?: {} }
+    'invites.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'members.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.index': { paramsTuple?: []; params?: {} }
     'mcps.store': { paramsTuple?: []; params?: {} }
     'mcps.oauthCallback': { paramsTuple?: []; params?: {} }
@@ -66,11 +68,13 @@ export type ScannedRoutes = {
     'tokens.store': { paramsTuple?: []; params?: {} }
     'tokens.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
+  DELETE: {
+    'invites.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'members.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'mcps.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+  }
   PUT: {
     'mcps.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-  }
-  DELETE: {
-    'mcps.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
 }
 declare module '@adonisjs/core/types/http' {
