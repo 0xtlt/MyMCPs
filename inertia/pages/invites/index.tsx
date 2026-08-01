@@ -216,22 +216,17 @@ export default function InvitesIndex({
       </HStack>
 
       <VStack gap={4} hAlign="stretch">
-        <SegmentedControl
-          value={section}
-          onChange={(value) => setSection(value as TeamSection)}
-          label="Team section"
-        >
-          <SegmentedControlItem
-            value="members"
-            label="Members"
-            icon={<Badge label={String(members.length)} variant="neutral" />}
-          />
-          <SegmentedControlItem
-            value="invites"
-            label="Invites"
-            icon={<Badge label={String(invites.length)} variant="neutral" />}
-          />
-        </SegmentedControl>
+        <StackItem size="static" crossAlignSelf="start">
+          <SegmentedControl
+            value={section}
+            onChange={(value) => setSection(value as TeamSection)}
+            label="Team section"
+            layout="hug"
+          >
+            <SegmentedControlItem value="members" label={`Members (${members.length})`} />
+            <SegmentedControlItem value="invites" label={`Invites (${invites.length})`} />
+          </SegmentedControl>
+        </StackItem>
 
         {section === 'members' ? (
           members.length === 0 ? (
