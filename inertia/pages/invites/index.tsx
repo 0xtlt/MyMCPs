@@ -13,9 +13,12 @@ import {
   StackItem,
   VStack,
 } from '@astryxdesign/core/Layout'
+import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl'
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
+
+type TeamSection = 'members' | 'invites'
 
 type InviteRow = {
   id: number
@@ -48,6 +51,7 @@ export default function InvitesIndex({
 }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [email, setEmail] = useState('')
+  const [section, setSection] = useState<TeamSection>('members')
 
   function inviteUrl(token: string) {
     return `${appUrl}/invite/${token}`
@@ -211,25 +215,38 @@ export default function InvitesIndex({
         <Button label="Create invite" variant="primary" onClick={openCreate} />
       </HStack>
 
-      <VStack gap={3} hAlign="stretch">
-        <Heading level={2}>Members</Heading>
-        {members.length === 0 ? (
-          <Banner status="info" title="No members yet" container="card" />
-        ) : (
-          <Table
-            data={members}
-            columns={memberColumns}
-            idKey="id"
-            hasHover
-            density="compact"
-            textOverflow="truncate"
+      <VStack gap={4} hAlign="stretch">
+        <SegmentedControl
+          value={section}
+          onChange={(value) => setSection(value as TeamSection)}
+          label="Team section"
+        >
+          <SegmentedControlItem
+            value="members"
+            label="Members"
+            icon={<Badge label={String(members.length)} variant="neutral" />}
           />
-        )}
-      </VStack>
+          <SegmentedControlItem
+            value="invites"
+            label="Invites"
+            icon={<Badge label={String(invites.length)} variant="neutral" />}
+          />
+        </SegmentedControl>
 
-      <VStack gap={3} hAlign="stretch">
-        <Heading level={2}>Invites</Heading>
-        {invites.length === 0 ? (
+        {section === 'members' ? (
+          members.length === 0 ? (
+            <Banner status="info" title="No members yet" container="card" />
+          ) : (
+            <Table
+              data={members}
+              columns={memberColumns}
+              idKey="id"
+              hasHover
+              density="compact"
+              textOverflow="truncate"
+            />
+          )
+        ) : invites.length === 0 ? (
           <Banner
             status="info"
             title="No invites yet"
