@@ -1,0 +1,31 @@
+{
+  "$schema": "https://cdn.coollabs.io/coolify/coolify.schema.json",
+  "version": "1.0",
+  "name": "MyMCPs",
+  "description": "Self-hosted MCP gateway for routing tools and resources to upstream MCPs.",
+  "build": {
+    "build_pack": "dockercompose",
+    "base_directory": "/",
+    "docker_compose": {
+      "location": "/docker-compose.yml"
+    }
+  },
+  "network": {
+    "ports": {
+      "expose": "3333"
+    }
+  },
+  "health_check": {
+    "enabled": true,
+    "path": "/health",
+    "port": "3333",
+    "host": "127.0.0.1",
+    "method": "GET",
+    "return_code": 200,
+    "scheme": "http",
+    "interval": 30,
+    "timeout": 5,
+    "retries": 3,
+    "start_period": 30
+  }
+}

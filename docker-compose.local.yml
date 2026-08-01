@@ -1,0 +1,9 @@
+# Optional local host publishing for the Coolify-compatible base stack.
+#
+# Run with:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d
+
+services:
+  mymcps:
+    ports:
+      - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-3333}:3333'
