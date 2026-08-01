@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Badge } from '@astryxdesign/core/Badge'
@@ -6,6 +6,7 @@ import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
 import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import { Icon } from '@astryxdesign/core/Icon'
 import {
   HStack,
   Layout,
@@ -67,12 +68,30 @@ export default function TokensIndex({
   const [scopeMode, setScopeMode] = useState('all')
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([])
   const [expiresAt, setExpiresAt] = useState('')
+  const [urlCopied, setUrlCopied] = useState(false)
+  const urlCopiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  async function copyText(value: string) {
+  useEffect(() => {
+    return () => {
+      if (urlCopiedTimeoutRef.current) {
+        clearTimeout(urlCopiedTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  async function copyGatewayUrl() {
     try {
-      await navigator.clipboard.writeText(value)
+      await navigator.clipboard.writeText(gatewayUrl)
+      setUrlCopied(true)
+      if (urlCopiedTimeoutRef.current) {
+        clearTimeout(urlCopiedTimeoutRef.current)
+      }
+      urlCopiedTimeoutRef.current = setTimeout(() => {
+        setUrlCopied(false)
+        urlCopiedTimeoutRef.current = null
+      }, 2000)
     } catch {
-      // ignore
+      // ignore clipboard failures
     }
   }
 
@@ -181,10 +200,11 @@ export default function TokensIndex({
           <HStack gap={3} vAlign="center" wrap="wrap">
             <Text type="body">{gatewayUrl}</Text>
             <Button
-              label="Copy URL"
-              variant="secondary"
+              label={urlCopied ? 'Copied' : 'Copy URL'}
+              variant={urlCopied ? 'primary' : 'secondary'}
               size="sm"
-              onClick={() => copyText(gatewayUrl)}
+              icon={<Icon icon={urlCopied ? 'checkDouble' : 'copy'} size="sm" />}
+              onClick={copyGatewayUrl}
             />
           </HStack>
           <Text type="supporting" color="secondary">
