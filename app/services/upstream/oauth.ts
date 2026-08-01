@@ -3,12 +3,9 @@ import { DateTime } from 'luxon'
 import type { HttpContext } from '@adonisjs/core/http'
 import type { Infer } from '@vinejs/vine/types'
 import env from '#start/env'
-import Mcp from '#models/mcp'
+import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
-import {
-  oauthSessionValidator,
-  oauthTokenResponseValidator,
-} from '#validators/oauth'
+import { oauthSessionValidator, oauthTokenResponseValidator } from '#validators/oauth'
 
 type OauthSession = Infer<typeof oauthSessionValidator>
 
@@ -85,7 +82,8 @@ export function buildAuthorizeRedirect(mcp: Mcp, oauth: OauthSession) {
 
 async function readFailedOauthBody(response: Response) {
   try {
-    const text = (await response.text()).trim()
+    const body = await response.text()
+    const text = body.trim()
     if (!text) {
       return 'empty response body'
     }
@@ -117,7 +115,7 @@ export async function exchangeAuthorizationCode(mcp: Mcp, code: string, codeVeri
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
+      'Accept': 'application/json',
     },
     body,
   })
@@ -132,9 +130,7 @@ export async function exchangeAuthorizationCode(mcp: Mcp, code: string, codeVeri
   if (json.refreshToken) {
     mcp.oauthRefreshToken = McpSecretStore.encrypt(json.refreshToken)
   }
-  mcp.oauthTokenExpiresAt = json.expiresIn
-    ? DateTime.utc().plus({ seconds: json.expiresIn })
-    : null
+  mcp.oauthTokenExpiresAt = json.expiresIn ? DateTime.utc().plus({ seconds: json.expiresIn }) : null
   mcp.status = 'ready'
   mcp.lastError = null
   await mcp.save()
@@ -168,7 +164,7 @@ export async function refreshOauthAccessToken(mcp: Mcp) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
+      'Accept': 'application/json',
     },
     body,
   })

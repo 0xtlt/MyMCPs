@@ -31,10 +31,7 @@ export default function Onboarding() {
                 <Banner
                   status="error"
                   title={
-                    errors.fullName ||
-                    errors.email ||
-                    errors.password ||
-                    'Unable to complete setup'
+                    errors.fullName || errors.email || errors.password || 'Unable to complete setup'
                   }
                   container="card"
                 />

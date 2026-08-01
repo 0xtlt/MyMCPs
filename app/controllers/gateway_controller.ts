@@ -2,10 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
 import {
   callUpstreamTool,
@@ -26,10 +23,7 @@ export default class GatewayController {
 
     const tools = await listNamespacedTools(mcps)
 
-    const server = new Server(
-      { name: 'mymcps', version: '0.1.0' },
-      { capabilities: { tools: {} } }
-    )
+    const server = new Server({ name: 'mymcps', version: '0.1.0' }, { capabilities: { tools: {} } })
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: tools.map((tool) => ({

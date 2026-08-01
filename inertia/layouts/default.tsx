@@ -18,8 +18,7 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
   const user = children.props.user
   const setupComplete = children.props.setupComplete ?? true
   const isOnboarding = url.startsWith('/onboarding')
-  const isAuthScreen =
-    isOnboarding || url.startsWith('/login') || url.startsWith('/invite/')
+  const isAuthScreen = isOnboarding || url.startsWith('/login') || url.startsWith('/invite/')
 
   useEffect(() => {
     toast.dismiss()
@@ -53,11 +52,7 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
               user ? (
                 <>
                   <TopNavItem label="Home" href="/" isSelected={url === '/'} />
-                  <TopNavItem
-                    label="MCPs"
-                    href="/mcps"
-                    isSelected={url.startsWith('/mcps')}
-                  />
+                  <TopNavItem label="MCPs" href="/mcps" isSelected={url.startsWith('/mcps')} />
                   <TopNavItem
                     label="Tokens"
                     href="/tokens"

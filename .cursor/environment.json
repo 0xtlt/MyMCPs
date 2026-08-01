@@ -1,0 +1,3 @@
+{
+  "install": "pnpm install --frozen-lockfile --config.minimumReleaseAge=0 && pnpm exec playwright install chromium"
+}

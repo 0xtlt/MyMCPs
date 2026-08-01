@@ -23,7 +23,19 @@ export class AccessTokenMcpSchema extends BaseModel {
 }
 
 export class AccessTokenSchema extends BaseModel {
-  static $columns = ['createdAt', 'createdBy', 'expiresAt', 'id', 'lastUsedAt', 'name', 'revokedAt', 'scopeMode', 'tokenHash', 'tokenPrefix', 'updatedAt'] as const
+  static $columns = [
+    'createdAt',
+    'createdBy',
+    'expiresAt',
+    'id',
+    'lastUsedAt',
+    'name',
+    'revokedAt',
+    'scopeMode',
+    'tokenHash',
+    'tokenPrefix',
+    'updatedAt',
+  ] as const
   $columns = AccessTokenSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -50,7 +62,17 @@ export class AccessTokenSchema extends BaseModel {
 }
 
 export class InviteSchema extends BaseModel {
-  static $columns = ['acceptedAt', 'createdAt', 'createdBy', 'email', 'expiresAt', 'id', 'role', 'token', 'updatedAt'] as const
+  static $columns = [
+    'acceptedAt',
+    'createdAt',
+    'createdBy',
+    'email',
+    'expiresAt',
+    'id',
+    'role',
+    'token',
+    'updatedAt',
+  ] as const
   $columns = InviteSchema.$columns
   @column.dateTime()
   declare acceptedAt: DateTime | null
@@ -73,7 +95,35 @@ export class InviteSchema extends BaseModel {
 }
 
 export class McpSchema extends BaseModel {
-  static $columns = ['authBearer', 'authHeaderName', 'authHeaderValue', 'authType', 'createdAt', 'createdBy', 'description', 'enabled', 'httpUrl', 'id', 'lastError', 'name', 'npmArgs', 'npmPackage', 'npmVersion', 'oauthAccessToken', 'oauthAuthorizeUrl', 'oauthClientId', 'oauthClientSecret', 'oauthRefreshToken', 'oauthScopes', 'oauthTokenExpiresAt', 'oauthTokenUrl', 'slug', 'status', 'transport', 'updatedAt'] as const
+  static $columns = [
+    'authBearer',
+    'authHeaderName',
+    'authHeaderValue',
+    'authType',
+    'createdAt',
+    'createdBy',
+    'description',
+    'enabled',
+    'httpUrl',
+    'id',
+    'lastError',
+    'name',
+    'npmArgs',
+    'npmPackage',
+    'npmVersion',
+    'oauthAccessToken',
+    'oauthAuthorizeUrl',
+    'oauthClientId',
+    'oauthClientSecret',
+    'oauthRefreshToken',
+    'oauthScopes',
+    'oauthTokenExpiresAt',
+    'oauthTokenUrl',
+    'slug',
+    'status',
+    'transport',
+    'updatedAt',
+  ] as const
   $columns = McpSchema.$columns
   @column()
   declare authBearer: string | null
@@ -132,7 +182,15 @@ export class McpSchema extends BaseModel {
 }
 
 export class UserSchema extends BaseModel {
-  static $columns = ['createdAt', 'email', 'fullName', 'id', 'password', 'role', 'updatedAt'] as const
+  static $columns = [
+    'createdAt',
+    'email',
+    'fullName',
+    'id',
+    'password',
+    'role',
+    'updatedAt',
+  ] as const
   $columns = UserSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
