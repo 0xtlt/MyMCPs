@@ -28,7 +28,17 @@ const mcpPayload = {
     .optional()
     .requiredWhen('transport', '=', 'npm'),
   npmVersion: vine.string().trim().maxLength(64).optional(),
-  npmArgs: vine.string().trim().maxLength(1000).optional(),
+  npmArgs: vine
+    .string()
+    .trim()
+    .maxLength(1000)
+    .optional()
+    .transform((value) => {
+      if (!value) {
+        return [] as string[]
+      }
+      return value.split(/\s+/).map((part) => part.trim()).filter(Boolean)
+    }),
   authType,
   authBearer: vine.string().trim().maxLength(4000).optional(),
   authHeaderName: headerName.optional().requiredWhen('authType', '=', 'header'),

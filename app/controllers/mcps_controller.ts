@@ -10,36 +10,11 @@ import {
   readOauthSession,
   startOauthSession,
 } from '#services/upstream/oauth'
-import vine from '@vinejs/vine'
 import { sanitizeErrorMessage } from '#services/error_message'
 import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
 
-/**
- * Flash values are untyped; only accept finite numbers or numeric strings (session may stringify).
- */
-function flashNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-  if (typeof value === 'string' && value.trim() !== '' && vine.helpers.isNumeric(value)) {
-    const parsed = vine.helpers.asNumber(value)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-  return null
-}
-
 type McpPayload = Infer<typeof createMcpValidator>
-
-function parseNpmArgs(raw: string | undefined): string[] {
-  if (!raw?.trim()) {
-    return []
-  }
-  return raw
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-}
 
 function applySecrets(mcp: Mcp, payload: McpPayload) {
   if (payload.authBearer && payload.authBearer.length > 0) {
@@ -84,7 +59,7 @@ async function assignMcpFromPayload(mcp: Mcp, payload: McpPayload, options?: { e
   mcp.httpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
   mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
   mcp.npmVersion = payload.transport === 'npm' ? (payload.npmVersion || null) : null
-  mcp.setNpmArgsList(payload.transport === 'npm' ? parseNpmArgs(payload.npmArgs) : [])
+  mcp.setNpmArgsList(payload.transport === 'npm' ? (payload.npmArgs ?? []) : [])
   mcp.authType = payload.authType
   mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
   mcp.oauthAuthorizeUrl =
@@ -118,7 +93,11 @@ async function uniqueSlug(name: string, excludeId?: number) {
 export default class McpsController {
   async index({ inertia, session }: HttpContext) {
     const mcps = await Mcp.query().orderBy('name', 'asc')
-    const editingMcpId = flashNumber(session.flashMessages.get('editingMcpId'))
+    const editingMcpIdRaw = session.flashMessages.get('editingMcpId')
+    const editingMcpId =
+      typeof editingMcpIdRaw === 'number' && Number.isFinite(editingMcpIdRaw)
+        ? editingMcpIdRaw
+        : null
     return inertia.render('mcps/index', {
       mcps: McpTransformer.transform(mcps),
       editingMcpId,
