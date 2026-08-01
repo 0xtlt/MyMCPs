@@ -9,7 +9,7 @@
 #           -v mymcps-data:/app/tmp mymcps
 
 ARG NODE_VERSION=24
-ARG PNPM_VERSION=10.33.3
+ARG PNPM_VERSION=11.19.0
 ARG DENO_VERSION=2.9.4
 
 # Official Deno binary only (multi-arch).
