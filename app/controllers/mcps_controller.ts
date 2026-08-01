@@ -27,10 +27,7 @@ function applySecrets(mcp: Mcp, payload: McpPayload) {
   }
 }
 
-export function applyNpmEnv(
-  mcp: Mcp,
-  payload: Pick<McpPayload, 'transport' | 'npmEnv'>
-) {
+export function applyNpmEnv(mcp: Mcp, payload: Pick<McpPayload, 'transport' | 'npmEnv'>) {
   if (payload.transport !== 'npm') {
     mcp.npmEnvMap = {}
     return

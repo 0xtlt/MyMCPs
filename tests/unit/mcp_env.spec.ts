@@ -10,7 +10,9 @@ test.group('MCP package environment variables', (group) => {
   group.each.setup(beginTestTransaction)
   group.each.teardown(rollbackTestTransaction)
 
-  test('validates multiple environment variables and rejects duplicate names', async ({ assert }) => {
+  test('validates multiple environment variables and rejects duplicate names', async ({
+    assert,
+  }) => {
     const payload = await createMcpValidator.validate({
       name: 'Package MCP',
       transport: 'npm',

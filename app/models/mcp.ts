@@ -42,7 +42,9 @@ function parseNpmEnvJson(value: string | null): McpNpmEnvMap {
     }
 
     return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string'
+      )
     )
   } catch {
     return {}
@@ -78,8 +80,7 @@ export default class Mcp extends McpSchema {
   }
 
   set npmEnvMap(env: McpNpmEnvMap) {
-    this.npmEnv =
-      Object.keys(env).length > 0 ? McpSecretStore.encrypt(JSON.stringify(env)) : null
+    this.npmEnv = Object.keys(env).length > 0 ? McpSecretStore.encrypt(JSON.stringify(env)) : null
   }
 
   get npmEnvEntries(): Array<{ name: string; hasValue: boolean }> {
