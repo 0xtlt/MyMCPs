@@ -98,6 +98,12 @@ function mockNotionOAuthServer() {
           }
         )
       }
+      if (message.method === 'notifications/initialized') {
+        return new Response(null, {
+          status: 202,
+          headers: { 'Mcp-Session-Id': 'notion-test-session' },
+        })
+      }
     }
 
     return new Response(`not found: ${method} ${url} body=${body}`, { status: 404 })
