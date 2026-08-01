@@ -3,7 +3,7 @@ declare module '*.png?*' {
   export default src
 }
 
-declare module '*.png?w=1254&format=png&quality=100' {
+declare module '*&img' {
   const src: string
   export default src
 }
