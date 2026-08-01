@@ -20,7 +20,7 @@ export default function Home() {
         </Text>
       </VStack>
 
-      <Card padding={6} width="100%" minHeight={220} className="mcp-hero-card">
+      <Card padding={6} width="100%" className="mcp-hero-card">
         <VStack gap={4} hAlign="start" className="mcp-hero-card__content">
           <VStack gap={1}>
             <Heading level={2}>MCPs</Heading>
