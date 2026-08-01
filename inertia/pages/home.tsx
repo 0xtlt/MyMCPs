@@ -4,7 +4,7 @@ import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { usePage } from '@inertiajs/react'
 import { type Data } from '@generated/data'
-import mcpNetworkUrl from '~/assets/mcp-network.png?w=440&format=webp'
+import mcpNetworkUrl from '~/assets/data-blocks-sync-balanced-square.png?w=440&format=webp'
 
 export default function Home() {
   const { props } = usePage<Data.SharedProps>()
