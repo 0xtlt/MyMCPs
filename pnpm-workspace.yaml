@@ -1,5 +1,8 @@
 confirmModulesPurge: false
 minimumReleaseAge: 360
+networkConcurrency: 8
+fetchRetries: 4
+fetchTimeout: 120000
 
 allowBuilds:
   '@astryxdesign/cli': true
