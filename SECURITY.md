@@ -9,6 +9,14 @@ credentials, access tokens, or exploit details in a public discussion.
 If private reporting is unavailable, contact the repository owner privately and
 include the affected version, reproduction steps, and impact.
 
+## Required GitHub settings
+
+Repository administrators should enable the dependency graph, Dependabot alerts,
+secret scanning with push protection, and branch protection requiring the
+security and quality checks before merging. Actions should be restricted to
+trusted or explicitly approved actions, with read-only default `GITHUB_TOKEN`
+permissions.
+
 ## Deployment baseline
 
 - Set a unique production `APP_KEY` and keep `.env` outside version control.

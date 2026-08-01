@@ -44,19 +44,6 @@ jobs:
       - name: Audit dependencies
         run: pnpm audit --audit-level=high
 
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - name: Review dependency changes
-        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
-        with:
-          fail-on-severity: high
-
   codeql:
     name: CodeQL
     runs-on: ubuntu-latest
