@@ -37,6 +37,21 @@ Migrations run as part of a fresh scaffold; for an existing DB:
 node ace migration:run
 ```
 
+## One-click OAuth MCPs
+
+For a remote OAuth MCP such as Notion, add an HTTP MCP with this URL:
+`https://mcp.notion.com/mcp`. Select **OAuth**, save it, and click **Connect
+OAuth**. MyMCPs discovers the MCP's OAuth metadata, registers a client for the
+current callback URL, opens the provider's login, and stores the resulting
+tokens. You do not need to enter authorize/token endpoints, a client ID, or
+register a callback URI manually.
+
+The provider must support MCP OAuth discovery and dynamic client registration.
+Providers without those capabilities can use the optional advanced OAuth
+overrides in the MCP form. In production, set `APP_URL` to the public HTTPS
+origin of the MyMCPs instance so the browser callback and session cookie use the
+same host.
+
 ## Tests
 
 The project uses native AdonisJS test suites powered by Japa:
