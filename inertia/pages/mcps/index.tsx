@@ -1,16 +1,27 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
-import { Card } from '@astryxdesign/core/Card'
-import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
-import { HStack, VStack } from '@astryxdesign/core/Layout'
-import { List, ListItem } from '@astryxdesign/core/List'
-import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import {
+  HStack,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  StackItem,
+  VStack,
+} from '@astryxdesign/core/Layout'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
-import { TextInput } from '@astryxdesign/core/TextInput'
+import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { Heading, Text } from '@astryxdesign/core/Text'
+import {
+  emptyMcpFormValues,
+  mcpFormValuesFromRow,
+  McpFormFields,
+  type McpFormValues,
+} from '~/components/mcp_form_fields'
 
 type McpRow = {
   id: number
@@ -23,10 +34,19 @@ type McpRow = {
   npmVersion: string | null
   npmArgs: string
   authType: 'none' | 'bearer' | 'header' | 'oauth'
+  authHeaderName: string | null
+  hasAuthBearer: boolean
+  hasAuthHeaderValue: boolean
+  oauthAuthorizeUrl: string | null
+  oauthTokenUrl: string | null
+  oauthScopes: string | null
+  oauthClientId: string | null
+  hasOauthClientSecret: boolean
+  hasOauthAccessToken: boolean
   status: 'draft' | 'ready' | 'error'
   lastError: string | null
   enabled: boolean
-}
+} & Record<string, unknown>
 
 function statusVariant(status: McpRow['status']): 'success' | 'warning' | 'error' | 'neutral' {
   if (status === 'ready') return 'success'
@@ -35,244 +55,302 @@ function statusVariant(status: McpRow['status']): 'success' | 'warning' | 'error
   return 'neutral'
 }
 
-export default function McpsIndex({ mcps }: { mcps: McpRow[] }) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [transport, setTransport] = useState('http')
-  const [httpUrl, setHttpUrl] = useState('')
-  const [npmPackage, setNpmPackage] = useState('')
-  const [npmVersion, setNpmVersion] = useState('')
-  const [npmArgs, setNpmArgs] = useState('')
-  const [authType, setAuthType] = useState('none')
-  const [authBearer, setAuthBearer] = useState('')
-  const [authHeaderName, setAuthHeaderName] = useState('')
-  const [authHeaderValue, setAuthHeaderValue] = useState('')
-  const [oauthAuthorizeUrl, setOauthAuthorizeUrl] = useState('')
-  const [oauthTokenUrl, setOauthTokenUrl] = useState('')
-  const [oauthScopes, setOauthScopes] = useState('')
-  const [oauthClientId, setOauthClientId] = useState('')
-  const [oauthClientSecret, setOauthClientSecret] = useState('')
-  const [enabled, setEnabled] = useState(true)
+function endpointLabel(mcp: McpRow) {
+  return mcp.transport === 'http' ? mcp.httpUrl || '—' : mcp.npmPackage || '—'
+}
+
+export default function McpsIndex({
+  mcps,
+  editingMcpId = null,
+}: {
+  mcps: McpRow[]
+  editingMcpId?: number | null
+}) {
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(editingMcpId)
+  const [createValues, setCreateValues] = useState<McpFormValues>(emptyMcpFormValues)
+  const [editValues, setEditValues] = useState<McpFormValues>(emptyMcpFormValues)
+
+  const editingMcp = useMemo(
+    () => mcps.find((mcp) => mcp.id === editingId) ?? null,
+    [mcps, editingId]
+  )
+
+  useEffect(() => {
+    if (editingMcpId) {
+      setEditingId(editingMcpId)
+    }
+  }, [editingMcpId])
+
+  useEffect(() => {
+    if (editingMcp) {
+      setEditValues(mcpFormValuesFromRow(editingMcp))
+    }
+  }, [editingMcp])
+
+  function openCreate() {
+    setCreateValues(emptyMcpFormValues())
+    setIsCreateOpen(true)
+  }
+
+  function openEdit(mcp: McpRow) {
+    setEditValues(mcpFormValuesFromRow(mcp))
+    setEditingId(mcp.id)
+  }
+
+  function closeEdit() {
+    setEditingId(null)
+  }
+
+  const columns: TableColumn<McpRow>[] = [
+    {
+      key: 'status',
+      header: 'Status',
+      width: pixel(110),
+      renderCell: (mcp) => (
+        <HStack gap={2} vAlign="center">
+          <StatusDot variant={statusVariant(mcp.status)} label={mcp.status} />
+          <Badge label={mcp.status} variant={statusVariant(mcp.status)} />
+        </HStack>
+      ),
+    },
+    {
+      key: 'name',
+      header: 'Name',
+      width: proportional(2),
+      renderCell: (mcp) => (
+        <VStack gap={0}>
+          <Text type="body" weight="bold">
+            {mcp.name}
+          </Text>
+          <Text type="supporting" color="secondary">
+            {mcp.slug}
+          </Text>
+        </VStack>
+      ),
+    },
+    {
+      key: 'endpoint',
+      header: 'Endpoint',
+      width: proportional(3),
+      renderCell: (mcp) => (
+        <Text type="supporting" color="secondary">
+          {endpointLabel(mcp)}
+        </Text>
+      ),
+    },
+    {
+      key: 'authType',
+      header: 'Auth',
+      width: pixel(100),
+      renderCell: (mcp) => (
+        <Text type="supporting" color="secondary">
+          {mcp.authType}
+        </Text>
+      ),
+    },
+    {
+      key: 'enabled',
+      header: 'Enabled',
+      width: pixel(100),
+      renderCell: (mcp) =>
+        mcp.enabled ? (
+          <Badge label="On" variant="success" />
+        ) : (
+          <Badge label="Off" variant="neutral" />
+        ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: pixel(100),
+      align: 'end',
+      renderCell: (mcp) => (
+        <Button label="Edit" variant="secondary" size="sm" onClick={() => openEdit(mcp)} />
+      ),
+    },
+  ]
 
   return (
-    <VStack gap={6} maxWidth={840} width="100%">
-      <VStack gap={2}>
-        <Heading level={1}>MCPs</Heading>
-        <Text type="body" color="secondary">
-          Register upstream MCP servers. Agents reach them through MyMCPs with an access token.
-        </Text>
-      </VStack>
+    <VStack gap={6} maxWidth={960} width="100%">
+      <HStack gap={4} hAlign="between" vAlign="start">
+        <StackItem size="fill">
+          <VStack gap={2}>
+            <Heading level={1}>MCPs</Heading>
+            <Text type="body" color="secondary">
+              Register upstream MCP servers. Agents reach them through MyMCPs with an access token.
+            </Text>
+          </VStack>
+        </StackItem>
+        <Button label="Add MCP" variant="primary" onClick={openCreate} />
+      </HStack>
 
-      <Card padding={6} width="100%">
+      {mcps.length === 0 ? (
+        <Banner
+          status="info"
+          title="No MCPs yet"
+          description="Create an MCP to start routing agent traffic."
+          container="card"
+        />
+      ) : (
+        <Table
+          data={mcps}
+          columns={columns}
+          idKey="id"
+          hasHover
+          density="compact"
+          textOverflow="truncate"
+        />
+      )}
+
+      <Dialog
+        isOpen={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+        purpose="form"
+        width={640}
+        maxHeight="85vh"
+      >
         <Form route="mcps.store">
           {({ errors, processing }) => (
-            <VStack gap={4} hAlign="stretch">
-              <Heading level={2}>Add MCP</Heading>
-
-              <TextInput
-                label="Name"
-                htmlName="name"
-                value={name}
-                onChange={setName}
-                width="100%"
-                status={errors.name ? { type: 'error', message: errors.name } : undefined}
-              />
-              <TextInput
-                label="Description"
-                htmlName="description"
-                value={description}
-                onChange={setDescription}
-                isOptional
-                width="100%"
-              />
-
-              <RadioList
-                label="Transport"
-                htmlName="transport"
-                value={transport}
-                onChange={setTransport}
-                orientation="horizontal"
-              >
-                <RadioListItem value="http" label="HTTP" description="Remote Streamable HTTP URL" />
-                <RadioListItem
-                  value="npm"
-                  label="npm package"
-                  description="Runs in a Deno sandbox"
+            <Layout
+              height="auto"
+              header={
+                <DialogHeader
+                  title="Add MCP"
+                  subtitle="Register an HTTP or npm upstream server"
+                  onOpenChange={setIsCreateOpen}
                 />
-              </RadioList>
-
-              {transport === 'http' ? (
-                <TextInput
-                  label="HTTP URL"
-                  htmlName="httpUrl"
-                  value={httpUrl}
-                  onChange={setHttpUrl}
-                  placeholder="https://example.com/mcp"
-                  width="100%"
-                  status={errors.httpUrl ? { type: 'error', message: errors.httpUrl } : undefined}
-                />
-              ) : (
-                <VStack gap={3} hAlign="stretch">
-                  <TextInput
-                    label="npm package"
-                    htmlName="npmPackage"
-                    value={npmPackage}
-                    onChange={setNpmPackage}
-                    placeholder="@modelcontextprotocol/server-everything"
-                    width="100%"
-                    status={
-                      errors.npmPackage ? { type: 'error', message: errors.npmPackage } : undefined
-                    }
+              }
+              content={
+                <LayoutContent>
+                  <McpFormFields
+                    values={createValues}
+                    onChange={(patch) => setCreateValues((current) => ({ ...current, ...patch }))}
+                    errors={errors}
                   />
-                  <HStack gap={3} wrap="wrap">
-                    <TextInput
-                      label="Version"
-                      htmlName="npmVersion"
-                      value={npmVersion}
-                      onChange={setNpmVersion}
-                      placeholder="latest"
-                      isOptional
-                      width={200}
+                </LayoutContent>
+              }
+              footer={
+                <LayoutFooter>
+                  <HStack gap={2} hAlign="end">
+                    <Button
+                      label="Cancel"
+                      variant="secondary"
+                      onClick={() => setIsCreateOpen(false)}
                     />
-                    <TextInput
-                      label="Extra args"
-                      htmlName="npmArgs"
-                      value={npmArgs}
-                      onChange={setNpmArgs}
-                      isOptional
-                      width={320}
+                    <Button
+                      type="submit"
+                      label="Add MCP"
+                      variant="primary"
+                      isLoading={processing}
                     />
                   </HStack>
-                </VStack>
-              )}
-
-              <RadioList
-                label="Authentication"
-                htmlName="authType"
-                value={authType}
-                onChange={setAuthType}
-              >
-                <RadioListItem value="none" label="None" />
-                <RadioListItem value="bearer" label="Bearer token" />
-                <RadioListItem value="header" label="Custom header" />
-                <RadioListItem value="oauth" label="OAuth" />
-              </RadioList>
-
-              {authType === 'bearer' ? (
-                <TextInput
-                  label="Bearer token"
-                  htmlName="authBearer"
-                  type="password"
-                  value={authBearer}
-                  onChange={setAuthBearer}
-                  width="100%"
-                />
-              ) : null}
-
-              {authType === 'header' ? (
-                <HStack gap={3} wrap="wrap">
-                  <TextInput
-                    label="Header name"
-                    htmlName="authHeaderName"
-                    value={authHeaderName}
-                    onChange={setAuthHeaderName}
-                    width={240}
-                  />
-                  <TextInput
-                    label="Header value"
-                    htmlName="authHeaderValue"
-                    type="password"
-                    value={authHeaderValue}
-                    onChange={setAuthHeaderValue}
-                    width={320}
-                  />
-                </HStack>
-              ) : null}
-
-              {authType === 'oauth' ? (
-                <VStack gap={3} hAlign="stretch">
-                  <TextInput
-                    label="Authorize URL"
-                    htmlName="oauthAuthorizeUrl"
-                    value={oauthAuthorizeUrl}
-                    onChange={setOauthAuthorizeUrl}
-                    width="100%"
-                  />
-                  <TextInput
-                    label="Token URL"
-                    htmlName="oauthTokenUrl"
-                    value={oauthTokenUrl}
-                    onChange={setOauthTokenUrl}
-                    width="100%"
-                  />
-                  <HStack gap={3} wrap="wrap">
-                    <TextInput
-                      label="Client ID"
-                      htmlName="oauthClientId"
-                      value={oauthClientId}
-                      onChange={setOauthClientId}
-                      width={240}
-                    />
-                    <TextInput
-                      label="Client secret"
-                      htmlName="oauthClientSecret"
-                      type="password"
-                      value={oauthClientSecret}
-                      onChange={setOauthClientSecret}
-                      width={240}
-                    />
-                    <TextInput
-                      label="Scopes"
-                      htmlName="oauthScopes"
-                      value={oauthScopes}
-                      onChange={setOauthScopes}
-                      isOptional
-                      width={240}
-                    />
-                  </HStack>
-                </VStack>
-              ) : null}
-
-              <CheckboxInput
-                label="Enabled"
-                htmlName="enabled"
-                value={enabled}
-                onChange={setEnabled}
-                description="Disabled MCPs are excluded from the gateway"
-              />
-
-              <Button type="submit" label="Add MCP" variant="primary" isLoading={processing} />
-            </VStack>
+                </LayoutFooter>
+              }
+            />
           )}
         </Form>
-      </Card>
+      </Dialog>
 
-      <VStack gap={3} hAlign="stretch">
-        <Heading level={2}>Registered MCPs</Heading>
-        {mcps.length === 0 ? (
-          <Banner status="info" title="No MCPs yet" container="card" />
-        ) : (
-          <List density="compact" hasDividers>
-            {mcps.map((mcp) => (
-              <ListItem
-                key={mcp.id}
-                href={`/mcps/${mcp.id}`}
-                label={mcp.name}
-                description={`${mcp.transport === 'http' ? mcp.httpUrl : mcp.npmPackage} · ${mcp.authType}`}
-                startContent={
-                  <StatusDot variant={statusVariant(mcp.status)} label={mcp.status} />
+      <Dialog
+        isOpen={Boolean(editingMcp)}
+        onOpenChange={(open) => {
+          if (!open) closeEdit()
+        }}
+        purpose="form"
+        width={640}
+        maxHeight="85vh"
+      >
+        {editingMcp ? (
+          <Form route="mcps.update" routeParams={{ id: editingMcp.id }} method="put">
+            {({ errors, processing }) => (
+              <Layout
+                height="auto"
+                header={
+                  <DialogHeader
+                    title={`Edit ${editingMcp.name}`}
+                    subtitle={editingMcp.slug}
+                    onOpenChange={() => closeEdit()}
+                  />
                 }
-                endContent={
-                  <HStack gap={2} vAlign="center">
-                    {!mcp.enabled ? <Badge label="Disabled" variant="neutral" /> : null}
-                    <Badge label={mcp.status} variant={statusVariant(mcp.status)} />
-                  </HStack>
+                content={
+                  <LayoutContent>
+                    <VStack gap={4} hAlign="stretch">
+                      {editingMcp.lastError ? (
+                        <Banner
+                          status="error"
+                          title="Last connection error"
+                          description={editingMcp.lastError}
+                          container="card"
+                        />
+                      ) : null}
+                      <HStack gap={2} wrap="wrap">
+                        <Button
+                          label="Test connection"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() =>
+                            router.post(`/mcps/${editingMcp.id}/probe`, undefined, {
+                              preserveScroll: true,
+                            })
+                          }
+                        />
+                        {editingMcp.authType === 'oauth' ? (
+                          <Button
+                            label={
+                              editingMcp.hasOauthAccessToken
+                                ? 'Re-authorize OAuth'
+                                : 'Connect OAuth'
+                            }
+                            variant="secondary"
+                            size="sm"
+                            href={`/mcps/${editingMcp.id}/oauth/start`}
+                          />
+                        ) : null}
+                      </HStack>
+                      <McpFormFields
+                        values={editValues}
+                        onChange={(patch) => setEditValues((current) => ({ ...current, ...patch }))}
+                        errors={errors}
+                        secrets={{
+                          hasAuthBearer: editingMcp.hasAuthBearer,
+                          hasAuthHeaderValue: editingMcp.hasAuthHeaderValue,
+                          hasOauthClientSecret: editingMcp.hasOauthClientSecret,
+                          hasOauthAccessToken: editingMcp.hasOauthAccessToken,
+                        }}
+                      />
+                    </VStack>
+                  </LayoutContent>
+                }
+                footer={
+                  <LayoutFooter>
+                    <HStack gap={2} hAlign="between" wrap="wrap">
+                      <Button
+                        label="Delete"
+                        variant="destructive"
+                        onClick={() =>
+                          router.delete(`/mcps/${editingMcp.id}`, {
+                            preserveScroll: true,
+                          })
+                        }
+                      />
+                      <HStack gap={2}>
+                        <Button label="Cancel" variant="secondary" onClick={closeEdit} />
+                        <Button
+                          type="submit"
+                          label="Save changes"
+                          variant="primary"
+                          isLoading={processing}
+                        />
+                      </HStack>
+                    </HStack>
+                  </LayoutFooter>
                 }
               />
-            ))}
-          </List>
-        )}
-      </VStack>
+            )}
+          </Form>
+        ) : null}
+      </Dialog>
     </VStack>
   )
 }

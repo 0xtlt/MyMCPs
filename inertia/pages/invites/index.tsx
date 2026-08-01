@@ -1,12 +1,20 @@
 import { useState } from 'react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
+import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
-import { Card } from '@astryxdesign/core/Card'
-import { HStack, VStack } from '@astryxdesign/core/Layout'
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import {
+  HStack,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  StackItem,
+  VStack,
+} from '@astryxdesign/core/Layout'
+import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
-import { Badge } from '@astryxdesign/core/Badge'
 
 type InviteRow = {
   id: number
@@ -17,7 +25,7 @@ type InviteRow = {
   expiresAt: string
   createdAt: string
   isUsable: boolean
-}
+} & Record<string, unknown>
 
 export default function InvitesIndex({
   invites,
@@ -26,6 +34,7 @@ export default function InvitesIndex({
   invites: InviteRow[]
   appUrl: string
 }) {
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [email, setEmail] = useState('')
 
   function inviteUrl(token: string) {
@@ -40,82 +49,156 @@ export default function InvitesIndex({
     }
   }
 
-  return (
-    <VStack gap={6} maxWidth={720} width="100%">
-      <VStack gap={2}>
-        <Heading level={1}>Invites</Heading>
-        <Text type="body" color="secondary">
-          Invite teammates with a link. There is no public registration—only people you invite can
-          join this instance.
-        </Text>
-      </VStack>
+  function openCreate() {
+    setEmail('')
+    setIsCreateOpen(true)
+  }
 
-      <Card padding={6} width="100%">
+  function inviteStatus(invite: InviteRow): {
+    label: string
+    variant: 'success' | 'info' | 'neutral'
+  } {
+    if (invite.acceptedAt) return { label: 'Accepted', variant: 'success' }
+    if (invite.isUsable) return { label: 'Pending', variant: 'info' }
+    return { label: 'Expired', variant: 'neutral' }
+  }
+
+  const columns: TableColumn<InviteRow>[] = [
+    {
+      key: 'email',
+      header: 'Email',
+      width: proportional(2),
+      renderCell: (invite) => (
+        <Text type="body" weight="bold">
+          {invite.email}
+        </Text>
+      ),
+    },
+    {
+      key: 'expiresAt',
+      header: 'Expires',
+      width: proportional(2),
+      renderCell: (invite) => (
+        <Text type="supporting" color="secondary">
+          {new Date(invite.expiresAt).toLocaleString()}
+        </Text>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: pixel(120),
+      renderCell: (invite) => {
+        const status = inviteStatus(invite)
+        return <Badge label={status.label} variant={status.variant} />
+      },
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: pixel(120),
+      align: 'end',
+      renderCell: (invite) =>
+        invite.isUsable ? (
+          <Button
+            label="Copy link"
+            variant="secondary"
+            size="sm"
+            onClick={() => copyLink(invite.token)}
+          />
+        ) : (
+          <Text type="supporting" color="secondary">
+            —
+          </Text>
+        ),
+    },
+  ]
+
+  return (
+    <VStack gap={6} maxWidth={960} width="100%">
+      <HStack gap={4} hAlign="between" vAlign="start">
+        <StackItem size="fill">
+          <VStack gap={2}>
+            <Heading level={1}>Invites</Heading>
+            <Text type="body" color="secondary">
+              Invite teammates with a link. There is no public registration—only people you invite can
+              join this instance.
+            </Text>
+          </VStack>
+        </StackItem>
+        <Button label="Create invite" variant="primary" onClick={openCreate} />
+      </HStack>
+
+      {invites.length === 0 ? (
+        <Banner
+          status="info"
+          title="No invites yet"
+          description="Create an invite link to add a teammate."
+          container="card"
+        />
+      ) : (
+        <Table
+          data={invites}
+          columns={columns}
+          idKey="id"
+          hasHover
+          density="compact"
+          textOverflow="truncate"
+        />
+      )}
+
+      <Dialog
+        isOpen={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+        purpose="form"
+        width={480}
+      >
         <Form route="invites.store">
           {({ errors, processing }) => (
-            <VStack gap={4} hAlign="stretch">
-              <Heading level={2}>Create invite</Heading>
-              <HStack gap={3} vAlign="end" wrap="wrap">
-                <TextInput
-                  label="Email"
-                  type="email"
-                  htmlName="email"
-                  value={email}
-                  onChange={setEmail}
-                  placeholder="teammate@example.com"
-                  width={320}
-                  status={errors.email ? { type: 'error', message: errors.email } : undefined}
+            <Layout
+              height="auto"
+              header={
+                <DialogHeader
+                  title="Create invite"
+                  subtitle="Send a one-time join link to a teammate"
+                  onOpenChange={setIsCreateOpen}
                 />
-                <Button
-                  type="submit"
-                  label="Create invite"
-                  variant="primary"
-                  isLoading={processing}
-                />
-              </HStack>
-            </VStack>
+              }
+              content={
+                <LayoutContent>
+                  <TextInput
+                    label="Email"
+                    type="email"
+                    htmlName="email"
+                    value={email}
+                    onChange={setEmail}
+                    placeholder="teammate@example.com"
+                    width="100%"
+                    status={errors.email ? { type: 'error', message: errors.email } : undefined}
+                  />
+                </LayoutContent>
+              }
+              footer={
+                <LayoutFooter>
+                  <HStack gap={2} hAlign="end">
+                    <Button
+                      label="Cancel"
+                      variant="secondary"
+                      onClick={() => setIsCreateOpen(false)}
+                    />
+                    <Button
+                      type="submit"
+                      label="Create invite"
+                      variant="primary"
+                      isLoading={processing}
+                    />
+                  </HStack>
+                </LayoutFooter>
+              }
+            />
           )}
         </Form>
-      </Card>
-
-      <VStack gap={3} hAlign="stretch">
-        <Heading level={2}>Pending and past invites</Heading>
-        {invites.length === 0 ? (
-          <Banner status="info" title="No invites yet" container="card" />
-        ) : (
-          invites.map((invite) => (
-            <Card key={invite.id} padding={4} width="100%">
-              <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
-                <VStack gap={1}>
-                  <Text type="body" weight="bold">
-                    {invite.email}
-                  </Text>
-                  <Text type="supporting" color="secondary">
-                    Expires {new Date(invite.expiresAt).toLocaleString()}
-                  </Text>
-                </VStack>
-                <HStack gap={2} vAlign="center">
-                  {invite.acceptedAt ? (
-                    <Badge label="Accepted" variant="success" />
-                  ) : invite.isUsable ? (
-                    <Badge label="Pending" variant="info" />
-                  ) : (
-                    <Badge label="Expired" variant="neutral" />
-                  )}
-                  {invite.isUsable ? (
-                    <Button
-                      label="Copy link"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => copyLink(invite.token)}
-                    />
-                  ) : null}
-                </HStack>
-              </HStack>
-            </Card>
-          ))
-        )}
-      </VStack>
+      </Dialog>
     </VStack>
   )
 }

@@ -5,8 +5,17 @@ import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
 import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
-import { HStack, VStack } from '@astryxdesign/core/Layout'
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import {
+  HStack,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  StackItem,
+  VStack,
+} from '@astryxdesign/core/Layout'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
+import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 
@@ -21,13 +30,25 @@ type TokenRow = {
   lastUsedAt: string | null
   createdAt: string
   isUsable: boolean
-}
+} & Record<string, unknown>
 
 type McpOption = {
   id: number
   name: string
   slug: string
   enabled: boolean
+}
+
+function tokenStatus(token: TokenRow): { label: string; variant: 'success' | 'warning' | 'neutral' } {
+  if (token.revokedAt) return { label: 'Revoked', variant: 'neutral' }
+  if (token.isUsable) return { label: 'Active', variant: 'success' }
+  return { label: 'Expired', variant: 'warning' }
+}
+
+function scopeLabel(token: TokenRow) {
+  if (token.scopeMode === 'all') return 'All MCPs'
+  const count = token.mcpIds.length
+  return `${count} MCP${count === 1 ? '' : 's'}`
 }
 
 export default function TokensIndex({
@@ -41,6 +62,7 @@ export default function TokensIndex({
   gatewayUrl: string
   createdPlaintext: string | null
 }) {
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [name, setName] = useState('')
   const [scopeMode, setScopeMode] = useState('all')
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([])
@@ -54,22 +76,116 @@ export default function TokensIndex({
     }
   }
 
-  return (
-    <VStack gap={6} maxWidth={840} width="100%">
-      <VStack gap={2}>
-        <Heading level={1}>Access tokens</Heading>
-        <Text type="body" color="secondary">
-          Identifiers agents use to call the MyMCPs gateway. Scope a token to all MCPs (new ones
-          included automatically) or to a selected list.
+  function openCreate() {
+    setName('')
+    setScopeMode('all')
+    setSelectedMcpIds([])
+    setExpiresAt('')
+    setIsCreateOpen(true)
+  }
+
+  const columns: TableColumn<TokenRow>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      width: proportional(2),
+      renderCell: (token) => (
+        <Text type="body" weight="bold">
+          {token.name}
         </Text>
-      </VStack>
+      ),
+    },
+    {
+      key: 'tokenPrefix',
+      header: 'Identifier',
+      width: proportional(2),
+      renderCell: (token) => (
+        <Text type="supporting" color="secondary">
+          {token.tokenPrefix}…
+        </Text>
+      ),
+    },
+    {
+      key: 'scopeMode',
+      header: 'Scope',
+      width: proportional(1),
+      renderCell: (token) => (
+        <Text type="supporting" color="secondary">
+          {scopeLabel(token)}
+        </Text>
+      ),
+    },
+    {
+      key: 'expiresAt',
+      header: 'Expires',
+      width: proportional(2),
+      renderCell: (token) => (
+        <Text type="supporting" color="secondary">
+          {token.expiresAt ? new Date(token.expiresAt).toLocaleString() : 'No expiry'}
+        </Text>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      width: pixel(110),
+      renderCell: (token) => {
+        const status = tokenStatus(token)
+        return <Badge label={status.label} variant={status.variant} />
+      },
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      width: pixel(110),
+      align: 'end',
+      renderCell: (token) =>
+        token.isUsable ? (
+          <Form route="tokens.revoke" routeParams={{ id: token.id }}>
+            {({ processing }) => (
+              <Button
+                type="submit"
+                label="Revoke"
+                variant="destructive"
+                size="sm"
+                isLoading={processing}
+              />
+            )}
+          </Form>
+        ) : (
+          <Text type="supporting" color="secondary">
+            —
+          </Text>
+        ),
+    },
+  ]
+
+  return (
+    <VStack gap={6} maxWidth={960} width="100%">
+      <HStack gap={4} hAlign="between" vAlign="start">
+        <StackItem size="fill">
+          <VStack gap={2}>
+            <Heading level={1}>Access tokens</Heading>
+            <Text type="body" color="secondary">
+              Identifiers agents use to call the MyMCPs gateway. Scope a token to all MCPs (new ones
+              included automatically) or to a selected list.
+            </Text>
+          </VStack>
+        </StackItem>
+        <Button label="Create token" variant="primary" onClick={openCreate} />
+      </HStack>
 
       <Card padding={6} width="100%">
         <VStack gap={3} hAlign="stretch">
           <Heading level={2}>Gateway URL</Heading>
           <HStack gap={3} vAlign="center" wrap="wrap">
             <Text type="body">{gatewayUrl}</Text>
-            <Button label="Copy URL" variant="secondary" size="sm" onClick={() => copyText(gatewayUrl)} />
+            <Button
+              label="Copy URL"
+              variant="secondary"
+              size="sm"
+              onClick={() => copyText(gatewayUrl)}
+            />
           </HStack>
           <Text type="supporting" color="secondary">
             Send Authorization: Bearer &lt;token&gt; on every request.
@@ -86,130 +202,127 @@ export default function TokensIndex({
         />
       ) : null}
 
-      <Card padding={6} width="100%">
+      {tokens.length === 0 ? (
+        <Banner
+          status="info"
+          title="No tokens yet"
+          description="Create a token so agents can call the gateway."
+          container="card"
+        />
+      ) : (
+        <Table
+          data={tokens}
+          columns={columns}
+          idKey="id"
+          hasHover
+          density="compact"
+          textOverflow="truncate"
+        />
+      )}
+
+      <Dialog
+        isOpen={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+        purpose="form"
+        width={520}
+        maxHeight="85vh"
+      >
         <Form route="tokens.store">
           {({ errors, processing }) => (
-            <VStack gap={4} hAlign="stretch">
-              <Heading level={2}>Create token</Heading>
-              <TextInput
-                label="Name"
-                htmlName="name"
-                value={name}
-                onChange={setName}
-                placeholder="Cursor agent"
-                width="100%"
-                status={errors.name ? { type: 'error', message: errors.name } : undefined}
-              />
+            <Layout
+              height="auto"
+              header={
+                <DialogHeader
+                  title="Create token"
+                  subtitle="Issue an identifier for the /mcp gateway"
+                  onOpenChange={setIsCreateOpen}
+                />
+              }
+              content={
+                <LayoutContent>
+                  <VStack gap={4} hAlign="stretch">
+                    <TextInput
+                      label="Name"
+                      htmlName="name"
+                      value={name}
+                      onChange={setName}
+                      placeholder="Cursor agent"
+                      width="100%"
+                      status={errors.name ? { type: 'error', message: errors.name } : undefined}
+                    />
 
-              <RadioList
-                label="MCP access"
-                htmlName="scopeMode"
-                value={scopeMode}
-                onChange={setScopeMode}
-                description="All includes every enabled MCP, including ones added later."
-              >
-                <RadioListItem value="all" label="All MCPs" />
-                <RadioListItem value="selected" label="Selected MCPs" />
-              </RadioList>
-
-              {scopeMode === 'selected' ? (
-                <>
-                  {selectedMcpIds.map((id) => (
-                    <input key={id} type="hidden" name="mcpIds[]" value={id} />
-                  ))}
-                  {mcps.length === 0 ? (
-                    <Banner status="warning" title="Add an MCP first" container="card" />
-                  ) : (
-                    <CheckboxList
-                      label="MCPs"
-                      value={selectedMcpIds}
-                      onChange={setSelectedMcpIds}
-                      hasDividers
+                    <RadioList
+                      label="MCP access"
+                      htmlName="scopeMode"
+                      value={scopeMode}
+                      onChange={setScopeMode}
+                      description="All includes every enabled MCP, including ones added later."
                     >
-                      {mcps.map((mcp) => (
-                        <CheckboxListItem
-                          key={mcp.id}
-                          value={String(mcp.id)}
-                          label={mcp.name}
-                          description={mcp.enabled ? mcp.slug : `${mcp.slug} (disabled)`}
-                        />
-                      ))}
-                    </CheckboxList>
-                  )}
-                </>
-              ) : null}
+                      <RadioListItem value="all" label="All MCPs" />
+                      <RadioListItem value="selected" label="Selected MCPs" />
+                    </RadioList>
 
-              <TextInput
-                label="Expires at (UTC)"
-                htmlName="expiresAt"
-                type="datetime-local"
-                value={expiresAt}
-                onChange={setExpiresAt}
-                isOptional
-                description="Leave empty for no expiration"
-                width={320}
-              />
+                    {scopeMode === 'selected' ? (
+                      <>
+                        {selectedMcpIds.map((id) => (
+                          <input key={id} type="hidden" name="mcpIds[]" value={id} />
+                        ))}
+                        {mcps.length === 0 ? (
+                          <Banner status="warning" title="Add an MCP first" container="card" />
+                        ) : (
+                          <CheckboxList
+                            label="MCPs"
+                            value={selectedMcpIds}
+                            onChange={setSelectedMcpIds}
+                            hasDividers
+                          >
+                            {mcps.map((mcp) => (
+                              <CheckboxListItem
+                                key={mcp.id}
+                                value={String(mcp.id)}
+                                label={mcp.name}
+                                description={mcp.enabled ? mcp.slug : `${mcp.slug} (disabled)`}
+                              />
+                            ))}
+                          </CheckboxList>
+                        )}
+                      </>
+                    ) : null}
 
-              <Button
-                type="submit"
-                label="Create token"
-                variant="primary"
-                isLoading={processing}
-              />
-            </VStack>
+                    <TextInput
+                      label="Expires at (UTC)"
+                      htmlName="expiresAt"
+                      type="datetime-local"
+                      value={expiresAt}
+                      onChange={setExpiresAt}
+                      isOptional
+                      description="Leave empty for no expiration"
+                      width="100%"
+                    />
+                  </VStack>
+                </LayoutContent>
+              }
+              footer={
+                <LayoutFooter>
+                  <HStack gap={2} hAlign="end">
+                    <Button
+                      label="Cancel"
+                      variant="secondary"
+                      onClick={() => setIsCreateOpen(false)}
+                    />
+                    <Button
+                      type="submit"
+                      label="Create token"
+                      variant="primary"
+                      isLoading={processing}
+                    />
+                  </HStack>
+                </LayoutFooter>
+              }
+            />
           )}
         </Form>
-      </Card>
-
-      <VStack gap={3} hAlign="stretch">
-        <Heading level={2}>Tokens</Heading>
-        {tokens.length === 0 ? (
-          <Banner status="info" title="No tokens yet" container="card" />
-        ) : (
-          tokens.map((token) => (
-            <Card key={token.id} padding={4} width="100%">
-              <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
-                <VStack gap={1}>
-                  <Text type="body" weight="bold">
-                    {token.name}
-                  </Text>
-                  <Text type="supporting" color="secondary">
-                    {token.tokenPrefix}… ·{' '}
-                    {token.scopeMode === 'all'
-                      ? 'All MCPs'
-                      : `${token.mcpIds.length} MCP${token.mcpIds.length === 1 ? '' : 's'}`}
-                    {token.expiresAt
-                      ? ` · expires ${new Date(token.expiresAt).toLocaleString()}`
-                      : ' · no expiry'}
-                  </Text>
-                </VStack>
-                <HStack gap={2} vAlign="center">
-                  {token.revokedAt ? (
-                    <Badge label="Revoked" variant="neutral" />
-                  ) : token.isUsable ? (
-                    <Badge label="Active" variant="success" />
-                  ) : (
-                    <Badge label="Expired" variant="warning" />
-                  )}
-                  {token.isUsable ? (
-                    <Form route="tokens.revoke" routeParams={{ id: token.id }}>
-                      {({ processing }) => (
-                        <Button
-                          type="submit"
-                          label="Revoke"
-                          variant="destructive"
-                          size="sm"
-                          isLoading={processing}
-                        />
-                      )}
-                    </Form>
-                  ) : null}
-                </HStack>
-              </HStack>
-            </Card>
-          ))
-        )}
-      </VStack>
+      </Dialog>
     </VStack>
   )
 }

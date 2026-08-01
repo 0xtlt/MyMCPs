@@ -108,10 +108,12 @@ function validateTransportFields(payload: {
 }
 
 export default class McpsController {
-  async index({ inertia }: HttpContext) {
+  async index({ inertia, session }: HttpContext) {
     const mcps = await Mcp.query().orderBy('name', 'asc')
+    const editingMcpId = session.flashMessages.get('editingMcpId') as number | undefined
     return inertia.render('mcps/index', {
       mcps: mcps.map(serializeMcp),
+      editingMcpId: editingMcpId ?? null,
     })
   }
 
@@ -147,16 +149,17 @@ export default class McpsController {
 
     await testAndUpdateStatus(mcp)
     session.flash('success', 'MCP created')
-    return response.redirect().toRoute('mcps.show', { id: mcp.id })
+    return response.redirect().toRoute('mcps.index')
   }
 
-  async show({ params, inertia, response, session }: HttpContext) {
+  async show({ params, response, session }: HttpContext) {
     const mcp = await Mcp.find(params.id)
     if (!mcp) {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')
     }
-    return inertia.render('mcps/show', { mcp: serializeMcp(mcp) })
+    session.flash('editingMcpId', mcp.id)
+    return response.redirect().toRoute('mcps.index')
   }
 
   async update({ params, request, response, session }: HttpContext) {
@@ -170,7 +173,8 @@ export default class McpsController {
     const error = validateTransportFields(payload)
     if (error) {
       session.flash('error', error)
-      return response.redirect().toRoute('mcps.show', { id: mcp.id })
+      session.flash('editingMcpId', mcp.id)
+      return response.redirect().toRoute('mcps.index')
     }
 
     mcp.name = payload.name
@@ -194,7 +198,7 @@ export default class McpsController {
 
     await testAndUpdateStatus(mcp)
     session.flash('success', 'MCP updated')
-    return response.redirect().toRoute('mcps.show', { id: mcp.id })
+    return response.redirect().toRoute('mcps.index')
   }
 
   async destroy({ params, response, session }: HttpContext) {
@@ -220,7 +224,8 @@ export default class McpsController {
     } else {
       session.flash('error', mcp.lastError || 'Connection failed')
     }
-    return response.redirect().toRoute('mcps.show', { id: mcp.id })
+    session.flash('editingMcpId', mcp.id)
+    return response.redirect().toRoute('mcps.index')
   }
 
   async oauthStart({ params, response, session }: HttpContext) {
@@ -231,7 +236,8 @@ export default class McpsController {
     }
     if (mcp.authType !== 'oauth') {
       session.flash('error', 'This MCP is not configured for OAuth')
-      return response.redirect().toRoute('mcps.show', { id: mcp.id })
+      session.flash('editingMcpId', mcp.id)
+      return response.redirect().toRoute('mcps.index')
     }
 
     try {
@@ -239,7 +245,8 @@ export default class McpsController {
       return response.redirect(buildAuthorizeRedirect(mcp, oauth))
     } catch (error) {
       session.flash('error', error instanceof Error ? error.message : 'OAuth start failed')
-      return response.redirect().toRoute('mcps.show', { id: mcp.id })
+      session.flash('editingMcpId', mcp.id)
+      return response.redirect().toRoute('mcps.index')
     }
   }
 
@@ -278,6 +285,7 @@ export default class McpsController {
       session.flash('error', mcp.lastError)
     }
 
-    return response.redirect().toRoute('mcps.show', { id: mcp.id })
+    session.flash('editingMcpId', mcp.id)
+    return response.redirect().toRoute('mcps.index')
   }
 }
