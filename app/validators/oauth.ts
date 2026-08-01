@@ -10,9 +10,9 @@ export const oauthSessionValidator = vine.create({
   mcpId: vine.number(),
   codeVerifier: vine.string().minLength(1),
   state: vine.string().minLength(1),
-  redirectUri: vine.string().url(),
-  authorizationServerUrl: vine.string().url(),
-  resource: vine.string().url().optional(),
+  redirectUri: vine.string().url({ require_tld: false }),
+  authorizationServerUrl: vine.string().url({ require_tld: false }),
+  resource: vine.string().url({ require_tld: false }).optional(),
   clientId: vine.string().minLength(1),
 })
 
