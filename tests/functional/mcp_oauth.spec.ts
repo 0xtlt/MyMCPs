@@ -126,13 +126,19 @@ test.group('MCP OAuth routes', (group) => {
         status: 'draft',
       })
 
-      await client
+      const loginResponse = await client
         .post('/login')
         .withCsrfToken()
         .redirects(0)
         .form({ email: 'admin@example.com', password: 'password123' })
+      const loginCookies = Object.fromEntries(
+        Object.entries(loginResponse.cookies()).map(([name, cookie]) => [name, cookie.value])
+      )
 
-      const startResponse = await client.get(`/mcps/${mcp.id}/oauth/start`).redirects(0)
+      const startResponse = await client
+        .get(`/mcps/${mcp.id}/oauth/start`)
+        .cookies(loginCookies)
+        .redirects(0)
 
       startResponse.assertStatus(302)
       const authorizationUrl = new URL(startResponse.header('location')!)
@@ -143,8 +149,12 @@ test.group('MCP OAuth routes', (group) => {
       const callbackUrl = new URL(authorizationUrl.searchParams.get('redirect_uri')!)
       callbackUrl.searchParams.set('code', 'authorization-code')
       callbackUrl.searchParams.set('state', authorizationUrl.searchParams.get('state')!)
+      const callbackCookies = Object.fromEntries(
+        Object.entries(startResponse.cookies()).map(([name, cookie]) => [name, cookie.value])
+      )
       const callbackResponse = await client
         .get(`${callbackUrl.pathname}${callbackUrl.search}`)
+        .cookies(callbackCookies)
         .redirects(0)
 
       callbackResponse.assertStatus(302)
