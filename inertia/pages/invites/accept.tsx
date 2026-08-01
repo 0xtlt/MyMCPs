@@ -8,42 +8,41 @@ import { VStack } from '@astryxdesign/core/Layout'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 
-export default function Login() {
-  const [email, setEmail] = useState('')
+export default function AcceptInvite({ token, email }: { token: string; email: string }) {
+  const [fullName, setFullName] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirmation, setPasswordConfirmation] = useState('')
 
   return (
     <Center axis="both" style={{ minHeight: '100%' }}>
       <VStack gap={4} hAlign="center" maxWidth={400} width="100%">
         <Card padding={8} width="100%">
-          <Form route="session.store">
+          <Form route="invites.accept" routeParams={{ token }}>
             {({ errors, processing }) => (
               <VStack gap={4} hAlign="stretch">
                 <VStack gap={1} hAlign="center">
-                  <Heading level={1}>Sign in</Heading>
+                  <Heading level={1}>Join MyMCPs</Heading>
                   <Text type="body" color="secondary" justify="center">
-                    Access this self-hosted MyMCPs instance. New users join by invite only.
+                    You were invited as {email}
                   </Text>
                 </VStack>
 
-                {errors.email || errors.password ? (
+                {errors.fullName || errors.password ? (
                   <Banner
                     status="error"
-                    title={errors.email || errors.password || 'Unable to sign in'}
+                    title={errors.fullName || errors.password || 'Unable to accept invite'}
                     container="card"
                   />
                 ) : null}
 
                 <TextInput
-                  label="Email"
-                  type="email"
-                  htmlName="email"
-                  value={email}
-                  onChange={setEmail}
-                  autoComplete="username"
+                  label="Full name"
+                  htmlName="fullName"
+                  value={fullName}
+                  onChange={setFullName}
                   size="lg"
                   width="100%"
-                  status={errors.email ? { type: 'error', message: errors.email } : undefined}
+                  status={errors.fullName ? { type: 'error', message: errors.fullName } : undefined}
                 />
 
                 <TextInput
@@ -52,15 +51,31 @@ export default function Login() {
                   htmlName="password"
                   value={password}
                   onChange={setPassword}
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                   size="lg"
                   width="100%"
                   status={errors.password ? { type: 'error', message: errors.password } : undefined}
                 />
 
+                <TextInput
+                  label="Confirm password"
+                  type="password"
+                  htmlName="passwordConfirmation"
+                  value={passwordConfirmation}
+                  onChange={setPasswordConfirmation}
+                  autoComplete="new-password"
+                  size="lg"
+                  width="100%"
+                  status={
+                    errors.passwordConfirmation
+                      ? { type: 'error', message: errors.passwordConfirmation }
+                      : undefined
+                  }
+                />
+
                 <Button
                   type="submit"
-                  label="Sign in"
+                  label="Create account"
                   variant="primary"
                   size="lg"
                   width="100%"

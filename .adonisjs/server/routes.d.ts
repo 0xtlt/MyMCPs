@@ -4,27 +4,37 @@ type ParamValue = string | number | bigint | boolean
 
 export type ScannedRoutes = {
   ALL: {
-    'home': { paramsTuple?: []; params?: {} }
-    'new_account.create': { paramsTuple?: []; params?: {} }
-    'new_account.store': { paramsTuple?: []; params?: {} }
+    'onboarding.show': { paramsTuple?: []; params?: {} }
+    'onboarding.store': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
     'session.store': { paramsTuple?: []; params?: {} }
+    'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
+    'invites.accept': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
+    'home': { paramsTuple?: []; params?: {} }
     'session.destroy': { paramsTuple?: []; params?: {} }
+    'invites.index': { paramsTuple?: []; params?: {} }
+    'invites.store': { paramsTuple?: []; params?: {} }
   }
   GET: {
-    'home': { paramsTuple?: []; params?: {} }
-    'new_account.create': { paramsTuple?: []; params?: {} }
+    'onboarding.show': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
+    'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
+    'home': { paramsTuple?: []; params?: {} }
+    'invites.index': { paramsTuple?: []; params?: {} }
   }
   HEAD: {
-    'home': { paramsTuple?: []; params?: {} }
-    'new_account.create': { paramsTuple?: []; params?: {} }
+    'onboarding.show': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
+    'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
+    'home': { paramsTuple?: []; params?: {} }
+    'invites.index': { paramsTuple?: []; params?: {} }
   }
   POST: {
-    'new_account.store': { paramsTuple?: []; params?: {} }
+    'onboarding.store': { paramsTuple?: []; params?: {} }
     'session.store': { paramsTuple?: []; params?: {} }
+    'invites.accept': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'session.destroy': { paramsTuple?: []; params?: {} }
+    'invites.store': { paramsTuple?: []; params?: {} }
   }
 }
 declare module '@adonisjs/core/types/http' {

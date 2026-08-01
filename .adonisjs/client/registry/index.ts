@@ -6,23 +6,17 @@ import type { ApiDefinition } from './tree.d.ts'
 const placeholder: any = {}
 
 const routes = {
-  'home': {
+  'onboarding.show': {
     methods: ["GET","HEAD"],
-    pattern: '/',
-    tokens: [{"old":"/","type":0,"val":"/","end":""}],
-    types: placeholder as Registry['home']['types'],
+    pattern: '/onboarding',
+    tokens: [{"old":"/onboarding","type":0,"val":"onboarding","end":""}],
+    types: placeholder as Registry['onboarding.show']['types'],
   },
-  'new_account.create': {
-    methods: ["GET","HEAD"],
-    pattern: '/signup',
-    tokens: [{"old":"/signup","type":0,"val":"signup","end":""}],
-    types: placeholder as Registry['new_account.create']['types'],
-  },
-  'new_account.store': {
+  'onboarding.store': {
     methods: ["POST"],
-    pattern: '/signup',
-    tokens: [{"old":"/signup","type":0,"val":"signup","end":""}],
-    types: placeholder as Registry['new_account.store']['types'],
+    pattern: '/onboarding',
+    tokens: [{"old":"/onboarding","type":0,"val":"onboarding","end":""}],
+    types: placeholder as Registry['onboarding.store']['types'],
   },
   'session.create': {
     methods: ["GET","HEAD"],
@@ -36,11 +30,41 @@ const routes = {
     tokens: [{"old":"/login","type":0,"val":"login","end":""}],
     types: placeholder as Registry['session.store']['types'],
   },
+  'invites.show': {
+    methods: ["GET","HEAD"],
+    pattern: '/invite/:token',
+    tokens: [{"old":"/invite/:token","type":0,"val":"invite","end":""},{"old":"/invite/:token","type":1,"val":"token","end":""}],
+    types: placeholder as Registry['invites.show']['types'],
+  },
+  'invites.accept': {
+    methods: ["POST"],
+    pattern: '/invite/:token',
+    tokens: [{"old":"/invite/:token","type":0,"val":"invite","end":""},{"old":"/invite/:token","type":1,"val":"token","end":""}],
+    types: placeholder as Registry['invites.accept']['types'],
+  },
+  'home': {
+    methods: ["GET","HEAD"],
+    pattern: '/',
+    tokens: [{"old":"/","type":0,"val":"/","end":""}],
+    types: placeholder as Registry['home']['types'],
+  },
   'session.destroy': {
     methods: ["POST"],
     pattern: '/logout',
     tokens: [{"old":"/logout","type":0,"val":"logout","end":""}],
     types: placeholder as Registry['session.destroy']['types'],
+  },
+  'invites.index': {
+    methods: ["GET","HEAD"],
+    pattern: '/invites',
+    tokens: [{"old":"/invites","type":0,"val":"invites","end":""}],
+    types: placeholder as Registry['invites.index']['types'],
+  },
+  'invites.store': {
+    methods: ["POST"],
+    pattern: '/invites',
+    tokens: [{"old":"/invites","type":0,"val":"invites","end":""}],
+    types: placeholder as Registry['invites.store']['types'],
   },
 } as const satisfies Record<string, AdonisEndpoint>
 

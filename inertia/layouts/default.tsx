@@ -12,8 +12,13 @@ import { Text } from '@astryxdesign/core/Text'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
 
 export default function Layout({ children }: { children: ReactElement<Data.SharedProps> }) {
-  const { url } = usePage()
+  const page = usePage<Data.SharedProps>()
+  const { url } = page
   const user = children.props.user
+  const setupComplete = children.props.setupComplete ?? true
+  const isOnboarding = url.startsWith('/onboarding')
+  const isAuthScreen =
+    isOnboarding || url.startsWith('/login') || url.startsWith('/invite/')
 
   useEffect(() => {
     toast.dismiss()
@@ -39,12 +44,23 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
             heading={
               <TopNavHeading
                 heading="MyMCPs"
-                href="/"
+                href={user ? '/' : undefined}
                 logo={<NavIcon icon={<Icon icon="wrench" size="sm" color="inherit" />} />}
               />
             }
             startContent={
-              <TopNavItem label="Home" href="/" isSelected={url === '/'} />
+              user ? (
+                <>
+                  <TopNavItem label="Home" href="/" isSelected={url === '/'} />
+                  {user.isAdmin ? (
+                    <TopNavItem
+                      label="Invites"
+                      href="/invites"
+                      isSelected={url.startsWith('/invites')}
+                    />
+                  ) : null}
+                </>
+              ) : undefined
             }
             endContent={
               user ? (
@@ -56,12 +72,9 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
                     <Button type="submit" label="Log out" variant="ghost" size="sm" />
                   </Form>
                 </HStack>
-              ) : (
-                <HStack gap={2} vAlign="center">
-                  <TopNavItem label="Signup" href="/signup" isSelected={url.startsWith('/signup')} />
-                  <TopNavItem label="Login" href="/login" isSelected={url.startsWith('/login')} />
-                </HStack>
-              )
+              ) : setupComplete && !isAuthScreen ? (
+                <TopNavItem label="Login" href="/login" isSelected={url.startsWith('/login')} />
+              ) : undefined
             }
           />
         }
