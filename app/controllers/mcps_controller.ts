@@ -11,7 +11,6 @@ import {
   readOauthSession,
   startOauthSession,
 } from '#services/upstream/oauth'
-import { sanitizeErrorMessage } from '#services/error_message'
 import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
 
@@ -188,7 +187,10 @@ export default class McpsController {
       const oauth = startOauthSession(session, mcp)
       return response.redirect(buildAuthorizeRedirect(mcp, oauth))
     } catch (error) {
-      session.flash('error', sanitizeErrorMessage(error))
+      session.flash(
+        'error',
+        error instanceof Error ? error.message : 'Failed to start OAuth'
+      )
       session.flash('editingMcpId', mcp.id)
       return response.redirect().toRoute('mcps.index')
     }
@@ -222,7 +224,7 @@ export default class McpsController {
       session.flash('success', 'OAuth connected')
     } catch (error) {
       mcp.status = 'error'
-      mcp.lastError = sanitizeErrorMessage(error)
+      mcp.lastError = error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
       await mcp.save()
       session.flash('error', mcp.lastError)
     }

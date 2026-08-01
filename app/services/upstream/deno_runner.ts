@@ -7,7 +7,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type Mcp from '#models/mcp'
 import type { UpstreamTool } from '#services/upstream/http_client'
-import { sanitizeErrorMessage } from '#services/error_message'
 
 export type ConnectedDenoUpstream = {
   client: Client
@@ -88,8 +87,9 @@ export async function connectDenoUpstream(mcp: Mcp): Promise<ConnectedDenoUpstre
   try {
     await client.connect(transport)
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
     throw new Error(
-      `Failed to start Deno npm MCP "${mcp.npmPackage}". Is Deno installed? ${sanitizeErrorMessage(error, 300)}`
+      `Failed to start Deno npm MCP "${mcp.npmPackage}". Is Deno installed? ${detail.slice(0, 300)}`
     )
   }
 

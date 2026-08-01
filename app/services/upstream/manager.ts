@@ -11,7 +11,6 @@ import {
   listDenoTools,
   type ConnectedDenoUpstream,
 } from '#services/upstream/deno_runner'
-import { sanitizeErrorMessage } from '#services/error_message'
 
 export type ConnectedUpstream = ConnectedHttpUpstream | ConnectedDenoUpstream
 
@@ -107,7 +106,7 @@ export async function testAndUpdateStatus(mcp: Mcp) {
     await mcp.save()
   } catch (error) {
     mcp.status = 'error'
-    mcp.lastError = sanitizeErrorMessage(error)
+    mcp.lastError = error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
     await mcp.save()
   }
   return mcp

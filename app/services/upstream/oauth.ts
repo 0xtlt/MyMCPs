@@ -5,7 +5,6 @@ import type { Infer } from '@vinejs/vine/types'
 import env from '#start/env'
 import Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
-import { sanitizeErrorMessage } from '#services/error_message'
 import {
   oauthSessionValidator,
   oauthTokenResponseValidator,
@@ -86,8 +85,11 @@ export function buildAuthorizeRedirect(mcp: Mcp, oauth: OauthSession) {
 
 async function readFailedOauthBody(response: Response) {
   try {
-    const text = await response.text()
-    return sanitizeErrorMessage(text, 300)
+    const text = (await response.text()).trim()
+    if (!text) {
+      return 'empty response body'
+    }
+    return text.length > 300 ? `${text.slice(0, 300)}…` : text
   } catch {
     return 'unable to read response body'
   }
