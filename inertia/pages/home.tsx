@@ -14,10 +14,34 @@ export default function Home() {
       <VStack gap={2}>
         <Heading level={1}>Dashboard</Heading>
         <Text type="body" color="secondary">
-          Signed in as {user?.fullName || user?.email}. This instance is ready—connect upstream MCPs
-          next (coming soon).
+          Signed in as {user?.fullName || user?.email}. Register upstream MCPs and issue access
+          tokens for your agents.
         </Text>
       </VStack>
+
+      <Card padding={6} width="100%">
+        <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
+          <VStack gap={1}>
+            <Heading level={2}>MCPs</Heading>
+            <Text type="body" color="secondary">
+              Add HTTP or npm upstream servers, configure auth, and inspect connection status.
+            </Text>
+          </VStack>
+          <Button label="Manage MCPs" variant="primary" href="/mcps" />
+        </HStack>
+      </Card>
+
+      <Card padding={6} width="100%">
+        <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
+          <VStack gap={1}>
+            <Heading level={2}>Access tokens</Heading>
+            <Text type="body" color="secondary">
+              Create identifiers with access to all MCPs or a selected subset for the /mcp gateway.
+            </Text>
+          </VStack>
+          <Button label="Manage tokens" variant="primary" href="/tokens" />
+        </HStack>
+      </Card>
 
       {user?.isAdmin ? (
         <Card padding={6} width="100%">
@@ -28,7 +52,7 @@ export default function Home() {
                 Invite people to this instance. There is no public registration.
               </Text>
             </VStack>
-            <Button label="Manage invites" variant="primary" href="/invites" />
+            <Button label="Manage invites" variant="secondary" href="/invites" />
           </HStack>
         </Card>
       ) : null}

@@ -52,6 +52,16 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
               user ? (
                 <>
                   <TopNavItem label="Home" href="/" isSelected={url === '/'} />
+                  <TopNavItem
+                    label="MCPs"
+                    href="/mcps"
+                    isSelected={url.startsWith('/mcps')}
+                  />
+                  <TopNavItem
+                    label="Tokens"
+                    href="/tokens"
+                    isSelected={url.startsWith('/tokens')}
+                  />
                   {user.isAdmin ? (
                     <TopNavItem
                       label="Invites"

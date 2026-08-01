@@ -7,6 +7,48 @@
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 import { DateTime } from 'luxon'
 
+export class AccessTokenMcpSchema extends BaseModel {
+  static $columns = ['accessTokenId', 'createdAt', 'id', 'mcpId', 'updatedAt'] as const
+  $columns = AccessTokenMcpSchema.$columns
+  @column()
+  declare accessTokenId: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mcpId: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class AccessTokenSchema extends BaseModel {
+  static $columns = ['createdAt', 'createdBy', 'expiresAt', 'id', 'lastUsedAt', 'name', 'revokedAt', 'scopeMode', 'tokenHash', 'tokenPrefix', 'updatedAt'] as const
+  $columns = AccessTokenSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdBy: number
+  @column.dateTime()
+  declare expiresAt: DateTime | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column.dateTime()
+  declare lastUsedAt: DateTime | null
+  @column()
+  declare name: string
+  @column.dateTime()
+  declare revokedAt: DateTime | null
+  @column()
+  declare scopeMode: string
+  @column()
+  declare tokenHash: string
+  @column()
+  declare tokenPrefix: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class InviteSchema extends BaseModel {
   static $columns = ['acceptedAt', 'createdAt', 'createdBy', 'email', 'expiresAt', 'id', 'role', 'token', 'updatedAt'] as const
   $columns = InviteSchema.$columns
@@ -26,6 +68,65 @@ export class InviteSchema extends BaseModel {
   declare role: string
   @column()
   declare token: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class McpSchema extends BaseModel {
+  static $columns = ['authBearer', 'authHeaderName', 'authHeaderValue', 'authType', 'createdAt', 'createdBy', 'description', 'enabled', 'httpUrl', 'id', 'lastError', 'name', 'npmArgs', 'npmPackage', 'npmVersion', 'oauthAccessToken', 'oauthAuthorizeUrl', 'oauthClientId', 'oauthClientSecret', 'oauthRefreshToken', 'oauthScopes', 'oauthTokenExpiresAt', 'oauthTokenUrl', 'slug', 'status', 'transport', 'updatedAt'] as const
+  $columns = McpSchema.$columns
+  @column()
+  declare authBearer: string | null
+  @column()
+  declare authHeaderName: string | null
+  @column()
+  declare authHeaderValue: string | null
+  @column()
+  declare authType: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdBy: number
+  @column()
+  declare description: string | null
+  @column()
+  declare enabled: boolean
+  @column()
+  declare httpUrl: string | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare lastError: string | null
+  @column()
+  declare name: string
+  @column()
+  declare npmArgs: string | null
+  @column()
+  declare npmPackage: string | null
+  @column()
+  declare npmVersion: string | null
+  @column()
+  declare oauthAccessToken: string | null
+  @column()
+  declare oauthAuthorizeUrl: string | null
+  @column()
+  declare oauthClientId: string | null
+  @column()
+  declare oauthClientSecret: string | null
+  @column()
+  declare oauthRefreshToken: string | null
+  @column()
+  declare oauthScopes: string | null
+  @column.dateTime()
+  declare oauthTokenExpiresAt: DateTime | null
+  @column()
+  declare oauthTokenUrl: string | null
+  @column()
+  declare slug: string
+  @column()
+  declare status: string
+  @column()
+  declare transport: string
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
 }

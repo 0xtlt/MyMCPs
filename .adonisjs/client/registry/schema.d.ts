@@ -31,6 +31,30 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/onboarding_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
+  'gateway.handle': {
+    methods: ["POST"]
+    pattern: '/mcp'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_controller').default['handle']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_controller').default['handle']>>>
+    }
+  }
+  'gateway.handleGet': {
+    methods: ["GET","HEAD"]
+    pattern: '/mcp'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_controller').default['handle']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_controller').default['handle']>>>
+    }
+  }
   'session.create': {
     methods: ["GET","HEAD"]
     pattern: '/login'
@@ -125,6 +149,138 @@ export interface Registry {
       query: ExtractQuery<InferInput<(typeof import('#validators/user').createInviteValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/invites_controller').default['store']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/invites_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'mcps.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/mcps'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['index']>>>
+    }
+  }
+  'mcps.store': {
+    methods: ["POST"]
+    pattern: '/mcps'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/mcp').createMcpValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/mcp').createMcpValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'mcps.oauthCallback': {
+    methods: ["GET","HEAD"]
+    pattern: '/mcps/oauth/callback'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthCallback']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthCallback']>>>
+    }
+  }
+  'mcps.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/mcps/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['show']>>>
+    }
+  }
+  'mcps.update': {
+    methods: ["PUT"]
+    pattern: '/mcps/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/mcp').updateMcpValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/mcp').updateMcpValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'mcps.destroy': {
+    methods: ["DELETE"]
+    pattern: '/mcps/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['destroy']>>>
+    }
+  }
+  'mcps.probe': {
+    methods: ["POST"]
+    pattern: '/mcps/:id/probe'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['probe']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['probe']>>>
+    }
+  }
+  'mcps.oauthStart': {
+    methods: ["GET","HEAD"]
+    pattern: '/mcps/:id/oauth/start'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthStart']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthStart']>>>
+    }
+  }
+  'tokens.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/tokens'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['index']>>>
+    }
+  }
+  'tokens.store': {
+    methods: ["POST"]
+    pattern: '/tokens'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/mcp').createAccessTokenValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/mcp').createAccessTokenValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'tokens.revoke': {
+    methods: ["POST"]
+    pattern: '/tokens/:id/revoke'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['revoke']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['revoke']>>>
     }
   }
 }

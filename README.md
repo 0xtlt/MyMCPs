@@ -15,16 +15,19 @@ This is **not** a public SaaS signup product. You install an instance, complete 
 1. **Fresh install** — any URL redirects to `/onboarding` to create the admin (no public marketing home)
 2. **Afterwards** — `/` is the signed-in dashboard; guests are sent to `/login`
 3. **Teammates** — invite-only (admin creates a link; no email sending required)
+4. **Agents** — use an access token as `Authorization: Bearer …` against `POST/GET /mcp`
 
 ## Quick start
 
-Requirements: **Node.js ≥ 24**, **pnpm**.
+Requirements: **Node.js ≥ 24**, **pnpm**. For **npm-transport MCPs**, also install [Deno](https://deno.land/) so packages run in a permission-sandboxed subprocess (they cannot read the Adonis SQLite DB or `.env`).
 
 ```bash
 pnpm install
 cp .env.example .env   # if needed; scaffold may already have .env
 pnpm run dev           # node ace serve --hmr
 ```
+
+Optional: set `DENO_PATH` if `deno` is not on your `PATH`.
 
 Open the app URL (default `http://localhost:3333`), complete onboarding, then sign in on later visits.
 
@@ -34,16 +37,20 @@ Migrations run as part of a fresh scaffold; for an existing DB:
 node ace migration:run
 ```
 
+## Product surfaces
+
+- **MCPs** — register HTTP (Streamable HTTP) or npm upstreams with none / bearer / header / OAuth auth
+- **Access tokens** — identifiers scoped to all MCPs (auto-includes new ones) or a selected list; optional expiry
+- **Gateway** — `/mcp` aggregates namespaced tools (`{slug}__{toolName}`) for allowed upstreams
+
 ## Stack
 
 - [AdonisJS 7](https://adonisjs.com/) — backend, Lucid, session auth
 - [Inertia](https://inertiajs.com/) + React 19 — server-driven UI
 - [Astryx](https://astryx.atmeta.com/) — design system
 - SQLite by default (`tmp/db.sqlite3`)
-
-## Status
-
-Early stage. The admin/onboarding/invite shell is in place. The MCP proxy surface (aggregating upstream MCPs behind one agent URL) is the next product focus.
+- [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) — client/server + Streamable HTTP
+- Deno — sandboxed runner for npm MCPs
 
 ## License
 

@@ -24,4 +24,7 @@ export default await Env.create(new URL('../', import.meta.url), {
 
   // Session
   SESSION_DRIVER: Env.schema.enum(['cookie', 'memory', 'database'] as const),
+
+  // Optional path to the Deno binary used to sandbox npm MCPs
+  DENO_PATH: Env.schema.string.optional(),
 })

@@ -6,6 +6,10 @@ export interface ApiDefinition {
     show: typeof routes['onboarding.show']
     store: typeof routes['onboarding.store']
   }
+  gateway: {
+    handle: typeof routes['gateway.handle']
+    handleGet: typeof routes['gateway.handleGet']
+  }
   session: {
     create: typeof routes['session.create']
     store: typeof routes['session.store']
@@ -18,4 +22,19 @@ export interface ApiDefinition {
     store: typeof routes['invites.store']
   }
   home: typeof routes['home']
+  mcps: {
+    index: typeof routes['mcps.index']
+    store: typeof routes['mcps.store']
+    oauthCallback: typeof routes['mcps.oauthCallback']
+    show: typeof routes['mcps.show']
+    update: typeof routes['mcps.update']
+    destroy: typeof routes['mcps.destroy']
+    probe: typeof routes['mcps.probe']
+    oauthStart: typeof routes['mcps.oauthStart']
+  }
+  tokens: {
+    index: typeof routes['tokens.index']
+    store: typeof routes['tokens.store']
+    revoke: typeof routes['tokens.revoke']
+  }
 }
