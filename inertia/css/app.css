@@ -8,7 +8,7 @@
 }
 
 .mcp-hero-card__content {
-  max-width: 58%;
+  max-width: 55%;
   position: relative;
   z-index: 1;
 }
@@ -17,9 +17,9 @@
   position: absolute;
   left: 100%;
   top: 100%;
-  width: 36%;
+  width: 48%;
   height: auto;
-  transform: translate(-25%, -25%);
+  transform: translate(-75%, -75%);
   pointer-events: none;
   user-select: none;
   z-index: 0;
