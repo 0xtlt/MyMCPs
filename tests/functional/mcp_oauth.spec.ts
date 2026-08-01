@@ -142,6 +142,7 @@ test.group('MCP OAuth routes', (group) => {
       callbackUrl.searchParams.set('state', authorizationUrl.searchParams.get('state')!)
       const callbackResponse = await client
         .get(`${callbackUrl.pathname}${callbackUrl.search}`)
+        .loginAs(admin)
         .redirects(0)
 
       callbackResponse.assertStatus(302)
