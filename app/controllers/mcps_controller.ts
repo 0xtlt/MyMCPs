@@ -206,7 +206,7 @@ export default class McpsController {
     return response.redirect().toRoute('mcps.index')
   }
 
-  async oauthStart({ params, request, response, session }: HttpContext) {
+  async oauthStart({ params, response, session }: HttpContext) {
     const mcp = await Mcp.find(params.id)
     if (!mcp) {
       session.flash('error', 'MCP not found')
@@ -219,7 +219,7 @@ export default class McpsController {
     }
 
     try {
-      return response.redirect(await startOauthFlow(session, mcp, request))
+      return response.redirect(await startOauthFlow(session, mcp))
     } catch (error) {
       session.flash('error', error instanceof Error ? error.message : 'Failed to start OAuth')
       session.flash('editingMcpId', mcp.id)

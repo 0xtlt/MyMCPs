@@ -49,9 +49,8 @@ register a callback URI manually.
 The provider must support MCP OAuth discovery and dynamic client registration.
 Providers without those capabilities can use the optional advanced OAuth
 overrides in the MCP form. In production, `APP_URL` must be the public HTTPS
-origin of the MyMCPs instance so the browser callback and session cookie use the
-same host. Coolify deployments derive it from the domain assigned to the
-service.
+origin of the MyMCPs instance so gateway URLs, invite links, and OAuth callbacks
+use the same host. MyMCPs does not infer this value from request headers.
 
 ## Tests
 
@@ -79,18 +78,18 @@ repository:
 
 1. Create a new resource from **Public Repository** and paste the GitHub
    repository URL.
-2. Use the checked-in `coolify.json` configuration and assign the domain that
-   should serve MyMCPs before deploying.
+2. Use the checked-in `coolify.json` configuration, assign the domain that
+   should serve MyMCPs, and set `APP_URL` to that public HTTPS origin (for
+   example, `https://mcp.example.com`).
 3. Deploy the resource.
 
 The profile selects the Compose build pack, exposes the internal port `3333`,
 configures `/health`, and keeps SQLite, generated key material, and Deno
-sandboxes in the named `/app/tmp` volume. Coolify's
-`SERVICE_URL_MYMCPS_3333` value is promoted to `APP_URL`, so the domain entered
-in Coolify is used for redirects, invite links, gateway URLs, and OAuth
-callbacks. The container generates an `APP_KEY` on first start when one is not
-provided; the key is stored in the persistent volume. Set an explicit
-`APP_KEY` in Coolify if you prefer to manage it yourself.
+sandboxes in the named `/app/tmp` volume. `APP_URL` is intentionally explicit:
+when it is missing, signed-in pages show a warning and public-link or OAuth
+controls stay disabled. The container generates an `APP_KEY` on first start
+when one is not provided; the key is stored in the persistent volume. Set an
+explicit `APP_KEY` in Coolify if you prefer to manage it yourself.
 
 If the Coolify instance does not automatically apply `coolify.json`, select
 **Docker Compose**, set the Compose file to `/docker-compose.yml`, expose port
@@ -122,7 +121,7 @@ Or without Compose:
 docker build -t mymcps .
 docker run --rm -p 3333:3333 \
   -e APP_KEY=... \
-  -e APP_URL=http://localhost:3333 \
+  -e APP_URL=https://mcp.example.com \
   -v mymcps-data:/app/tmp \
   mymcps
 ```

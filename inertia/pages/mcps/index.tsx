@@ -67,9 +67,11 @@ function endpointLabel(mcp: McpRow) {
 export default function McpsIndex({
   mcps,
   editingMcpId = null,
+  appUrlConfigured,
 }: {
   mcps: McpRow[]
   editingMcpId?: number | null
+  appUrlConfigured: boolean
 }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingOverride, setEditingOverride] = useState<EditingOverride | null>(null)
@@ -309,6 +311,10 @@ export default function McpsIndex({
                             }
                             variant="secondary"
                             size="sm"
+                            isDisabled={!appUrlConfigured}
+                            tooltip={
+                              !appUrlConfigured ? 'Set APP_URL to connect with OAuth' : undefined
+                            }
                             onClick={() =>
                               window.location.assign(`/mcps/${editingMcp.id}/oauth/start`)
                             }

@@ -21,8 +21,8 @@ permissions.
 
 - Set a unique production `APP_KEY` and keep `.env` outside version control. The
   container can generate and persist one in `/app/tmp` when it is omitted.
-- Set `APP_URL` to the HTTPS URL used by the deployment. In Coolify, assign the
-  intended domain before deployment so its generated service URL is used.
+- Set `APP_URL` explicitly to the HTTPS URL used by the deployment. In Coolify,
+  set it to the same public origin assigned to the service.
 - Persist `/app/tmp`; losing it also loses the SQLite database, encrypted MCP
   secrets, generated key, and Deno sandbox cache.
 - Put the application behind a TLS-terminating reverse proxy rather than exposing
