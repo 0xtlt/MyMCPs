@@ -78,6 +78,8 @@ test.group('invites and member administration', (group) => {
     const member = await User.findByOrFail('email', 'invited@example.com')
     assert.equal(member.fullName, 'Invited Member')
     assert.equal(member.role, 'member')
+    response.assertCookie('remember_web')
+    assert.lengthOf(await User.rememberMeTokens.all(member), 1)
     const acceptedInvite = await Invite.findOrFail(invite.id)
     assert.isTrue(acceptedInvite.isAccepted)
   })

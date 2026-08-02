@@ -32,7 +32,7 @@ export default class OnboardingController {
       return response.redirect().toRoute('home')
     }
 
-    await auth.use('web').login(user)
+    await auth.use('web').login(user, true)
     return response.redirect().toRoute('home')
   }
 }
