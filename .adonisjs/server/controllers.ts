@@ -5,8 +5,10 @@
 
 export const controllers = {
   AccessTokens: () => import('#controllers/access_tokens_controller'),
+  Analytics: () => import('#controllers/analytics_controller'),
   Gateway: () => import('#controllers/gateway_controller'),
   Invites: () => import('#controllers/invites_controller'),
+  Logs: () => import('#controllers/logs_controller'),
   Mcps: () => import('#controllers/mcps_controller'),
   Onboarding: () => import('#controllers/onboarding_controller'),
   Session: () => import('#controllers/session_controller'),

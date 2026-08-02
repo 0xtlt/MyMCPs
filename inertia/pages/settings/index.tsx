@@ -7,10 +7,19 @@ import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from '@astryxdesign/core/Layout'
 import { Section } from '@astryxdesign/core/Section'
+import { NumberInput } from '@astryxdesign/core/NumberInput'
+import { Selector } from '@astryxdesign/core/Selector'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 
-export default function SettingsIndex() {
+export default function SettingsIndex({
+  mcpLogging,
+}: {
+  mcpLogging: {
+    level: 'off' | 'metadata' | 'arguments' | 'responses'
+    retentionDays: number
+  } | null
+}) {
   const { props } = usePage<Data.SharedProps>()
   const user = props.user!
   const [isEmailOpen, setIsEmailOpen] = useState(false)
@@ -20,6 +29,8 @@ export default function SettingsIndex() {
   const [passwordCurrentPassword, setPasswordCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
+  const [mcpLogLevel, setMcpLogLevel] = useState(mcpLogging?.level ?? 'metadata')
+  const [mcpLogRetentionDays, setMcpLogRetentionDays] = useState(mcpLogging?.retentionDays ?? 14)
 
   function openEmailDialog() {
     setEmail(user.email)
@@ -99,20 +110,76 @@ export default function SettingsIndex() {
 
         {user.isAdmin ? (
           <Section padding={6} width="100%">
-            <VStack gap={4}>
-              <VStack gap={1}>
-                <Heading level={2}>My Instance</Heading>
-                <Text type="body" color="secondary">
-                  Configure settings that apply to everyone using this MyMCPs instance.
-                </Text>
-              </VStack>
-              <Banner
-                status="warning"
-                title="Work in progress"
-                description="Instance settings are not available yet."
-                container="card"
-              />
-            </VStack>
+            <Form route="settings.updateMcpLogging">
+              {({ errors, processing }) => (
+                <VStack gap={5} hAlign="stretch">
+                  <VStack gap={1}>
+                    <Heading level={2}>My Instance</Heading>
+                    <Text type="body" color="secondary">
+                      Configure settings that apply to everyone using this MyMCPs instance.
+                    </Text>
+                  </VStack>
+                  <Banner
+                    status="warning"
+                    title="Arguments and responses can contain sensitive data"
+                    description="Argument and response capture stores exact MCP JSON without redaction. Tool responses may contain secrets, personal data, or large payloads."
+                    container="section"
+                  />
+                  <HStack gap={4} vAlign="start" wrap="wrap">
+                    <Selector
+                      label="Call logging level"
+                      htmlName="mcpLogLevel"
+                      value={mcpLogLevel}
+                      onChange={(value) =>
+                        setMcpLogLevel(value as 'off' | 'metadata' | 'arguments' | 'responses')
+                      }
+                      options={[
+                        { value: 'off', label: 'Off' },
+                        { value: 'metadata', label: 'Metadata' },
+                        { value: 'arguments', label: 'Metadata + arguments' },
+                        {
+                          value: 'responses',
+                          label: 'Metadata + arguments + responses',
+                        },
+                      ]}
+                      description="Changes apply to future tool calls only."
+                      width={280}
+                      status={
+                        errors.mcpLogLevel
+                          ? { type: 'error', message: errors.mcpLogLevel }
+                          : undefined
+                      }
+                    />
+                    <NumberInput
+                      label="Log retention"
+                      htmlName="mcpLogRetentionDays"
+                      value={mcpLogRetentionDays}
+                      onChange={setMcpLogRetentionDays}
+                      min={1}
+                      max={365}
+                      step={1}
+                      units="days"
+                      isIntegerOnly
+                      description="Records older than this are deleted."
+                      width={220}
+                      status={
+                        errors.mcpLogRetentionDays
+                          ? { type: 'error', message: errors.mcpLogRetentionDays }
+                          : undefined
+                      }
+                    />
+                  </HStack>
+                  <HStack gap={3} hAlign="end">
+                    <Button
+                      type="submit"
+                      label="Save logging settings"
+                      variant="primary"
+                      isLoading={processing}
+                    />
+                  </HStack>
+                </VStack>
+              )}
+            </Form>
           </Section>
         ) : null}
       </VStack>

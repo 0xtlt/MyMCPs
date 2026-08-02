@@ -4,6 +4,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
+import McpCallLogService from '#services/mcp_call_log_service'
 import {
   callUpstreamTool,
   listNamespacedTools,
@@ -34,8 +35,22 @@ export default class GatewayController {
     }))
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const startedAt = performance.now()
+      const accessToken = ctx.accessToken!
+      const requestedToolName = request.params.name
+      const args = request.params.arguments
       const parsed = parseNamespacedTool(request.params.name)
       if (!parsed) {
+        McpCallLogService.record({
+          accessToken,
+          requestedToolName,
+          toolName: null,
+          args,
+          outcome: 'error',
+          errorCategory: 'invalid_tool',
+          errorSummary: 'Invalid tool name',
+          durationMs: performance.now() - startedAt,
+        })
         return {
           content: [{ type: 'text' as const, text: 'Invalid tool name' }],
           isError: true,
@@ -44,6 +59,17 @@ export default class GatewayController {
 
       const mcp = bySlug.get(parsed.slug)
       if (!mcp) {
+        McpCallLogService.record({
+          accessToken,
+          mcpSlug: parsed.slug,
+          requestedToolName,
+          toolName: parsed.toolName,
+          args,
+          outcome: 'error',
+          errorCategory: 'disallowed_mcp',
+          errorSummary: 'MCP not allowed for this token',
+          durationMs: performance.now() - startedAt,
+        })
         return {
           content: [{ type: 'text' as const, text: 'MCP not allowed for this token' }],
           isError: true,
@@ -52,12 +78,37 @@ export default class GatewayController {
 
       try {
         // CallToolRequestSchema already types arguments as Record<string, unknown> | undefined
-        return await callUpstreamTool(mcp, parsed.toolName, request.params.arguments)
+        const result = await callUpstreamTool(mcp, parsed.toolName, args)
+        const isError = result.isError === true
+        McpCallLogService.record({
+          accessToken,
+          mcp,
+          requestedToolName,
+          toolName: parsed.toolName,
+          args,
+          response: result,
+          outcome: isError ? 'error' : 'success',
+          errorCategory: isError ? 'tool_error' : null,
+          errorSummary: isError ? 'Upstream tool returned an error' : null,
+          durationMs: performance.now() - startedAt,
+        })
+        return result
       } catch (error) {
         logger.warn(
           { err: error, mcpId: mcp.id, tool: parsed.toolName },
           'Upstream tool call failed'
         )
+        McpCallLogService.record({
+          accessToken,
+          mcp,
+          requestedToolName,
+          toolName: parsed.toolName,
+          args,
+          outcome: 'error',
+          errorCategory: 'upstream_exception',
+          errorSummary: error instanceof Error ? error : 'Upstream tool call failed',
+          durationMs: performance.now() - startedAt,
+        })
         return {
           content: [{ type: 'text' as const, text: 'Upstream tool call failed' }],
           isError: true,
@@ -74,6 +125,8 @@ export default class GatewayController {
     const nodeReq = ctx.request.request
     const nodeRes = ctx.response.response
     const body = ctx.request.all()
+
+    void McpCallLogService.pruneExpired()
 
     nodeRes.on('finish', () => {
       void server.close().catch((error) => {

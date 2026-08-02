@@ -175,6 +175,42 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/settings_controller').default['updatePassword']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
+  'settings.updateMcpLogging': {
+    methods: ["PATCH"]
+    pattern: '/settings/mcp-logging'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/user').updateMcpLoggingValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/user').updateMcpLoggingValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/settings_controller').default['updateMcpLogging']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/settings_controller').default['updateMcpLogging']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'logs.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/logs'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/mcp_call_log').logsQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/logs_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/logs_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'analytics.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/analytics'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/mcp_call_log').analyticsQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/analytics_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/analytics_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
   'invites.index': {
     methods: ["GET","HEAD"]
     pattern: '/invites'

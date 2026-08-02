@@ -28,6 +28,13 @@ export interface ApiDefinition {
     index: typeof routes['settings.index']
     updateEmail: typeof routes['settings.updateEmail']
     updatePassword: typeof routes['settings.updatePassword']
+    updateMcpLogging: typeof routes['settings.updateMcpLogging']
+  }
+  logs: {
+    index: typeof routes['logs.index']
+  }
+  analytics: {
+    index: typeof routes['analytics.index']
   }
   members: {
     destroy: typeof routes['members.destroy']
