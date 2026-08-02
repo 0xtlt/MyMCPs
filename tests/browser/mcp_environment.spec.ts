@@ -49,7 +49,8 @@ test.group('MCP environment variable form', (group) => {
     )
     await page.getByLabel('Add MCP').getByRole('button', { name: 'Add MCP' }).click()
 
-    const postData = (await submission).postData() ?? ''
+    const submittedRequest = await submission
+    const postData = submittedRequest.postData() ?? ''
     assert.include(postData, 'API_KEY')
     assert.include(postData, 'secret-one')
   })
