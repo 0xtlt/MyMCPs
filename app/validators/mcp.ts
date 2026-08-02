@@ -2,6 +2,7 @@ import vine from '@vinejs/vine'
 
 const transport = vine.enum(['http', 'npm'] as const)
 const authType = vine.enum(['none', 'bearer', 'header', 'oauth'] as const)
+const reservedNpmEnvNames = ['HOME', 'TMPDIR', 'NO_COLOR']
 
 /** RFC 9110 token for custom header names. */
 const headerName = vine
@@ -9,6 +10,22 @@ const headerName = vine
   .trim()
   .maxLength(120)
   .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/)
+
+const npmEnvironment = vine
+  .array(
+    vine.object({
+      name: vine
+        .string()
+        .trim()
+        .maxLength(128)
+        .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+        .notIn(reservedNpmEnvNames),
+      // Do not trim secrets. Empty HTML inputs become null through the global Vine transform.
+      value: vine.string().maxLength(8192).nullable(),
+    })
+  )
+  .maxLength(50)
+  .optional()
 
 const mcpPayload = {
   name: vine.string().trim().minLength(1).maxLength(120),
@@ -38,6 +55,7 @@ const mcpPayload = {
         .map((part) => part.trim())
         .filter(Boolean)
     }),
+  npmEnv: npmEnvironment,
   authType,
   authBearer: vine.string().trim().maxLength(4000).optional(),
   authHeaderName: headerName.optional().requiredWhen('authType', '=', 'header'),

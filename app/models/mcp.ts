@@ -3,6 +3,7 @@ import { belongsTo, manyToMany } from '@adonisjs/lucid/orm'
 import type { BelongsTo, ManyToMany } from '@adonisjs/lucid/types/relations'
 import User from '#models/user'
 import AccessToken from '#models/access_token'
+import McpEnvironmentStore from '#services/mcp_environment_store'
 
 export type McpTransport = 'http' | 'npm'
 export type McpAuthType = 'none' | 'bearer' | 'header' | 'oauth'
@@ -49,6 +50,14 @@ export default class Mcp extends McpSchema {
 
   set npmArgsList(args: string[]) {
     this.npmArgs = args.length > 0 ? JSON.stringify(args) : null
+  }
+
+  get npmEnvNames(): string[] {
+    return McpEnvironmentStore.names(this.npmEnv)
+  }
+
+  get npmEnvironment(): Record<string, string> {
+    return McpEnvironmentStore.decrypt(this.npmEnv)
   }
 
   static slugify(name: string) {

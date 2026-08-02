@@ -1,5 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import { errors } from '@vinejs/vine'
 import Mcp from '#models/mcp'
+import McpEnvironmentStore from '#services/mcp_environment_store'
 import McpSecretStore from '#services/mcp_secret_store'
 import { createMcpValidator, updateMcpValidator } from '#validators/mcp'
 import { oauthCallbackValidator } from '#validators/oauth'
@@ -14,6 +16,63 @@ import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
 
 type McpPayload = Infer<typeof createMcpValidator>
+
+const MAX_NPM_ENV_TOTAL_BYTES = 64 * 1024
+
+function npmEnvValidationError(field: string, message: string): never {
+  throw new errors.E_VALIDATION_ERROR([
+    {
+      field,
+      message,
+      rule: 'npmEnvironment',
+    },
+  ])
+}
+
+function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
+  if (payload.transport !== 'npm') {
+    mcp.npmEnv = null
+    return
+  }
+
+  const entries = payload.npmEnv ?? []
+  const seenNames = new Set<string>()
+
+  for (const [index, entry] of entries.entries()) {
+    if (seenNames.has(entry.name)) {
+      npmEnvValidationError(`npmEnv.${index}.name`, 'Environment variable names must be unique')
+    }
+    seenNames.add(entry.name)
+
+    if (entry.value === null && !McpEnvironmentStore.hasName(mcp.npmEnv, entry.name)) {
+      npmEnvValidationError(
+        `npmEnv.${index}.value`,
+        'A value is required for a new environment variable'
+      )
+    }
+  }
+
+  const nextValue = McpEnvironmentStore.merge(mcp.npmEnv, entries)
+  let environment: Record<string, string>
+  try {
+    environment = McpEnvironmentStore.decrypt(nextValue)
+  } catch (error) {
+    npmEnvValidationError(
+      'npmEnv',
+      error instanceof Error ? error.message : 'Environment variable configuration is invalid'
+    )
+  }
+
+  const totalBytes = Object.entries(environment).reduce(
+    (total, [name, value]) => total + Buffer.byteLength(name) + Buffer.byteLength(value),
+    0
+  )
+  if (totalBytes > MAX_NPM_ENV_TOTAL_BYTES) {
+    npmEnvValidationError('npmEnv', 'Environment variables must not exceed 64 KiB in total')
+  }
+
+  mcp.npmEnv = nextValue
+}
 
 function applySecrets(mcp: Mcp, payload: McpPayload) {
   if (payload.authBearer && payload.authBearer.length > 0) {
@@ -71,7 +130,7 @@ function clearOAuthConnection(mcp: Mcp) {
   mcp.oauthTokenType = null
 }
 
-async function assignMcpFromPayload(
+export async function assignMcpFromPayload(
   mcp: Mcp,
   payload: McpPayload,
   options?: { excludeId?: number }
@@ -90,6 +149,7 @@ async function assignMcpFromPayload(
   mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
   mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
   mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
+  assignNpmEnvironment(mcp, payload)
   mcp.authType = payload.authType
   mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
   mcp.oauthAuthorizeUrl = payload.authType === 'oauth' ? (payload.oauthAuthorizeUrl ?? null) : null

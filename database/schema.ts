@@ -109,6 +109,7 @@ export class McpSchema extends BaseModel {
     'lastError',
     'name',
     'npmArgs',
+    'npmEnv',
     'npmPackage',
     'npmVersion',
     'oauthAccessToken',
@@ -156,6 +157,8 @@ export class McpSchema extends BaseModel {
   declare name: string
   @column()
   declare npmArgs: string | null
+  @column()
+  declare npmEnv: string | null
   @column()
   declare npmPackage: string | null
   @column()

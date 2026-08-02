@@ -33,6 +33,7 @@ type McpRow = {
   npmPackage: string | null
   npmVersion: string | null
   npmArgs: string
+  npmEnv: Array<{ name: string; hasValue: boolean }>
   authType: 'none' | 'bearer' | 'header' | 'oauth'
   authHeaderName: string | null
   hasAuthBearer: boolean
