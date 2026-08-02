@@ -79,6 +79,7 @@ export async function createMcp(
     npmPackage: null,
     npmVersion: null,
     npmArgs: null,
+    npmEnv: null,
     authType: overrides.authType ?? 'none',
     authBearer: null,
     authHeaderName: null,

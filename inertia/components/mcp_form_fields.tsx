@@ -1,4 +1,6 @@
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
+import { Banner } from '@astryxdesign/core/Banner'
+import { Button } from '@astryxdesign/core/Button'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { TextInput } from '@astryxdesign/core/TextInput'
@@ -14,6 +16,14 @@ export type McpFormSecrets = {
   hasOauthAccessToken?: boolean
 }
 
+export type McpEnvironmentVariable = {
+  id: string
+  name: string
+  value: string
+  hasValue: boolean
+  originalName?: string
+}
+
 export type McpFormValues = {
   name: string
   description: string
@@ -22,6 +32,7 @@ export type McpFormValues = {
   npmPackage: string
   npmVersion: string
   npmArgs: string
+  npmEnv: McpEnvironmentVariable[]
   authType: McpAuthType
   authBearer: string
   authHeaderName: string
@@ -43,6 +54,18 @@ type Props = {
   secrets?: McpFormSecrets
 }
 
+let nextEnvironmentVariableId = 0
+
+function newEnvironmentVariable(): McpEnvironmentVariable {
+  nextEnvironmentVariableId += 1
+  return {
+    id: `new-env-${nextEnvironmentVariableId}`,
+    name: '',
+    value: '',
+    hasValue: false,
+  }
+}
+
 export function emptyMcpFormValues(): McpFormValues {
   return {
     name: '',
@@ -52,6 +75,7 @@ export function emptyMcpFormValues(): McpFormValues {
     npmPackage: '',
     npmVersion: '',
     npmArgs: '',
+    npmEnv: [],
     authType: 'none',
     authBearer: '',
     authHeaderName: '',
@@ -73,6 +97,7 @@ export function mcpFormValuesFromRow(mcp: {
   npmPackage: string | null
   npmVersion: string | null
   npmArgs: string
+  npmEnv: Array<{ name: string; hasValue: boolean }>
   authType: McpAuthType
   authHeaderName: string | null
   oauthAuthorizeUrl: string | null
@@ -90,6 +115,13 @@ export function mcpFormValuesFromRow(mcp: {
     npmPackage: mcp.npmPackage ?? '',
     npmVersion: mcp.npmVersion ?? '',
     npmArgs: mcp.npmArgs,
+    npmEnv: mcp.npmEnv.map((entry, index) => ({
+      id: `stored-env-${index}`,
+      name: entry.name,
+      value: '',
+      hasValue: entry.hasValue,
+      originalName: entry.name,
+    })),
     authType: mcp.authType,
     authHeaderName: mcp.authHeaderName ?? '',
     oauthAuthorizeUrl: mcp.oauthAuthorizeUrl ?? '',
@@ -178,6 +210,100 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
               width={320}
             />
           </HStack>
+          <VStack gap={2} hAlign="stretch">
+            <VStack gap={1} hAlign="stretch">
+              <Text type="body" weight="bold">
+                Environment variables
+              </Text>
+              <Text type="supporting" color="secondary">
+                Values are encrypted and only provided to this MCP process.
+              </Text>
+            </VStack>
+            {values.npmEnv.map((entry, index) => {
+              const canKeepExistingValue =
+                entry.hasValue &&
+                entry.originalName !== undefined &&
+                entry.name === entry.originalName
+
+              return (
+                <HStack key={entry.id} gap={2} wrap="wrap" vAlign="end">
+                  <TextInput
+                    label="Name"
+                    htmlName={`npmEnv[${index}][name]`}
+                    value={entry.name}
+                    onChange={(name) =>
+                      onChange({
+                        npmEnv: values.npmEnv.map((current, currentIndex) =>
+                          currentIndex === index ? { ...current, name } : current
+                        ),
+                      })
+                    }
+                    placeholder="API_KEY"
+                    width={200}
+                    status={
+                      errors[`npmEnv.${index}.name`]
+                        ? { type: 'error', message: errors[`npmEnv.${index}.name`] }
+                        : undefined
+                    }
+                  />
+                  <TextInput
+                    label="Value"
+                    htmlName={`npmEnv[${index}][value]`}
+                    type="password"
+                    value={entry.value}
+                    onChange={(value) =>
+                      onChange({
+                        npmEnv: values.npmEnv.map((current, currentIndex) =>
+                          currentIndex === index ? { ...current, value } : current
+                        ),
+                      })
+                    }
+                    description={
+                      canKeepExistingValue ? 'Leave blank to keep the saved value' : undefined
+                    }
+                    isOptional={canKeepExistingValue}
+                    isRequired={!canKeepExistingValue}
+                    width={260}
+                    status={
+                      errors[`npmEnv.${index}.value`]
+                        ? { type: 'error', message: errors[`npmEnv.${index}.value`] }
+                        : undefined
+                    }
+                  />
+                  <Button
+                    type="button"
+                    label={`Remove ${entry.name || 'environment variable'}`}
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      onChange({
+                        npmEnv: values.npmEnv.filter((_, currentIndex) => currentIndex !== index),
+                      })
+                    }
+                  >
+                    Remove
+                  </Button>
+                </HStack>
+              )
+            })}
+            <HStack gap={2} hAlign="start">
+              <Button
+                type="button"
+                label="Add variable"
+                variant="secondary"
+                size="sm"
+                isDisabled={values.npmEnv.length >= 50}
+                onClick={() => onChange({ npmEnv: [...values.npmEnv, newEnvironmentVariable()] })}
+              />
+            </HStack>
+            {errors.npmEnv ? (
+              <Banner
+                status="error"
+                title="Environment variables error"
+                description={errors.npmEnv}
+              />
+            ) : null}
+          </VStack>
         </VStack>
       )}
 
