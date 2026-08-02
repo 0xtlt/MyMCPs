@@ -17,6 +17,38 @@ export type ConnectedHttpUpstream = {
   close: () => Promise<void>
 }
 
+type UnauthorizedResponse = {
+  body: string
+  wwwAuthenticate: string
+}
+
+export class UpstreamUnauthorizedError extends Error {
+  readonly status = 401
+
+  constructor(details: UnauthorizedResponse, options?: ErrorOptions) {
+    const context = [
+      details.body ? `Response: ${details.body}` : null,
+      details.wwwAuthenticate ? `WWW-Authenticate: ${details.wwwAuthenticate}` : null,
+    ].filter(Boolean)
+
+    super(
+      context.length > 0
+        ? `MCP server returned HTTP 401. ${context.join(' | ')}`
+        : 'MCP server returned HTTP 401 Unauthorized.',
+      options
+    )
+    this.name = 'UpstreamUnauthorizedError'
+  }
+}
+
+function compactDiagnostic(value: string | null, limit = 240) {
+  if (!value) {
+    return ''
+  }
+  const compacted = value.replace(/\s+/g, ' ').trim()
+  return compacted.length > limit ? `${compacted.slice(0, limit - 1)}…` : compacted
+}
+
 function buildAuthHeaders(mcp: Mcp): Record<string, string> {
   const headers: Record<string, string> = {}
 
@@ -55,11 +87,35 @@ export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstre
   }
 
   const headers = buildAuthHeaders(mcp)
+  let unauthorizedResponse: UnauthorizedResponse | null = null
+  const diagnosticFetch: typeof fetch = async (input, init) => {
+    const response = await fetch(input, init)
+    if (response.status === 401) {
+      unauthorizedResponse = {
+        body: compactDiagnostic(
+          await response
+            .clone()
+            .text()
+            .catch(() => '')
+        ),
+        wwwAuthenticate: compactDiagnostic(response.headers.get('WWW-Authenticate')),
+      }
+    }
+    return response
+  }
   const transport = new StreamableHTTPClientTransport(new URL(mcp.httpUrl), {
+    fetch: diagnosticFetch,
     requestInit: { headers },
   })
   const client = new Client({ name: 'mymcps-gateway', version: '0.1.0' })
-  await client.connect(transport)
+  try {
+    await client.connect(transport)
+  } catch (error) {
+    if (unauthorizedResponse) {
+      throw new UpstreamUnauthorizedError(unauthorizedResponse, { cause: error })
+    }
+    throw error
+  }
 
   return {
     client,

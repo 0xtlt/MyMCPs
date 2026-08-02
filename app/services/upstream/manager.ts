@@ -6,6 +6,7 @@ import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamable
 import {
   connectHttpUpstream,
   listHttpTools,
+  UpstreamUnauthorizedError,
   type ConnectedHttpUpstream,
   type UpstreamTool,
 } from '#services/upstream/http_client'
@@ -103,13 +104,16 @@ export async function testAndUpdateStatus(mcp: Mcp) {
   } catch (error) {
     const authorizationRequired =
       error instanceof UnauthorizedError ||
+      error instanceof UpstreamUnauthorizedError ||
       (error instanceof StreamableHTTPError && error.code === 401)
 
     if (mcp.transport === 'http' && mcp.authType === 'auto' && authorizationRequired) {
       const hasOauthAccessToken = Boolean(McpSecretStore.decrypt(mcp.oauthAccessToken))
       mcp.status = hasOauthAccessToken ? 'error' : 'draft'
       mcp.lastError = hasOauthAccessToken
-        ? 'OAuth authorization was rejected. Re-authorize this MCP.'
+        ? error instanceof UpstreamUnauthorizedError
+          ? `OAuth token rejected. ${error.message}`.slice(0, 500)
+          : 'OAuth token was rejected by the MCP server (HTTP 401). Re-authorize this MCP.'
         : 'OAuth authorization required'
       mcp.oauthRequired = true
     } else {

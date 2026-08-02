@@ -218,13 +218,20 @@ test.group('MCP automatic authentication', (group) => {
   }) => {
     const originalFetch = globalThis.fetch
     globalThis.fetch = async () =>
-      new Response('', {
-        status: 401,
-        headers: {
-          'WWW-Authenticate':
-            'Bearer resource_metadata="https://mcp.example/.well-known/oauth-protected-resource"',
-        },
-      })
+      new Response(
+        JSON.stringify({
+          error: 'invalid_token',
+          error_description: 'The access token audience is invalid',
+        }),
+        {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+            'WWW-Authenticate':
+              'Bearer error="invalid_token", error_description="The access token audience is invalid"',
+          },
+        }
+      )
 
     try {
       const admin = await createAdmin()
@@ -254,10 +261,9 @@ test.group('MCP automatic authentication', (group) => {
       assert.equal(automatic.lastError, 'OAuth authorization required')
       assert.isTrue(automatic.oauthRequired)
       assert.equal(rejectedToken.status, 'error')
-      assert.equal(
-        rejectedToken.lastError,
-        'OAuth authorization was rejected. Re-authorize this MCP.'
-      )
+      assert.include(rejectedToken.lastError, 'OAuth token rejected. MCP server returned HTTP 401.')
+      assert.include(rejectedToken.lastError, 'The access token audience is invalid')
+      assert.include(rejectedToken.lastError, 'WWW-Authenticate')
       assert.isTrue(rejectedToken.oauthRequired)
       assert.equal(manual.status, 'error')
       assert.isFalse(manual.oauthRequired)

@@ -63,13 +63,20 @@ function mockNotionOAuthServer(options: { rejectMcpToken?: boolean } = {}) {
     }
 
     if (url.startsWith('https://mcp.notion.com/mcp') && options.rejectMcpToken) {
-      return new Response('', {
-        status: 401,
-        headers: {
-          'WWW-Authenticate':
-            'Bearer resource_metadata="https://mcp.notion.com/.well-known/oauth-protected-resource"',
-        },
-      })
+      return new Response(
+        JSON.stringify({
+          error: 'invalid_token',
+          error_description: 'The access token audience is invalid',
+        }),
+        {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+            'WWW-Authenticate':
+              'Bearer error="invalid_token", error_description="The access token audience is invalid"',
+          },
+        }
+      )
     }
 
     if (url.startsWith('https://mcp.notion.com/mcp') && body) {
@@ -222,7 +229,7 @@ test.group('MCP OAuth routes', (group) => {
       callbackResponse.assertStatus(302)
       callbackResponse.assertFlashMessage(
         'error',
-        'OAuth authorization was rejected. Re-authorize this MCP.'
+        'OAuth token rejected. MCP server returned HTTP 401. Response: {"error":"invalid_token","error_description":"The access token audience is invalid"} | WWW-Authenticate: Bearer error="invalid_token", error_description="The access token audience is invalid"'
       )
       assert.isUndefined(callbackResponse.flashMessage('success'))
 
