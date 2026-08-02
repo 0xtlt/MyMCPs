@@ -43,6 +43,8 @@ test.group('missing public app URL browser state', (group) => {
       await page.getByRole('button', { name: 'Copy URL' }).getAttribute('aria-disabled'),
       'true'
     )
+    await page.assertTextContains('body', 'Reduce tool-definition overhead')
+    await page.assertTextContains('body', 'X-MyMCPs-Tool-Mode: lazy')
 
     await page.getByRole('link', { name: 'Invites', exact: true }).click()
     await page.waitForURL((url) => url.pathname === '/invites')
