@@ -1,5 +1,6 @@
 import type Mcp from '#models/mcp'
 import logger from '@adonisjs/core/services/logger'
+import McpSecretStore from '#services/mcp_secret_store'
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
 import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import {
@@ -105,8 +106,11 @@ export async function testAndUpdateStatus(mcp: Mcp) {
       (error instanceof StreamableHTTPError && error.code === 401)
 
     if (mcp.transport === 'http' && mcp.authType === 'auto' && authorizationRequired) {
-      mcp.status = 'draft'
-      mcp.lastError = 'OAuth authorization required'
+      const hasOauthAccessToken = Boolean(McpSecretStore.decrypt(mcp.oauthAccessToken))
+      mcp.status = hasOauthAccessToken ? 'error' : 'draft'
+      mcp.lastError = hasOauthAccessToken
+        ? 'OAuth authorization was rejected. Re-authorize this MCP.'
+        : 'OAuth authorization required'
       mcp.oauthRequired = true
     } else {
       mcp.status = 'error'

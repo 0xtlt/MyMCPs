@@ -309,7 +309,11 @@ export default class McpsController {
     try {
       await exchangeAuthorizationCode(mcp, oauth, code)
       await testAndUpdateStatus(mcp)
-      session.flash('success', 'OAuth connected')
+      if (mcp.status === 'ready') {
+        session.flash('success', 'OAuth connected')
+      } else {
+        session.flash('error', mcp.lastError || 'OAuth connected, but the connection test failed')
+      }
     } catch (error) {
       mcp.status = 'error'
       mcp.lastError = error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'

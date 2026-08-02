@@ -11,7 +11,7 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
-function mockNotionOAuthServer() {
+function mockNotionOAuthServer(options: { rejectMcpToken?: boolean } = {}) {
   const originalFetch = globalThis.fetch
 
   globalThis.fetch = async (input, init) => {
@@ -59,6 +59,16 @@ function mockNotionOAuthServer() {
         expires_in: 3600,
         refresh_token: 'refresh-token',
         scope: 'notion',
+      })
+    }
+
+    if (url.startsWith('https://mcp.notion.com/mcp') && options.rejectMcpToken) {
+      return new Response('', {
+        status: 401,
+        headers: {
+          'WWW-Authenticate':
+            'Bearer resource_metadata="https://mcp.notion.com/.well-known/oauth-protected-resource"',
+        },
       })
     }
 
@@ -168,6 +178,58 @@ test.group('MCP OAuth routes', (group) => {
       assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'access-token')
       assert.equal(saved.status, 'ready')
       assert.isFalse(Boolean(saved.oauthRequired))
+    } finally {
+      restoreFetch()
+    }
+  })
+
+  test('reports a rejected OAuth token instead of claiming the MCP connected', async ({
+    client,
+    assert,
+  }) => {
+    const restoreFetch = mockNotionOAuthServer({ rejectMcpToken: true })
+
+    try {
+      const admin = await createAdmin({ email: 'rejected@example.com' })
+      const mcp = await createMcp(admin.id, {
+        name: 'Rejected Notion token',
+        authType: 'auto',
+        oauthRequired: true,
+        httpUrl: 'https://mcp.notion.com/mcp',
+        status: 'draft',
+      })
+
+      const loginResponse = await client
+        .post('/login')
+        .withCsrfToken()
+        .redirects(0)
+        .form({ email: 'rejected@example.com', password: 'password123' })
+
+      const startResponse = await client
+        .get(`/mcps/${mcp.id}/oauth/start`)
+        .withSession(loginResponse.session())
+        .redirects(0)
+      const authorizationUrl = new URL(startResponse.header('location')!)
+      const callbackUrl = new URL(authorizationUrl.searchParams.get('redirect_uri')!)
+      callbackUrl.searchParams.set('code', 'authorization-code')
+      callbackUrl.searchParams.set('state', authorizationUrl.searchParams.get('state')!)
+
+      const callbackResponse = await client
+        .get(`${callbackUrl.pathname}${callbackUrl.search}`)
+        .withSession(startResponse.session())
+        .redirects(0)
+
+      callbackResponse.assertStatus(302)
+      callbackResponse.assertFlashMessage(
+        'error',
+        'OAuth authorization was rejected. Re-authorize this MCP.'
+      )
+      assert.isUndefined(callbackResponse.flashMessage('success'))
+
+      const saved = await Mcp.findOrFail(mcp.id)
+      assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'access-token')
+      assert.equal(saved.status, 'error')
+      assert.isTrue(Boolean(saved.oauthRequired))
     } finally {
       restoreFetch()
     }
