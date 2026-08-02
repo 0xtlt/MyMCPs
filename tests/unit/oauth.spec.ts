@@ -233,6 +233,13 @@ test.group('MCP automatic authentication', (group) => {
         authType: 'auto',
         status: 'draft',
       })
+      const rejectedToken = await createMcp(admin.id, {
+        name: 'Rejected OAuth token',
+        authType: 'auto',
+        status: 'ready',
+      })
+      rejectedToken.oauthAccessToken = McpSecretStore.encrypt('rejected-access-token')
+      await rejectedToken.save()
       const manual = await createMcp(admin.id, {
         name: 'Manual bearer',
         authType: 'bearer',
@@ -240,11 +247,18 @@ test.group('MCP automatic authentication', (group) => {
       })
 
       await testAndUpdateStatus(automatic)
+      await testAndUpdateStatus(rejectedToken)
       await testAndUpdateStatus(manual)
 
       assert.equal(automatic.status, 'draft')
       assert.equal(automatic.lastError, 'OAuth authorization required')
       assert.isTrue(automatic.oauthRequired)
+      assert.equal(rejectedToken.status, 'error')
+      assert.equal(
+        rejectedToken.lastError,
+        'OAuth authorization was rejected. Re-authorize this MCP.'
+      )
+      assert.isTrue(rejectedToken.oauthRequired)
       assert.equal(manual.status, 'error')
       assert.isFalse(manual.oauthRequired)
     } finally {
