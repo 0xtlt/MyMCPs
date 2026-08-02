@@ -169,7 +169,7 @@ export default class InvitesController {
       return response.redirect().toRoute('session.create')
     }
 
-    await auth.use('web').login(result.user)
+    await auth.use('web').login(result.user, true)
     session.flash('success', 'Welcome to MyMCPs')
     return response.redirect().toRoute('home')
   }

@@ -4,6 +4,7 @@ type ParamValue = string | number | bigint | boolean
 
 export type ScannedRoutes = {
   ALL: {
+    'health': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
     'onboarding.store': { paramsTuple?: []; params?: {} }
     'gateway.handle': { paramsTuple?: []; params?: {} }
@@ -14,6 +15,9 @@ export type ScannedRoutes = {
     'invites.accept': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'home': { paramsTuple?: []; params?: {} }
     'session.destroy': { paramsTuple?: []; params?: {} }
+    'settings.index': { paramsTuple?: []; params?: {} }
+    'settings.updateEmail': { paramsTuple?: []; params?: {} }
+    'settings.updatePassword': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'invites.store': { paramsTuple?: []; params?: {} }
     'invites.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -31,11 +35,13 @@ export type ScannedRoutes = {
     'tokens.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   GET: {
+    'health': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'home': { paramsTuple?: []; params?: {} }
+    'settings.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'mcps.index': { paramsTuple?: []; params?: {} }
     'mcps.oauthCallback': { paramsTuple?: []; params?: {} }
@@ -44,11 +50,13 @@ export type ScannedRoutes = {
     'tokens.index': { paramsTuple?: []; params?: {} }
   }
   HEAD: {
+    'health': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'home': { paramsTuple?: []; params?: {} }
+    'settings.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'mcps.index': { paramsTuple?: []; params?: {} }
     'mcps.oauthCallback': { paramsTuple?: []; params?: {} }
@@ -67,6 +75,10 @@ export type ScannedRoutes = {
     'mcps.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.store': { paramsTuple?: []; params?: {} }
     'tokens.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+  }
+  PATCH: {
+    'settings.updateEmail': { paramsTuple?: []; params?: {} }
+    'settings.updatePassword': { paramsTuple?: []; params?: {} }
   }
   DELETE: {
     'invites.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }

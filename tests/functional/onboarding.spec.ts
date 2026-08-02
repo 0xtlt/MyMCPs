@@ -28,6 +28,8 @@ test.group('onboarding', (group) => {
     const user = await User.findByOrFail('email', 'admin@example.com')
     assert.equal(user.fullName, 'First Admin')
     assert.equal(user.role, 'admin')
+    response.assertCookie('remember_web')
+    assert.lengthOf(await User.rememberMeTokens.all(user), 1)
   })
 
   test('does not allow onboarding after setup is complete', async ({ client, assert }) => {

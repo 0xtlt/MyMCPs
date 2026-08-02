@@ -33,6 +33,7 @@ type McpRow = {
   npmPackage: string | null
   npmVersion: string | null
   npmArgs: string
+  npmEnv: Array<{ name: string; hasValue: boolean }>
   authType: 'none' | 'bearer' | 'header' | 'oauth'
   authHeaderName: string | null
   hasAuthBearer: boolean
@@ -215,7 +216,11 @@ export default function McpsIndex({
         width={640}
         maxHeight="85vh"
       >
-        <Form route="mcps.store" className="dialog-form-fill">
+        <Form
+          route="mcps.store"
+          className="dialog-form-fill"
+          onSuccess={() => setIsCreateOpen(false)}
+        >
           {({ errors, processing }) => (
             <Layout
               header={
@@ -270,6 +275,7 @@ export default function McpsIndex({
             route="mcps.update"
             routeParams={{ id: editingMcp.id }}
             className="dialog-form-fill"
+            onSuccess={closeEdit}
           >
             {({ errors, processing }) => (
               <Layout
@@ -349,6 +355,7 @@ export default function McpsIndex({
                         onClick={() =>
                           router.delete(`/mcps/${editingMcp.id}`, {
                             preserveScroll: true,
+                            onSuccess: closeEdit,
                           })
                         }
                       />

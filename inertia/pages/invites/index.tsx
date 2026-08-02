@@ -266,7 +266,11 @@ export default function InvitesIndex({
       </VStack>
 
       <Dialog isOpen={isCreateOpen} onOpenChange={setIsCreateOpen} purpose="form" width={480}>
-        <Form route="invites.store" className="dialog-form-fill">
+        <Form
+          route="invites.store"
+          className="dialog-form-fill"
+          onSuccess={() => setIsCreateOpen(false)}
+        >
           {({ errors, processing }) => (
             <Layout
               header={

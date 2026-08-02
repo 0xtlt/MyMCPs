@@ -2,6 +2,7 @@ import { UserSchema } from '#database/schema'
 import hash from '@adonisjs/core/services/hash'
 import { compose } from '@adonisjs/core/helpers'
 import { withAuthFinder } from '@adonisjs/auth/mixins/lucid'
+import { DbRememberMeTokensProvider } from '@adonisjs/auth/session'
 import { hasMany } from '@adonisjs/lucid/orm'
 import type { HasMany } from '@adonisjs/lucid/types/relations'
 import Invite from '#models/invite'
@@ -9,6 +10,8 @@ import Invite from '#models/invite'
 export type UserRole = 'admin' | 'member'
 
 export default class User extends compose(UserSchema, withAuthFinder(hash)) {
+  static rememberMeTokens = DbRememberMeTokensProvider.forModel(User)
+
   declare role: UserRole
 
   @hasMany(() => Invite, { foreignKey: 'createdBy' })
