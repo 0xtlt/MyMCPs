@@ -205,7 +205,10 @@ function saveOAuthConfiguration(
 function saveOAuthTokens(mcp: Mcp, tokens: OAuthTokens) {
   mcp.oauthAccessToken = McpSecretStore.encrypt(tokens.access_token)
   mcp.oauthRefreshToken = tokens.refresh_token ? McpSecretStore.encrypt(tokens.refresh_token) : null
-  mcp.oauthTokenType = tokens.token_type || 'Bearer'
+  mcp.oauthTokenType =
+    !tokens.token_type || tokens.token_type.toLowerCase() === 'bearer'
+      ? 'Bearer'
+      : tokens.token_type
   mcp.oauthTokenExpiresAt =
     typeof tokens.expires_in === 'number'
       ? DateTime.utc().plus({ seconds: tokens.expires_in })

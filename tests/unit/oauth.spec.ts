@@ -92,7 +92,7 @@ function mockNotionOAuthServer() {
 
       return jsonResponse({
         access_token: 'access-token',
-        token_type: 'Bearer',
+        token_type: 'bearer',
         expires_in: 3600,
         refresh_token: 'refresh-token',
         scope: 'notion',
@@ -217,8 +217,10 @@ test.group('MCP automatic authentication', (group) => {
     assert,
   }) => {
     const originalFetch = globalThis.fetch
-    globalThis.fetch = async () =>
-      new Response(
+    const authorizationHeaders: Array<string | null> = []
+    globalThis.fetch = async (_input, init) => {
+      authorizationHeaders.push(new Headers(init?.headers).get('Authorization'))
+      return new Response(
         JSON.stringify({
           error: 'invalid_token',
           error_description: 'The access token audience is invalid',
@@ -232,6 +234,7 @@ test.group('MCP automatic authentication', (group) => {
           },
         }
       )
+    }
 
     try {
       const admin = await createAdmin()
@@ -246,6 +249,7 @@ test.group('MCP automatic authentication', (group) => {
         status: 'ready',
       })
       rejectedToken.oauthAccessToken = McpSecretStore.encrypt('rejected-access-token')
+      rejectedToken.oauthTokenType = 'bearer'
       await rejectedToken.save()
       const manual = await createMcp(admin.id, {
         name: 'Manual bearer',
@@ -264,6 +268,8 @@ test.group('MCP automatic authentication', (group) => {
       assert.include(rejectedToken.lastError, 'OAuth token rejected. MCP server returned HTTP 401.')
       assert.include(rejectedToken.lastError, 'The access token audience is invalid')
       assert.include(rejectedToken.lastError, 'WWW-Authenticate')
+      assert.include(authorizationHeaders, 'Bearer rejected-access-token')
+      assert.notInclude(authorizationHeaders, 'bearer rejected-access-token')
       assert.isTrue(rejectedToken.oauthRequired)
       assert.equal(manual.status, 'error')
       assert.isFalse(manual.oauthRequired)

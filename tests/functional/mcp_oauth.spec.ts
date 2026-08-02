@@ -55,11 +55,30 @@ function mockNotionOAuthServer(options: { rejectMcpToken?: boolean } = {}) {
     if (url === 'https://auth.example/token') {
       return jsonResponse({
         access_token: 'access-token',
-        token_type: 'Bearer',
+        token_type: 'bearer',
         expires_in: 3600,
         refresh_token: 'refresh-token',
         scope: 'notion',
       })
+    }
+
+    if (
+      url.startsWith('https://mcp.notion.com/mcp') &&
+      new Headers(init?.headers).get('Authorization') !== 'Bearer access-token'
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: 'invalid_token',
+          error_description: 'Missing or invalid access token',
+        }),
+        {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+            'WWW-Authenticate': 'Bearer error="invalid_token"',
+          },
+        }
+      )
     }
 
     if (url.startsWith('https://mcp.notion.com/mcp') && options.rejectMcpToken) {

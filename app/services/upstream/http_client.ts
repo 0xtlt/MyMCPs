@@ -70,7 +70,9 @@ function buildAuthHeaders(mcp: Mcp): Record<string, string> {
   if (mcp.authType === 'auto') {
     const token = McpSecretStore.decrypt(mcp.oauthAccessToken)
     if (token) {
-      headers.Authorization = `${mcp.oauthTokenType || 'Bearer'} ${token}`
+      // OAuth token type names are case-insensitive, but some upstreams (including
+      // the provider behind Notion MCP) parse the Bearer scheme case-sensitively.
+      headers.Authorization = `Bearer ${token}`
     }
   }
 
