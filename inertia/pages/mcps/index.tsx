@@ -273,6 +273,7 @@ export default function McpsIndex({
             route="mcps.update"
             routeParams={{ id: editingMcp.id }}
             className="dialog-form-fill"
+            onSuccess={closeEdit}
           >
             {({ errors, processing }) => (
               <Layout
@@ -348,6 +349,7 @@ export default function McpsIndex({
                         onClick={() =>
                           router.delete(`/mcps/${editingMcp.id}`, {
                             preserveScroll: true,
+                            onSuccess: closeEdit,
                           })
                         }
                       />
