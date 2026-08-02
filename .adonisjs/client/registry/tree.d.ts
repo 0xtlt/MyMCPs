@@ -2,6 +2,7 @@
 import type { routes } from './index.ts'
 
 export interface ApiDefinition {
+  health: typeof routes['health']
   onboarding: {
     show: typeof routes['onboarding.show']
     store: typeof routes['onboarding.store']
@@ -23,6 +24,11 @@ export interface ApiDefinition {
     destroy: typeof routes['invites.destroy']
   }
   home: typeof routes['home']
+  settings: {
+    index: typeof routes['settings.index']
+    updateEmail: typeof routes['settings.updateEmail']
+    updatePassword: typeof routes['settings.updatePassword']
+  }
   members: {
     destroy: typeof routes['members.destroy']
   }

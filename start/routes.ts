@@ -62,6 +62,14 @@ router
         router.on('/').renderInertia('home', {}).as('home')
         router.post('logout', [controllers.Session, 'destroy']).as('session.destroy')
 
+        router.get('settings', [controllers.Settings, 'index']).as('settings.index')
+        router
+          .patch('settings/email', [controllers.Settings, 'updateEmail'])
+          .as('settings.updateEmail')
+        router
+          .patch('settings/password', [controllers.Settings, 'updatePassword'])
+          .as('settings.updatePassword')
+
         router
           .group(() => {
             router.get('invites', [controllers.Invites, 'index']).as('invites.index')

@@ -10,4 +10,5 @@ export const controllers = {
   Mcps: () => import('#controllers/mcps_controller'),
   Onboarding: () => import('#controllers/onboarding_controller'),
   Session: () => import('#controllers/session_controller'),
+  Settings: () => import('#controllers/settings_controller'),
 }

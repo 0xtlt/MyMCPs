@@ -6,6 +6,12 @@ import type { ApiDefinition } from './tree.d.ts'
 const placeholder: any = {}
 
 const routes = {
+  'health': {
+    methods: ["GET","HEAD"],
+    pattern: '/health',
+    tokens: [{"old":"/health","type":0,"val":"health","end":""}],
+    types: placeholder as Registry['health']['types'],
+  },
   'onboarding.show': {
     methods: ["GET","HEAD"],
     pattern: '/onboarding',
@@ -65,6 +71,24 @@ const routes = {
     pattern: '/logout',
     tokens: [{"old":"/logout","type":0,"val":"logout","end":""}],
     types: placeholder as Registry['session.destroy']['types'],
+  },
+  'settings.index': {
+    methods: ["GET","HEAD"],
+    pattern: '/settings',
+    tokens: [{"old":"/settings","type":0,"val":"settings","end":""}],
+    types: placeholder as Registry['settings.index']['types'],
+  },
+  'settings.updateEmail': {
+    methods: ["PATCH"],
+    pattern: '/settings/email',
+    tokens: [{"old":"/settings/email","type":0,"val":"settings","end":""},{"old":"/settings/email","type":0,"val":"email","end":""}],
+    types: placeholder as Registry['settings.updateEmail']['types'],
+  },
+  'settings.updatePassword': {
+    methods: ["PATCH"],
+    pattern: '/settings/password',
+    tokens: [{"old":"/settings/password","type":0,"val":"settings","end":""},{"old":"/settings/password","type":0,"val":"password","end":""}],
+    types: placeholder as Registry['settings.updatePassword']['types'],
   },
   'invites.index': {
     methods: ["GET","HEAD"],

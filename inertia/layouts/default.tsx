@@ -8,8 +8,8 @@ import { Button } from '@astryxdesign/core/Button'
 import { Center } from '@astryxdesign/core/Center'
 import { HStack } from '@astryxdesign/core/Layout'
 import { Icon } from '@astryxdesign/core/Icon'
+import { Link } from '@astryxdesign/core/Link'
 import { NavIcon } from '@astryxdesign/core/NavIcon'
-import { Text } from '@astryxdesign/core/Text'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
 
 export default function Layout({ children }: { children: ReactElement<Data.SharedProps> }) {
@@ -71,9 +71,9 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
             endContent={
               user ? (
                 <HStack gap={2} vAlign="center">
-                  <Text type="label" color="secondary">
+                  <Link href="/settings" isStandalone label="Open settings">
                     {user.initials}
-                  </Text>
+                  </Link>
                   <Form route="session.destroy">
                     <Button type="submit" label="Log out" variant="ghost" size="sm" />
                   </Form>
