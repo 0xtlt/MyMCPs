@@ -3,15 +3,6 @@ set -eu
 
 mkdir -p tmp/mcp-sandboxes tmp/deno-cache
 
-if [ -n "${SERVICE_URL_MYMCPS_3333:-}" ]; then
-  # Coolify's assigned domain is authoritative for redirects, links, and
-  # OAuth callbacks. Keep APP_URL overrides for non-Coolify deployments.
-  APP_URL="${SERVICE_URL_MYMCPS_3333%/}"
-elif [ -z "${APP_URL:-}" ]; then
-  APP_URL="http://localhost:${PORT:-3333}"
-fi
-export APP_URL
-
 APP_KEY_FILE=/app/tmp/app.key
 
 if [ -z "${APP_KEY:-}" ]; then

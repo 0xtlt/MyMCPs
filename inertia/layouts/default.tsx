@@ -4,9 +4,10 @@ import { usePage } from '@inertiajs/react'
 import { type ReactElement, useEffect } from 'react'
 import { Form } from '@adonisjs/inertia/react'
 import { AppShell } from '@astryxdesign/core/AppShell'
+import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Center } from '@astryxdesign/core/Center'
-import { HStack } from '@astryxdesign/core/Layout'
+import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Icon } from '@astryxdesign/core/Icon'
 import { Link } from '@astryxdesign/core/Link'
 import { NavIcon } from '@astryxdesign/core/NavIcon'
@@ -85,9 +86,19 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
           />
         }
       >
-        <Center axis="horizontal" width="100%">
-          {children}
-        </Center>
+        <VStack gap={4} width="100%" hAlign="stretch">
+          {user && !children.props.appUrlConfigured ? (
+            <Banner
+              status="warning"
+              title="Set APP_URL to enable public links"
+              description="Define APP_URL as this instance’s public HTTPS origin, then redeploy."
+              container="section"
+            />
+          ) : null}
+          <Center axis="horizontal" width="100%">
+            {children}
+          </Center>
+        </VStack>
       </AppShell>
       <Toaster position="top-center" richColors />
     </>

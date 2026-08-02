@@ -47,19 +47,22 @@ export default function InvitesIndex({
 }: {
   invites: InviteRow[]
   members: MemberRow[]
-  appUrl: string
+  appUrl: string | null
 }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [email, setEmail] = useState('')
   const [section, setSection] = useState<TeamSection>('members')
 
   function inviteUrl(token: string) {
+    if (!appUrl) return null
     return `${appUrl}/invite/${token}`
   }
 
   async function copyLink(token: string) {
+    const url = inviteUrl(token)
+    if (!url) return
     try {
-      await navigator.clipboard.writeText(inviteUrl(token))
+      await navigator.clipboard.writeText(url)
     } catch {
       // ignore clipboard failures
     }
@@ -121,6 +124,8 @@ export default function InvitesIndex({
               label="Copy link"
               variant="secondary"
               size="sm"
+              isDisabled={!appUrl}
+              tooltip={!appUrl ? 'Set APP_URL to enable public links' : undefined}
               onClick={() => copyLink(invite.token)}
             />
           ) : null}

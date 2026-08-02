@@ -11,14 +11,14 @@ import InviteTransformer from '#transformers/invite_transformer'
 import MemberTransformer from '#transformers/member_transformer'
 
 export default class InvitesController {
-  async index({ inertia, auth, request }: HttpContext) {
+  async index({ inertia, auth }: HttpContext) {
     const invites = await Invite.query().orderBy('created_at', 'desc')
     const members = await User.query().orderBy('created_at', 'asc')
 
     return inertia.render('invites/index', {
       invites: InviteTransformer.transform(invites),
       members: MemberTransformer.transform(members, auth.user!.id),
-      appUrl: publicAppUrl(request),
+      appUrl: publicAppUrl(),
     })
   }
 

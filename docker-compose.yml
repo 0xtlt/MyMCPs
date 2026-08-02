@@ -20,9 +20,6 @@ services:
       APP_URL: ${APP_URL:-}
       SESSION_DRIVER: cookie
       DENO_PATH: /usr/local/bin/deno
-      # Coolify populates this from the domain assigned to the service. The
-      # entrypoint promotes it to APP_URL before AdonisJS starts.
-      SERVICE_URL_MYMCPS_3333:
     volumes:
       - mymcps-data:/app/tmp
     security_opt:

@@ -18,7 +18,7 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js'
 import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
-import { publicAppUrl } from '#services/public_url'
+import { requirePublicAppUrl } from '#services/public_url'
 import { oauthSessionValidator } from '#validators/oauth'
 
 type OauthSession = Infer<typeof oauthSessionValidator>
@@ -215,8 +215,8 @@ function saveOAuthTokens(mcp: Mcp, tokens: OAuthTokens) {
   }
 }
 
-export function oauthCallbackUrl(request: HttpContext['request']) {
-  return `${publicAppUrl(request)}/mcps/oauth/callback`
+export function oauthCallbackUrl() {
+  return `${requirePublicAppUrl()}/mcps/oauth/callback`
 }
 
 export function startOauthSession(
@@ -254,12 +254,8 @@ export function clearOauthSession(session: HttpContext['session'], state: string
  * Discover an upstream's OAuth provider, register a public client when needed,
  * and create the browser authorization redirect.
  */
-export async function startOauthFlow(
-  session: HttpContext['session'],
-  mcp: Mcp,
-  request: HttpContext['request']
-) {
-  const redirectUri = oauthCallbackUrl(request)
+export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) {
+  const redirectUri = oauthCallbackUrl()
   const context = await discoverOAuthContext(mcp)
   const existingClient = clientInformationFromMcp(mcp)
   const canReuseExisting =

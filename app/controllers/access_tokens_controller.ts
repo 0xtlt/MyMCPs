@@ -8,17 +8,18 @@ import AccessTokenTransformer from '#transformers/access_token_transformer'
 import McpTransformer from '#transformers/mcp_transformer'
 
 export default class AccessTokensController {
-  async index({ inertia, session, request }: HttpContext) {
+  async index({ inertia, session }: HttpContext) {
     const tokens = await AccessToken.query().preload('mcps').orderBy('created_at', 'desc')
     const mcps = await Mcp.query().orderBy('name', 'asc')
 
     const createdPlaintextRaw = session.flashMessages.get('createdPlaintext')
     const createdPlaintext = typeof createdPlaintextRaw === 'string' ? createdPlaintextRaw : null
+    const appUrl = publicAppUrl()
 
     return inertia.render('tokens/index', {
       tokens: AccessTokenTransformer.transform(tokens),
       mcps: McpTransformer.transform(mcps).useVariant('toOption'),
-      gatewayUrl: `${publicAppUrl(request)}/mcp`,
+      gatewayUrl: appUrl ? `${appUrl}/mcp` : null,
       createdPlaintext,
     })
   }

@@ -29,13 +29,6 @@ function fakeSession() {
   return { session, values }
 }
 
-function fakeRequest(host = 'localhost:3333') {
-  return {
-    protocol: () => 'http',
-    host: () => host,
-  } as unknown as HttpContext['request']
-}
-
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -135,7 +128,7 @@ test.group('MCP OAuth', (group) => {
       })
       const { session, values } = fakeSession()
 
-      const redirect = await startOauthFlow(session, mcp, fakeRequest())
+      const redirect = await startOauthFlow(session, mcp)
       const authorizationUrl = new URL(redirect)
       const state = authorizationUrl.searchParams.get('state')
       const oauth = await readOauthSession(session, state ?? undefined)
@@ -205,7 +198,7 @@ test.group('MCP OAuth', (group) => {
       })
 
       await assert.rejects(
-        () => startOauthFlow(fakeSession().session, mcp, fakeRequest()),
+        () => startOauthFlow(fakeSession().session, mcp),
         'OAuth provider metadata could not be discovered'
       )
     } finally {

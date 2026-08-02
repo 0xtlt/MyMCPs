@@ -66,7 +66,7 @@ export default function TokensIndex({
 }: {
   tokens: TokenRow[]
   mcps: McpOption[]
-  gatewayUrl: string
+  gatewayUrl: string | null
   createdPlaintext: string | null
 }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -202,7 +202,7 @@ export default function TokensIndex({
         <VStack gap={3} hAlign="stretch">
           <Heading level={2}>Gateway URL</Heading>
           <HStack gap={3} vAlign="center" wrap="wrap">
-            <Text type="body">{gatewayUrl}</Text>
+            <Text type="body">{gatewayUrl ?? 'Configure APP_URL to reveal the gateway URL.'}</Text>
             <Button
               label={
                 gatewayCopyState === 'copied'
@@ -213,7 +213,9 @@ export default function TokensIndex({
               }
               variant={gatewayCopyState === 'copied' ? 'primary' : 'secondary'}
               size="sm"
-              clickAction={() => copyText(gatewayUrl, setGatewayCopyState)}
+              isDisabled={!gatewayUrl}
+              tooltip={!gatewayUrl ? 'Set APP_URL to enable public links' : undefined}
+              clickAction={gatewayUrl ? () => copyText(gatewayUrl, setGatewayCopyState) : undefined}
             />
           </HStack>
           <Text type="supporting" color="secondary">

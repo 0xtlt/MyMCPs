@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
 import User from '#models/user'
 import UserTransformer from '#transformers/user_transformer'
+import { publicAppUrl } from '#services/public_url'
 import BaseInertiaMiddleware from '@adonisjs/inertia/inertia_middleware'
 
 export default class InertiaMiddleware extends BaseInertiaMiddleware {
@@ -36,6 +37,7 @@ export default class InertiaMiddleware extends BaseInertiaMiddleware {
       }),
       user: ctx.inertia.always(auth?.user ? UserTransformer.transform(auth.user) : undefined),
       setupComplete: ctx.inertia.always(await User.setupComplete()),
+      appUrlConfigured: ctx.inertia.always(Boolean(publicAppUrl())),
     }
   }
 
