@@ -6,14 +6,12 @@ import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Text } from '@astryxdesign/core/Text'
 
-export type McpAuthType = 'none' | 'bearer' | 'header' | 'oauth'
+export type McpAuthType = 'auto' | 'bearer' | 'header'
 export type McpTransport = 'http' | 'npm'
 
 export type McpFormSecrets = {
   hasAuthBearer?: boolean
   hasAuthHeaderValue?: boolean
-  hasOauthClientSecret?: boolean
-  hasOauthAccessToken?: boolean
 }
 
 export type McpEnvironmentVariable = {
@@ -37,11 +35,6 @@ export type McpFormValues = {
   authBearer: string
   authHeaderName: string
   authHeaderValue: string
-  oauthAuthorizeUrl: string
-  oauthTokenUrl: string
-  oauthScopes: string
-  oauthClientId: string
-  oauthClientSecret: string
   enabled: boolean
 }
 
@@ -76,15 +69,10 @@ export function emptyMcpFormValues(): McpFormValues {
     npmVersion: '',
     npmArgs: '',
     npmEnv: [],
-    authType: 'none',
+    authType: 'auto',
     authBearer: '',
     authHeaderName: '',
     authHeaderValue: '',
-    oauthAuthorizeUrl: '',
-    oauthTokenUrl: '',
-    oauthScopes: '',
-    oauthClientId: '',
-    oauthClientSecret: '',
     enabled: true,
   }
 }
@@ -100,10 +88,6 @@ export function mcpFormValuesFromRow(mcp: {
   npmEnv: Array<{ name: string; hasValue: boolean }>
   authType: McpAuthType
   authHeaderName: string | null
-  oauthAuthorizeUrl: string | null
-  oauthTokenUrl: string | null
-  oauthScopes: string | null
-  oauthClientId: string | null
   enabled: boolean
 }): McpFormValues {
   return {
@@ -124,10 +108,6 @@ export function mcpFormValuesFromRow(mcp: {
     })),
     authType: mcp.authType,
     authHeaderName: mcp.authHeaderName ?? '',
-    oauthAuthorizeUrl: mcp.oauthAuthorizeUrl ?? '',
-    oauthTokenUrl: mcp.oauthTokenUrl ?? '',
-    oauthScopes: mcp.oauthScopes ?? '',
-    oauthClientId: mcp.oauthClientId ?? '',
     enabled: mcp.enabled,
   }
 }
@@ -156,14 +136,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
         label="Transport"
         htmlName="transport"
         value={values.transport}
-        onChange={(transport) =>
-          onChange({
-            transport: transport as McpTransport,
-            ...(transport === 'npm' && values.authType === 'oauth'
-              ? { authType: 'none' as McpAuthType }
-              : {}),
-          })
-        }
+        onChange={(transport) => onChange({ transport: transport as McpTransport })}
         orientation="horizontal"
       >
         <RadioListItem value="http" label="HTTP" description="Remote Streamable HTTP URL" />
@@ -313,10 +286,13 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
         value={values.authType}
         onChange={(authType) => onChange({ authType: authType as McpAuthType })}
       >
-        <RadioListItem value="none" label="None" />
+        <RadioListItem
+          value="auto"
+          label="Auto"
+          description="Connect without credentials or detect OAuth automatically"
+        />
         <RadioListItem value="bearer" label="Bearer token" />
         <RadioListItem value="header" label="Custom header" />
-        {values.transport === 'http' ? <RadioListItem value="oauth" label="OAuth" /> : null}
       </RadioList>
 
       {values.authType === 'bearer' ? (
@@ -352,68 +328,6 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
             isOptional={Boolean(secrets.hasAuthHeaderValue)}
           />
         </HStack>
-      ) : null}
-
-      {values.authType === 'oauth' ? (
-        <VStack gap={3} hAlign="stretch">
-          <Text type="supporting" color="secondary">
-            OAuth endpoints and client registration are discovered automatically from the HTTP MCP
-            when you connect. The fields below are optional overrides for providers without standard
-            discovery.
-          </Text>
-          <TextInput
-            label="Authorize URL (optional override)"
-            htmlName="oauthAuthorizeUrl"
-            value={values.oauthAuthorizeUrl}
-            onChange={(oauthAuthorizeUrl) => onChange({ oauthAuthorizeUrl })}
-            width="100%"
-            isOptional
-          />
-          <TextInput
-            label="Token URL (optional override)"
-            htmlName="oauthTokenUrl"
-            value={values.oauthTokenUrl}
-            onChange={(oauthTokenUrl) => onChange({ oauthTokenUrl })}
-            width="100%"
-            isOptional
-          />
-          <HStack gap={3} wrap="wrap">
-            <TextInput
-              label="Client ID (optional override)"
-              htmlName="oauthClientId"
-              value={values.oauthClientId}
-              onChange={(oauthClientId) => onChange({ oauthClientId })}
-              width={240}
-              isOptional
-            />
-            <TextInput
-              label={
-                secrets.hasOauthClientSecret
-                  ? 'Client secret (leave blank to keep)'
-                  : 'Client secret (optional override)'
-              }
-              htmlName="oauthClientSecret"
-              type="password"
-              value={values.oauthClientSecret}
-              onChange={(oauthClientSecret) => onChange({ oauthClientSecret })}
-              width={240}
-              isOptional={Boolean(secrets.hasOauthClientSecret)}
-            />
-            <TextInput
-              label="Scopes"
-              htmlName="oauthScopes"
-              value={values.oauthScopes}
-              onChange={(oauthScopes) => onChange({ oauthScopes })}
-              isOptional
-              width={240}
-            />
-          </HStack>
-          {secrets.hasOauthAccessToken !== undefined ? (
-            <Text type="supporting" color="secondary">
-              OAuth access token: {secrets.hasOauthAccessToken ? 'connected' : 'not connected yet'}
-            </Text>
-          ) : null}
-        </VStack>
       ) : null}
 
       <CheckboxInput

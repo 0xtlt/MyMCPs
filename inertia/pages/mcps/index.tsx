@@ -34,16 +34,12 @@ type McpRow = {
   npmVersion: string | null
   npmArgs: string
   npmEnv: Array<{ name: string; hasValue: boolean }>
-  authType: 'none' | 'bearer' | 'header' | 'oauth'
+  authType: 'auto' | 'bearer' | 'header'
   authHeaderName: string | null
   hasAuthBearer: boolean
   hasAuthHeaderValue: boolean
-  oauthAuthorizeUrl: string | null
-  oauthTokenUrl: string | null
-  oauthScopes: string | null
-  oauthClientId: string | null
-  hasOauthClientSecret: boolean
   hasOauthAccessToken: boolean
+  oauthRequired: boolean
   status: 'draft' | 'ready' | 'error'
   lastError: string | null
   enabled: boolean
@@ -289,7 +285,28 @@ export default function McpsIndex({
                 content={
                   <LayoutContent isScrollable>
                     <VStack gap={4} hAlign="stretch">
-                      {editingMcp.lastError ? (
+                      {editingMcp.oauthRequired ? (
+                        <Banner
+                          status="warning"
+                          title="Authorization required"
+                          description="This MCP requires OAuth. Connect your account to finish setup."
+                          container="card"
+                          endContent={
+                            <Button
+                              label={editingMcp.hasOauthAccessToken ? 'Re-authorize' : 'Connect'}
+                              variant="secondary"
+                              size="sm"
+                              isDisabled={!appUrlConfigured}
+                              tooltip={
+                                !appUrlConfigured ? 'Set APP_URL to connect with OAuth' : undefined
+                              }
+                              onClick={() =>
+                                window.location.assign(`/mcps/${editingMcp.id}/oauth/start`)
+                              }
+                            />
+                          }
+                        />
+                      ) : editingMcp.lastError ? (
                         <Banner
                           status="error"
                           title="Last connection error"
@@ -308,13 +325,11 @@ export default function McpsIndex({
                             })
                           }
                         />
-                        {editingMcp.authType === 'oauth' ? (
+                        {editingMcp.authType === 'auto' &&
+                        editingMcp.hasOauthAccessToken &&
+                        !editingMcp.oauthRequired ? (
                           <Button
-                            label={
-                              editingMcp.hasOauthAccessToken
-                                ? 'Re-authorize OAuth'
-                                : 'Connect OAuth'
-                            }
+                            label="Re-authorize"
                             variant="secondary"
                             size="sm"
                             isDisabled={!appUrlConfigured}
@@ -339,8 +354,6 @@ export default function McpsIndex({
                         secrets={{
                           hasAuthBearer: editingMcp.hasAuthBearer,
                           hasAuthHeaderValue: editingMcp.hasAuthHeaderValue,
-                          hasOauthClientSecret: editingMcp.hasOauthClientSecret,
-                          hasOauthAccessToken: editingMcp.hasOauthAccessToken,
                         }}
                       />
                     </VStack>

@@ -24,7 +24,8 @@ test.group('missing public app URL browser state', (group) => {
     await createInvite(admin.id)
     await createMcp(admin.id, {
       name: 'OAuth MCP',
-      authType: 'oauth',
+      authType: 'auto',
+      oauthRequired: true,
       httpUrl: 'https://mcp.example/mcp',
       status: 'draft',
     })
@@ -55,7 +56,9 @@ test.group('missing public app URL browser state', (group) => {
     await page.waitForURL((url) => url.pathname === '/mcps')
     await page.getByRole('button', { name: 'Edit' }).click()
     assert.equal(
-      await page.getByRole('button', { name: 'Connect OAuth' }).getAttribute('aria-disabled'),
+      await page
+        .getByRole('button', { name: 'Connect', exact: true })
+        .getAttribute('aria-disabled'),
       'true'
     )
   })
