@@ -61,6 +61,30 @@ export class AccessTokenSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
+export class InstanceSettingSchema extends BaseModel {
+  static $columns = [
+    'createdAt',
+    'id',
+    'mcpLogLevel',
+    'mcpLogRetentionDays',
+    'updatedAt',
+    'updatedBy',
+  ] as const
+  $columns = InstanceSettingSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mcpLogLevel: string
+  @column()
+  declare mcpLogRetentionDays: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare updatedBy: number | null
+}
+
 export class InviteSchema extends BaseModel {
   static $columns = [
     'acceptedAt',
@@ -92,6 +116,66 @@ export class InviteSchema extends BaseModel {
   declare token: string
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
+}
+
+export class McpCallLogSchema extends BaseModel {
+  static $columns = [
+    'accessTokenId',
+    'accessTokenName',
+    'accessTokenPrefix',
+    'arguments',
+    'argumentsCaptured',
+    'createdAt',
+    'durationMs',
+    'errorCategory',
+    'errorSummary',
+    'id',
+    'mcpId',
+    'mcpName',
+    'mcpSlug',
+    'outcome',
+    'requestedToolName',
+    'response',
+    'responseCaptured',
+    'toolName',
+  ] as const
+  $columns = McpCallLogSchema.$columns
+  @column()
+  declare accessTokenId: number | null
+  @column()
+  declare accessTokenName: string
+  @column()
+  declare accessTokenPrefix: string
+  @column()
+  declare arguments: string | null
+  @column()
+  declare argumentsCaptured: boolean
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare durationMs: number
+  @column()
+  declare errorCategory: string | null
+  @column()
+  declare errorSummary: string | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mcpId: number | null
+  @column()
+  declare mcpName: string | null
+  @column()
+  declare mcpSlug: string | null
+  @column()
+  declare outcome: string
+  @column()
+  declare requestedToolName: string
+  @column()
+  declare response: string | null
+  @column()
+  declare responseCaptured: boolean
+  @column()
+  declare toolName: string | null
 }
 
 export class McpSchema extends BaseModel {
@@ -197,6 +281,23 @@ export class McpSchema extends BaseModel {
   declare transport: string
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
+}
+
+export class RememberMeTokenSchema extends BaseModel {
+  static $columns = ['createdAt', 'expiresAt', 'hash', 'id', 'tokenableId', 'updatedAt'] as const
+  $columns = RememberMeTokenSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare expiresAt: DateTime
+  @column()
+  declare hash: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare tokenableId: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
 }
 
 export class UserSchema extends BaseModel {

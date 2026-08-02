@@ -4,6 +4,7 @@ import AccessToken from '#models/access_token'
 import Invite from '#models/invite'
 import Mcp from '#models/mcp'
 import User from '#models/user'
+import McpCallLog from '#models/mcp_call_log'
 
 let sequence = 0
 
@@ -143,5 +144,44 @@ export async function createStoredAccessToken(
     revokedAt: overrides.revokedAt ?? null,
     lastUsedAt: overrides.lastUsedAt ?? null,
     createdBy,
+  })
+}
+
+export async function createMcpCallLog(
+  accessToken: AccessToken,
+  overrides: Partial<{
+    mcp: Mcp | null
+    requestedToolName: string
+    toolName: string | null
+    outcome: 'success' | 'error'
+    errorCategory: 'invalid_tool' | 'disallowed_mcp' | 'upstream_exception' | 'tool_error' | null
+    errorSummary: string | null
+    arguments: string | null
+    argumentsCaptured: boolean
+    response: string | null
+    responseCaptured: boolean
+    durationMs: number
+    createdAt: DateTime
+  }> = {}
+) {
+  const mcp = overrides.mcp ?? null
+  return McpCallLog.create({
+    accessTokenId: accessToken.id,
+    accessTokenName: accessToken.name,
+    accessTokenPrefix: accessToken.tokenPrefix,
+    mcpId: mcp?.id ?? null,
+    mcpName: mcp?.name ?? null,
+    mcpSlug: mcp?.slug ?? null,
+    requestedToolName: overrides.requestedToolName ?? `${mcp?.slug ?? 'test'}__echo`,
+    toolName: overrides.toolName === undefined ? 'echo' : overrides.toolName,
+    outcome: overrides.outcome ?? 'success',
+    errorCategory: overrides.errorCategory ?? null,
+    errorSummary: overrides.errorSummary ?? null,
+    arguments: overrides.arguments ?? null,
+    argumentsCaptured: overrides.argumentsCaptured ?? false,
+    response: overrides.response ?? null,
+    responseCaptured: overrides.responseCaptured ?? false,
+    durationMs: overrides.durationMs ?? 25,
+    createdAt: overrides.createdAt,
   })
 }

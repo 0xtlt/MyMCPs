@@ -72,6 +72,11 @@ router
 
         router
           .group(() => {
+            router
+              .patch('settings/mcp-logging', [controllers.Settings, 'updateMcpLogging'])
+              .as('settings.updateMcpLogging')
+            router.get('logs', [controllers.Logs, 'index']).as('logs.index')
+            router.get('analytics', [controllers.Analytics, 'index']).as('analytics.index')
             router.get('invites', [controllers.Invites, 'index']).as('invites.index')
             router.post('invites', [controllers.Invites, 'store']).as('invites.store')
             router.delete('invites/:id', [controllers.Invites, 'destroy']).as('invites.destroy')

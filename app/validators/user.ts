@@ -30,6 +30,11 @@ export const updatePasswordValidator = vine.create({
   }),
 })
 
+export const updateMcpLoggingValidator = vine.create({
+  mcpLogLevel: vine.enum(['off', 'metadata', 'arguments', 'responses'] as const),
+  mcpLogRetentionDays: vine.number().withoutDecimals().min(1).max(365),
+})
+
 /**
  * First-run onboarding: create the instance admin.
  */

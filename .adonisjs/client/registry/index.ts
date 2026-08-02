@@ -90,6 +90,24 @@ const routes = {
     tokens: [{"old":"/settings/password","type":0,"val":"settings","end":""},{"old":"/settings/password","type":0,"val":"password","end":""}],
     types: placeholder as Registry['settings.updatePassword']['types'],
   },
+  'settings.updateMcpLogging': {
+    methods: ["PATCH"],
+    pattern: '/settings/mcp-logging',
+    tokens: [{"old":"/settings/mcp-logging","type":0,"val":"settings","end":""},{"old":"/settings/mcp-logging","type":0,"val":"mcp-logging","end":""}],
+    types: placeholder as Registry['settings.updateMcpLogging']['types'],
+  },
+  'logs.index': {
+    methods: ["GET","HEAD"],
+    pattern: '/logs',
+    tokens: [{"old":"/logs","type":0,"val":"logs","end":""}],
+    types: placeholder as Registry['logs.index']['types'],
+  },
+  'analytics.index': {
+    methods: ["GET","HEAD"],
+    pattern: '/analytics',
+    tokens: [{"old":"/analytics","type":0,"val":"analytics","end":""}],
+    types: placeholder as Registry['analytics.index']['types'],
+  },
   'invites.index': {
     methods: ["GET","HEAD"],
     pattern: '/invites',

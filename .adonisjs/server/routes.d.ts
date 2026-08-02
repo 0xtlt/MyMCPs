@@ -18,6 +18,9 @@ export type ScannedRoutes = {
     'settings.index': { paramsTuple?: []; params?: {} }
     'settings.updateEmail': { paramsTuple?: []; params?: {} }
     'settings.updatePassword': { paramsTuple?: []; params?: {} }
+    'settings.updateMcpLogging': { paramsTuple?: []; params?: {} }
+    'logs.index': { paramsTuple?: []; params?: {} }
+    'analytics.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'invites.store': { paramsTuple?: []; params?: {} }
     'invites.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -42,6 +45,8 @@ export type ScannedRoutes = {
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'home': { paramsTuple?: []; params?: {} }
     'settings.index': { paramsTuple?: []; params?: {} }
+    'logs.index': { paramsTuple?: []; params?: {} }
+    'analytics.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'mcps.index': { paramsTuple?: []; params?: {} }
     'mcps.oauthCallback': { paramsTuple?: []; params?: {} }
@@ -57,6 +62,8 @@ export type ScannedRoutes = {
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'home': { paramsTuple?: []; params?: {} }
     'settings.index': { paramsTuple?: []; params?: {} }
+    'logs.index': { paramsTuple?: []; params?: {} }
+    'analytics.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'mcps.index': { paramsTuple?: []; params?: {} }
     'mcps.oauthCallback': { paramsTuple?: []; params?: {} }
@@ -79,6 +86,7 @@ export type ScannedRoutes = {
   PATCH: {
     'settings.updateEmail': { paramsTuple?: []; params?: {} }
     'settings.updatePassword': { paramsTuple?: []; params?: {} }
+    'settings.updateMcpLogging': { paramsTuple?: []; params?: {} }
   }
   DELETE: {
     'invites.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }

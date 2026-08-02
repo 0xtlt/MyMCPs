@@ -60,11 +60,19 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
                     isSelected={url.startsWith('/tokens')}
                   />
                   {user.isAdmin ? (
-                    <TopNavItem
-                      label="Invites"
-                      href="/invites"
-                      isSelected={url.startsWith('/invites')}
-                    />
+                    <>
+                      <TopNavItem label="Logs" href="/logs" isSelected={url.startsWith('/logs')} />
+                      <TopNavItem
+                        label="Analytics"
+                        href="/analytics"
+                        isSelected={url.startsWith('/analytics')}
+                      />
+                      <TopNavItem
+                        label="Invites"
+                        href="/invites"
+                        isSelected={url.startsWith('/invites')}
+                      />
+                    </>
                   ) : null}
                 </>
               ) : undefined
