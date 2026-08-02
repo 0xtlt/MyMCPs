@@ -7,6 +7,30 @@ const email = () => vine.string().email().maxLength(254)
 const password = () => vine.string().minLength(8).maxLength(32)
 
 /**
+ * Change the signed-in user's email address.
+ */
+export const updateEmailValidator = vine.withMetaData<{ userId: number }>().create({
+  email: email().unique({
+    table: 'users',
+    column: 'email',
+    filter: (query, _value, field) => {
+      query.whereNot('id', field.meta.userId)
+    },
+  }),
+  currentPassword: vine.string().minLength(1),
+})
+
+/**
+ * Change the signed-in user's password.
+ */
+export const updatePasswordValidator = vine.create({
+  currentPassword: vine.string().minLength(1),
+  newPassword: password().confirmed({
+    confirmationField: 'passwordConfirmation',
+  }),
+})
+
+/**
  * First-run onboarding: create the instance admin.
  */
 export const onboardingValidator = vine.create({
