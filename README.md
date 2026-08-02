@@ -37,6 +37,13 @@ Migrations run as part of a fresh scaffold; for an existing DB:
 node ace migration:run
 ```
 
+## Codex worktrees
+
+When creating a worktree in the Codex desktop app, select the **MyMCPs** local
+environment. Codex will install the locked pnpm dependencies, create an isolated
+`.env` with a generated `APP_KEY`, and migrate a fresh SQLite database. The
+environment also adds **Dev** and **Tests** actions to the Codex toolbar.
+
 ## One-click OAuth MCPs
 
 For a remote OAuth MCP such as Notion, add an HTTP MCP with this URL:
