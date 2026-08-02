@@ -1,5 +1,7 @@
 import type Mcp from '#models/mcp'
 import logger from '@adonisjs/core/services/logger'
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
+import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import {
   connectHttpUpstream,
   listHttpTools,
@@ -92,20 +94,25 @@ export async function callUpstreamTool(
 
 export async function testAndUpdateStatus(mcp: Mcp) {
   try {
-    if (mcp.authType === 'oauth' && !mcp.oauthAccessToken) {
-      mcp.status = 'draft'
-      mcp.lastError = 'OAuth authorization required'
-      await mcp.save()
-      return mcp
-    }
-
     await probeUpstream(mcp)
     mcp.status = 'ready'
     mcp.lastError = null
+    mcp.oauthRequired = false
     await mcp.save()
   } catch (error) {
-    mcp.status = 'error'
-    mcp.lastError = error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
+    const authorizationRequired =
+      error instanceof UnauthorizedError ||
+      (error instanceof StreamableHTTPError && error.code === 401)
+
+    if (mcp.transport === 'http' && mcp.authType === 'auto' && authorizationRequired) {
+      mcp.status = 'draft'
+      mcp.lastError = 'OAuth authorization required'
+      mcp.oauthRequired = true
+    } else {
+      mcp.status = 'error'
+      mcp.lastError = error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
+      mcp.oauthRequired = false
+    }
     await mcp.save()
   }
   return mcp

@@ -27,7 +27,7 @@ async function npmPayload(
     npmVersion: '',
     npmArgs: '',
     npmEnv: overrides.npmEnv ?? [],
-    authType: 'none',
+    authType: 'auto',
     enabled: true,
   })
 }

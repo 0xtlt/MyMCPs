@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { DateTime } from 'luxon'
 import { test } from '@japa/runner'
 import McpSecretStore from '#services/mcp_secret_store'
+import { testAndUpdateStatus } from '#services/upstream/manager'
 import {
   clearOauthSession,
   exchangeAuthorizationCode,
@@ -122,7 +123,7 @@ test.group('MCP OAuth', (group) => {
       const admin = await createAdmin()
       const mcp = await createMcp(admin.id, {
         name: 'Notion',
-        authType: 'oauth',
+        authType: 'auto',
         httpUrl: 'https://mcp.notion.com/mcp',
         status: 'draft',
       })
@@ -156,6 +157,7 @@ test.group('MCP OAuth', (group) => {
       assert.equal(McpSecretStore.decrypt(mcp.oauthRefreshToken), 'refresh-token')
       assert.equal(mcp.oauthTokenType, 'Bearer')
       assert.equal(mcp.oauthScopes, 'notion')
+      assert.isFalse(mcp.oauthRequired)
       assert.isNotNull(mcp.oauthTokenExpiresAt)
 
       mcp.oauthTokenExpiresAt = DateTime.utc().minus({ minutes: 1 })
@@ -192,7 +194,7 @@ test.group('MCP OAuth', (group) => {
       const admin = await createAdmin()
       const mcp = await createMcp(admin.id, {
         name: 'Undiscoverable',
-        authType: 'oauth',
+        authType: 'auto',
         httpUrl: 'https://mcp.example/mcp',
         status: 'draft',
       })
@@ -201,6 +203,50 @@ test.group('MCP OAuth', (group) => {
         () => startOauthFlow(fakeSession().session, mcp),
         'OAuth provider metadata could not be discovered'
       )
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
+test.group('MCP automatic authentication', (group) => {
+  group.each.setup(beginTestTransaction)
+  group.each.teardown(rollbackTestTransaction)
+
+  test('marks only Auto HTTP MCPs as requiring OAuth after an unauthorized response', async ({
+    assert,
+  }) => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () =>
+      new Response('', {
+        status: 401,
+        headers: {
+          'WWW-Authenticate':
+            'Bearer resource_metadata="https://mcp.example/.well-known/oauth-protected-resource"',
+        },
+      })
+
+    try {
+      const admin = await createAdmin()
+      const automatic = await createMcp(admin.id, {
+        name: 'Automatic auth',
+        authType: 'auto',
+        status: 'draft',
+      })
+      const manual = await createMcp(admin.id, {
+        name: 'Manual bearer',
+        authType: 'bearer',
+        status: 'draft',
+      })
+
+      await testAndUpdateStatus(automatic)
+      await testAndUpdateStatus(manual)
+
+      assert.equal(automatic.status, 'draft')
+      assert.equal(automatic.lastError, 'OAuth authorization required')
+      assert.isTrue(automatic.oauthRequired)
+      assert.equal(manual.status, 'error')
+      assert.isFalse(manual.oauthRequired)
     } finally {
       globalThis.fetch = originalFetch
     }

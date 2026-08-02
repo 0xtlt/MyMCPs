@@ -81,9 +81,6 @@ function applySecrets(mcp: Mcp, payload: McpPayload) {
   if (payload.authHeaderValue && payload.authHeaderValue.length > 0) {
     mcp.authHeaderValue = McpSecretStore.encrypt(payload.authHeaderValue)
   }
-  if (payload.oauthClientSecret && payload.oauthClientSecret.length > 0) {
-    mcp.oauthClientSecret = McpSecretStore.encrypt(payload.oauthClientSecret)
-  }
 }
 
 /**
@@ -97,7 +94,7 @@ function clearUnusedAuthSecrets(mcp: Mcp) {
     mcp.authHeaderName = null
     mcp.authHeaderValue = null
   }
-  if (mcp.authType !== 'oauth') {
+  if (mcp.authType !== 'auto') {
     mcp.oauthAuthorizeUrl = null
     mcp.oauthTokenUrl = null
     mcp.oauthScopes = null
@@ -111,6 +108,7 @@ function clearUnusedAuthSecrets(mcp: Mcp) {
     mcp.oauthRedirectUri = null
     mcp.oauthClientAuthMethod = null
     mcp.oauthTokenType = null
+    mcp.oauthRequired = false
   }
 }
 
@@ -128,6 +126,7 @@ function clearOAuthConnection(mcp: Mcp) {
   mcp.oauthRedirectUri = null
   mcp.oauthClientAuthMethod = null
   mcp.oauthTokenType = null
+  mcp.oauthRequired = false
 }
 
 export async function assignMcpFromPayload(
@@ -152,10 +151,6 @@ export async function assignMcpFromPayload(
   assignNpmEnvironment(mcp, payload)
   mcp.authType = payload.authType
   mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
-  mcp.oauthAuthorizeUrl = payload.authType === 'oauth' ? (payload.oauthAuthorizeUrl ?? null) : null
-  mcp.oauthTokenUrl = payload.authType === 'oauth' ? (payload.oauthTokenUrl ?? null) : null
-  mcp.oauthScopes = payload.authType === 'oauth' ? payload.oauthScopes || null : null
-  mcp.oauthClientId = payload.authType === 'oauth' ? (payload.oauthClientId ?? null) : null
   mcp.enabled = payload.enabled ?? false
   clearUnusedAuthSecrets(mcp)
   applySecrets(mcp, payload)
@@ -203,7 +198,7 @@ export default class McpsController {
     await mcp.save()
 
     await testAndUpdateStatus(mcp)
-    if (payload.authType === 'oauth') {
+    if (mcp.oauthRequired) {
       session.flash('editingMcpId', mcp.id)
     }
     session.flash('success', 'MCP created')
@@ -232,7 +227,7 @@ export default class McpsController {
     await mcp.save()
 
     await testAndUpdateStatus(mcp)
-    if (payload.authType === 'oauth') {
+    if (mcp.oauthRequired) {
       session.flash('editingMcpId', mcp.id)
     }
     session.flash('success', 'MCP updated')
@@ -272,8 +267,8 @@ export default class McpsController {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')
     }
-    if (mcp.authType !== 'oauth') {
-      session.flash('error', 'This MCP is not configured for OAuth')
+    if (mcp.authType !== 'auto' || (!mcp.oauthRequired && !mcp.oauthAccessToken)) {
+      session.flash('error', 'This MCP does not require OAuth authorization')
       session.flash('editingMcpId', mcp.id)
       return response.redirect().toRoute('mcps.index')
     }

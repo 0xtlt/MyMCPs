@@ -19,10 +19,6 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
         'npmVersion',
         'authType',
         'authHeaderName',
-        'oauthAuthorizeUrl',
-        'oauthTokenUrl',
-        'oauthScopes',
-        'oauthClientId',
         'status',
         'lastError',
         'enabled',
@@ -33,8 +29,8 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
       npmEnv: this.resource.npmEnvNames.map((name) => ({ name, hasValue: true })),
       hasAuthBearer: McpSecretStore.hasSecret(this.resource.authBearer),
       hasAuthHeaderValue: McpSecretStore.hasSecret(this.resource.authHeaderValue),
-      hasOauthClientSecret: McpSecretStore.hasSecret(this.resource.oauthClientSecret),
       hasOauthAccessToken: McpSecretStore.hasSecret(this.resource.oauthAccessToken),
+      oauthRequired: Boolean(this.resource.oauthRequired),
     }
   }
 

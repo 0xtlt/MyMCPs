@@ -213,6 +213,7 @@ function saveOAuthTokens(mcp: Mcp, tokens: OAuthTokens) {
   if (tokens.scope) {
     mcp.oauthScopes = tokens.scope
   }
+  mcp.oauthRequired = false
 }
 
 export function oauthCallbackUrl() {

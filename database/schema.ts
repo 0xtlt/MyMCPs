@@ -204,6 +204,7 @@ export class McpSchema extends BaseModel {
     'oauthIssuer',
     'oauthRedirectUri',
     'oauthRefreshToken',
+    'oauthRequired',
     'oauthResource',
     'oauthScopes',
     'oauthTokenExpiresAt',
@@ -263,6 +264,8 @@ export class McpSchema extends BaseModel {
   declare oauthRedirectUri: string | null
   @column()
   declare oauthRefreshToken: string | null
+  @column()
+  declare oauthRequired: boolean
   @column()
   declare oauthResource: string | null
   @column()

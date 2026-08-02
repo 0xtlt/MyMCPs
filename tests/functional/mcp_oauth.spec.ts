@@ -128,7 +128,8 @@ test.group('MCP OAuth routes', (group) => {
       const admin = await createAdmin({ email: 'admin@example.com' })
       const mcp = await createMcp(admin.id, {
         name: 'Notion',
-        authType: 'oauth',
+        authType: 'auto',
+        oauthRequired: true,
         httpUrl: 'https://mcp.notion.com/mcp',
         status: 'draft',
       })
@@ -166,6 +167,7 @@ test.group('MCP OAuth routes', (group) => {
       const saved = await Mcp.findOrFail(mcp.id)
       assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'access-token')
       assert.equal(saved.status, 'ready')
+      assert.isFalse(Boolean(saved.oauthRequired))
     } finally {
       restoreFetch()
     }
