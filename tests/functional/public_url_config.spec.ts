@@ -40,7 +40,8 @@ test.group('missing public app URL', (group) => {
     const admin = await createAdmin()
     const mcp = await createMcp(admin.id, {
       name: 'OAuth MCP',
-      authType: 'oauth',
+      authType: 'auto',
+      oauthRequired: true,
       httpUrl: 'https://mcp.example/mcp',
       status: 'draft',
     })

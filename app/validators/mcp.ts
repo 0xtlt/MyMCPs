@@ -1,7 +1,7 @@
 import vine from '@vinejs/vine'
 
 const transport = vine.enum(['http', 'npm'] as const)
-const authType = vine.enum(['none', 'bearer', 'header', 'oauth'] as const)
+const authType = vine.enum(['auto', 'bearer', 'header'] as const)
 const reservedNpmEnvNames = ['HOME', 'TMPDIR', 'NO_COLOR']
 
 /** RFC 9110 token for custom header names. */
@@ -60,11 +60,6 @@ const mcpPayload = {
   authBearer: vine.string().trim().maxLength(4000).optional(),
   authHeaderName: headerName.optional().requiredWhen('authType', '=', 'header'),
   authHeaderValue: vine.string().trim().maxLength(4000).optional(),
-  oauthAuthorizeUrl: vine.string().trim().url().maxLength(2048).optional(),
-  oauthTokenUrl: vine.string().trim().url().maxLength(2048).optional(),
-  oauthScopes: vine.string().trim().maxLength(500).optional(),
-  oauthClientId: vine.string().trim().maxLength(254).optional(),
-  oauthClientSecret: vine.string().trim().maxLength(4000).optional(),
   /** CheckboxInput submits "on" when checked; omitted when unchecked. */
   enabled: vine.boolean().optional(),
 }

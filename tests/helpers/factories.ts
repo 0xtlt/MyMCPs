@@ -64,7 +64,8 @@ export async function createMcp(
     enabled: boolean
     status: 'draft' | 'ready' | 'error'
     transport: 'http' | 'npm'
-    authType: 'none' | 'bearer' | 'header' | 'oauth'
+    authType: 'auto' | 'bearer' | 'header'
+    oauthRequired: boolean
     httpUrl: string | null
   }> = {}
 ) {
@@ -80,7 +81,7 @@ export async function createMcp(
     npmVersion: null,
     npmArgs: null,
     npmEnv: null,
-    authType: overrides.authType ?? 'none',
+    authType: overrides.authType ?? 'auto',
     authBearer: null,
     authHeaderName: null,
     authHeaderValue: null,
@@ -95,6 +96,7 @@ export async function createMcp(
     oauthIssuer: null,
     oauthResource: null,
     oauthRedirectUri: null,
+    oauthRequired: overrides.oauthRequired ?? false,
     oauthClientAuthMethod: null,
     oauthTokenType: null,
     status: overrides.status ?? 'ready',

@@ -35,7 +35,7 @@ function buildAuthHeaders(mcp: Mcp): Record<string, string> {
     }
   }
 
-  if (mcp.authType === 'oauth') {
+  if (mcp.authType === 'auto') {
     const token = McpSecretStore.decrypt(mcp.oauthAccessToken)
     if (token) {
       headers.Authorization = `${mcp.oauthTokenType || 'Bearer'} ${token}`
@@ -50,7 +50,7 @@ export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstre
     throw new Error('HTTP MCP is missing a URL')
   }
 
-  if (mcp.authType === 'oauth') {
+  if (mcp.authType === 'auto' && mcp.oauthAccessToken) {
     await refreshOauthAccessToken(mcp)
   }
 
