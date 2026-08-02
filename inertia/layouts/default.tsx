@@ -1,7 +1,6 @@
 import { type Data } from '@generated/data'
-import { toast, Toaster } from 'sonner'
 import { usePage } from '@inertiajs/react'
-import { type ReactElement, useEffect } from 'react'
+import { type ReactElement, useEffect, useRef } from 'react'
 import { Form } from '@adonisjs/inertia/react'
 import { AppShell } from '@astryxdesign/core/AppShell'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -10,8 +9,34 @@ import { Center } from '@astryxdesign/core/Center'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Icon } from '@astryxdesign/core/Icon'
 import { Link } from '@astryxdesign/core/Link'
+import { LayerProvider } from '@astryxdesign/core/Layer'
 import { NavIcon } from '@astryxdesign/core/NavIcon'
+import { useToast } from '@astryxdesign/core/Toast'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
+
+function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> }) {
+  const page = usePage<Data.SharedProps>()
+  const showToast = useToast()
+  const dismissToasts = useRef<Array<() => void>>([])
+
+  useEffect(() => {
+    for (const dismiss of dismissToasts.current) dismiss()
+    dismissToasts.current = []
+
+    if (children.props.flash.error) {
+      dismissToasts.current.push(
+        showToast({ body: children.props.flash.error, type: 'error', uniqueID: 'flash-error' })
+      )
+    }
+    if (children.props.flash.success) {
+      dismissToasts.current.push(
+        showToast({ body: children.props.flash.success, type: 'info', uniqueID: 'flash-success' })
+      )
+    }
+  }, [children.props.flash.error, children.props.flash.success, page.url, showToast])
+
+  return null
+}
 
 export default function Layout({ children }: { children: ReactElement<Data.SharedProps> }) {
   const page = usePage<Data.SharedProps>()
@@ -21,21 +46,9 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
   const isOnboarding = url.startsWith('/onboarding')
   const isAuthScreen = isOnboarding || url.startsWith('/login') || url.startsWith('/invite/')
 
-  useEffect(() => {
-    toast.dismiss()
-  }, [url])
-
-  useEffect(() => {
-    if (children.props.flash.error) {
-      toast.error(children.props.flash.error)
-    }
-    if (children.props.flash.success) {
-      toast.success(children.props.flash.success)
-    }
-  })
-
   return (
-    <>
+    <LayerProvider toast={{ position: 'topEnd' }}>
+      <FlashToasts>{children}</FlashToasts>
       <AppShell
         contentPadding={6}
         style={{ height: '100%', minHeight: 0 }}
@@ -108,7 +121,6 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
           </Center>
         </VStack>
       </AppShell>
-      <Toaster position="top-center" richColors />
-    </>
+    </LayerProvider>
   )
 }
