@@ -19,6 +19,7 @@ import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
+import { Token } from '@astryxdesign/core/Token'
 
 type TokenRow = {
   id: number
@@ -73,7 +74,8 @@ export default function TokensIndex({
   const [scopeMode, setScopeMode] = useState('all')
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([])
   const [expiresAt, setExpiresAt] = useState<ISODateTimeString>()
-  const [copyState, setCopyState] = useState<CopyState>('idle')
+  const [gatewayCopyState, setGatewayCopyState] = useState<CopyState>('idle')
+  const [tokenCopyState, setTokenCopyState] = useState<CopyState>('idle')
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -82,17 +84,19 @@ export default function TokensIndex({
     }
   }, [])
 
-  async function copyGatewayUrl() {
+  async function copyText(value: string, setState: (state: CopyState) => void) {
     if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
+    setGatewayCopyState('idle')
+    setTokenCopyState('idle')
 
     try {
-      await navigator.clipboard.writeText(gatewayUrl)
-      setCopyState('copied')
+      await navigator.clipboard.writeText(value)
+      setState('copied')
     } catch {
-      setCopyState('error')
+      setState('error')
     }
 
-    copyResetTimer.current = setTimeout(() => setCopyState('idle'), 2000)
+    copyResetTimer.current = setTimeout(() => setState('idle'), 2000)
   }
 
   function openCreate() {
@@ -201,15 +205,15 @@ export default function TokensIndex({
             <Text type="body">{gatewayUrl}</Text>
             <Button
               label={
-                copyState === 'copied'
+                gatewayCopyState === 'copied'
                   ? 'Copied!'
-                  : copyState === 'error'
+                  : gatewayCopyState === 'error'
                     ? 'Copy failed'
                     : 'Copy URL'
               }
-              variant={copyState === 'copied' ? 'primary' : 'secondary'}
+              variant={gatewayCopyState === 'copied' ? 'primary' : 'secondary'}
               size="sm"
-              clickAction={copyGatewayUrl}
+              clickAction={() => copyText(gatewayUrl, setGatewayCopyState)}
             />
           </HStack>
           <Text type="supporting" color="secondary">
@@ -221,8 +225,23 @@ export default function TokensIndex({
       {createdPlaintext ? (
         <Banner
           status="success"
-          title="Copy your new token now"
-          description={createdPlaintext}
+          title={
+            tokenCopyState === 'copied'
+              ? 'Token copied'
+              : tokenCopyState === 'error'
+                ? 'Copy failed — click to retry'
+                : 'Click your new token to copy it'
+          }
+          description={
+            <Token
+              label={createdPlaintext}
+              color={
+                tokenCopyState === 'copied' ? 'green' : tokenCopyState === 'error' ? 'red' : 'gray'
+              }
+              onClick={() => copyText(createdPlaintext, setTokenCopyState)}
+              description="Copy the new access token to the clipboard"
+            />
+          }
           container="card"
         />
       ) : null}
@@ -252,7 +271,11 @@ export default function TokensIndex({
         width={520}
         maxHeight="85vh"
       >
-        <Form route="tokens.store" className="dialog-form-fill">
+        <Form
+          route="tokens.store"
+          className="dialog-form-fill"
+          onSuccess={() => setIsCreateOpen(false)}
+        >
           {({ errors, processing }) => (
             <Layout
               header={
