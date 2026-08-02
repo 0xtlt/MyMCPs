@@ -187,7 +187,9 @@ export default function LogsIndex({
 
   return (
     <Layout
+      contentWidth={1200}
       height="fill"
+      style={{ width: '100%' }}
       content={
         <LayoutContent padding={6} label="MCP call logs">
           <VStack gap={6} width="100%">
