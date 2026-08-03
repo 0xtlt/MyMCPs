@@ -77,4 +77,4 @@ MyMCPs uses AdonisJS 7, Inertia, React 19, SQLite, the MCP TypeScript SDK, and D
 
 ## License
 
-UNLICENSED.
+[MIT](LICENSE) © 2026 Thomas Tastet.
