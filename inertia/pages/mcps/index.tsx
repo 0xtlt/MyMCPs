@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { router } from '@inertiajs/react'
+import { Head, router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Badge } from '@astryxdesign/core/Badge'
@@ -175,6 +175,7 @@ export default function McpsIndex({
 
   return (
     <VStack gap={6} maxWidth={960} width="100%">
+      <Head title="MCPs" />
       <HStack gap={4} hAlign="between" vAlign="start">
         <StackItem size="fill">
           <VStack gap={2}>

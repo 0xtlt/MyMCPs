@@ -17,6 +17,37 @@ This is **not** a public SaaS signup product. You install an instance, complete 
 3. **Teammates** — invite-only (admin creates a link; no email sending required)
 4. **Agents** — use an access token as `Authorization: Bearer …` against `POST/GET /mcp`
 
+## Lazy tool discovery
+
+The gateway keeps its existing eager behavior by default: `tools/list` returns
+every allowed upstream tool as `{slug}__{toolName}`. Clients with large tool
+catalogs can opt into MyMCPs progressive discovery by adding this static request
+header to their MCP configuration:
+
+```text
+X-MyMCPs-Tool-Mode: lazy
+```
+
+Lazy mode shares the access token's allowed MCP catalog during initialization
+and exposes only three stable tools:
+
+1. `list_mcps` returns the current allowed MCP names, slugs, descriptions, and statuses.
+2. `tool_search` searches one selected MCP and returns matching tool definitions.
+3. `call_tool` invokes an exact tool using its MCP slug, name, and schema-compliant arguments.
+
+Example workflow:
+
+```json
+{ "name": "tool_search", "arguments": { "mcp": "github", "query": "create issue" } }
+{ "name": "call_tool", "arguments": { "mcp": "github", "tool": "create_issue", "arguments": { "title": "Example" } } }
+```
+
+This `tool_search` is a portable MyMCPs MCP tool. It does not enable or replace
+a host's reserved native tool-search feature; Codex, Cursor, and other hosts
+control their own model-facing tool deferral independently. Use
+`X-MyMCPs-Tool-Mode: eager` to select the original behavior explicitly. Other
+header values are rejected with HTTP 400 so configuration mistakes are visible.
+
 ## Quick start
 
 Requirements: **Node.js ≥ 24**, **pnpm**. For **npm-transport MCPs**, also install [Deno](https://deno.land/). npm packages run in a Deno subprocess with filesystem access limited to a per-MCP sandbox directory (they cannot read the Adonis SQLite DB, `.env`, or app source). Network and env remain allowed so typical MCP packages can call APIs—treat installed packages as trusted software.
@@ -141,7 +172,7 @@ docker run --rm -p 3333:3333 \
 
 - **MCPs** — register HTTP (Streamable HTTP) or npm upstreams with none / bearer / header / OAuth auth
 - **Access tokens** — identifiers scoped to all MCPs (auto-includes new ones) or a selected list; optional expiry
-- **Gateway** — `/mcp` aggregates namespaced tools (`{slug}__{toolName}`) for allowed upstreams
+- **Gateway** — `/mcp` aggregates namespaced tools (`{slug}__{toolName}`) or provides opt-in lazy discovery for allowed upstreams
 
 ## Stack
 

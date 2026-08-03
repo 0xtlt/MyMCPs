@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react'
-import { router } from '@inertiajs/react'
+import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
@@ -193,6 +193,7 @@ export default function LogsIndex({
       style={{ width: '100%' }}
       content={
         <LayoutContent padding={6} label="MCP call logs">
+          <Head title="MCP call logs" />
           <VStack gap={6} width="100%">
             <HStack gap={4} hAlign="between" vAlign="start" wrap="wrap">
               <StackItem size="fill">
