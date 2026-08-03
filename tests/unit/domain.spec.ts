@@ -97,6 +97,10 @@ test.group('domain services and models', (group) => {
   test('exposes model state and normalizes MCP names', async ({ assert }) => {
     const admin = await createAdmin()
     const mcp = await createMcp(admin.id, { name: 'Primary MCP' })
+    const disabledMcp = await createMcp(admin.id, {
+      name: 'Disabled MCP',
+      enabled: false,
+    })
     const invite = await Invite.create({
       email: 'member@example.com',
       role: 'member',
@@ -107,7 +111,10 @@ test.group('domain services and models', (group) => {
     })
     const token = await createStoredAccessToken(admin.id)
 
-    assert.isTrue(mcp.enabled)
+    await mcp.refresh()
+    await disabledMcp.refresh()
+    assert.strictEqual(mcp.enabled, true)
+    assert.strictEqual(disabledMcp.enabled, false)
     assert.isTrue(mcp.status === 'ready')
     assert.isTrue(invite.isUsable)
     assert.isFalse(invite.isAccepted)

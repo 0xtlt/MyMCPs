@@ -1,5 +1,5 @@
 import { McpSchema } from '#database/schema'
-import { belongsTo, manyToMany } from '@adonisjs/lucid/orm'
+import { belongsTo, column, manyToMany } from '@adonisjs/lucid/orm'
 import type { BelongsTo, ManyToMany } from '@adonisjs/lucid/types/relations'
 import User from '#models/user'
 import AccessToken from '#models/access_token'
@@ -32,6 +32,9 @@ export default class Mcp extends McpSchema {
   declare transport: McpTransport
   declare authType: McpAuthType
   declare status: McpStatus
+
+  @column({ consume: (value) => Boolean(value), prepare: (value) => Boolean(value) })
+  declare enabled: boolean
 
   @belongsTo(() => User, { foreignKey: 'createdBy' })
   declare creator: BelongsTo<typeof User>
