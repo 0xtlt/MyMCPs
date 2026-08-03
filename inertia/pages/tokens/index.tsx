@@ -22,6 +22,7 @@ import {
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { Tab, TabList } from '@astryxdesign/core/TabList'
+import { Switch } from '@astryxdesign/core/Switch'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
@@ -214,6 +215,7 @@ export default function TokensIndex({
   const [installClient, setInstallClient] = useState<McpClient>('codex')
   const [installToken, setInstallToken] = useState(createdPlaintext ?? '')
   const [isInstallTokenVisible, setIsInstallTokenVisible] = useState(Boolean(createdPlaintext))
+  const [isLazyToolModeEnabled, setIsLazyToolModeEnabled] = useState(false)
   const [createValues, setCreateValues] = useState<TokenFormValues>(emptyTokenFormValues)
   const [editingToken, setEditingToken] = useState<TokenRow | null>(null)
   const [editValues, setEditValues] = useState<TokenFormValues>(emptyTokenFormValues)
@@ -261,6 +263,7 @@ export default function TokensIndex({
     setInstallClient('codex')
     setInstallToken('')
     setIsInstallTokenVisible(false)
+    setIsLazyToolModeEnabled(false)
     setIsInstallOpen(true)
   }
 
@@ -269,13 +272,15 @@ export default function TokensIndex({
     if (!isOpen) {
       setInstallToken('')
       setIsInstallTokenVisible(false)
+      setIsLazyToolModeEnabled(false)
     }
   }
 
   const installConfig = createMcpInstallConfig(
     installClient,
     gatewayUrl ?? '<YOUR_GATEWAY_URL>',
-    installToken || '<YOUR_ACCESS_TOKEN>'
+    installToken || '<YOUR_ACCESS_TOKEN>',
+    isLazyToolModeEnabled
   )
   const canCopyInstallConfig = Boolean(gatewayUrl && installToken)
   const installStatus = !gatewayUrl
@@ -516,6 +521,15 @@ export default function TokensIndex({
                     }}
                   />
                 </InputGroup>
+                <Switch
+                  label="Enable lazy tool mode"
+                  description="Adds X-MyMCPs-Tool-Mode: lazy so clients discover tools on demand."
+                  value={isLazyToolModeEnabled}
+                  onChange={setIsLazyToolModeEnabled}
+                  labelPosition="start"
+                  labelSpacing="spread"
+                  width="100%"
+                />
                 <TabList
                   value={installClient}
                   onChange={(value) => setInstallClient(value as McpClient)}
