@@ -2,7 +2,7 @@ import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Heading, Text } from '@astryxdesign/core/Text'
-import { usePage } from '@inertiajs/react'
+import { Head, usePage } from '@inertiajs/react'
 import { type Data } from '@generated/data'
 import mcpNetworkUrl from '~/assets/data-blocks-sync-balanced-square.png?w=1254&format=png&quality=100&img'
 import accessTokensArtUrl from '~/assets/access-token-card-circular.png?w=1254&format=png&quality=100&img'
@@ -13,6 +13,7 @@ export default function Home() {
 
   return (
     <VStack gap={6} maxWidth={720} width="100%">
+      <Head title="Dashboard" />
       <VStack gap={2}>
         <Heading level={1}>Dashboard</Heading>
         <Text type="body" color="secondary">

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Head } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
@@ -16,6 +17,7 @@ export default function Onboarding() {
 
   return (
     <Center axis="both" style={{ minHeight: '100%' }}>
+      <Head title="Set up MyMCPs" />
       <Card padding={8} maxWidth={420} width="100%">
         <Form route="onboarding.store">
           {({ errors, processing }) => (

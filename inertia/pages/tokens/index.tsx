@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Head } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Badge } from '@astryxdesign/core/Badge'
@@ -185,6 +186,7 @@ export default function TokensIndex({
 
   return (
     <VStack gap={6} maxWidth={960} width="100%">
+      <Head title="Access tokens" />
       <HStack gap={4} hAlign="between" vAlign="start">
         <StackItem size="fill">
           <VStack gap={2}>
