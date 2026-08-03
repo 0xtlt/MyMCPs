@@ -1,5 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import { DateTime } from 'luxon'
+import { DateTime, IANAZone } from 'luxon'
 import McpCallLog from '#models/mcp_call_log'
 import McpCallLogService from '#services/mcp_call_log_service'
 import { analyticsQueryValidator } from '#validators/mcp_call_log'
@@ -11,14 +11,18 @@ type AggregateRow = {
   average_duration_ms: number | string | null
 }
 type TimelineRow = {
-  bucket: string
+  bucket: string | null
   total: number | string
   errors: number | string
 }
 type BreakdownRow = AggregateRow & { label: string }
 
-function rangeConfig(range: AnalyticsRange) {
-  const now = DateTime.utc()
+function resolveTimeZone(timeZone: string | undefined) {
+  return timeZone && IANAZone.isValidZone(timeZone) ? timeZone : 'UTC'
+}
+
+function rangeConfig(range: AnalyticsRange, timeZone: string) {
+  const now = DateTime.now().setZone(timeZone)
   if (range === '24h') {
     return { start: now.startOf('hour').minus({ hours: 23 }), unit: 'hour' as const, count: 24 }
   }
@@ -30,15 +34,29 @@ function numeric(value: number | string | null | undefined) {
   return Number(value ?? 0)
 }
 
+function sqliteTimestamp(value: DateTime) {
+  return value.toUTC().toSQL({ includeOffset: false })!
+}
+
 export default class AnalyticsController {
   async index({ request, inertia }: HttpContext) {
     await McpCallLogService.pruneExpired()
     const filters = await request.validateUsing(analyticsQueryValidator)
     const range = filters.range ?? '7d'
-    const config = rangeConfig(range)
+    const timeZone = resolveTimeZone(filters.timeZone)
+    const config = rangeConfig(range, timeZone)
+    const buckets = Array.from({ length: config.count }, (_, index) => {
+      const start = config.start.plus({ [config.unit === 'hour' ? 'hours' : 'days']: index })
+      return {
+        key: `bucket-${index}`,
+        start,
+        end: start.plus({ [config.unit === 'hour' ? 'hours' : 'days']: 1 }),
+        label: config.unit === 'hour' ? start.toFormat('HH:mm') : start.toFormat('LLL d'),
+      }
+    })
     const periodQuery = () =>
       McpCallLog.query()
-        .withScopes((scopes) => scopes.inPeriod(config.start))
+        .withScopes((scopes) => scopes.inPeriod(config.start.toUTC()))
         .pojo()
 
     const metricsQuery = periodQuery()
@@ -47,10 +65,14 @@ export default class AnalyticsController {
     const topToolsQuery = periodQuery()
     const topTokensQuery = periodQuery()
     const errorCountSql = "SUM(CASE WHEN outcome = 'error' THEN 1 ELSE 0 END)"
-    const bucketSql =
-      config.unit === 'hour'
-        ? "strftime('%Y-%m-%dT%H:00:00Z', created_at)"
-        : "strftime('%Y-%m-%dT00:00:00Z', created_at)"
+    const bucketSql = `CASE ${buckets
+      .map(() => 'WHEN created_at >= ? AND created_at < ? THEN ?')
+      .join(' ')} END`
+    const bucketBindings = buckets.flatMap((bucket) => [
+      sqliteTimestamp(bucket.start),
+      sqliteTimestamp(bucket.end),
+      bucket.key,
+    ])
 
     const metricsPromise = metricsQuery
       .select(metricsQuery.client.raw('COUNT(*) AS total'))
@@ -59,10 +81,10 @@ export default class AnalyticsController {
       .first() as Promise<AggregateRow | null>
 
     const timelinePromise = timelineQuery
-      .select(timelineQuery.client.raw(`${bucketSql} AS bucket`))
+      .select(timelineQuery.client.raw(`${bucketSql} AS bucket`, bucketBindings))
       .select(timelineQuery.client.raw('COUNT(*) AS total'))
       .select(timelineQuery.client.raw(`${errorCountSql} AS errors`))
-      .groupByRaw(bucketSql)
+      .groupBy('bucket')
       .orderBy('bucket', 'asc') as Promise<TimelineRow[]>
 
     const breakdown = (query: ReturnType<typeof periodQuery>, labelSql: string) =>
@@ -87,23 +109,15 @@ export default class AnalyticsController {
       ])
 
     const bucketMap = new Map(
-      timelineRows.map((row) => [
-        row.bucket,
-        { total: numeric(row.total), errors: numeric(row.errors) },
-      ])
+      timelineRows
+        .filter((row): row is TimelineRow & { bucket: string } => row.bucket !== null)
+        .map((row) => [row.bucket, { total: numeric(row.total), errors: numeric(row.errors) }])
     )
-    const timeline = Array.from({ length: config.count }, (_, index) => {
-      const date = config.start.plus({ [config.unit === 'hour' ? 'hours' : 'days']: index })
-      const key =
-        config.unit === 'hour'
-          ? date.toFormat("yyyy-MM-dd'T'HH:00:00'Z'")
-          : date.toFormat("yyyy-MM-dd'T'00:00:00'Z'")
-      return {
-        bucket: key,
-        label: config.unit === 'hour' ? date.toFormat('HH:mm') : date.toFormat('LLL d'),
-        ...(bucketMap.get(key) ?? { total: 0, errors: 0 }),
-      }
-    })
+    const timeline = buckets.map((bucket) => ({
+      bucket: bucket.start.toUTC().toISO()!,
+      label: bucket.label,
+      ...(bucketMap.get(bucket.key) ?? { total: 0, errors: 0 }),
+    }))
 
     const serializeBreakdown = (rows: BreakdownRow[]) =>
       rows.map((row) => ({
@@ -119,6 +133,7 @@ export default class AnalyticsController {
 
     return inertia.render('analytics/index', {
       range,
+      timeZone,
       loggingLevel: settings.mcpLogLevel,
       metrics: {
         total,

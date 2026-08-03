@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -24,6 +24,8 @@ import {
 } from '@astryxdesign/core/Table'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
+import { LiveRefreshButton } from '~/components/live_refresh_button'
+import { browserTimeZone, formatLocalDateTime, formatTimeZoneLabel } from '~/components/local_time'
 
 interface LogRow extends Record<string, JSONDataTypes> {
   id: number
@@ -47,7 +49,13 @@ interface LogRow extends Record<string, JSONDataTypes> {
   createdAt: string
 }
 
-type Filters = { range: string; outcome: string; mcp: string; token: string }
+type Filters = {
+  range: string
+  outcome: string
+  mcp: string
+  token: string
+  timeZone: string
+}
 type Option = { value: string; label: string }
 
 function displayArguments(log: LogRow) {
@@ -85,13 +93,26 @@ export default function LogsIndex({
   options: { mcps: Option[]; tokens: Option[] }
   loggingLevel: 'off' | 'metadata' | 'arguments' | 'responses'
 }) {
+  const pendingPageSize = useRef<number | null>(null)
   const navigate = useCallback(
     (changes: Record<string, string | number | undefined>) => {
-      const next = { ...filters, page: pagination.page, ...changes }
+      const next = {
+        ...filters,
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        ...changes,
+      }
       router.get('/logs', next, { preserveState: true, replace: true })
     },
-    [filters, pagination.page]
+    [filters, pagination.page, pagination.pageSize]
   )
+
+  useEffect(() => {
+    const localTimeZone = browserTimeZone()
+    if (!localTimeZone || localTimeZone === filters.timeZone) return
+
+    navigate({ timeZone: localTimeZone })
+  }, [filters.timeZone, navigate])
 
   const columns: TableColumn<LogRow>[] = [
     {
@@ -100,7 +121,7 @@ export default function LogsIndex({
       width: proportional(2),
       renderCell: (log) => (
         <Text type="supporting" color="secondary">
-          {new Date(log.createdAt).toLocaleString()}
+          {formatLocalDateTime(log.createdAt, filters.timeZone)}
         </Text>
       ),
     },
@@ -204,7 +225,10 @@ export default function LogsIndex({
                   </Text>
                 </VStack>
               </StackItem>
-              <Button label="View analytics" variant="secondary" href="/analytics" />
+              <HStack gap={3} vAlign="center">
+                <LiveRefreshButton />
+                <Button label="View analytics" variant="secondary" href="/analytics" />
+              </HStack>
             </HStack>
 
             {loggingLevel === 'off' ? (
@@ -282,16 +306,27 @@ export default function LogsIndex({
                     rowIndexStart={(pagination.page - 1) * pagination.pageSize + 1}
                     rowCount={pagination.total}
                   />
-                  {pagination.totalPages > 1 ? (
+                  {pagination.total > 0 ? (
                     <Pagination
                       page={pagination.page}
                       pageSize={pagination.pageSize}
                       totalItems={pagination.total}
                       variant="count"
                       size="sm"
-                      onChange={(page) => navigate({ page, logId: undefined })}
+                      pageSizeOptions={[10, 25, 50, 100]}
+                      onPageSizeChange={(pageSize) => {
+                        pendingPageSize.current = pageSize
+                      }}
+                      onChange={(page) => {
+                        const pageSize = pendingPageSize.current ?? pagination.pageSize
+                        pendingPageSize.current = null
+                        navigate({ pageSize, page, logId: undefined })
+                      }}
                     />
                   ) : null}
+                  <Text type="supporting" color="secondary">
+                    Times shown in {formatTimeZoneLabel(filters.timeZone)}.
+                  </Text>
                 </VStack>
               )}
             </VStack>
@@ -329,7 +364,9 @@ export default function LogsIndex({
                 <Text type="label">Caller IP</Text>
                 <Text type="body">{selectedLog.callerIp ?? 'Unknown'}</Text>
                 <Text type="label">Started</Text>
-                <Text type="body">{new Date(selectedLog.createdAt).toLocaleString()}</Text>
+                <Text type="body">
+                  {formatLocalDateTime(selectedLog.createdAt, filters.timeZone)}
+                </Text>
                 <Text type="label">Duration</Text>
                 <Text type="body">{selectedLog.durationMs} ms</Text>
               </VStack>

@@ -1,11 +1,15 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import { DateTime } from 'luxon'
+import { DateTime, IANAZone } from 'luxon'
 import McpCallLog from '#models/mcp_call_log'
 import McpCallLogService from '#services/mcp_call_log_service'
 import McpCallLogTransformer from '#transformers/mcp_call_log_transformer'
 import { logsQueryValidator } from '#validators/mcp_call_log'
 
-const PAGE_SIZE = 50
+const DEFAULT_PAGE_SIZE = 25
+
+function resolveTimeZone(timeZone: string | undefined) {
+  return timeZone && IANAZone.isValidZone(timeZone) ? timeZone : 'UTC'
+}
 
 export default class LogsController {
   async index({ request, inertia }: HttpContext) {
@@ -17,6 +21,8 @@ export default class LogsController {
     const mcp = filters.mcp ?? ''
     const token = filters.token ?? ''
     const page = filters.page ?? 1
+    const pageSize = filters.pageSize ?? DEFAULT_PAGE_SIZE
+    const timeZone = resolveTimeZone(filters.timeZone)
     const cutoff =
       range === 'all'
         ? null
@@ -31,7 +37,7 @@ export default class LogsController {
       return query
     }
 
-    const paginator = await buildQuery().orderBy('created_at', 'desc').paginate(page, PAGE_SIZE)
+    const paginator = await buildQuery().orderBy('created_at', 'desc').paginate(page, pageSize)
     const logs = paginator.all()
 
     const selectedLog = filters.logId ? await McpCallLog.find(filters.logId) : null
@@ -55,7 +61,7 @@ export default class LogsController {
         total: paginator.total,
         totalPages: paginator.lastPage,
       },
-      filters: { range, outcome, mcp, token },
+      filters: { range, outcome, mcp, token, timeZone },
       options: {
         mcps: mcpOptions.map((item) => ({
           value: item.mcpSlug!,
