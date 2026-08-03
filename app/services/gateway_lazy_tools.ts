@@ -104,16 +104,15 @@ function singleLine(value: string) {
 export function lazyGatewayInstructions(mcps: Mcp[]) {
   const catalog = mcpCatalog(mcps)
   const entries = catalog.map((mcp) => {
-    const description = mcp.description ? ` — ${singleLine(mcp.description)}` : ''
-    return `- ${mcp.slug}: ${singleLine(mcp.name)} [${mcp.status}]${description}`
+    const description = mcp.description ? singleLine(mcp.description) : singleLine(mcp.name)
+    return `- ${mcp.slug}: ${description}`
   })
 
   return [
-    'MyMCPs is using lazy tool discovery.',
-    'Choose one MCP from the catalog, call tool_search with its slug, then call call_tool with the returned exact tool name and schema-compliant arguments.',
-    'Call list_mcps to refresh the structured catalog.',
     'Available MCPs:',
     ...(entries.length > 0 ? entries : ['- None available for this access token.']),
+    '',
+    "Use list_mcps to get the up-to-date catalog, then tool_search to discover an MCP's tools.",
   ].join('\n')
 }
 
