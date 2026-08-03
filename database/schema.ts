@@ -23,19 +23,7 @@ export class AccessTokenMcpSchema extends BaseModel {
 }
 
 export class AccessTokenSchema extends BaseModel {
-  static $columns = [
-    'createdAt',
-    'createdBy',
-    'expiresAt',
-    'id',
-    'lastUsedAt',
-    'name',
-    'revokedAt',
-    'scopeMode',
-    'tokenHash',
-    'tokenPrefix',
-    'updatedAt',
-  ] as const
+  static $columns = ['createdAt', 'createdBy', 'expiresAt', 'id', 'lastUsedAt', 'name', 'revokedAt', 'scopeMode', 'tokenHash', 'tokenPrefix', 'updatedAt'] as const
   $columns = AccessTokenSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -62,14 +50,7 @@ export class AccessTokenSchema extends BaseModel {
 }
 
 export class InstanceSettingSchema extends BaseModel {
-  static $columns = [
-    'createdAt',
-    'id',
-    'mcpLogLevel',
-    'mcpLogRetentionDays',
-    'updatedAt',
-    'updatedBy',
-  ] as const
+  static $columns = ['createdAt', 'id', 'mcpLogLevel', 'mcpLogRetentionDays', 'updatedAt', 'updatedBy'] as const
   $columns = InstanceSettingSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -86,17 +67,7 @@ export class InstanceSettingSchema extends BaseModel {
 }
 
 export class InviteSchema extends BaseModel {
-  static $columns = [
-    'acceptedAt',
-    'createdAt',
-    'createdBy',
-    'email',
-    'expiresAt',
-    'id',
-    'role',
-    'token',
-    'updatedAt',
-  ] as const
+  static $columns = ['acceptedAt', 'createdAt', 'createdBy', 'email', 'expiresAt', 'id', 'role', 'token', 'updatedAt'] as const
   $columns = InviteSchema.$columns
   @column.dateTime()
   declare acceptedAt: DateTime | null
@@ -119,26 +90,7 @@ export class InviteSchema extends BaseModel {
 }
 
 export class McpCallLogSchema extends BaseModel {
-  static $columns = [
-    'accessTokenId',
-    'accessTokenName',
-    'accessTokenPrefix',
-    'arguments',
-    'argumentsCaptured',
-    'createdAt',
-    'durationMs',
-    'errorCategory',
-    'errorSummary',
-    'id',
-    'mcpId',
-    'mcpName',
-    'mcpSlug',
-    'outcome',
-    'requestedToolName',
-    'response',
-    'responseCaptured',
-    'toolName',
-  ] as const
+  static $columns = ['accessTokenId', 'accessTokenName', 'accessTokenPrefix', 'arguments', 'argumentsCaptured', 'createdAt', 'durationMs', 'errorCategory', 'errorSummary', 'id', 'mcpId', 'mcpName', 'mcpSlug', 'outcome', 'requestedToolName', 'response', 'responseCaptured', 'toolName'] as const
   $columns = McpCallLogSchema.$columns
   @column()
   declare accessTokenId: number | null
@@ -179,42 +131,7 @@ export class McpCallLogSchema extends BaseModel {
 }
 
 export class McpSchema extends BaseModel {
-  static $columns = [
-    'authBearer',
-    'authHeaderName',
-    'authHeaderValue',
-    'authType',
-    'createdAt',
-    'createdBy',
-    'description',
-    'enabled',
-    'httpUrl',
-    'id',
-    'lastError',
-    'name',
-    'npmArgs',
-    'npmEnv',
-    'npmPackage',
-    'npmVersion',
-    'oauthAccessToken',
-    'oauthAuthorizeUrl',
-    'oauthClientAuthMethod',
-    'oauthClientId',
-    'oauthClientSecret',
-    'oauthIssuer',
-    'oauthRedirectUri',
-    'oauthRefreshToken',
-    'oauthRequired',
-    'oauthResource',
-    'oauthScopes',
-    'oauthTokenExpiresAt',
-    'oauthTokenType',
-    'oauthTokenUrl',
-    'slug',
-    'status',
-    'transport',
-    'updatedAt',
-  ] as const
+  static $columns = ['authBearer', 'authHeaderName', 'authHeaderValue', 'authType', 'createdAt', 'createdBy', 'description', 'enabled', 'httpUrl', 'id', 'lastError', 'name', 'npmArgs', 'npmEnv', 'npmPackage', 'npmVersion', 'oauthAccessToken', 'oauthAuthorizeUrl', 'oauthClientAuthMethod', 'oauthClientId', 'oauthClientSecret', 'oauthIssuer', 'oauthRedirectUri', 'oauthRefreshToken', 'oauthRequired', 'oauthResource', 'oauthScopes', 'oauthTokenExpiresAt', 'oauthTokenType', 'oauthTokenUrl', 'slug', 'status', 'transport', 'updatedAt'] as const
   $columns = McpSchema.$columns
   @column()
   declare authBearer: string | null
@@ -304,15 +221,7 @@ export class RememberMeTokenSchema extends BaseModel {
 }
 
 export class UserSchema extends BaseModel {
-  static $columns = [
-    'createdAt',
-    'email',
-    'fullName',
-    'id',
-    'password',
-    'role',
-    'updatedAt',
-  ] as const
+  static $columns = ['createdAt', 'email', 'fullName', 'id', 'password', 'role', 'updatedAt'] as const
   $columns = UserSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime

@@ -6,6 +6,7 @@ import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
 import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
+import { CodeBlock } from '@astryxdesign/core/CodeBlock'
 import { DateTimeInput, type ISODateTimeString } from '@astryxdesign/core/DateTimeInput'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import {
@@ -18,9 +19,11 @@ import {
 } from '@astryxdesign/core/Layout'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
+import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
+import { createMcpInstallConfig, type McpClient } from '~/components/mcp_install_config'
 
 type TokenRow = {
   id: number
@@ -71,6 +74,9 @@ export default function TokensIndex({
   createdPlaintext: string | null
 }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isInstallOpen, setIsInstallOpen] = useState(Boolean(createdPlaintext))
+  const [installClient, setInstallClient] = useState<McpClient>('codex')
+  const [installToken, setInstallToken] = useState(createdPlaintext ?? '')
   const [name, setName] = useState('')
   const [scopeMode, setScopeMode] = useState('all')
   const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([])
@@ -107,6 +113,29 @@ export default function TokensIndex({
     setExpiresAt(undefined)
     setIsCreateOpen(true)
   }
+
+  function openInstall() {
+    setInstallClient('codex')
+    setInstallToken('')
+    setIsInstallOpen(true)
+  }
+
+  function handleInstallOpenChange(isOpen: boolean) {
+    setIsInstallOpen(isOpen)
+    if (!isOpen) setInstallToken('')
+  }
+
+  const installConfig = createMcpInstallConfig(
+    installClient,
+    gatewayUrl ?? '<YOUR_GATEWAY_URL>',
+    installToken || '<YOUR_ACCESS_TOKEN>'
+  )
+  const canCopyInstallConfig = Boolean(gatewayUrl && installToken)
+  const installStatus = !gatewayUrl
+    ? 'Configure APP_URL before copying this configuration.'
+    : !installToken
+      ? 'Paste an access token to enable copying.'
+      : null
 
   const columns: TableColumn<TokenRow>[] = [
     {
@@ -219,6 +248,7 @@ export default function TokensIndex({
               tooltip={!gatewayUrl ? 'Set APP_URL to enable public links' : undefined}
               clickAction={gatewayUrl ? () => copyText(gatewayUrl, setGatewayCopyState) : undefined}
             />
+            <Button label="Install MCP" variant="primary" size="sm" onClick={openInstall} />
           </HStack>
           <Text type="supporting" color="secondary">
             Send Authorization: Bearer &lt;token&gt; on every request.
@@ -273,6 +303,84 @@ export default function TokensIndex({
           textOverflow="truncate"
         />
       )}
+
+      <Dialog
+        isOpen={isInstallOpen}
+        onOpenChange={handleInstallOpenChange}
+        purpose="info"
+        width={680}
+        maxHeight="85vh"
+      >
+        <Layout
+          header={
+            <DialogHeader
+              title="Install MyMCPs"
+              subtitle="Connect this gateway to your MCP client"
+              onOpenChange={handleInstallOpenChange}
+            />
+          }
+          content={
+            <LayoutContent isScrollable>
+              <VStack gap={4} hAlign="stretch">
+                <Banner
+                  status="warning"
+                  title="Your token will be stored in plaintext"
+                  description="These quick-install configurations include the access token directly. Keep the configuration private and revoke the token immediately if it is exposed."
+                  container="card"
+                />
+                <TextInput
+                  type="password"
+                  label="Access token"
+                  value={installToken}
+                  onChange={setInstallToken}
+                  placeholder="Paste your MyMCPs access token"
+                  description="This value stays in this browser tab and is cleared when you close the modal."
+                  width="100%"
+                  hasClear
+                />
+                <TabList
+                  value={installClient}
+                  onChange={(value) => setInstallClient(value as McpClient)}
+                  layout="fill"
+                  hasDivider
+                >
+                  <Tab value="codex" label="Codex" />
+                  <Tab value="claude" label="Claude" />
+                  <Tab value="cursor" label="Cursor" />
+                </TabList>
+                <VStack gap={3} hAlign="stretch">
+                  <CodeBlock
+                    code={installConfig.code}
+                    language={installConfig.language}
+                    title={installConfig.title}
+                    width="100%"
+                    size="sm"
+                    hasCopyButton={canCopyInstallConfig}
+                  />
+                  {installStatus ? (
+                    <Banner status="info" title={installStatus} container="card" />
+                  ) : null}
+                  <Text type="body">{installConfig.restartInstruction}</Text>
+                  <Text type="supporting" color="secondary">
+                    {installConfig.verifyInstruction}
+                  </Text>
+                </VStack>
+              </VStack>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter>
+              <HStack gap={2} hAlign="end">
+                <Button
+                  label="Close"
+                  variant="secondary"
+                  onClick={() => handleInstallOpenChange(false)}
+                />
+              </HStack>
+            </LayoutFooter>
+          }
+        />
+      </Dialog>
 
       <Dialog
         isOpen={isCreateOpen}
