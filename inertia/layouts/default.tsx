@@ -3,6 +3,7 @@ import { usePage } from '@inertiajs/react'
 import { type ReactElement, useEffect, useRef } from 'react'
 import { Form } from '@adonisjs/inertia/react'
 import { AppShell } from '@astryxdesign/core/AppShell'
+import { Avatar } from '@astryxdesign/core/Avatar'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Center } from '@astryxdesign/core/Center'
@@ -92,8 +93,11 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
             endContent={
               user ? (
                 <HStack gap={2} vAlign="center">
-                  <Link href="/settings" isStandalone label="Open settings">
-                    {user.initials}
+                  <Link href="/settings" isStandalone>
+                    <HStack gap={1} vAlign="center">
+                      <Avatar name={user.fullName || user.initials} size="sm" tooltip={false} />
+                      Settings
+                    </HStack>
                   </Link>
                   <Form route="session.destroy">
                     <Button type="submit" label="Log out" variant="ghost" size="sm" />
