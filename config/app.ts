@@ -9,10 +9,24 @@ import { defineConfig } from '@adonisjs/core/http'
  */
 export const appUrl = env.get('APP_URL')
 
+function resolveTrustProxy(value: string | undefined): boolean | string {
+  const normalized = value?.trim()
+  if (!normalized || normalized.toLowerCase() === 'loopback') return 'loopback'
+  if (normalized.toLowerCase() === 'true') return true
+  if (normalized.toLowerCase() === 'false') return false
+  return normalized
+}
+
 /**
  * The configuration settings used by the HTTP server
  */
 export const http = defineConfig({
+  /**
+   * Trust only the configured proxy addresses when resolving forwarded client IPs.
+   * The default keeps Adonis's loopback-only behavior for local development.
+   */
+  trustProxy: resolveTrustProxy(env.get('TRUST_PROXY')),
+
   /**
    * Generate a unique request id for each incoming request.
    * Useful to correlate logs and debug a request flow.

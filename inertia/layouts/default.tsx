@@ -7,12 +7,11 @@ import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Center } from '@astryxdesign/core/Center'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
-import { Icon } from '@astryxdesign/core/Icon'
 import { Link } from '@astryxdesign/core/Link'
 import { LayerProvider } from '@astryxdesign/core/Layer'
-import { NavIcon } from '@astryxdesign/core/NavIcon'
 import { useToast } from '@astryxdesign/core/Toast'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
+import logoUrl from '~/assets/brand/mymcps-m-logo.png?w=64&format=png&quality=100&img'
 
 function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> }) {
   const page = usePage<Data.SharedProps>()
@@ -59,7 +58,7 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
               <TopNavHeading
                 heading="MyMCPs"
                 href={user ? '/' : undefined}
-                logo={<NavIcon icon={<Icon icon="wrench" size="sm" color="inherit" />} />}
+                logo={<img src={logoUrl} alt="" className="app-logo" />}
               />
             }
             startContent={

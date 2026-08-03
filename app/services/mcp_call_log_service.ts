@@ -14,6 +14,7 @@ let lastPrunedAt = 0
 
 export type McpCallLogInput = {
   accessToken: AccessToken
+  callerIp: string | null
   mcp?: Mcp | null
   mcpSlug?: string | null
   requestedToolName: string
@@ -96,6 +97,7 @@ export default class McpCallLogService {
         accessTokenId: input.accessToken.id,
         accessTokenName: input.accessToken.name,
         accessTokenPrefix: input.accessToken.tokenPrefix,
+        callerIp: input.callerIp,
         mcpId: input.mcp?.id ?? null,
         mcpName: input.mcp?.name ?? null,
         mcpSlug: input.mcp?.slug ?? input.mcpSlug ?? null,

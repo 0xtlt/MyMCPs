@@ -29,7 +29,9 @@ X-MyMCPs-Tool-Mode: lazy
 ```
 
 Lazy mode shares the access token's allowed MCP catalog during initialization
-and exposes only three stable tools:
+as a concise `slug: description` list, with instructions to refresh it using
+`list_mcps` and discover tools using `tool_search`. It exposes only three stable
+tools:
 
 1. `list_mcps` returns the current allowed MCP names, slugs, descriptions, and statuses.
 2. `tool_search` searches one selected MCP and returns matching tool definitions.
@@ -127,7 +129,9 @@ sandboxes in the named `/app/tmp` volume. `APP_URL` is intentionally explicit:
 when it is missing, signed-in pages show a warning and public-link or OAuth
 controls stay disabled. The container generates an `APP_KEY` on first start
 when one is not provided; the key is stored in the persistent volume. Set an
-explicit `APP_KEY` in Coolify if you prefer to manage it yourself.
+explicit `APP_KEY` in Coolify if you prefer to manage it yourself. Set
+`TRUST_PROXY` to the Coolify proxy's IP or CIDR when the application should
+resolve forwarded caller IPs instead of recording the proxy address.
 
 If the Coolify instance does not automatically apply `coolify.json`, select
 **Docker Compose**, set the Compose file to `/docker-compose.yml`, expose port
