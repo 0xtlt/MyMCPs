@@ -227,15 +227,6 @@ export default function TokensIndex({
     }
   }, [])
 
-  useEffect(() => {
-    if (!createdPlaintext) return
-
-    setInstallClient('codex')
-    setInstallToken(createdPlaintext)
-    setIsInstallTokenVisible(true)
-    setIsInstallOpen(true)
-  }, [createdPlaintext])
-
   async function copyText(value: string, setState: (state: CopyState) => void) {
     if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
     setGatewayCopyState('idle')
@@ -579,7 +570,17 @@ export default function TokensIndex({
         <Form
           route="tokens.store"
           className="dialog-form-fill"
-          onSuccess={() => setIsCreateOpen(false)}
+          onSuccess={(page) => {
+            setIsCreateOpen(false)
+
+            const newToken = page.props.createdPlaintext
+            if (typeof newToken !== 'string') return
+
+            setInstallClient('codex')
+            setInstallToken(newToken)
+            setIsInstallTokenVisible(true)
+            setIsInstallOpen(true)
+          }}
         >
           {({ errors, processing }) => (
             <Layout
