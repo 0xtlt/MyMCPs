@@ -130,7 +130,7 @@ test.group('MCP logs and analytics administration', (group) => {
     page.assertStatus(200)
     page.assertInertiaPropsContains({
       filters: { range: 'all', outcome: 'error', mcp: 'search', token: 'mcp_agent' },
-      pagination: { total: 1 },
+      pagination: { pageSize: 25, total: 1 },
       logs: [{ id: failed.id, requestedToolName: 'search__fail', outcome: 'error' }],
       selectedLog: {
         id: failed.id,
@@ -150,14 +150,29 @@ test.group('MCP logs and analytics administration', (group) => {
     blankFilters.assertStatus(200)
     blankFilters.assertInertiaPropsContains({
       filters: { range: '24h', outcome: '', mcp: '', token: '' },
+      pagination: { pageSize: 25 },
+    })
+
+    const selectedPageSize = await client
+      .get('/logs?pageSize=10&timeZone=Europe/Paris')
+      .withInertia()
+      .loginAs(admin)
+    selectedPageSize.assertStatus(200)
+    selectedPageSize.assertInertiaPropsContains({
+      filters: { timeZone: 'Europe/Paris' },
+      pagination: { pageSize: 10 },
     })
 
     const invalidRange = await client.get('/logs?range=invalid').loginAs(admin).redirects(0)
     invalidRange.assertStatus(302)
     assert.property(invalidRange.flashMessage('inputErrorsBag'), 'range')
+
+    const invalidPageSize = await client.get('/logs?pageSize=30').loginAs(admin).redirects(0)
+    invalidPageSize.assertStatus(302)
+    assert.property(invalidPageSize.flashMessage('inputErrorsBag'), 'pageSize')
   })
 
-  test('calculates analytics metrics, buckets, and breakdowns', async ({ client }) => {
+  test('calculates analytics metrics, buckets, and breakdowns', async ({ client, assert }) => {
     const admin = await createAdmin()
     const token = await createStoredAccessToken(admin.id, { name: 'Analytics token' })
     const mcp = await createMcp(admin.id, { name: 'Analytics MCP' })
@@ -169,11 +184,15 @@ test.group('MCP logs and analytics administration', (group) => {
       durationMs: 300,
     })
 
-    const page = await client.get('/analytics?range=7d').withInertia().loginAs(admin)
+    const page = await client
+      .get('/analytics?range=7d&timeZone=Europe/Paris')
+      .withInertia()
+      .loginAs(admin)
 
     page.assertStatus(200)
     page.assertInertiaPropsContains({
       range: '7d',
+      timeZone: 'Europe/Paris',
       metrics: {
         total: 2,
         successes: 1,
@@ -185,5 +204,12 @@ test.group('MCP logs and analytics administration', (group) => {
       topMcps: [{ label: 'Analytics MCP', total: 2, errors: 1 }],
       topTokens: [{ label: 'Analytics token', total: 2, errors: 1 }],
     })
+
+    const currentLocalBucket = page.inertiaProps.timeline.at(-1)
+    const expectedLocalBucket = DateTime.now().setZone('Europe/Paris').startOf('day')
+    assert.equal(currentLocalBucket.bucket, expectedLocalBucket.toUTC().toISO())
+    assert.equal(currentLocalBucket.label, expectedLocalBucket.toFormat('LLL d'))
+    assert.equal(currentLocalBucket.total, 2)
+    assert.equal(currentLocalBucket.errors, 1)
   })
 })

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -22,6 +22,8 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { useTheme } from '@astryxdesign/core/theme'
+import { LiveRefreshButton } from '~/components/live_refresh_button'
+import { browserTimeZone, formatTimeZoneLabel } from '~/components/local_time'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Legend)
 
@@ -66,6 +68,7 @@ function Breakdown({ title, rows }: { title: string; rows: BreakdownRow[] }) {
 
 export default function AnalyticsIndex({
   range,
+  timeZone,
   loggingLevel,
   metrics,
   timeline,
@@ -74,6 +77,7 @@ export default function AnalyticsIndex({
   topTokens,
 }: {
   range: '24h' | '7d' | '30d'
+  timeZone: string
   loggingLevel: 'off' | 'metadata' | 'arguments' | 'responses'
   metrics: {
     total: number
@@ -91,8 +95,19 @@ export default function AnalyticsIndex({
   const { token } = useTheme()
 
   function changeRange(value: string) {
-    router.get('/analytics', { range: value }, { preserveState: true, replace: true })
+    router.get('/analytics', { range: value, timeZone }, { preserveState: true, replace: true })
   }
+
+  useEffect(() => {
+    const localTimeZone = browserTimeZone()
+    if (!localTimeZone || localTimeZone === timeZone) return
+
+    router.get(
+      '/analytics',
+      { range, timeZone: localTimeZone },
+      { preserveState: true, preserveScroll: true, replace: true }
+    )
+  }, [range, timeZone])
 
   const cards = [
     { label: 'Total calls', value: metrics.total.toLocaleString() },
@@ -179,6 +194,7 @@ export default function AnalyticsIndex({
             <SegmentedControlItem value="7d" label="7 days" />
             <SegmentedControlItem value="30d" label="30 days" />
           </SegmentedControl>
+          <LiveRefreshButton />
           <Button label="View logs" variant="secondary" href="/logs" />
         </HStack>
       </HStack>
@@ -218,7 +234,7 @@ export default function AnalyticsIndex({
             <VStack gap={1}>
               <Heading level={2}>Calls and errors over time</Heading>
               <Text type="supporting" color="secondary">
-                Successful and failed tool-call attempts recorded by the gateway.
+                Successful and failed tool-call attempts in {formatTimeZoneLabel(timeZone)}.
               </Text>
             </VStack>
             <VStack height={300} hAlign="stretch">
