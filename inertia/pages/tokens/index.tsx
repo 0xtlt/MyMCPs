@@ -221,6 +221,12 @@ export default function TokensIndex({
           <Text type="supporting" color="secondary">
             Send Authorization: Bearer &lt;token&gt; on every request.
           </Text>
+          <Banner
+            status="info"
+            title="Reduce tool-definition overhead"
+            description="Optional: configure your MCP client to send X-MyMCPs-Tool-Mode: lazy. The gateway will announce available MCPs first and expose list_mcps, tool_search, and call_tool instead of loading every upstream tool definition. Without the header, eager mode remains active."
+            container="card"
+          />
         </VStack>
       </Card>
 
