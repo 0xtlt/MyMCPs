@@ -235,8 +235,16 @@ test.group('gateway lazy tool mode', (group) => {
       const rpc = parseRpcResponse(response)
       const instructions = String(rpc.result?.instructions)
 
-      assert.include(instructions, 'issues: Issue Tracker [ready]')
-      assert.include(instructions, 'Project issues without exposing credentials')
+      assert.deepEqual(rpc.result?.serverInfo, { name: 'mymcps', version: '0.1.0' })
+      assert.equal(
+        instructions,
+        [
+          'Available MCPs:',
+          '- issues: Project issues without exposing credentials',
+          '',
+          "Use list_mcps to get the up-to-date catalog, then tool_search to discover an MCP's tools.",
+        ].join('\n')
+      )
       assert.notInclude(instructions, 'Private Calendar')
       assert.notInclude(instructions, 'top-secret-value')
       assert.lengthOf(mock.requests, 0)

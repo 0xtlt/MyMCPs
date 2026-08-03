@@ -29,7 +29,9 @@ X-MyMCPs-Tool-Mode: lazy
 ```
 
 Lazy mode shares the access token's allowed MCP catalog during initialization
-and exposes only three stable tools:
+as a concise `slug: description` list, with instructions to refresh it using
+`list_mcps` and discover tools using `tool_search`. It exposes only three stable
+tools:
 
 1. `list_mcps` returns the current allowed MCP names, slugs, descriptions, and statuses.
 2. `tool_search` searches one selected MCP and returns matching tool definitions.
