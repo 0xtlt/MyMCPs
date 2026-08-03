@@ -249,7 +249,7 @@ export default function AnalyticsIndex({
         </Card>
       )}
 
-      <Grid gap={6} columns={{ minWidth: 320, repeat: 'fit' }}>
+      <Grid gap={6} columns={{ minWidth: 320, max: 2, repeat: 'fit' }}>
         <Breakdown title="Top MCPs" rows={topMcps} />
         <Breakdown title="Top tools" rows={topTools} />
         <Breakdown title="Top access tokens" rows={topTokens} />
