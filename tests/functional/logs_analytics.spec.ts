@@ -115,6 +115,7 @@ test.group('MCP logs and analytics administration', (group) => {
       toolName: 'fail',
       errorCategory: 'tool_error',
       errorSummary: 'Upstream tool returned an error',
+      callerIp: '192.0.2.12',
       argumentsCaptured: true,
       arguments: JSON.stringify({ query: 'private value' }),
       responseCaptured: true,
@@ -133,6 +134,7 @@ test.group('MCP logs and analytics administration', (group) => {
       logs: [{ id: failed.id, requestedToolName: 'search__fail', outcome: 'error' }],
       selectedLog: {
         id: failed.id,
+        callerIp: '192.0.2.12',
         argumentsCaptured: true,
         arguments: JSON.stringify({ query: 'private value' }),
         responseCaptured: true,

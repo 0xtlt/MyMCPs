@@ -88,18 +88,23 @@ async function callGateway(
   plaintext: string,
   name: string,
   args?: Record<string, unknown>,
-  options: { flush?: boolean } = {}
+  options: { flush?: boolean; headers?: Record<string, string> } = {}
 ) {
-  const response = await client
+  const request = client
     .post('/mcp')
     .bearerToken(plaintext)
     .header('accept', 'application/json, text/event-stream')
-    .json({
-      jsonrpc: '2.0',
-      id: Math.floor(Math.random() * 1_000_000),
-      method: 'tools/call',
-      params: { name, ...(args === undefined ? {} : { arguments: args }) },
-    })
+
+  for (const [header, value] of Object.entries(options.headers ?? {})) {
+    request.header(header, value)
+  }
+
+  const response = await request.json({
+    jsonrpc: '2.0',
+    id: Math.floor(Math.random() * 1_000_000),
+    method: 'tools/call',
+    params: { name, ...(args === undefined ? {} : { arguments: args }) },
+  })
 
   if (options.flush !== false) {
     await McpCallLogService.flush()
@@ -125,13 +130,22 @@ test.group('MCP call capture', (group) => {
         mcpIds: [mcp.id],
       })
 
-      const response = await callGateway(client, plaintext, 'logging__echo', { message: 'secret' })
+      const response = await callGateway(
+        client,
+        plaintext,
+        'logging__echo',
+        { message: 'secret' },
+        {
+          headers: { 'x-forwarded-for': '192.0.2.10' },
+        }
+      )
       response.assertStatus(200)
 
       const log = await McpCallLog.firstOrFail()
       assert.equal(log.outcome, 'success')
       assert.equal(log.mcpName, 'Logging MCP')
       assert.equal(log.toolName, 'echo')
+      assert.equal(log.callerIp, '192.0.2.10')
       assert.isFalse(log.argumentsCaptured)
       assert.isNull(log.arguments)
       assert.isFalse(log.responseCaptured)
@@ -244,13 +258,21 @@ test.group('MCP call capture', (group) => {
     const admin = await createAdmin()
     const { plaintext } = await createAccessToken(admin.id)
 
-    await callGateway(client, plaintext, 'invalid')
-    await callGateway(client, plaintext, 'missing__tool')
+    await callGateway(client, plaintext, 'invalid', undefined, {
+      headers: { 'x-forwarded-for': '192.0.2.11' },
+    })
+    await callGateway(client, plaintext, 'missing__tool', undefined, {
+      headers: { 'x-forwarded-for': '192.0.2.11' },
+    })
 
     const logs = await McpCallLog.query().orderBy('id', 'asc')
     assert.deepEqual(
       logs.map((log) => log.errorCategory),
       ['invalid_tool', 'disallowed_mcp']
+    )
+    assert.deepEqual(
+      logs.map((log) => log.callerIp),
+      ['192.0.2.11', '192.0.2.11']
     )
     assert.equal(logs[1].mcpSlug, 'missing')
     assert.equal(logs.length, 2)

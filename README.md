@@ -127,7 +127,9 @@ sandboxes in the named `/app/tmp` volume. `APP_URL` is intentionally explicit:
 when it is missing, signed-in pages show a warning and public-link or OAuth
 controls stay disabled. The container generates an `APP_KEY` on first start
 when one is not provided; the key is stored in the persistent volume. Set an
-explicit `APP_KEY` in Coolify if you prefer to manage it yourself.
+explicit `APP_KEY` in Coolify if you prefer to manage it yourself. Set
+`TRUST_PROXY` to the Coolify proxy's IP or CIDR when the application should
+resolve forwarded caller IPs instead of recording the proxy address.
 
 If the Coolify instance does not automatically apply `coolify.json`, select
 **Docker Compose**, set the Compose file to `/docker-compose.yml`, expose port

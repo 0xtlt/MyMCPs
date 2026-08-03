@@ -35,6 +35,7 @@ export default class GatewayController {
     }
 
     const mcps = ctx.allowedMcps ?? []
+    const callerIp = ctx.request.ip()
     const bySlug = new Map<string, Mcp>()
     for (const mcp of mcps) {
       bySlug.set(mcp.slug, mcp)
@@ -132,6 +133,7 @@ export default class GatewayController {
           if (typeof input === 'string') {
             McpCallLogService.record({
               accessToken,
+              callerIp,
               requestedToolName,
               toolName: null,
               args,
@@ -151,6 +153,7 @@ export default class GatewayController {
           if (!mcp) {
             McpCallLogService.record({
               accessToken,
+              callerIp,
               mcpSlug: input.mcp,
               requestedToolName: targetToolName,
               toolName: input.tool,
@@ -168,6 +171,7 @@ export default class GatewayController {
 
           return this.callAndRecord({
             accessToken,
+            callerIp,
             mcp,
             requestedToolName: targetToolName,
             toolName: input.tool,
@@ -186,6 +190,7 @@ export default class GatewayController {
       if (!parsed) {
         McpCallLogService.record({
           accessToken,
+          callerIp,
           requestedToolName,
           toolName: null,
           args,
@@ -204,6 +209,7 @@ export default class GatewayController {
       if (!mcp) {
         McpCallLogService.record({
           accessToken,
+          callerIp,
           mcpSlug: parsed.slug,
           requestedToolName,
           toolName: parsed.toolName,
@@ -221,6 +227,7 @@ export default class GatewayController {
 
       return this.callAndRecord({
         accessToken,
+        callerIp,
         mcp,
         requestedToolName,
         toolName: parsed.toolName,
@@ -252,6 +259,7 @@ export default class GatewayController {
 
   private async callAndRecord(params: {
     accessToken: NonNullable<HttpContext['accessToken']>
+    callerIp: string | null
     mcp: Mcp
     requestedToolName: string
     toolName: string
@@ -263,6 +271,7 @@ export default class GatewayController {
       const isError = result.isError === true
       McpCallLogService.record({
         accessToken: params.accessToken,
+        callerIp: params.callerIp,
         mcp: params.mcp,
         requestedToolName: params.requestedToolName,
         toolName: params.toolName,
@@ -281,6 +290,7 @@ export default class GatewayController {
       )
       McpCallLogService.record({
         accessToken: params.accessToken,
+        callerIp: params.callerIp,
         mcp: params.mcp,
         requestedToolName: params.requestedToolName,
         toolName: params.toolName,
