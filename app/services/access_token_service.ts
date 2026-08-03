@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { DateTime } from 'luxon'
 import AccessToken from '#models/access_token'
 import Mcp from '#models/mcp'
+import db from '@adonisjs/lucid/services/db'
 
 export type CreatedAccessToken = {
   token: AccessToken
@@ -74,6 +75,25 @@ export default class AccessTokenService {
       query.where('enabled', true).orderBy('name', 'asc')
     })
     return token.mcps
+  }
+
+  static async update(
+    token: AccessToken,
+    params: {
+      name: string
+      scopeMode: 'all' | 'selected'
+      mcpIds: number[]
+      expiresAt: DateTime | null
+    }
+  ) {
+    await db.transaction(async (trx) => {
+      token.useTransaction(trx)
+      token.name = params.name
+      token.scopeMode = params.scopeMode
+      token.expiresAt = params.expiresAt
+      await token.save()
+      await token.related('mcps').sync(params.scopeMode === 'selected' ? params.mcpIds : [])
+    })
   }
 
   static async revoke(token: AccessToken) {

@@ -77,7 +77,7 @@ export const updateMcpValidator = vine.create(mcpPayload)
 /**
  * Create an agent access token (identifier).
  */
-export const createAccessTokenValidator = vine.create({
+const accessTokenPayload = {
   name: vine.string().trim().minLength(1).maxLength(120),
   scopeMode: vine.enum(['all', 'selected'] as const),
   mcpIds: vine
@@ -89,4 +89,18 @@ export const createAccessTokenValidator = vine.create({
     .date({ formats: ['iso8601'] })
     .nullable()
     .optional(),
+}
+
+export const createAccessTokenValidator = vine.create(accessTokenPayload)
+
+/**
+ * Update an agent access token without rotating its secret.
+ */
+export const updateAccessTokenValidator = vine.create(accessTokenPayload)
+
+/**
+ * Route parameters for access-token mutations.
+ */
+export const accessTokenParamsValidator = vine.create({
+  id: vine.number().withoutDecimals().positive(),
 })
