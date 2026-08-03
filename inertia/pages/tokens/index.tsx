@@ -48,6 +48,15 @@ type McpOption = {
   enabled: boolean
 }
 
+type TokenFormValues = {
+  name: string
+  scopeMode: 'all' | 'selected'
+  selectedMcpIds: string[]
+  expiresAt: ISODateTimeString | undefined
+}
+
+type TokenFormErrors = Partial<Record<'name' | 'scopeMode' | 'mcpIds' | 'expiresAt', string>>
+
 type CopyState = 'idle' | 'copied' | 'error'
 
 function EyeIcon(props: SVGProps<SVGSVGElement>) {
@@ -83,6 +92,112 @@ function scopeLabel(token: TokenRow) {
   return `${count} MCP${count === 1 ? '' : 's'}`
 }
 
+function emptyTokenFormValues(): TokenFormValues {
+  return {
+    name: '',
+    scopeMode: 'all',
+    selectedMcpIds: [],
+    expiresAt: undefined,
+  }
+}
+
+function toLocalDateTime(value: string | null): ISODateTimeString | undefined {
+  if (!value) return undefined
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return undefined
+
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}` as ISODateTimeString
+}
+
+function tokenFormValuesFromRow(token: TokenRow): TokenFormValues {
+  return {
+    name: token.name,
+    scopeMode: token.scopeMode,
+    selectedMcpIds: token.mcpIds.map(String),
+    expiresAt: toLocalDateTime(token.expiresAt),
+  }
+}
+
+function TokenFormFields({
+  values,
+  onChange,
+  errors,
+  mcps,
+}: {
+  values: TokenFormValues
+  onChange: (patch: Partial<TokenFormValues>) => void
+  errors: TokenFormErrors
+  mcps: McpOption[]
+}) {
+  return (
+    <VStack gap={4} hAlign="stretch">
+      <TextInput
+        label="Name"
+        htmlName="name"
+        value={values.name}
+        onChange={(name) => onChange({ name })}
+        placeholder="Cursor agent"
+        width="100%"
+        status={errors.name ? { type: 'error', message: errors.name } : undefined}
+      />
+
+      <RadioList
+        label="MCP access"
+        htmlName="scopeMode"
+        value={values.scopeMode}
+        onChange={(scopeMode) => onChange({ scopeMode: scopeMode as TokenFormValues['scopeMode'] })}
+        description="All includes every enabled MCP, including ones added later."
+        status={errors.scopeMode ? { type: 'error', message: errors.scopeMode } : undefined}
+      >
+        <RadioListItem value="all" label="All MCPs" />
+        <RadioListItem value="selected" label="Selected MCPs" />
+      </RadioList>
+
+      {values.scopeMode === 'selected' ? (
+        <>
+          {values.selectedMcpIds.map((id) => (
+            <input key={id} type="hidden" name="mcpIds[]" value={id} />
+          ))}
+          {mcps.length === 0 ? (
+            <Banner status="warning" title="Add an MCP first" container="card" />
+          ) : (
+            <CheckboxList
+              label="MCPs"
+              value={values.selectedMcpIds}
+              onChange={(selectedMcpIds) => onChange({ selectedMcpIds })}
+              hasDividers
+              status={errors.mcpIds ? { type: 'error', message: errors.mcpIds } : undefined}
+            >
+              {mcps.map((mcp) => (
+                <CheckboxListItem
+                  key={mcp.id}
+                  value={String(mcp.id)}
+                  label={mcp.name}
+                  description={mcp.enabled ? mcp.slug : `${mcp.slug} (disabled)`}
+                />
+              ))}
+            </CheckboxList>
+          )}
+        </>
+      ) : null}
+
+      <DateTimeInput
+        label="Expires at"
+        value={values.expiresAt}
+        onChange={(expiresAt) => onChange({ expiresAt })}
+        isOptional
+        hasClear
+        description="Leave empty for no expiration. Time is interpreted in your local timezone."
+        width="100%"
+        status={errors.expiresAt ? { type: 'error', message: errors.expiresAt } : undefined}
+      />
+      <input type="hidden" name="expiresAt" value={values.expiresAt ?? ''} />
+    </VStack>
+  )
+}
+
 export default function TokensIndex({
   tokens,
   mcps,
@@ -99,10 +214,9 @@ export default function TokensIndex({
   const [installClient, setInstallClient] = useState<McpClient>('codex')
   const [installToken, setInstallToken] = useState(createdPlaintext ?? '')
   const [isInstallTokenVisible, setIsInstallTokenVisible] = useState(Boolean(createdPlaintext))
-  const [name, setName] = useState('')
-  const [scopeMode, setScopeMode] = useState('all')
-  const [selectedMcpIds, setSelectedMcpIds] = useState<string[]>([])
-  const [expiresAt, setExpiresAt] = useState<ISODateTimeString>()
+  const [createValues, setCreateValues] = useState<TokenFormValues>(emptyTokenFormValues)
+  const [editingToken, setEditingToken] = useState<TokenRow | null>(null)
+  const [editValues, setEditValues] = useState<TokenFormValues>(emptyTokenFormValues)
   const [gatewayCopyState, setGatewayCopyState] = useState<CopyState>('idle')
   const [tokenCopyState, setTokenCopyState] = useState<CopyState>('idle')
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -138,11 +252,18 @@ export default function TokensIndex({
   }
 
   function openCreate() {
-    setName('')
-    setScopeMode('all')
-    setSelectedMcpIds([])
-    setExpiresAt(undefined)
+    setCreateValues(emptyTokenFormValues())
     setIsCreateOpen(true)
+  }
+
+  function openEdit(token: TokenRow) {
+    setEditValues(tokenFormValuesFromRow(token))
+    setEditingToken(token)
+  }
+
+  function closeEdit() {
+    setEditingToken(null)
+    setEditValues(emptyTokenFormValues())
   }
 
   function openInstall() {
@@ -225,26 +346,36 @@ export default function TokensIndex({
     {
       key: 'actions',
       header: 'Actions',
-      width: pixel(110),
+      width: pixel(190),
       align: 'end',
-      renderCell: (token) =>
-        token.isUsable ? (
-          <Form route="tokens.revoke" routeParams={{ id: token.id }}>
-            {({ processing }) => (
-              <Button
-                type="submit"
-                label="Revoke"
-                variant="destructive"
-                size="sm"
-                isLoading={processing}
-              />
-            )}
-          </Form>
-        ) : (
-          <Text type="supporting" color="secondary">
-            —
-          </Text>
-        ),
+      renderCell: (token) => {
+        if (token.revokedAt) {
+          return (
+            <Text type="supporting" color="secondary">
+              —
+            </Text>
+          )
+        }
+
+        return (
+          <HStack gap={2} hAlign="end">
+            <Button label="Edit" variant="secondary" size="sm" onClick={() => openEdit(token)} />
+            {token.isUsable ? (
+              <Form route="tokens.revoke" routeParams={{ id: token.id }}>
+                {({ processing }) => (
+                  <Button
+                    type="submit"
+                    label="Revoke"
+                    variant="destructive"
+                    size="sm"
+                    isLoading={processing}
+                  />
+                )}
+              </Form>
+            ) : null}
+          </HStack>
+        )
+      },
     },
   ]
 
@@ -461,65 +592,12 @@ export default function TokensIndex({
               }
               content={
                 <LayoutContent isScrollable>
-                  <VStack gap={4} hAlign="stretch">
-                    <TextInput
-                      label="Name"
-                      htmlName="name"
-                      value={name}
-                      onChange={setName}
-                      placeholder="Cursor agent"
-                      width="100%"
-                      status={errors.name ? { type: 'error', message: errors.name } : undefined}
-                    />
-
-                    <RadioList
-                      label="MCP access"
-                      htmlName="scopeMode"
-                      value={scopeMode}
-                      onChange={setScopeMode}
-                      description="All includes every enabled MCP, including ones added later."
-                    >
-                      <RadioListItem value="all" label="All MCPs" />
-                      <RadioListItem value="selected" label="Selected MCPs" />
-                    </RadioList>
-
-                    {scopeMode === 'selected' ? (
-                      <>
-                        {selectedMcpIds.map((id) => (
-                          <input key={id} type="hidden" name="mcpIds[]" value={id} />
-                        ))}
-                        {mcps.length === 0 ? (
-                          <Banner status="warning" title="Add an MCP first" container="card" />
-                        ) : (
-                          <CheckboxList
-                            label="MCPs"
-                            value={selectedMcpIds}
-                            onChange={setSelectedMcpIds}
-                            hasDividers
-                          >
-                            {mcps.map((mcp) => (
-                              <CheckboxListItem
-                                key={mcp.id}
-                                value={String(mcp.id)}
-                                label={mcp.name}
-                                description={mcp.enabled ? mcp.slug : `${mcp.slug} (disabled)`}
-                              />
-                            ))}
-                          </CheckboxList>
-                        )}
-                      </>
-                    ) : null}
-
-                    <DateTimeInput
-                      label="Expires at"
-                      value={expiresAt}
-                      onChange={setExpiresAt}
-                      isOptional
-                      description="Leave empty for no expiration. Time is interpreted in your local timezone."
-                      width="100%"
-                    />
-                    <input type="hidden" name="expiresAt" value={expiresAt ?? ''} />
-                  </VStack>
+                  <TokenFormFields
+                    values={createValues}
+                    onChange={(patch) => setCreateValues((current) => ({ ...current, ...patch }))}
+                    errors={errors}
+                    mcps={mcps}
+                  />
                 </LayoutContent>
               }
               footer={
@@ -542,6 +620,59 @@ export default function TokensIndex({
             />
           )}
         </Form>
+      </Dialog>
+
+      <Dialog
+        isOpen={Boolean(editingToken)}
+        onOpenChange={(open) => {
+          if (!open) closeEdit()
+        }}
+        purpose="form"
+        width={520}
+        maxHeight="85vh"
+      >
+        {editingToken ? (
+          <Form
+            action={{ url: `/tokens/${editingToken.id}`, method: 'put' }}
+            className="dialog-form-fill"
+            onSuccess={closeEdit}
+          >
+            {({ errors, processing }) => (
+              <Layout
+                header={
+                  <DialogHeader
+                    title={`Edit ${editingToken.name}`}
+                    subtitle={`${editingToken.tokenPrefix}…`}
+                    onOpenChange={() => closeEdit()}
+                  />
+                }
+                content={
+                  <LayoutContent isScrollable>
+                    <TokenFormFields
+                      values={editValues}
+                      onChange={(patch) => setEditValues((current) => ({ ...current, ...patch }))}
+                      errors={errors}
+                      mcps={mcps}
+                    />
+                  </LayoutContent>
+                }
+                footer={
+                  <LayoutFooter>
+                    <HStack gap={2} hAlign="end">
+                      <Button label="Cancel" variant="secondary" onClick={closeEdit} />
+                      <Button
+                        type="submit"
+                        label="Save changes"
+                        variant="primary"
+                        isLoading={processing}
+                      />
+                    </HStack>
+                  </LayoutFooter>
+                }
+              />
+            )}
+          </Form>
+        ) : null}
       </Dialog>
     </VStack>
   )
