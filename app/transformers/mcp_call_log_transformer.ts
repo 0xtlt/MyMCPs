@@ -9,6 +9,7 @@ export default class McpCallLogTransformer extends BaseTransformer<McpCallLog> {
         'accessTokenId',
         'accessTokenName',
         'accessTokenPrefix',
+        'callerIp',
         'mcpId',
         'mcpName',
         'mcpSlug',

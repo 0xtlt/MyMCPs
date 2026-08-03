@@ -17,6 +17,7 @@ import {
 export default class GatewayController {
   async handle(ctx: HttpContext) {
     const mcps = ctx.allowedMcps ?? []
+    const callerIp = ctx.request.ip()
     const bySlug = new Map<string, Mcp>()
     for (const mcp of mcps) {
       bySlug.set(mcp.slug, mcp)
@@ -43,6 +44,7 @@ export default class GatewayController {
       if (!parsed) {
         McpCallLogService.record({
           accessToken,
+          callerIp,
           requestedToolName,
           toolName: null,
           args,
@@ -61,6 +63,7 @@ export default class GatewayController {
       if (!mcp) {
         McpCallLogService.record({
           accessToken,
+          callerIp,
           mcpSlug: parsed.slug,
           requestedToolName,
           toolName: parsed.toolName,
@@ -82,6 +85,7 @@ export default class GatewayController {
         const isError = result.isError === true
         McpCallLogService.record({
           accessToken,
+          callerIp,
           mcp,
           requestedToolName,
           toolName: parsed.toolName,
@@ -100,6 +104,7 @@ export default class GatewayController {
         )
         McpCallLogService.record({
           accessToken,
+          callerIp,
           mcp,
           requestedToolName,
           toolName: parsed.toolName,

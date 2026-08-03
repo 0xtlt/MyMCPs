@@ -30,6 +30,7 @@ interface LogRow extends Record<string, JSONDataTypes> {
   accessTokenId: number | null
   accessTokenName: string
   accessTokenPrefix: string
+  callerIp: string | null
   mcpId: number | null
   mcpName: string | null
   mcpSlug: string | null
@@ -324,6 +325,8 @@ export default function LogsIndex({
                 <Text type="body">
                   {selectedLog.accessTokenName} ({selectedLog.accessTokenPrefix}…)
                 </Text>
+                <Text type="label">Caller IP</Text>
+                <Text type="body">{selectedLog.callerIp ?? 'Unknown'}</Text>
                 <Text type="label">Started</Text>
                 <Text type="body">{new Date(selectedLog.createdAt).toLocaleString()}</Text>
                 <Text type="label">Duration</Text>

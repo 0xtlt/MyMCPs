@@ -162,6 +162,7 @@ export async function createMcpCallLog(
     argumentsCaptured: boolean
     response: string | null
     responseCaptured: boolean
+    callerIp: string | null
     durationMs: number
     createdAt: DateTime
   }> = {}
@@ -171,6 +172,7 @@ export async function createMcpCallLog(
     accessTokenId: accessToken.id,
     accessTokenName: accessToken.name,
     accessTokenPrefix: accessToken.tokenPrefix,
+    callerIp: overrides.callerIp ?? null,
     mcpId: mcp?.id ?? null,
     mcpName: mcp?.name ?? null,
     mcpSlug: mcp?.slug ?? null,

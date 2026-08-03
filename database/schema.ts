@@ -125,6 +125,7 @@ export class McpCallLogSchema extends BaseModel {
     'accessTokenPrefix',
     'arguments',
     'argumentsCaptured',
+    'callerIp',
     'createdAt',
     'durationMs',
     'errorCategory',
@@ -150,6 +151,8 @@ export class McpCallLogSchema extends BaseModel {
   declare arguments: string | null
   @column()
   declare argumentsCaptured: boolean
+  @column()
+  declare callerIp: string | null
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
   @column()
