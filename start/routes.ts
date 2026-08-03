@@ -99,6 +99,7 @@ router
 
         router.get('tokens', [controllers.AccessTokens, 'index']).as('tokens.index')
         router.post('tokens', [controllers.AccessTokens, 'store']).as('tokens.store')
+        router.put('tokens/:id', [controllers.AccessTokens, 'update']).as('tokens.update')
         router.post('tokens/:id/revoke', [controllers.AccessTokens, 'revoke']).as('tokens.revoke')
       })
       .use(middleware.auth())
