@@ -49,8 +49,8 @@ For providers that support MCP OAuth discovery and dynamic client registration, 
 
 This repository includes a production Docker image, a Compose service, and a `coolify.json` profile.
 
-1. In Coolify, create a project and add a **Public Repository** resource. Use the GitHub App resource instead if the repository is private.
-2. Enter this repository's URL and select the branch you want to deploy.
+1. In Coolify, create a project and add a **Public Repository** resource.
+2. Use [0xtlt/MyMCPs](https://github.com/0xtlt/MyMCPs) as the repository and select the branch you want to deploy.
 3. Use **Docker Compose** as the build pack and `/docker-compose.yml` as the Compose file. Coolify may fill these settings from `coolify.json`.
 4. Add a domain to the `mymcps` service and set `APP_URL` to the same HTTPS origin, for example `https://mcp.example.com`.
 5. Deploy, open the domain, and complete onboarding.
