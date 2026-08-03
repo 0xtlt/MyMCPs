@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type SVGProps } from 'react'
 import { Head } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -9,6 +9,8 @@ import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
 import { CodeBlock } from '@astryxdesign/core/CodeBlock'
 import { DateTimeInput, type ISODateTimeString } from '@astryxdesign/core/DateTimeInput'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import { Icon } from '@astryxdesign/core/Icon'
+import { InputGroup } from '@astryxdesign/core/InputGroup'
 import {
   HStack,
   Layout,
@@ -23,6 +25,7 @@ import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
+import { ToggleButton } from '@astryxdesign/core/ToggleButton'
 import { createMcpInstallConfig, type McpClient } from '~/components/mcp_install_config'
 
 type TokenRow = {
@@ -55,6 +58,24 @@ type TokenFormValues = {
 type TokenFormErrors = Partial<Record<'name' | 'scopeMode' | 'mcpIds' | 'expiresAt', string>>
 
 type CopyState = 'idle' | 'copied' | 'error'
+
+function EyeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.25 12s3.75-6.75 9.75-6.75S21.75 12 21.75 12 18 18.75 12 18.75 2.25 12 2.25 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
 
 function tokenStatus(token: TokenRow): {
   label: string
@@ -192,6 +213,7 @@ export default function TokensIndex({
   const [isInstallOpen, setIsInstallOpen] = useState(Boolean(createdPlaintext))
   const [installClient, setInstallClient] = useState<McpClient>('codex')
   const [installToken, setInstallToken] = useState(createdPlaintext ?? '')
+  const [isInstallTokenVisible, setIsInstallTokenVisible] = useState(Boolean(createdPlaintext))
   const [createValues, setCreateValues] = useState<TokenFormValues>(emptyTokenFormValues)
   const [editingToken, setEditingToken] = useState<TokenRow | null>(null)
   const [editValues, setEditValues] = useState<TokenFormValues>(emptyTokenFormValues)
@@ -204,6 +226,15 @@ export default function TokensIndex({
       if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (!createdPlaintext) return
+
+    setInstallClient('codex')
+    setInstallToken(createdPlaintext)
+    setIsInstallTokenVisible(true)
+    setIsInstallOpen(true)
+  }, [createdPlaintext])
 
   async function copyText(value: string, setState: (state: CopyState) => void) {
     if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
@@ -238,12 +269,16 @@ export default function TokensIndex({
   function openInstall() {
     setInstallClient('codex')
     setInstallToken('')
+    setIsInstallTokenVisible(false)
     setIsInstallOpen(true)
   }
 
   function handleInstallOpenChange(isOpen: boolean) {
     setIsInstallOpen(isOpen)
-    if (!isOpen) setInstallToken('')
+    if (!isOpen) {
+      setInstallToken('')
+      setIsInstallTokenVisible(false)
+    }
   }
 
   const installConfig = createMcpInstallConfig(
@@ -459,16 +494,37 @@ export default function TokensIndex({
                   description="These quick-install configurations include the access token directly. Keep the configuration private and revoke the token immediately if it is exposed."
                   container="card"
                 />
-                <TextInput
-                  type="password"
+                <InputGroup
                   label="Access token"
-                  value={installToken}
-                  onChange={setInstallToken}
-                  placeholder="Paste your MyMCPs access token"
                   description="This value stays in this browser tab and is cleared when you close the modal."
-                  width="100%"
-                  hasClear
-                />
+                >
+                  <TextInput
+                    type={isInstallTokenVisible ? 'text' : 'password'}
+                    label="Access token"
+                    isLabelHidden
+                    value={installToken}
+                    onChange={setInstallToken}
+                    placeholder="Paste your MyMCPs access token"
+                    hasClear
+                  />
+                  <ToggleButton
+                    label={isInstallTokenVisible ? 'Hide access token' : 'Show access token'}
+                    tooltip={isInstallTokenVisible ? 'Hide access token' : 'Show access token'}
+                    icon={<Icon icon={EyeIcon} />}
+                    pressedIcon={<Icon icon="eyeSlash" />}
+                    isPressed={isInstallTokenVisible}
+                    onPressedChange={setIsInstallTokenVisible}
+                    isIconOnly
+                    style={{
+                      borderWidth: 'var(--border-width)',
+                      borderStyle: 'solid',
+                      borderColor: 'var(--color-border)',
+                      borderStartStartRadius: 'var(--radius-none)',
+                      borderEndStartRadius: 'var(--radius-none)',
+                      marginInlineStart: 'calc(-1 * var(--border-width))',
+                    }}
+                  />
+                </InputGroup>
                 <TabList
                   value={installClient}
                   onChange={(value) => setInstallClient(value as McpClient)}
