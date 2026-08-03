@@ -2,10 +2,12 @@ import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { Button } from '@astryxdesign/core/Button'
 import { Center } from '@astryxdesign/core/Center'
 import { Icon } from '@astryxdesign/core/Icon'
+import { Head } from '@inertiajs/react'
 
 export default function NotFound() {
   return (
     <Center axis="both" style={{ minHeight: '100%' }}>
+      <Head title="Page not found" />
       <EmptyState
         title="Page not found"
         description="This route does not exist. Head back home to continue."

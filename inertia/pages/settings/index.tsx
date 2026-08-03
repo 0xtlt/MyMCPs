@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { usePage } from '@inertiajs/react'
+import { Head, usePage } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { type Data } from '@generated/data'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -60,6 +60,7 @@ export default function SettingsIndex({
 
   return (
     <>
+      <Head title="Settings" />
       <VStack gap={6} maxWidth={720} width="100%">
         <VStack gap={2}>
           <Heading level={1}>Settings</Heading>

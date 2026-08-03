@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { router } from '@inertiajs/react'
+import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
@@ -163,6 +163,7 @@ export default function AnalyticsIndex({
 
   return (
     <VStack gap={6} maxWidth={1200} width="100%">
+      <Head title="MCP analytics" />
       <HStack gap={4} hAlign="between" vAlign="start" wrap="wrap">
         <StackItem size="fill">
           <VStack gap={2}>

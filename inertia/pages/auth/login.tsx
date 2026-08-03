@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Head } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
@@ -14,6 +15,7 @@ export default function Login() {
 
   return (
     <Center axis="both" style={{ minHeight: '100%' }}>
+      <Head title="Sign in" />
       <VStack gap={4} hAlign="center" maxWidth={400} width="100%">
         <Card padding={8} width="100%">
           <Form route="session.store">
