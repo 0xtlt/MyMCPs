@@ -27,5 +27,14 @@
     "timeout": 5,
     "retries": 3,
     "start_period": 30
+  },
+  "environment_variables": {
+    "production": [
+      {
+        "key": "TRUST_PROXY",
+        "value": "true",
+        "is_required": true
+      }
+    ]
   }
 }

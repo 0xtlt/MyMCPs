@@ -1,190 +1,80 @@
 # MyMCPs
 
-Self-hosted **MCP gateway**: expose one MCP URL to your AI agents, and route tools/resources to many upstream MCPs behind it.
+MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) gateway. Connect your AI client to one endpoint, then manage every upstream MCP, credential, and access token from one dashboard.
 
-Agents talk to **one** endpoint. MyMCPs talks to the rest.
+## What it does
 
-## Why
+- Connects HTTP and npm-based MCP servers.
+- Supports bearer tokens, custom headers, and OAuth.
+- Issues access tokens for all MCPs or a selected set.
+- Exposes every allowed upstream through `GET` and `POST /mcp`.
+- Records gateway activity and usage analytics.
 
-Running many MCP servers means many URLs, credentials, and agent configs. MyMCPs concentrates them into a single gateway you host yourself—on your laptop, a VPS, or your infra.
+MyMCPs is self-hosted and invite-only. The first user becomes the administrator during onboarding.
 
-This is **not** a public SaaS signup product. You install an instance, complete first-run onboarding, and own the deployment.
+## Run locally
 
-## Access model
+You need [Node.js 24 or newer](https://nodejs.org/), [pnpm](https://pnpm.io/), and [Deno](https://deno.com/) if you want to run npm-based MCPs.
 
-1. **Fresh install** — any URL redirects to `/onboarding` to create the admin (no public marketing home)
-2. **Afterwards** — `/` is the signed-in dashboard; guests are sent to `/login`
-3. **Teammates** — invite-only (admin creates a link; no email sending required)
-4. **Agents** — use an access token as `Authorization: Bearer …` against `POST/GET /mcp`
+```bash
+pnpm install
+cp .env.example .env
+node ace generate:key
+node ace migration:run
+pnpm run dev
+```
 
-## Lazy tool discovery
+Open [http://localhost:3333](http://localhost:3333) and create the admin account.
 
-The gateway keeps its existing eager behavior by default: `tools/list` returns
-every allowed upstream tool as `{slug}__{toolName}`. Clients with large tool
-catalogs can opt into MyMCPs progressive discovery by adding this static request
-header to their MCP configuration:
+## Connect an AI client
+
+1. Add your upstream servers from **MCPs**.
+2. Create a token from **Access tokens**.
+3. Point your AI client to `https://your-domain.example/mcp`.
+4. Send the token as `Authorization: Bearer <token>`.
+
+Tools use `{mcp-slug}__{tool-name}` names by default. For clients with large tool catalogs, add the following request header to enable progressive discovery:
 
 ```text
 X-MyMCPs-Tool-Mode: lazy
 ```
 
-Lazy mode shares the access token's allowed MCP catalog during initialization
-as a concise `slug: description` list, with instructions to refresh it using
-`list_mcps` and discover tools using `tool_search`. It exposes only three stable
-tools:
+Lazy mode exposes `list_mcps`, `tool_search`, and `call_tool` instead of loading every tool definition at once.
 
-1. `list_mcps` returns the current allowed MCP names, slugs, descriptions, and statuses.
-2. `tool_search` searches one selected MCP and returns matching tool definitions.
-3. `call_tool` invokes an exact tool using its MCP slug, name, and schema-compliant arguments.
+### OAuth MCPs
 
-Example workflow:
+For providers that support MCP OAuth discovery and dynamic client registration, choose **OAuth** when adding the server, save it, then select **Connect OAuth**. Set `APP_URL` to the instance's public HTTPS URL so callback URLs are generated correctly.
 
-```json
-{ "name": "tool_search", "arguments": { "mcp": "github", "query": "create issue" } }
-{ "name": "call_tool", "arguments": { "mcp": "github", "tool": "create_issue", "arguments": { "title": "Example" } } }
-```
+## How to deploy to my Coolify
 
-This `tool_search` is a portable MyMCPs MCP tool. It does not enable or replace
-a host's reserved native tool-search feature; Codex, Cursor, and other hosts
-control their own model-facing tool deferral independently. Use
-`X-MyMCPs-Tool-Mode: eager` to select the original behavior explicitly. Other
-header values are rejected with HTTP 400 so configuration mistakes are visible.
+This repository includes a production Docker image, a Compose service, and a `coolify.json` profile.
 
-## Quick start
+1. In Coolify, create a project and add a **Public Repository** resource.
+2. Paste `https://github.com/0xtlt/MyMCPs` as the repository URL and select the branch you want to deploy.
+3. Use **Docker Compose** as the build pack and `/docker-compose.yml` as the Compose file. Coolify may fill these settings from `coolify.json`.
+4. Add a domain to the `mymcps` service and set `APP_URL` to the same HTTPS origin, for example `https://mcp.example.com`.
+5. Deploy, open the domain, and complete onboarding.
 
-Requirements: **Node.js ≥ 24**, **pnpm**. For **npm-transport MCPs**, also install [Deno](https://deno.land/). npm packages run in a Deno subprocess with filesystem access limited to a per-MCP sandbox directory (they cannot read the Adonis SQLite DB, `.env`, or app source). Network and env remain allowed so typical MCP packages can call APIs—treat installed packages as trusted software.
+The deployment exposes port `3333`, checks `/health`, and runs database migrations before the app starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`.
+
+`APP_KEY` is required, but you do not need to create it in Coolify. On the first start, the container generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable.
+
+The Coolify profile sets `TRUST_PROXY=true` so logs use the forwarded client IP instead of the proxy's IP.
+
+## Useful commands
 
 ```bash
-pnpm install
-cp .env.example .env   # if needed; scaffold may already have .env
-pnpm run dev           # node ace serve --hmr
+pnpm run dev        # Start the development server
+pnpm test           # Run all tests
+pnpm run lint       # Check code style
+pnpm run typecheck  # Check TypeScript
+pnpm run build      # Create a production build
 ```
-
-Optional: set `DENO_PATH` if `deno` is not on your `PATH`.
-
-Open the app URL (default `http://localhost:3333`), complete onboarding, then sign in on later visits.
-
-Migrations run as part of a fresh scaffold; for an existing DB:
-
-```bash
-node ace migration:run
-```
-
-## Codex worktrees
-
-When creating a worktree in the Codex desktop app, select the **MyMCPs** local
-environment. Codex will install the locked pnpm dependencies, create an isolated
-`.env` with a generated `APP_KEY`, and migrate a fresh SQLite database. The
-environment also adds **Dev** and **Tests** actions to the Codex toolbar.
-
-## One-click OAuth MCPs
-
-For a remote OAuth MCP such as Notion, add an HTTP MCP with this URL:
-`https://mcp.notion.com/mcp`. Select **OAuth**, save it, and click **Connect
-OAuth**. MyMCPs discovers the MCP's OAuth metadata, registers a client for the
-current callback URL, opens the provider's login, and stores the resulting
-tokens. You do not need to enter authorize/token endpoints, a client ID, or
-register a callback URI manually.
-
-The provider must support MCP OAuth discovery and dynamic client registration.
-Providers without those capabilities can use the optional advanced OAuth
-overrides in the MCP form. In production, `APP_URL` must be the public HTTPS
-origin of the MyMCPs instance so gateway URLs, invite links, and OAuth callbacks
-use the same host. MyMCPs does not infer this value from request headers.
-
-## Tests
-
-The project uses native AdonisJS test suites powered by Japa:
-
-```bash
-pnpm test
-pnpm test unit
-pnpm test functional
-pnpm test browser
-```
-
-Tests use `tmp/test.sqlite3`, which is isolated from the development database at `tmp/db.sqlite3` and reset for each test through a rolled-back database transaction. Browser tests run headless Chromium through Playwright. After installing dependencies on a new machine, install the browser once:
-
-```bash
-pnpm exec playwright install chromium
-```
-
-Add reusable records through the helpers in `tests/helpers/factories.ts`, and place fast logic tests in `tests/unit`, HTTP tests in `tests/functional`, and end-to-end UI tests in `tests/browser`.
-
-## Coolify
-
-The repository includes a Coolify deployment profile. To deploy a public
-repository:
-
-1. Create a new resource from **Public Repository** and paste the GitHub
-   repository URL.
-2. Use the checked-in `coolify.json` configuration, assign the domain that
-   should serve MyMCPs, and set `APP_URL` to that public HTTPS origin (for
-   example, `https://mcp.example.com`).
-3. Deploy the resource.
-
-The profile selects the Compose build pack, exposes the internal port `3333`,
-configures `/health`, and keeps SQLite, generated key material, and Deno
-sandboxes in the named `/app/tmp` volume. `APP_URL` is intentionally explicit:
-when it is missing, signed-in pages show a warning and public-link or OAuth
-controls stay disabled. The container generates an `APP_KEY` on first start
-when one is not provided; the key is stored in the persistent volume. Set an
-explicit `APP_KEY` in Coolify if you prefer to manage it yourself. Set
-`TRUST_PROXY` to the Coolify proxy's IP or CIDR when the application should
-resolve forwarded caller IPs instead of recording the proxy address.
-
-If the Coolify instance does not automatically apply `coolify.json`, select
-**Docker Compose**, set the Compose file to `/docker-compose.yml`, expose port
-`3333`, and add the same domain manually.
-
-## Docker
-
-The image bundles **Node.js 24**, production deps, and **Deno** (for npm MCP sandboxes). Persist `/app/tmp` so SQLite and sandbox caches survive restarts.
-
-```bash
-cp .env.example .env
-# APP_KEY is generated and persisted by the container when omitted.
-# For a direct production deployment, set APP_URL to the public HTTPS URL.
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.local.yml \
-  up --build -d
-```
-
-The optional local Compose override binds the published port to `127.0.0.1` by
-default. If the container must be reachable outside the host, set
-`BIND_ADDRESS` only behind a TLS-terminating reverse proxy and use an HTTPS
-`APP_URL`. Coolify uses its own proxy and the base `docker-compose.yml` does not
-publish a host port.
-
-Or without Compose:
-
-```bash
-docker build -t mymcps .
-docker run --rm -p 3333:3333 \
-  -e APP_KEY=... \
-  -e APP_URL=https://mcp.example.com \
-  -v mymcps-data:/app/tmp \
-  mymcps
-```
-
-`DENO_PATH` defaults to `/usr/local/bin/deno` inside the container.
-
-## Product surfaces
-
-- **MCPs** — register HTTP (Streamable HTTP) or npm upstreams with none / bearer / header / OAuth auth
-- **Access tokens** — identifiers scoped to all MCPs (auto-includes new ones) or a selected list; optional expiry
-- **Gateway** — `/mcp` aggregates namespaced tools (`{slug}__{toolName}`) or provides opt-in lazy discovery for allowed upstreams
 
 ## Stack
 
-- [AdonisJS 7](https://adonisjs.com/) — backend, Lucid, session auth
-- [Inertia](https://inertiajs.com/) + React 19 — server-driven UI
-- [Astryx](https://astryx.atmeta.com/) — design system
-- SQLite by default (`tmp/db.sqlite3`)
-- [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) — client/server + Streamable HTTP
-- Deno — sandboxed filesystem runner for npm MCPs (network/env still permitted)
+MyMCPs uses AdonisJS 7, Inertia, React 19, SQLite, the MCP TypeScript SDK, and Deno. See [SECURITY.md](SECURITY.md) for the deployment security baseline and vulnerability reporting process.
 
 ## License
 
-See repository license file when present. UNLICENSED until one is added.
+[MIT](LICENSE) © 2026 Thomas Tastet.

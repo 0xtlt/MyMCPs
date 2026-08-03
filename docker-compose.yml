@@ -16,7 +16,7 @@ services:
       APP_NAME: ${APP_NAME:-MyMCPs}
       VITE_APP_NAME: ${VITE_APP_NAME:-MyMCPs}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      TRUST_PROXY: ${TRUST_PROXY:-loopback}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
       APP_KEY: ${APP_KEY:-}
       APP_URL: ${APP_URL:-}
       SESSION_DRIVER: cookie
