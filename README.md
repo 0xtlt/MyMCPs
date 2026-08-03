@@ -50,16 +50,16 @@ For providers that support MCP OAuth discovery and dynamic client registration, 
 This repository includes a production Docker image, a Compose service, and a `coolify.json` profile.
 
 1. In Coolify, create a project and add a **Public Repository** resource.
-2. Use [0xtlt/MyMCPs](https://github.com/0xtlt/MyMCPs) as the repository and select the branch you want to deploy.
+2. Paste `https://github.com/0xtlt/MyMCPs` as the repository URL and select the branch you want to deploy.
 3. Use **Docker Compose** as the build pack and `/docker-compose.yml` as the Compose file. Coolify may fill these settings from `coolify.json`.
 4. Add a domain to the `mymcps` service and set `APP_URL` to the same HTTPS origin, for example `https://mcp.example.com`.
 5. Deploy, open the domain, and complete onboarding.
 
-The deployment exposes port `3333` and checks `/health`. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`.
+The deployment exposes port `3333`, checks `/health`, and runs database migrations before the app starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`.
 
-`APP_KEY` is generated on the first start if you leave it empty. You can instead provide your own stable AdonisJS application key. Back up the persistent volume: losing it also loses the database and generated key.
+`APP_KEY` is required, but you do not need to create it in Coolify. On the first start, the container generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable.
 
-If requests are logged with the proxy's IP, set `TRUST_PROXY` to the Coolify proxy's IP or CIDR.
+The Coolify profile sets `TRUST_PROXY=true` so logs use the forwarded client IP instead of the proxy's IP.
 
 ## Useful commands
 
