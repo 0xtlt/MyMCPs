@@ -23,7 +23,8 @@ function authorizationHeader(token: string) {
 export function createMcpInstallConfig(
   client: McpClient,
   gatewayUrl: string,
-  token: string
+  token: string,
+  enableLazyToolMode = false
 ): McpInstallConfig {
   const authorization = authorizationHeader(token)
 
@@ -34,7 +35,7 @@ export function createMcpInstallConfig(
       code: [
         '[mcp_servers.mymcps]',
         `url = ${tomlString(gatewayUrl)}`,
-        `http_headers = { Authorization = ${tomlString(authorization)}, "X-MyMCPs-Tool-Mode" = "lazy" }`,
+        `http_headers = { Authorization = ${tomlString(authorization)}${enableLazyToolMode ? ', "X-MyMCPs-Tool-Mode" = "lazy"' : ''} }`,
       ].join('\n'),
       restartInstruction: 'Save the file, then restart Codex or restart the IDE extension.',
       verifyInstruction: 'Open /mcp in Codex and confirm that mymcps is connected.',
@@ -42,13 +43,20 @@ export function createMcpInstallConfig(
   }
 
   if (client === 'claude') {
+    const headers = [
+      `Authorization: ${authorization}`,
+      ...(enableLazyToolMode ? ['X-MyMCPs-Tool-Mode: lazy'] : []),
+    ]
+
     return {
       language: 'bash',
       title: 'Terminal',
       code: [
         `claude mcp add --transport http --scope user mymcps ${shellArgument(gatewayUrl)} \\`,
-        `  --header ${shellArgument(`Authorization: ${authorization}`)} \\`,
-        `  --header ${shellArgument('X-MyMCPs-Tool-Mode: lazy')}`,
+        ...headers.map(
+          (header, index) =>
+            `  --header ${shellArgument(header)}${index < headers.length - 1 ? ' \\' : ''}`
+        ),
         'claude mcp get mymcps',
       ].join('\n'),
       restartInstruction: 'Restart Claude Code after the command completes.',
@@ -66,8 +74,8 @@ export function createMcpInstallConfig(
             type: 'http',
             url: gatewayUrl,
             headers: {
-              'Authorization': authorization,
-              'X-MyMCPs-Tool-Mode': 'lazy',
+              Authorization: authorization,
+              ...(enableLazyToolMode ? { 'X-MyMCPs-Tool-Mode': 'lazy' } : {}),
             },
           },
         },

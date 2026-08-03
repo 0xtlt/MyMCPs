@@ -32,15 +32,23 @@ test.group('MCP installation modal', (group) => {
 
     assert.include(await modal.innerText(), '[mcp_servers.mymcps]')
     assert.include(await modal.innerText(), 'Authorization = "Bearer token\'quoted"')
-    assert.include(await modal.innerText(), 'X-MyMCPs-Tool-Mode')
+    assert.notInclude(await modal.innerText(), '"X-MyMCPs-Tool-Mode" = "lazy"')
+
+    const lazyModeToggle = modal.getByRole('switch', { name: 'Enable lazy tool mode' })
+    assert.equal(await lazyModeToggle.isChecked(), false)
+    await lazyModeToggle.click()
+    assert.equal(await lazyModeToggle.isChecked(), true)
+    assert.include(await modal.innerText(), '"X-MyMCPs-Tool-Mode" = "lazy"')
 
     await modal.getByRole('button', { name: 'Claude' }).click()
     assert.include(await modal.innerText(), 'claude mcp add --transport http --scope user mymcps')
     assert.include(await modal.innerText(), `'Authorization: Bearer token'"'"'quoted'`)
+    assert.include(await modal.innerText(), `'X-MyMCPs-Tool-Mode: lazy'`)
 
     await modal.getByRole('button', { name: 'Cursor' }).click()
     assert.include(await modal.innerText(), '"mcpServers"')
     assert.include(await modal.innerText(), '"Authorization": "Bearer token\'quoted"')
+    assert.include(await modal.innerText(), '"X-MyMCPs-Tool-Mode": "lazy"')
   })
 
   test('requires a token on manual opening', async ({ assert, browserContext, visit }) => {
