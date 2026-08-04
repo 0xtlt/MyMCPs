@@ -2,9 +2,12 @@ import { useMemo, useState } from 'react'
 import { Head, router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
+import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
+import { List, ListItem } from '@astryxdesign/core/List'
 import {
   HStack,
   Layout,
@@ -70,6 +73,7 @@ export default function McpsIndex({
   editingMcpId?: number | null
   appUrlConfigured: boolean
 }) {
+  const { isMobile } = useAppShellMobile()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingOverride, setEditingOverride] = useState<EditingOverride | null>(null)
   const [createValues, setCreateValues] = useState<McpFormValues>(emptyMcpFormValues)
@@ -109,12 +113,7 @@ export default function McpsIndex({
       key: 'status',
       header: 'Status',
       width: pixel(110),
-      renderCell: (mcp) => (
-        <HStack gap={2} vAlign="center">
-          <StatusDot variant={statusVariant(mcp.status)} label={mcp.status} />
-          <Badge label={mcp.status} variant={statusVariant(mcp.status)} />
-        </HStack>
-      ),
+      renderCell: (mcp) => <StatusDot variant={statusVariant(mcp.status)} label={mcp.status} />,
     },
     {
       key: 'name',
@@ -176,7 +175,7 @@ export default function McpsIndex({
   return (
     <VStack gap={6} maxWidth={960} width="100%">
       <Head title="MCPs" />
-      <HStack gap={4} hAlign="between" vAlign="start">
+      <HStack gap={4} hAlign="between" vAlign="start" wrap="wrap">
         <StackItem size="fill">
           <VStack gap={2}>
             <Heading level={1}>MCPs</Heading>
@@ -195,6 +194,37 @@ export default function McpsIndex({
           description="Create an MCP to start routing agent traffic."
           container="card"
         />
+      ) : isMobile ? (
+        <List header="Registered MCPs" density="compact" hasDividers>
+          {mcps.map((mcp) => (
+            <ListItem
+              key={mcp.id}
+              label={mcp.name}
+              startContent={<StatusDot variant={statusVariant(mcp.status)} label={mcp.status} />}
+              description={
+                <VStack gap={0}>
+                  <Text type="supporting" color="secondary">
+                    {mcp.slug} · {mcp.transport}
+                  </Text>
+                  <Text type="supporting" color="secondary" className="mcp-endpoint">
+                    {endpointLabel(mcp)}
+                  </Text>
+                </VStack>
+              }
+              endContent={
+                <DropdownMenu
+                  button={{
+                    label: `Actions for ${mcp.name}`,
+                    children: 'Actions',
+                    variant: 'secondary',
+                    size: 'sm',
+                  }}
+                  items={[{ label: 'Edit MCP', onClick: () => openEdit(mcp) }]}
+                />
+              }
+            />
+          ))}
+        </List>
       ) : (
         <Table
           data={mcps}

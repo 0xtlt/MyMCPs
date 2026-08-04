@@ -9,27 +9,14 @@
   object-fit: contain;
 }
 
-.dashboard-art-card {
-  position: relative;
-  overflow: hidden;
+.gateway-url {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.dashboard-art-card__content {
-  max-width: 55%;
-  position: relative;
-  z-index: 1;
-}
-
-.dashboard-art-card__art {
-  position: absolute;
-  left: 100%;
-  top: 100%;
-  width: 38%;
-  height: auto;
-  transform: translate(-60%, -75%);
-  pointer-events: none;
-  user-select: none;
-  z-index: 0;
+.mcp-endpoint {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Let Layout fill + LayoutContent scroll inside Dialog (Form is otherwise block-sized). */

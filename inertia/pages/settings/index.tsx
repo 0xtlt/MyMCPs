@@ -3,6 +3,7 @@ import { Head, usePage } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { type Data } from '@generated/data'
 import { Banner } from '@astryxdesign/core/Banner'
+import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from '@astryxdesign/core/Layout'
@@ -20,6 +21,7 @@ export default function SettingsIndex({
     retentionDays: number
   } | null
 }) {
+  const { isMobile } = useAppShellMobile()
   const { props } = usePage<Data.SharedProps>()
   const user = props.user!
   const [isEmailOpen, setIsEmailOpen] = useState(false)
@@ -69,7 +71,11 @@ export default function SettingsIndex({
           </Text>
         </VStack>
 
-        <Section padding={6} width="100%" dividers={user.isAdmin ? ['bottom'] : undefined}>
+        <Section
+          padding={isMobile ? 4 : 6}
+          width="100%"
+          dividers={user.isAdmin ? ['bottom'] : undefined}
+        >
           <VStack gap={5}>
             <VStack gap={1}>
               <Heading level={2}>My account</Heading>
@@ -110,7 +116,7 @@ export default function SettingsIndex({
         </Section>
 
         {user.isAdmin ? (
-          <Section padding={6} width="100%">
+          <Section padding={isMobile ? 4 : 6} width="100%">
             <Form route="settings.updateMcpLogging">
               {({ errors, processing }) => (
                 <VStack gap={5} hAlign="stretch">
@@ -144,7 +150,7 @@ export default function SettingsIndex({
                         },
                       ]}
                       description="Changes apply to future tool calls only."
-                      width={280}
+                      width={isMobile ? '100%' : 280}
                       status={
                         errors.mcpLogLevel
                           ? { type: 'error', message: errors.mcpLogLevel }
@@ -162,7 +168,7 @@ export default function SettingsIndex({
                       units="days"
                       isIntegerOnly
                       description="Records older than this are deleted."
-                      width={220}
+                      width={isMobile ? '100%' : 220}
                       status={
                         errors.mcpLogRetentionDays
                           ? { type: 'error', message: errors.mcpLogRetentionDays }
@@ -176,6 +182,7 @@ export default function SettingsIndex({
                       label="Save logging settings"
                       variant="primary"
                       isLoading={processing}
+                      width={isMobile ? '100%' : undefined}
                     />
                   </HStack>
                 </VStack>

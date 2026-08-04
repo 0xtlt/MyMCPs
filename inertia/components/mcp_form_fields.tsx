@@ -1,5 +1,6 @@
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
 import { Banner } from '@astryxdesign/core/Banner'
+import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Button } from '@astryxdesign/core/Button'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
@@ -113,6 +114,8 @@ export function mcpFormValuesFromRow(mcp: {
 }
 
 export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: Props) {
+  const { isMobile } = useAppShellMobile()
+
   return (
     <VStack gap={4} hAlign="stretch">
       <TextInput
@@ -172,7 +175,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
               onChange={(npmVersion) => onChange({ npmVersion })}
               placeholder="latest"
               isOptional
-              width={200}
+              width={isMobile ? '100%' : 200}
             />
             <TextInput
               label="Extra args"
@@ -180,7 +183,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
               value={values.npmArgs}
               onChange={(npmArgs) => onChange({ npmArgs })}
               isOptional
-              width={320}
+              width={isMobile ? '100%' : 320}
             />
           </HStack>
           <VStack gap={2} hAlign="stretch">
@@ -212,7 +215,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                       })
                     }
                     placeholder="API_KEY"
-                    width={200}
+                    width={isMobile ? '100%' : 200}
                     status={
                       errors[`npmEnv.${index}.name`]
                         ? { type: 'error', message: errors[`npmEnv.${index}.name`] }
@@ -236,7 +239,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                     }
                     isOptional={canKeepExistingValue}
                     isRequired={!canKeepExistingValue}
-                    width={260}
+                    width={isMobile ? '100%' : 260}
                     status={
                       errors[`npmEnv.${index}.value`]
                         ? { type: 'error', message: errors[`npmEnv.${index}.value`] }
@@ -314,7 +317,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
             htmlName="authHeaderName"
             value={values.authHeaderName}
             onChange={(authHeaderName) => onChange({ authHeaderName })}
-            width={240}
+            width={isMobile ? '100%' : 240}
           />
           <TextInput
             label={
@@ -324,7 +327,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
             type="password"
             value={values.authHeaderValue}
             onChange={(authHeaderValue) => onChange({ authHeaderValue })}
-            width={320}
+            width={isMobile ? '100%' : 320}
             isOptional={Boolean(secrets.hasAuthHeaderValue)}
           />
         </HStack>

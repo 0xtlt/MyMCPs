@@ -1,9 +1,11 @@
-import { useEffect, useMemo } from 'react'
+import { Fragment, useEffect, useMemo } from 'react'
 import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
+import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
+import { Divider } from '@astryxdesign/core/Divider'
 import { Grid } from '@astryxdesign/core/Grid'
 import { HStack, StackItem, VStack } from '@astryxdesign/core/Layout'
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl'
@@ -51,18 +53,64 @@ const breakdownColumns: TableColumn<BreakdownRow>[] = [
 
 function Breakdown({ title, rows }: { title: string; rows: BreakdownRow[] }) {
   return (
-    <Card padding={4} width="100%">
-      <VStack gap={3} hAlign="stretch">
-        <Heading level={2}>{title}</Heading>
-        {rows.length > 0 ? (
-          <Table data={rows} columns={breakdownColumns} idKey="label" density="compact" />
-        ) : (
-          <Text type="body" color="secondary">
-            No data for this period.
-          </Text>
-        )}
+    <VStack gap={3} hAlign="stretch">
+      <Heading level={2}>{title}</Heading>
+      {rows.length > 0 ? (
+        <Table data={rows} columns={breakdownColumns} idKey="label" density="compact" />
+      ) : (
+        <Text type="body" color="secondary">
+          No data for this period.
+        </Text>
+      )}
+      <Divider />
+    </VStack>
+  )
+}
+
+function MetricCell({ label, value }: { label: string; value: string }) {
+  return (
+    <StackItem size="fill">
+      <VStack gap={1} padding={4} width="100%">
+        <Text type="label" color="secondary">
+          {label}
+        </Text>
+        <Heading level={2}>{value}</Heading>
       </VStack>
-    </Card>
+    </StackItem>
+  )
+}
+
+function MetricStrip({ metrics }: { metrics: Array<{ label: string; value: string }> }) {
+  const { isMobile } = useAppShellMobile()
+  const dividerStyle = { alignSelf: 'stretch', height: 'auto' }
+
+  if (isMobile) {
+    return (
+      <VStack gap={0} hAlign="stretch">
+        <HStack gap={0} align="stretch">
+          <MetricCell {...metrics[0]} />
+          <Divider orientation="vertical" style={dividerStyle} />
+          <MetricCell {...metrics[1]} />
+        </HStack>
+        <Divider />
+        <HStack gap={0} align="stretch">
+          <MetricCell {...metrics[2]} />
+          <Divider orientation="vertical" style={dividerStyle} />
+          <MetricCell {...metrics[3]} />
+        </HStack>
+      </VStack>
+    )
+  }
+
+  return (
+    <HStack gap={0} align="stretch">
+      {metrics.map((metric, index) => (
+        <Fragment key={metric.label}>
+          {index > 0 ? <Divider orientation="vertical" style={dividerStyle} /> : null}
+          <MetricCell {...metric} />
+        </Fragment>
+      ))}
+    </HStack>
   )
 }
 
@@ -208,18 +256,7 @@ export default function AnalyticsIndex({
         />
       ) : null}
 
-      <Grid gap={4} columns={{ minWidth: 220, repeat: 'fit' }}>
-        {cards.map((metric) => (
-          <Card key={metric.label} padding={5} width="100%">
-            <VStack gap={2}>
-              <Text type="label" color="secondary">
-                {metric.label}
-              </Text>
-              <Heading level={2}>{metric.value}</Heading>
-            </VStack>
-          </Card>
-        ))}
-      </Grid>
+      <MetricStrip metrics={cards} />
 
       {metrics.total === 0 ? (
         <Banner
