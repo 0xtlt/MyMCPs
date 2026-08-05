@@ -2,11 +2,12 @@ import { type Data } from '@generated/data'
 import { usePage } from '@inertiajs/react'
 import { type ReactElement, useEffect, useRef } from 'react'
 import { Form } from '@adonisjs/inertia/react'
-import { AppShell } from '@astryxdesign/core/AppShell'
+import { AppShell, useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Avatar } from '@astryxdesign/core/Avatar'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Center } from '@astryxdesign/core/Center'
+import { Divider } from '@astryxdesign/core/Divider'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Link } from '@astryxdesign/core/Link'
 import { LayerProvider } from '@astryxdesign/core/Layer'
@@ -36,6 +37,58 @@ function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> })
   }, [children.props.flash.error, children.props.flash.success, page.url, showToast])
 
   return null
+}
+
+function DesktopAccountActions({ user }: { user: NonNullable<Data.SharedProps['user']> }) {
+  const { isMobile } = useAppShellMobile()
+
+  if (isMobile) return null
+
+  return (
+    <HStack gap={2} vAlign="center">
+      <Link href="/settings" isStandalone>
+        <HStack gap={1} vAlign="center">
+          <Avatar name={user.fullName || user.initials} size="sm" tooltip={false} />
+          Settings
+        </HStack>
+      </Link>
+      <Form route="session.destroy">
+        <Button type="submit" label="Log out" variant="ghost" size="sm" />
+      </Form>
+    </HStack>
+  )
+}
+
+function MobileAccountActions({
+  user,
+  url,
+}: {
+  user: NonNullable<Data.SharedProps['user']>
+  url: string
+}) {
+  const { isMobile, closeMobileNav } = useAppShellMobile()
+
+  if (!isMobile) return null
+
+  return (
+    <VStack gap={2} hAlign="stretch">
+      <Divider />
+      <TopNavItem
+        label={`${user.fullName || user.email} · Settings`}
+        href="/settings"
+        isSelected={url.startsWith('/settings')}
+      />
+      <Form route="session.destroy">
+        <Button
+          type="submit"
+          label="Log out"
+          variant="ghost"
+          width="100%"
+          onClick={closeMobileNav}
+        />
+      </Form>
+    </VStack>
+  )
 }
 
 export default function Layout({ children }: { children: ReactElement<Data.SharedProps> }) {
@@ -87,22 +140,13 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
                       />
                     </>
                   ) : null}
+                  <MobileAccountActions user={user} url={url} />
                 </>
               ) : undefined
             }
             endContent={
               user ? (
-                <HStack gap={2} vAlign="center">
-                  <Link href="/settings" isStandalone>
-                    <HStack gap={1} vAlign="center">
-                      <Avatar name={user.fullName || user.initials} size="sm" tooltip={false} />
-                      Settings
-                    </HStack>
-                  </Link>
-                  <Form route="session.destroy">
-                    <Button type="submit" label="Log out" variant="ghost" size="sm" />
-                  </Form>
-                </HStack>
+                <DesktopAccountActions user={user} />
               ) : setupComplete && !isAuthScreen ? (
                 <TopNavItem label="Login" href="/login" isSelected={url.startsWith('/login')} />
               ) : undefined

@@ -9,27 +9,14 @@
   object-fit: contain;
 }
 
-.dashboard-art-card {
-  position: relative;
-  overflow: hidden;
+.gateway-url {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.dashboard-art-card__content {
-  max-width: 55%;
-  position: relative;
-  z-index: 1;
-}
-
-.dashboard-art-card__art {
-  position: absolute;
-  left: 100%;
-  top: 100%;
-  width: 38%;
-  height: auto;
-  transform: translate(-60%, -75%);
-  pointer-events: none;
-  user-select: none;
-  z-index: 0;
+.mcp-endpoint {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Let Layout fill + LayoutContent scroll inside Dialog (Form is otherwise block-sized). */
@@ -40,6 +27,45 @@
   min-height: 0;
   max-height: 100%;
   overflow: hidden;
+}
+
+.analytics-metric-cell:not(:first-child) {
+  border-inline-start: var(--border-width) solid var(--color-border);
+}
+
+/* Keep presentation-only responsiveness aligned with AppShell's md breakpoint. */
+@media (max-width: 768px) {
+  .analytics-metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .analytics-metric-cell:not(:first-child) {
+    border-inline-start: none;
+  }
+
+  .analytics-metric-cell:nth-child(odd) {
+    border-inline-end: var(--border-width) solid var(--color-border);
+  }
+
+  .analytics-metric-cell:nth-child(-n + 2) {
+    border-block-end: var(--border-width) solid var(--color-border);
+  }
+
+  .settings-section-content {
+    padding: var(--spacing-4) !important;
+  }
+
+  .settings-account-action-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: var(--spacing-3) !important;
+  }
+
+  .mobile-full-width-fields > .astryx-field,
+  .mobile-full-width {
+    width: 100% !important;
+  }
 }
 
 html,

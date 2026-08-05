@@ -164,7 +164,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
             width="100%"
             status={errors.npmPackage ? { type: 'error', message: errors.npmPackage } : undefined}
           />
-          <HStack gap={3} wrap="wrap">
+          <HStack className="mobile-full-width-fields" gap={3} wrap="wrap">
             <TextInput
               label="Version"
               htmlName="npmVersion"
@@ -199,7 +199,13 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                 entry.name === entry.originalName
 
               return (
-                <HStack key={entry.id} gap={2} wrap="wrap" vAlign="end">
+                <HStack
+                  key={entry.id}
+                  className="mobile-full-width-fields"
+                  gap={2}
+                  wrap="wrap"
+                  vAlign="end"
+                >
                   <TextInput
                     label="Name"
                     htmlName={`npmEnv[${index}][name]`}
@@ -308,7 +314,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
       ) : null}
 
       {values.authType === 'header' ? (
-        <HStack gap={3} wrap="wrap">
+        <HStack className="mobile-full-width-fields" gap={3} wrap="wrap">
           <TextInput
             label="Header name"
             htmlName="authHeaderName"

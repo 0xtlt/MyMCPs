@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type SVGProps } from 'react'
-import { Head } from '@inertiajs/react'
+import { Head, router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
+import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
@@ -9,6 +10,7 @@ import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
 import { CodeBlock } from '@astryxdesign/core/CodeBlock'
 import { DateTimeInput, type ISODateTimeString } from '@astryxdesign/core/DateTimeInput'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
 import { Icon } from '@astryxdesign/core/Icon'
 import { InputGroup } from '@astryxdesign/core/InputGroup'
 import {
@@ -19,6 +21,7 @@ import {
   StackItem,
   VStack,
 } from '@astryxdesign/core/Layout'
+import { List, ListItem } from '@astryxdesign/core/List'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { Tab, TabList } from '@astryxdesign/core/TabList'
@@ -210,6 +213,7 @@ export default function TokensIndex({
   gatewayUrl: string | null
   createdPlaintext: string | null
 }) {
+  const { isMobile } = useAppShellMobile()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isInstallOpen, setIsInstallOpen] = useState(Boolean(createdPlaintext))
   const [installClient, setInstallClient] = useState<McpClient>('codex')
@@ -378,7 +382,7 @@ export default function TokensIndex({
   return (
     <VStack gap={6} maxWidth={960} width="100%">
       <Head title="Access tokens" />
-      <HStack gap={4} hAlign="between" vAlign="start">
+      <HStack gap={4} hAlign="between" vAlign="start" wrap="wrap">
         <StackItem size="fill">
           <VStack gap={2}>
             <Heading level={1}>Access tokens</Heading>
@@ -395,7 +399,9 @@ export default function TokensIndex({
         <VStack gap={3} hAlign="stretch">
           <Heading level={2}>Gateway URL</Heading>
           <HStack gap={3} vAlign="center" wrap="wrap">
-            <Text type="body">{gatewayUrl ?? 'Configure APP_URL to reveal the gateway URL.'}</Text>
+            <Text type="body" className="gateway-url">
+              {gatewayUrl ?? 'Configure APP_URL to reveal the gateway URL.'}
+            </Text>
             <Button
               label={
                 gatewayCopyState === 'copied'
@@ -455,6 +461,61 @@ export default function TokensIndex({
           description="Create a token so agents can call the gateway."
           container="card"
         />
+      ) : isMobile ? (
+        <List header="Issued tokens" density="compact" hasDividers>
+          {tokens.map((token) => {
+            const status = tokenStatus(token)
+            const actions = [
+              { label: 'Edit', onClick: () => openEdit(token) },
+              ...(token.isUsable
+                ? [
+                    {
+                      label: 'Revoke',
+                      onClick: () =>
+                        router.post(`/tokens/${token.id}/revoke`, undefined, {
+                          preserveScroll: true,
+                        }),
+                    },
+                  ]
+                : []),
+            ]
+
+            return (
+              <ListItem
+                key={token.id}
+                label={token.name}
+                description={
+                  <VStack gap={0}>
+                    <Text type="supporting" color="secondary">
+                      {token.tokenPrefix}… · {scopeLabel(token)}
+                    </Text>
+                    <Text type="supporting" color="secondary">
+                      {token.expiresAt
+                        ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
+                        : 'No expiry'}
+                    </Text>
+                  </VStack>
+                }
+                endContent={
+                  <VStack gap={1} hAlign="end">
+                    <Badge label={status.label} variant={status.variant} />
+                    {actions.length > 0 ? (
+                      <DropdownMenu
+                        button={{
+                          label: `Actions for ${token.name}`,
+                          children: 'Actions',
+                          variant: 'secondary',
+                          size: 'sm',
+                        }}
+                        items={actions}
+                      />
+                    ) : null}
+                  </VStack>
+                }
+              />
+            )
+          })}
+        </List>
       ) : (
         <Table
           data={tokens}

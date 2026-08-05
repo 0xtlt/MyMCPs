@@ -69,8 +69,8 @@ export default function SettingsIndex({
           </Text>
         </VStack>
 
-        <Section padding={6} width="100%" dividers={user.isAdmin ? ['bottom'] : undefined}>
-          <VStack gap={5}>
+        <Section padding={0} width="100%" dividers={user.isAdmin ? ['bottom'] : undefined}>
+          <VStack className="settings-section-content" gap={5} padding={6}>
             <VStack gap={1}>
               <Heading level={2}>My account</Heading>
               <Text type="body" color="secondary">
@@ -87,7 +87,13 @@ export default function SettingsIndex({
               </VStack>
             </HStack>
 
-            <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
+            <HStack
+              className="settings-account-action-row"
+              gap={4}
+              hAlign="between"
+              vAlign="center"
+              wrap="wrap"
+            >
               <VStack gap={1}>
                 <Text type="label">Email</Text>
                 <Text type="body" color="secondary">
@@ -97,7 +103,13 @@ export default function SettingsIndex({
               <Button label="Change email" variant="secondary" onClick={openEmailDialog} />
             </HStack>
 
-            <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
+            <HStack
+              className="settings-account-action-row"
+              gap={4}
+              hAlign="between"
+              vAlign="center"
+              wrap="wrap"
+            >
               <VStack gap={1}>
                 <Text type="label">Password</Text>
                 <Text type="body" color="secondary">
@@ -110,10 +122,10 @@ export default function SettingsIndex({
         </Section>
 
         {user.isAdmin ? (
-          <Section padding={6} width="100%">
+          <Section padding={0} width="100%">
             <Form route="settings.updateMcpLogging">
               {({ errors, processing }) => (
-                <VStack gap={5} hAlign="stretch">
+                <VStack className="settings-section-content" gap={5} padding={6} hAlign="stretch">
                   <VStack gap={1}>
                     <Heading level={2}>My Instance</Heading>
                     <Text type="body" color="secondary">
@@ -126,7 +138,7 @@ export default function SettingsIndex({
                     description="Argument and response capture stores exact MCP JSON without redaction. Tool responses may contain secrets, personal data, or large payloads."
                     container="section"
                   />
-                  <HStack gap={4} vAlign="start" wrap="wrap">
+                  <HStack className="mobile-full-width-fields" gap={4} vAlign="start" wrap="wrap">
                     <Selector
                       label="Call logging level"
                       htmlName="mcpLogLevel"
@@ -172,6 +184,7 @@ export default function SettingsIndex({
                   </HStack>
                   <HStack gap={3} hAlign="end">
                     <Button
+                      className="mobile-full-width"
                       type="submit"
                       label="Save logging settings"
                       variant="primary"

@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { Head, router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
+import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
 import {
   HStack,
   Layout,
@@ -13,6 +15,7 @@ import {
   StackItem,
   VStack,
 } from '@astryxdesign/core/Layout'
+import { List, ListItem } from '@astryxdesign/core/List'
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl'
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { TextInput } from '@astryxdesign/core/TextInput'
@@ -49,6 +52,7 @@ export default function InvitesIndex({
   members: MemberRow[]
   appUrl: string | null
 }) {
+  const { isMobile } = useAppShellMobile()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [email, setEmail] = useState('')
   const [section, setSection] = useState<TeamSection>('members')
@@ -208,7 +212,7 @@ export default function InvitesIndex({
   return (
     <VStack gap={6} maxWidth={960} width="100%">
       <Head title="Invites" />
-      <HStack gap={4} hAlign="between" vAlign="start">
+      <HStack gap={4} hAlign="between" vAlign="start" wrap="wrap">
         <StackItem size="fill">
           <VStack gap={2}>
             <Heading level={1}>Invites</Heading>
@@ -237,6 +241,47 @@ export default function InvitesIndex({
         {section === 'members' ? (
           members.length === 0 ? (
             <Banner status="info" title="No members yet" container="card" />
+          ) : isMobile ? (
+            <List header="Members" density="compact" hasDividers>
+              {members.map((member) => (
+                <ListItem
+                  key={member.id}
+                  label={member.fullName || member.email}
+                  description={member.fullName ? member.email : 'Member of this instance'}
+                  endContent={
+                    <VStack gap={1} hAlign="end">
+                      <Badge
+                        label={member.role}
+                        variant={member.role === 'admin' ? 'info' : 'neutral'}
+                      />
+                      {member.isCurrentUser ? (
+                        <Text type="supporting" color="secondary">
+                          You
+                        </Text>
+                      ) : (
+                        <DropdownMenu
+                          button={{
+                            label: `Actions for ${member.fullName || member.email}`,
+                            children: 'Actions',
+                            variant: 'secondary',
+                            size: 'sm',
+                          }}
+                          items={[
+                            {
+                              label: 'Remove member',
+                              onClick: () =>
+                                router.delete(`/members/${member.id}`, {
+                                  preserveScroll: true,
+                                }),
+                            },
+                          ]}
+                        />
+                      )}
+                    </VStack>
+                  }
+                />
+              ))}
+            </List>
           ) : (
             <Table
               data={members}
@@ -254,6 +299,54 @@ export default function InvitesIndex({
             description="Create an invite link to add a teammate."
             container="card"
           />
+        ) : isMobile ? (
+          <List header="Pending and past invites" density="compact" hasDividers>
+            {invites.map((invite) => {
+              const status = inviteStatus(invite)
+              return (
+                <ListItem
+                  key={invite.id}
+                  label={invite.email}
+                  description={
+                    invite.expiresAt
+                      ? `Expires ${new Date(invite.expiresAt).toLocaleDateString()}`
+                      : 'No expiration date'
+                  }
+                  endContent={
+                    <VStack gap={1} hAlign="end">
+                      <Badge label={status.label} variant={status.variant} />
+                      <DropdownMenu
+                        button={{
+                          label: `Actions for ${invite.email}`,
+                          children: 'Actions',
+                          variant: 'secondary',
+                          size: 'sm',
+                        }}
+                        items={[
+                          ...(invite.isUsable
+                            ? [
+                                {
+                                  label: 'Copy link',
+                                  onClick: () => copyLink(invite.token),
+                                  isDisabled: !appUrl,
+                                },
+                              ]
+                            : []),
+                          {
+                            label: 'Remove invite',
+                            onClick: () =>
+                              router.delete(`/invites/${invite.id}`, {
+                                preserveScroll: true,
+                              }),
+                          },
+                        ]}
+                      />
+                    </VStack>
+                  }
+                />
+              )
+            })}
+          </List>
         ) : (
           <Table
             data={invites}
