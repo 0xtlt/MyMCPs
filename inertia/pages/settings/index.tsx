@@ -93,15 +93,27 @@ export default function SettingsIndex({
               </VStack>
             </HStack>
 
-            <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
-              <VStack gap={1}>
-                <Text type="label">Email</Text>
-                <Text type="body" color="secondary">
-                  {user.email}
-                </Text>
+            {isMobile ? (
+              <VStack gap={3} hAlign="start">
+                <VStack gap={1}>
+                  <Text type="label">Email</Text>
+                  <Text type="body" color="secondary">
+                    {user.email}
+                  </Text>
+                </VStack>
+                <Button label="Change email" variant="secondary" onClick={openEmailDialog} />
               </VStack>
-              <Button label="Change email" variant="secondary" onClick={openEmailDialog} />
-            </HStack>
+            ) : (
+              <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
+                <VStack gap={1}>
+                  <Text type="label">Email</Text>
+                  <Text type="body" color="secondary">
+                    {user.email}
+                  </Text>
+                </VStack>
+                <Button label="Change email" variant="secondary" onClick={openEmailDialog} />
+              </HStack>
+            )}
 
             <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
               <VStack gap={1}>
