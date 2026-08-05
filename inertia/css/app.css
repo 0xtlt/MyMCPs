@@ -29,6 +29,45 @@
   overflow: hidden;
 }
 
+.analytics-metric-cell:not(:first-child) {
+  border-inline-start: var(--border-width) solid var(--color-border);
+}
+
+/* Keep presentation-only responsiveness aligned with AppShell's md breakpoint. */
+@media (max-width: 768px) {
+  .analytics-metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .analytics-metric-cell:not(:first-child) {
+    border-inline-start: none;
+  }
+
+  .analytics-metric-cell:nth-child(odd) {
+    border-inline-end: var(--border-width) solid var(--color-border);
+  }
+
+  .analytics-metric-cell:nth-child(-n + 2) {
+    border-block-end: var(--border-width) solid var(--color-border);
+  }
+
+  .settings-section-content {
+    padding: var(--spacing-4) !important;
+  }
+
+  .settings-account-action-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: var(--spacing-3) !important;
+  }
+
+  .mobile-full-width-fields > .astryx-field,
+  .mobile-full-width {
+    width: 100% !important;
+  }
+}
+
 html,
 body,
 #app {

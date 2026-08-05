@@ -1,6 +1,5 @@
 import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
 import { Banner } from '@astryxdesign/core/Banner'
-import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Button } from '@astryxdesign/core/Button'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
@@ -114,8 +113,6 @@ export function mcpFormValuesFromRow(mcp: {
 }
 
 export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: Props) {
-  const { isMobile } = useAppShellMobile()
-
   return (
     <VStack gap={4} hAlign="stretch">
       <TextInput
@@ -167,7 +164,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
             width="100%"
             status={errors.npmPackage ? { type: 'error', message: errors.npmPackage } : undefined}
           />
-          <HStack gap={3} wrap="wrap">
+          <HStack className="mobile-full-width-fields" gap={3} wrap="wrap">
             <TextInput
               label="Version"
               htmlName="npmVersion"
@@ -175,7 +172,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
               onChange={(npmVersion) => onChange({ npmVersion })}
               placeholder="latest"
               isOptional
-              width={isMobile ? '100%' : 200}
+              width={200}
             />
             <TextInput
               label="Extra args"
@@ -183,7 +180,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
               value={values.npmArgs}
               onChange={(npmArgs) => onChange({ npmArgs })}
               isOptional
-              width={isMobile ? '100%' : 320}
+              width={320}
             />
           </HStack>
           <VStack gap={2} hAlign="stretch">
@@ -202,7 +199,13 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                 entry.name === entry.originalName
 
               return (
-                <HStack key={entry.id} gap={2} wrap="wrap" vAlign="end">
+                <HStack
+                  key={entry.id}
+                  className="mobile-full-width-fields"
+                  gap={2}
+                  wrap="wrap"
+                  vAlign="end"
+                >
                   <TextInput
                     label="Name"
                     htmlName={`npmEnv[${index}][name]`}
@@ -215,7 +218,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                       })
                     }
                     placeholder="API_KEY"
-                    width={isMobile ? '100%' : 200}
+                    width={200}
                     status={
                       errors[`npmEnv.${index}.name`]
                         ? { type: 'error', message: errors[`npmEnv.${index}.name`] }
@@ -239,7 +242,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
                     }
                     isOptional={canKeepExistingValue}
                     isRequired={!canKeepExistingValue}
-                    width={isMobile ? '100%' : 260}
+                    width={260}
                     status={
                       errors[`npmEnv.${index}.value`]
                         ? { type: 'error', message: errors[`npmEnv.${index}.value`] }
@@ -311,13 +314,13 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
       ) : null}
 
       {values.authType === 'header' ? (
-        <HStack gap={3} wrap="wrap">
+        <HStack className="mobile-full-width-fields" gap={3} wrap="wrap">
           <TextInput
             label="Header name"
             htmlName="authHeaderName"
             value={values.authHeaderName}
             onChange={(authHeaderName) => onChange({ authHeaderName })}
-            width={isMobile ? '100%' : 240}
+            width={240}
           />
           <TextInput
             label={
@@ -327,7 +330,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
             type="password"
             value={values.authHeaderValue}
             onChange={(authHeaderValue) => onChange({ authHeaderValue })}
-            width={isMobile ? '100%' : 320}
+            width={320}
             isOptional={Boolean(secrets.hasAuthHeaderValue)}
           />
         </HStack>

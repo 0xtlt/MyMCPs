@@ -3,7 +3,6 @@ import { Head, usePage } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { type Data } from '@generated/data'
 import { Banner } from '@astryxdesign/core/Banner'
-import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Button } from '@astryxdesign/core/Button'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from '@astryxdesign/core/Layout'
@@ -21,7 +20,6 @@ export default function SettingsIndex({
     retentionDays: number
   } | null
 }) {
-  const { isMobile } = useAppShellMobile()
   const { props } = usePage<Data.SharedProps>()
   const user = props.user!
   const [isEmailOpen, setIsEmailOpen] = useState(false)
@@ -71,12 +69,8 @@ export default function SettingsIndex({
           </Text>
         </VStack>
 
-        <Section
-          padding={isMobile ? 4 : 6}
-          width="100%"
-          dividers={user.isAdmin ? ['bottom'] : undefined}
-        >
-          <VStack gap={5}>
+        <Section padding={0} width="100%" dividers={user.isAdmin ? ['bottom'] : undefined}>
+          <VStack className="settings-section-content" gap={5} padding={6}>
             <VStack gap={1}>
               <Heading level={2}>My account</Heading>
               <Text type="body" color="secondary">
@@ -93,29 +87,29 @@ export default function SettingsIndex({
               </VStack>
             </HStack>
 
-            {isMobile ? (
-              <VStack gap={3} hAlign="start">
-                <VStack gap={1}>
-                  <Text type="label">Email</Text>
-                  <Text type="body" color="secondary">
-                    {user.email}
-                  </Text>
-                </VStack>
-                <Button label="Change email" variant="secondary" onClick={openEmailDialog} />
+            <HStack
+              className="settings-account-action-row"
+              gap={4}
+              hAlign="between"
+              vAlign="center"
+              wrap="wrap"
+            >
+              <VStack gap={1}>
+                <Text type="label">Email</Text>
+                <Text type="body" color="secondary">
+                  {user.email}
+                </Text>
               </VStack>
-            ) : (
-              <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
-                <VStack gap={1}>
-                  <Text type="label">Email</Text>
-                  <Text type="body" color="secondary">
-                    {user.email}
-                  </Text>
-                </VStack>
-                <Button label="Change email" variant="secondary" onClick={openEmailDialog} />
-              </HStack>
-            )}
+              <Button label="Change email" variant="secondary" onClick={openEmailDialog} />
+            </HStack>
 
-            <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
+            <HStack
+              className="settings-account-action-row"
+              gap={4}
+              hAlign="between"
+              vAlign="center"
+              wrap="wrap"
+            >
               <VStack gap={1}>
                 <Text type="label">Password</Text>
                 <Text type="body" color="secondary">
@@ -128,10 +122,10 @@ export default function SettingsIndex({
         </Section>
 
         {user.isAdmin ? (
-          <Section padding={isMobile ? 4 : 6} width="100%">
+          <Section padding={0} width="100%">
             <Form route="settings.updateMcpLogging">
               {({ errors, processing }) => (
-                <VStack gap={5} hAlign="stretch">
+                <VStack className="settings-section-content" gap={5} padding={6} hAlign="stretch">
                   <VStack gap={1}>
                     <Heading level={2}>My Instance</Heading>
                     <Text type="body" color="secondary">
@@ -144,7 +138,7 @@ export default function SettingsIndex({
                     description="Argument and response capture stores exact MCP JSON without redaction. Tool responses may contain secrets, personal data, or large payloads."
                     container="section"
                   />
-                  <HStack gap={4} vAlign="start" wrap="wrap">
+                  <HStack className="mobile-full-width-fields" gap={4} vAlign="start" wrap="wrap">
                     <Selector
                       label="Call logging level"
                       htmlName="mcpLogLevel"
@@ -162,7 +156,7 @@ export default function SettingsIndex({
                         },
                       ]}
                       description="Changes apply to future tool calls only."
-                      width={isMobile ? '100%' : 280}
+                      width={280}
                       status={
                         errors.mcpLogLevel
                           ? { type: 'error', message: errors.mcpLogLevel }
@@ -180,7 +174,7 @@ export default function SettingsIndex({
                       units="days"
                       isIntegerOnly
                       description="Records older than this are deleted."
-                      width={isMobile ? '100%' : 220}
+                      width={220}
                       status={
                         errors.mcpLogRetentionDays
                           ? { type: 'error', message: errors.mcpLogRetentionDays }
@@ -190,11 +184,11 @@ export default function SettingsIndex({
                   </HStack>
                   <HStack gap={3} hAlign="end">
                     <Button
+                      className="mobile-full-width"
                       type="submit"
                       label="Save logging settings"
                       variant="primary"
                       isLoading={processing}
-                      width={isMobile ? '100%' : undefined}
                     />
                   </HStack>
                 </VStack>
