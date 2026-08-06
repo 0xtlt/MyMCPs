@@ -1,15 +1,25 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
+import { DateRangeInput, type DateRange } from '@astryxdesign/core/DateRangeInput'
+import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { Divider } from '@astryxdesign/core/Divider'
 import { Grid } from '@astryxdesign/core/Grid'
-import { HStack, StackItem, VStack } from '@astryxdesign/core/Layout'
+import {
+  HStack,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  StackItem,
+  VStack,
+} from '@astryxdesign/core/Layout'
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl'
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { Heading, Text } from '@astryxdesign/core/Text'
+import { TimeInput, type ISOTimeString } from '@astryxdesign/core/TimeInput'
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -23,6 +33,7 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { useTheme } from '@astryxdesign/core/theme'
+import { DateTime } from 'luxon'
 import { LiveRefreshButton } from '~/components/live_refresh_button'
 import { browserTimeZone, formatTimeZoneLabel } from '~/components/local_time'
 
@@ -35,7 +46,13 @@ interface BreakdownRow extends Record<string, JSONDataTypes> {
   averageDurationMs: number
 }
 
-type TimelinePoint = { bucket: string; label: string; total: number; errors: number }
+type AnalyticsRange = '24h' | '7d' | '30d' | 'custom'
+type TimelinePoint = {
+  bucket: string
+  label: string
+  total: number
+  errors: number
+}
 
 const breakdownColumns: TableColumn<BreakdownRow>[] = [
   { key: 'label', header: 'Name', width: proportional(2) },
@@ -89,8 +106,18 @@ function MetricStrip({ metrics }: { metrics: Array<{ label: string; value: strin
   )
 }
 
+function rangeDates(start: string, end: string): DateRange {
+  return { start: start.slice(0, 10), end: end.slice(0, 10) } as DateRange
+}
+
+function rangeTime(value: string): ISOTimeString {
+  return value.slice(11, 16) as ISOTimeString
+}
+
 export default function AnalyticsIndex({
   range,
+  start,
+  end,
   timeZone,
   loggingLevel,
   metrics,
@@ -99,7 +126,9 @@ export default function AnalyticsIndex({
   topTools,
   topTokens,
 }: {
-  range: '24h' | '7d' | '30d'
+  range: AnalyticsRange
+  start: string
+  end: string
   timeZone: string
   loggingLevel: 'off' | 'metadata' | 'arguments' | 'responses'
   metrics: {
@@ -116,9 +145,56 @@ export default function AnalyticsIndex({
   topTokens: BreakdownRow[]
 }) {
   const { token } = useTheme()
+  const [isCustomRangeOpen, setIsCustomRangeOpen] = useState(false)
+  const [customDates, setCustomDates] = useState<DateRange | null>(rangeDates(start, end))
+  const [customStartTime, setCustomStartTime] = useState<ISOTimeString | undefined>(
+    rangeTime(start)
+  )
+  const [customEndTime, setCustomEndTime] = useState<ISOTimeString | undefined>(rangeTime(end))
+
+  const customStart =
+    customDates && customStartTime ? `${customDates.start}T${customStartTime}` : undefined
+  const customEnd = customDates && customEndTime ? `${customDates.end}T${customEndTime}` : undefined
+
+  function openCustomRange() {
+    setCustomDates(rangeDates(start, end))
+    setCustomStartTime(rangeTime(start))
+    setCustomEndTime(rangeTime(end))
+    setIsCustomRangeOpen(true)
+  }
 
   function changeRange(value: string) {
+    if (value === 'custom') {
+      openCustomRange()
+      return
+    }
     router.get('/analytics', { range: value, timeZone }, { preserveState: true, replace: true })
+  }
+
+  const customRangeError = useMemo(() => {
+    if (!customStart || !customEnd) return 'Choose both a start and an end time.'
+
+    const customStartDate = DateTime.fromISO(customStart, { zone: timeZone })
+    const customEndDate = DateTime.fromISO(customEnd, { zone: timeZone })
+    if (!customStartDate.isValid || !customEndDate.isValid) return 'Enter valid dates and times.'
+    if (customEndDate.toMillis() <= customStartDate.toMillis()) {
+      return 'End time must be after start time.'
+    }
+    if (customEndDate.toMillis() > customStartDate.plus({ days: 365 }).toMillis()) {
+      return 'Custom ranges can span up to 365 days.'
+    }
+    return null
+  }, [customEnd, customStart, timeZone])
+
+  function applyCustomRange() {
+    if (customRangeError || !customStart || !customEnd) return
+
+    setIsCustomRangeOpen(false)
+    router.get(
+      '/analytics',
+      { range: 'custom', start: customStart, end: customEnd, timeZone },
+      { preserveState: true, preserveScroll: true, replace: true }
+    )
   }
 
   useEffect(() => {
@@ -127,10 +203,14 @@ export default function AnalyticsIndex({
 
     router.get(
       '/analytics',
-      { range, timeZone: localTimeZone },
+      {
+        range,
+        timeZone: localTimeZone,
+        ...(range === 'custom' ? { start, end } : {}),
+      },
       { preserveState: true, preserveScroll: true, replace: true }
     )
-  }, [range, timeZone])
+  }, [end, range, start, timeZone])
 
   const cards = [
     { label: 'Total calls', value: metrics.total.toLocaleString() },
@@ -216,6 +296,7 @@ export default function AnalyticsIndex({
             <SegmentedControlItem value="24h" label="24 hours" />
             <SegmentedControlItem value="7d" label="7 days" />
             <SegmentedControlItem value="30d" label="30 days" />
+            <SegmentedControlItem value="custom" label="Custom" onClick={openCustomRange} />
           </SegmentedControl>
           <LiveRefreshButton />
           <Button label="View logs" variant="secondary" href="/logs" />
@@ -266,6 +347,77 @@ export default function AnalyticsIndex({
         <Breakdown title="Top tools" rows={topTools} />
         <Breakdown title="Top access tokens" rows={topTokens} />
       </Grid>
+
+      <Dialog
+        isOpen={isCustomRangeOpen}
+        onOpenChange={setIsCustomRangeOpen}
+        purpose="form"
+        width={560}
+      >
+        <Layout
+          header={
+            <DialogHeader
+              title="Custom analytics range"
+              subtitle={`Choose exact times in ${formatTimeZoneLabel(timeZone)}`}
+              onOpenChange={setIsCustomRangeOpen}
+            />
+          }
+          content={
+            <LayoutContent>
+              <VStack gap={4} hAlign="stretch">
+                <DateRangeInput
+                  label="Dates"
+                  value={customDates}
+                  onChange={setCustomDates}
+                  numberOfMonths={2}
+                  width="100%"
+                  isRequired
+                />
+                <HStack className="mobile-full-width-fields" gap={4} vAlign="start" wrap="wrap">
+                  <TimeInput
+                    label="Start time"
+                    value={customStartTime}
+                    onChange={setCustomStartTime}
+                    hourFormat="24h"
+                    increment={5}
+                    width={240}
+                    isRequired
+                  />
+                  <TimeInput
+                    label="End time"
+                    value={customEndTime}
+                    onChange={setCustomEndTime}
+                    hourFormat="24h"
+                    increment={5}
+                    width={240}
+                    isRequired
+                    status={
+                      customRangeError ? { type: 'error', message: customRangeError } : undefined
+                    }
+                  />
+                </HStack>
+              </VStack>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter>
+              <HStack gap={2} hAlign="end">
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  onClick={() => setIsCustomRangeOpen(false)}
+                />
+                <Button
+                  label="Apply range"
+                  variant="primary"
+                  onClick={applyCustomRange}
+                  isDisabled={Boolean(customRangeError)}
+                />
+              </HStack>
+            </LayoutFooter>
+          }
+        />
+      </Dialog>
     </VStack>
   )
 }

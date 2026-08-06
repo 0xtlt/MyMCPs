@@ -212,4 +212,61 @@ test.group('MCP logs and analytics administration', (group) => {
     assert.equal(currentLocalBucket.total, 2)
     assert.equal(currentLocalBucket.errors, 1)
   })
+
+  test('filters analytics by an exact custom time range', async ({ client, assert }) => {
+    const admin = await createAdmin()
+    const token = await createStoredAccessToken(admin.id, { name: 'Custom range token' })
+    const customStart = DateTime.now().setZone('Europe/Paris').startOf('hour').minus({ hours: 6 })
+    const customEnd = customStart.plus({ hours: 4 })
+
+    await createMcpCallLog(token, {
+      durationMs: 50,
+      createdAt: customStart.minus({ minutes: 1 }).toUTC(),
+    })
+    await createMcpCallLog(token, {
+      durationMs: 100,
+      createdAt: customStart.toUTC(),
+    })
+    await createMcpCallLog(token, {
+      durationMs: 300,
+      outcome: 'error',
+      createdAt: customEnd.minus({ minutes: 1 }).toUTC(),
+    })
+    await createMcpCallLog(token, {
+      durationMs: 500,
+      createdAt: customEnd.toUTC(),
+    })
+
+    const start = customStart.toFormat("yyyy-MM-dd'T'HH:mm")
+    const end = customEnd.toFormat("yyyy-MM-dd'T'HH:mm")
+    const page = await client
+      .get(
+        `/analytics?range=custom&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&timeZone=Europe%2FParis`
+      )
+      .withInertia()
+      .loginAs(admin)
+
+    page.assertStatus(200)
+    page.assertInertiaPropsContains({
+      range: 'custom',
+      start,
+      end,
+      timeZone: 'Europe/Paris',
+      metrics: {
+        total: 2,
+        successes: 1,
+        errors: 1,
+        successRate: 50,
+        errorRate: 50,
+        averageDurationMs: 200,
+      },
+    })
+
+    assert.lengthOf(page.inertiaProps.timeline, 4)
+    assert.equal(page.inertiaProps.timeline[0].bucket, customStart.toUTC().toISO())
+    assert.equal(
+      page.inertiaProps.timeline.at(-1).bucket,
+      customEnd.minus({ hours: 1 }).toUTC().toISO()
+    )
+  })
 })

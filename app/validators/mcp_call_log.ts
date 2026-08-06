@@ -12,6 +12,8 @@ export const logsQueryValidator = vine.create({
 })
 
 export const analyticsQueryValidator = vine.create({
-  range: vine.enum(['24h', '7d', '30d'] as const).optional(),
+  range: vine.enum(['24h', '7d', '30d', 'custom'] as const).optional(),
+  start: vine.string().trim().maxLength(40).optional(),
+  end: vine.string().trim().maxLength(40).optional(),
   timeZone: vine.string().trim().maxLength(100).optional(),
 })
