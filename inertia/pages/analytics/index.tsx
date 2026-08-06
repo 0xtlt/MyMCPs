@@ -114,11 +114,23 @@ function rangeTime(value: string): ISOTimeString {
   return value.slice(11, 16) as ISOTimeString
 }
 
-function selectedDateTime(value: string, sourceValue: string, timeZone: string) {
+function selectedDateTime(
+  value: string,
+  sourceValue: string,
+  timeZone: string,
+  boundary: 'start' | 'end'
+) {
   const source = DateTime.fromISO(sourceValue, { setZone: true }).setZone(timeZone)
   if (source.isValid && source.toFormat("yyyy-MM-dd'T'HH:mm") === value) return source
 
-  return DateTime.fromISO(value, { zone: timeZone })
+  const entered = DateTime.fromISO(value, { zone: timeZone })
+  const possibleOffsets = entered.getPossibleOffsets()
+  if (possibleOffsets.length < 2) return entered
+
+  return possibleOffsets.reduce((selected, candidate) => {
+    const candidateIsEarlier = candidate.toMillis() < selected.toMillis()
+    return candidateIsEarlier === (boundary === 'start') ? candidate : selected
+  })
 }
 
 export default function AnalyticsIndex({
@@ -183,8 +195,8 @@ export default function AnalyticsIndex({
       return { error: 'Choose both a start and an end time.' }
     }
 
-    const customStartDate = selectedDateTime(customStart, start, timeZone)
-    const customEndDate = selectedDateTime(customEnd, end, timeZone)
+    const customStartDate = selectedDateTime(customStart, start, timeZone, 'start')
+    const customEndDate = selectedDateTime(customEnd, end, timeZone, 'end')
     if (
       !customStartDate.isValid ||
       !customEndDate.isValid ||

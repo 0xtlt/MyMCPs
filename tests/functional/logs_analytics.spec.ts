@@ -216,7 +216,11 @@ test.group('MCP logs and analytics administration', (group) => {
   test('filters analytics by an exact custom time range', async ({ client, assert }) => {
     const admin = await createAdmin()
     const token = await createStoredAccessToken(admin.id, { name: 'Custom range token' })
-    const customStart = DateTime.now().setZone('Europe/Paris').startOf('hour').minus({ hours: 6 })
+    const customStart = DateTime.now()
+      .setZone('Europe/Paris')
+      .startOf('hour')
+      .minus({ hours: 6 })
+      .plus({ minutes: 30 })
     const customEnd = customStart.plus({ hours: 4 })
 
     await createMcpCallLog(token, {
@@ -261,6 +265,10 @@ test.group('MCP logs and analytics administration', (group) => {
     })
 
     assert.lengthOf(page.inertiaProps.timeline, 4)
+    assert.deepEqual(
+      page.inertiaProps.timeline.map((point: { total: number }) => point.total),
+      [1, 0, 0, 1]
+    )
     assert.equal(
       DateTime.fromISO(page.inertiaProps.start, { setZone: true }).toUTC().toMillis(),
       customStart.toUTC().toMillis()
@@ -322,5 +330,14 @@ test.group('MCP logs and analytics administration', (group) => {
       .loginAs(admin)
     offsetFreeGap.assertStatus(200)
     offsetFreeGap.assertInertiaPropsContains({ range: '7d', timeZone: 'Europe/Paris' })
+
+    const fractionalBoundary = await client
+      .get(
+        '/analytics?range=custom&start=2026-03-29T00%3A30%3A00.500Z&end=2026-03-29T01%3A30%3A00.500Z&timeZone=Europe%2FParis'
+      )
+      .withInertia()
+      .loginAs(admin)
+    fractionalBoundary.assertStatus(200)
+    fractionalBoundary.assertInertiaPropsContains({ range: '7d', timeZone: 'Europe/Paris' })
   })
 })

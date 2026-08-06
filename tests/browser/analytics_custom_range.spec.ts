@@ -39,13 +39,19 @@ test.group('analytics custom range', (group) => {
     assert.match(selectedUrl.searchParams.get('end')!, /Z$/)
     assert.equal(await page.getByRole('slider').count(), 0)
 
-    const sharedStart = '2026-10-25T00:30Z'
-    const sharedEnd = '2026-10-25T01:30Z'
+    const browserSession = await browserContext.newCDPSession(page)
+    await browserSession.send('Emulation.setTimezoneOverride', { timezoneId: 'America/New_York' })
+    const sharedStart = '2026-10-24T00:30Z'
+    const sharedEnd = '2026-10-24T01:30Z'
     await page.goto(
       `/analytics?range=custom&start=${encodeURIComponent(sharedStart)}&end=${encodeURIComponent(sharedEnd)}&timeZone=Europe%2FParis`
     )
     await page.getByRole('radio', { name: 'Custom', checked: true }).waitFor()
     await page.waitForTimeout(250)
+    assert.equal(
+      await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+      'America/New_York'
+    )
     const sharedUrl = new URL(page.url())
     assert.equal(sharedUrl.searchParams.get('start'), sharedStart)
     assert.equal(sharedUrl.searchParams.get('end'), sharedEnd)
@@ -59,6 +65,14 @@ test.group('analytics custom range', (group) => {
     const calendarDialog = page.getByRole('dialog', { name: 'Choose date range' })
     await calendarDialog.waitFor()
     await page.waitForTimeout(250)
+    const dialogBox = await mobileDialog.boundingBox()
+    const calendarBox = await calendarDialog.boundingBox()
+    assert.isNotNull(dialogBox)
+    assert.isNotNull(calendarBox)
+    for (const box of [dialogBox!, calendarBox!]) {
+      assert.isAtLeast(box.x, 0)
+      assert.isAtMost(box.x + box.width, 430)
+    }
     const hasHorizontalOverflow = await page.evaluate(() => {
       const browser = globalThis as unknown as {
         document: { documentElement: { scrollWidth: number } }
@@ -67,8 +81,18 @@ test.group('analytics custom range', (group) => {
       return browser.document.documentElement.scrollWidth > browser.innerWidth
     })
     assert.isFalse(hasHorizontalOverflow)
-    await mobileDialog.getByRole('button', { name: 'Close calendar' }).first().click()
+
+    const foldedDate = calendarDialog.getByRole('button', {
+      name: 'Sunday, October 25, 2026',
+    })
+    await foldedDate.click()
+    await foldedDate.click()
+    await mobileDialog.getByLabel('Start time').fill('02:30')
+    await mobileDialog.getByLabel('End time').fill('02:30')
+    assert.isFalse(await mobileDialog.getByRole('button', { name: 'Apply range' }).isDisabled())
     await mobileDialog.getByRole('button', { name: 'Apply range' }).click()
-    await page.waitForURL((url) => url.searchParams.get('range') === 'custom')
+    await page.waitForURL((url) => url.searchParams.get('start') === '2026-10-25T00:30Z')
+    const foldedUrl = new URL(page.url())
+    assert.equal(foldedUrl.searchParams.get('end'), '2026-10-25T01:30Z')
   })
 })

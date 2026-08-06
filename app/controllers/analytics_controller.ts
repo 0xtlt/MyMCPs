@@ -50,6 +50,8 @@ function rangeConfig(
     !hasExplicitOffset(endInput) ||
     !start.isValid ||
     !end.isValid ||
+    start.millisecond !== 0 ||
+    end.millisecond !== 0 ||
     end.toMillis() <= start.toMillis() ||
     end.toMillis() > start.plus({ days: 365 }).toMillis()
   ) {
