@@ -7,7 +7,7 @@ test.group('analytics custom range', (group) => {
   group.each.setup(beginTestTransaction)
   group.each.teardown(rollbackTestTransaction)
 
-  test('applies a custom date and time range without adding chart controls', async ({
+  test('applies and preserves a responsive custom date and time range', async ({
     assert,
     browserContext,
     visit,
@@ -35,16 +35,30 @@ test.group('analytics custom range', (group) => {
     assert.equal(selectedUrl.searchParams.get('range'), 'custom')
     assert.isNotNull(selectedUrl.searchParams.get('start'))
     assert.isNotNull(selectedUrl.searchParams.get('end'))
+    assert.match(selectedUrl.searchParams.get('start')!, /Z$/)
+    assert.match(selectedUrl.searchParams.get('end')!, /Z$/)
     assert.equal(await page.getByRole('slider').count(), 0)
 
-    await page.getByRole('radio', { name: 'Custom' }).click()
-    const reopenedDialog = page.getByRole('dialog', { name: 'Custom analytics range' })
-    await reopenedDialog.waitFor()
-    await reopenedDialog.getByRole('button', { name: 'Cancel' }).click()
-    await reopenedDialog.waitFor({ state: 'hidden' })
+    const sharedStart = '2026-10-25T00:30Z'
+    const sharedEnd = '2026-10-25T01:30Z'
+    await page.goto(
+      `/analytics?range=custom&start=${encodeURIComponent(sharedStart)}&end=${encodeURIComponent(sharedEnd)}&timeZone=Europe%2FParis`
+    )
+    await page.getByRole('radio', { name: 'Custom', checked: true }).waitFor()
+    await page.waitForTimeout(250)
+    const sharedUrl = new URL(page.url())
+    assert.equal(sharedUrl.searchParams.get('start'), sharedStart)
+    assert.equal(sharedUrl.searchParams.get('end'), sharedEnd)
+    assert.equal(sharedUrl.searchParams.get('timeZone'), 'Europe/Paris')
 
     await page.setViewportSize({ width: 430, height: 932 })
-    await page.waitForTimeout(500)
+    await page.getByRole('radio', { name: 'Custom' }).click()
+    const mobileDialog = page.getByRole('dialog', { name: 'Custom analytics range' })
+    await mobileDialog.waitFor()
+    await mobileDialog.getByRole('button', { name: /^Dates:/ }).click()
+    const calendarDialog = page.getByRole('dialog', { name: 'Choose date range' })
+    await calendarDialog.waitFor()
+    await page.waitForTimeout(250)
     const hasHorizontalOverflow = await page.evaluate(() => {
       const browser = globalThis as unknown as {
         document: { documentElement: { scrollWidth: number } }
@@ -53,5 +67,8 @@ test.group('analytics custom range', (group) => {
       return browser.document.documentElement.scrollWidth > browser.innerWidth
     })
     assert.isFalse(hasHorizontalOverflow)
+    await mobileDialog.getByRole('button', { name: 'Close calendar' }).first().click()
+    await mobileDialog.getByRole('button', { name: 'Apply range' }).click()
+    await page.waitForURL((url) => url.searchParams.get('range') === 'custom')
   })
 })

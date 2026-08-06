@@ -42,9 +42,12 @@ function rangeConfig(
     return presetRangeConfig(range === 'custom' ? '7d' : range, timeZone)
   }
 
-  const start = DateTime.fromISO(startInput, { zone: timeZone })
-  const end = DateTime.fromISO(endInput, { zone: timeZone })
+  const hasExplicitOffset = (value: string) => /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+  const start = DateTime.fromISO(startInput, { setZone: true }).setZone(timeZone)
+  const end = DateTime.fromISO(endInput, { setZone: true }).setZone(timeZone)
   if (
+    !hasExplicitOffset(startInput) ||
+    !hasExplicitOffset(endInput) ||
     !start.isValid ||
     !end.isValid ||
     end.toMillis() <= start.toMillis() ||
@@ -166,8 +169,8 @@ export default class AnalyticsController {
 
     return inertia.render('analytics/index', {
       range: config.range,
-      start: config.start.toFormat("yyyy-MM-dd'T'HH:mm"),
-      end: config.end.toFormat("yyyy-MM-dd'T'HH:mm"),
+      start: config.start.toISO({ suppressSeconds: true, suppressMilliseconds: true })!,
+      end: config.end.toISO({ suppressSeconds: true, suppressMilliseconds: true })!,
       timeZone,
       loggingLevel: settings.mcpLogLevel,
       metrics: {

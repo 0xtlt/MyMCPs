@@ -114,6 +114,13 @@ function rangeTime(value: string): ISOTimeString {
   return value.slice(11, 16) as ISOTimeString
 }
 
+function selectedDateTime(value: string, sourceValue: string, timeZone: string) {
+  const source = DateTime.fromISO(sourceValue, { setZone: true }).setZone(timeZone)
+  if (source.isValid && source.toFormat("yyyy-MM-dd'T'HH:mm") === value) return source
+
+  return DateTime.fromISO(value, { zone: timeZone })
+}
+
 export default function AnalyticsIndex({
   range,
   start,
@@ -171,33 +178,52 @@ export default function AnalyticsIndex({
     router.get('/analytics', { range: value, timeZone }, { preserveState: true, replace: true })
   }
 
-  const customRangeError = useMemo(() => {
-    if (!customStart || !customEnd) return 'Choose both a start and an end time.'
+  const customRange = useMemo(() => {
+    if (!customStart || !customEnd) {
+      return { error: 'Choose both a start and an end time.' }
+    }
 
-    const customStartDate = DateTime.fromISO(customStart, { zone: timeZone })
-    const customEndDate = DateTime.fromISO(customEnd, { zone: timeZone })
-    if (!customStartDate.isValid || !customEndDate.isValid) return 'Enter valid dates and times.'
+    const customStartDate = selectedDateTime(customStart, start, timeZone)
+    const customEndDate = selectedDateTime(customEnd, end, timeZone)
+    if (
+      !customStartDate.isValid ||
+      !customEndDate.isValid ||
+      customStartDate.toFormat("yyyy-MM-dd'T'HH:mm") !== customStart ||
+      customEndDate.toFormat("yyyy-MM-dd'T'HH:mm") !== customEnd
+    ) {
+      return { error: 'Enter valid dates and times.' }
+    }
     if (customEndDate.toMillis() <= customStartDate.toMillis()) {
-      return 'End time must be after start time.'
+      return { error: 'End time must be after start time.' }
     }
     if (customEndDate.toMillis() > customStartDate.plus({ days: 365 }).toMillis()) {
-      return 'Custom ranges can span up to 365 days.'
+      return { error: 'Custom ranges can span up to 365 days.' }
     }
-    return null
-  }, [customEnd, customStart, timeZone])
+    return { error: null, start: customStartDate, end: customEndDate }
+  }, [customEnd, customStart, end, start, timeZone])
 
   function applyCustomRange() {
-    if (customRangeError || !customStart || !customEnd) return
+    if (customRange.error || !customRange.start || !customRange.end) return
+
+    const startInstant = customRange.start
+      .toUTC()
+      .toISO({ suppressSeconds: true, suppressMilliseconds: true })
+    const endInstant = customRange.end
+      .toUTC()
+      .toISO({ suppressSeconds: true, suppressMilliseconds: true })
+    if (!startInstant || !endInstant) return
 
     setIsCustomRangeOpen(false)
     router.get(
       '/analytics',
-      { range: 'custom', start: customStart, end: customEnd, timeZone },
+      { range: 'custom', start: startInstant, end: endInstant, timeZone },
       { preserveState: true, preserveScroll: true, replace: true }
     )
   }
 
   useEffect(() => {
+    if (range === 'custom') return
+
     const localTimeZone = browserTimeZone()
     if (!localTimeZone || localTimeZone === timeZone) return
 
@@ -206,7 +232,6 @@ export default function AnalyticsIndex({
       {
         range,
         timeZone: localTimeZone,
-        ...(range === 'custom' ? { start, end } : {}),
       },
       { preserveState: true, preserveScroll: true, replace: true }
     )
@@ -369,7 +394,7 @@ export default function AnalyticsIndex({
                   label="Dates"
                   value={customDates}
                   onChange={setCustomDates}
-                  numberOfMonths={2}
+                  numberOfMonths={1}
                   width="100%"
                   isRequired
                 />
@@ -392,7 +417,7 @@ export default function AnalyticsIndex({
                     width={240}
                     isRequired
                     status={
-                      customRangeError ? { type: 'error', message: customRangeError } : undefined
+                      customRange.error ? { type: 'error', message: customRange.error } : undefined
                     }
                   />
                 </HStack>
@@ -411,7 +436,7 @@ export default function AnalyticsIndex({
                   label="Apply range"
                   variant="primary"
                   onClick={applyCustomRange}
-                  isDisabled={Boolean(customRangeError)}
+                  isDisabled={Boolean(customRange.error)}
                 />
               </HStack>
             </LayoutFooter>

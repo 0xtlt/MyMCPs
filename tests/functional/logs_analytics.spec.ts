@@ -237,8 +237,8 @@ test.group('MCP logs and analytics administration', (group) => {
       createdAt: customEnd.toUTC(),
     })
 
-    const start = customStart.toFormat("yyyy-MM-dd'T'HH:mm")
-    const end = customEnd.toFormat("yyyy-MM-dd'T'HH:mm")
+    const start = customStart.toUTC().toISO({ suppressSeconds: true, suppressMilliseconds: true })!
+    const end = customEnd.toUTC().toISO({ suppressSeconds: true, suppressMilliseconds: true })!
     const page = await client
       .get(
         `/analytics?range=custom&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&timeZone=Europe%2FParis`
@@ -249,8 +249,6 @@ test.group('MCP logs and analytics administration', (group) => {
     page.assertStatus(200)
     page.assertInertiaPropsContains({
       range: 'custom',
-      start,
-      end,
       timeZone: 'Europe/Paris',
       metrics: {
         total: 2,
@@ -263,10 +261,66 @@ test.group('MCP logs and analytics administration', (group) => {
     })
 
     assert.lengthOf(page.inertiaProps.timeline, 4)
+    assert.equal(
+      DateTime.fromISO(page.inertiaProps.start, { setZone: true }).toUTC().toMillis(),
+      customStart.toUTC().toMillis()
+    )
+    assert.equal(
+      DateTime.fromISO(page.inertiaProps.end, { setZone: true }).toUTC().toMillis(),
+      customEnd.toUTC().toMillis()
+    )
     assert.equal(page.inertiaProps.timeline[0].bucket, customStart.toUTC().toISO())
     assert.equal(
       page.inertiaProps.timeline.at(-1).bucket,
       customEnd.minus({ hours: 1 }).toUTC().toISO()
     )
+  })
+
+  test('keeps custom instants exact across daylight-saving transitions', async ({
+    client,
+    assert,
+  }) => {
+    const admin = await createAdmin()
+    const transitions = [
+      {
+        start: '2026-03-29T00:30Z',
+        end: '2026-03-29T01:30Z',
+        localStart: '2026-03-29T01:30+01:00',
+        localEnd: '2026-03-29T03:30+02:00',
+      },
+      {
+        start: '2026-10-25T00:30Z',
+        end: '2026-10-25T01:30Z',
+        localStart: '2026-10-25T02:30+02:00',
+        localEnd: '2026-10-25T02:30+01:00',
+      },
+    ]
+
+    for (const transition of transitions) {
+      const page = await client
+        .get(
+          `/analytics?range=custom&start=${encodeURIComponent(transition.start)}&end=${encodeURIComponent(transition.end)}&timeZone=Europe%2FParis`
+        )
+        .withInertia()
+        .loginAs(admin)
+
+      page.assertStatus(200)
+      page.assertInertiaPropsContains({
+        range: 'custom',
+        start: transition.localStart,
+        end: transition.localEnd,
+        timeZone: 'Europe/Paris',
+      })
+      assert.lengthOf(page.inertiaProps.timeline, 1)
+    }
+
+    const offsetFreeGap = await client
+      .get(
+        '/analytics?range=custom&start=2026-03-29T02%3A30&end=2026-03-29T03%3A30&timeZone=Europe%2FParis'
+      )
+      .withInertia()
+      .loginAs(admin)
+    offsetFreeGap.assertStatus(200)
+    offsetFreeGap.assertInertiaPropsContains({ range: '7d', timeZone: 'Europe/Paris' })
   })
 })
