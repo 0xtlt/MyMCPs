@@ -23,7 +23,10 @@ router.get('health', ({ response }) => response.ok({ status: 'ok' })).as('health
 router
   .group(() => {
     router.get('onboarding', [controllers.Onboarding, 'show']).as('onboarding.show')
-    router.post('onboarding', [controllers.Onboarding, 'store']).as('onboarding.store')
+    router
+      .post('onboarding', [controllers.Onboarding, 'store'])
+      .use(middleware.rateLimit({ name: 'onboarding', limit: 5, windowMs: 15 * 60 * 1_000 }))
+      .as('onboarding.store')
   })
   .use(middleware.setupComplete())
 
@@ -46,14 +49,20 @@ router
     router
       .group(() => {
         router.get('login', [controllers.Session, 'create']).as('session.create')
-        router.post('login', [controllers.Session, 'store']).as('session.store')
+        router
+          .post('login', [controllers.Session, 'store'])
+          .use(middleware.rateLimit({ name: 'login', limit: 5, windowMs: 15 * 60 * 1_000 }))
+          .as('session.store')
       })
       .use(middleware.guest())
 
     router
       .group(() => {
         router.get('invite/:token', [controllers.Invites, 'show']).as('invites.show')
-        router.post('invite/:token', [controllers.Invites, 'accept']).as('invites.accept')
+        router
+          .post('invite/:token', [controllers.Invites, 'accept'])
+          .use(middleware.rateLimit({ name: 'invite-accept', limit: 5, windowMs: 15 * 60 * 1_000 }))
+          .as('invites.accept')
       })
       .use(middleware.guest())
 

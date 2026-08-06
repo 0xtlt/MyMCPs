@@ -14,19 +14,42 @@ import {
 } from '#services/upstream/oauth'
 import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
+import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
+import { ensureSafeHttpUrl } from '#services/http_url'
 
 type McpPayload = Infer<typeof createMcpValidator>
 
 const MAX_NPM_ENV_TOTAL_BYTES = 64 * 1024
 
-function npmEnvValidationError(field: string, message: string): never {
+function mcpValidationError(field: string, message: string, rule = 'mcp'): never {
   throw new errors.E_VALIDATION_ERROR([
     {
       field,
       message,
-      rule: 'npmEnvironment',
+      rule,
     },
   ])
+}
+
+function normalizedHttpUrl(value: string) {
+  try {
+    return ensureSafeHttpUrl(value, 'MCP URL').toString()
+  } catch (error) {
+    mcpValidationError(
+      'httpUrl',
+      error instanceof Error ? error.message : 'MCP URL is invalid',
+      'url'
+    )
+  }
+}
+
+function comparableStoredHttpUrl(value: string | null) {
+  if (!value) return null
+  try {
+    return new URL(value).toString()
+  } catch {
+    return value
+  }
 }
 
 function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
@@ -40,14 +63,19 @@ function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
 
   for (const [index, entry] of entries.entries()) {
     if (seenNames.has(entry.name)) {
-      npmEnvValidationError(`npmEnv.${index}.name`, 'Environment variable names must be unique')
+      mcpValidationError(
+        `npmEnv.${index}.name`,
+        'Environment variable names must be unique',
+        'npmEnvironment'
+      )
     }
     seenNames.add(entry.name)
 
     if (entry.value === null && !McpEnvironmentStore.hasName(mcp.npmEnv, entry.name)) {
-      npmEnvValidationError(
+      mcpValidationError(
         `npmEnv.${index}.value`,
-        'A value is required for a new environment variable'
+        'A value is required for a new environment variable',
+        'npmEnvironment'
       )
     }
   }
@@ -57,9 +85,10 @@ function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
   try {
     environment = McpEnvironmentStore.decrypt(nextValue)
   } catch (error) {
-    npmEnvValidationError(
+    mcpValidationError(
       'npmEnv',
-      error instanceof Error ? error.message : 'Environment variable configuration is invalid'
+      error instanceof Error ? error.message : 'Environment variable configuration is invalid',
+      'npmEnvironment'
     )
   }
 
@@ -68,7 +97,11 @@ function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
     0
   )
   if (totalBytes > MAX_NPM_ENV_TOTAL_BYTES) {
-    npmEnvValidationError('npmEnv', 'Environment variables must not exceed 64 KiB in total')
+    mcpValidationError(
+      'npmEnv',
+      'Environment variables must not exceed 64 KiB in total',
+      'npmEnvironment'
+    )
   }
 
   mcp.npmEnv = nextValue
@@ -134,10 +167,73 @@ export async function assignMcpFromPayload(
   payload: McpPayload,
   options?: { excludeId?: number }
 ) {
-  const nextHttpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
-  const oauthServerChanged = mcp.transport !== payload.transport || mcp.httpUrl !== nextHttpUrl
+  const previousTransport = mcp.transport
+  const previousHttpUrl = comparableStoredHttpUrl(mcp.httpUrl)
+  const previousNpmPackage = mcp.npmPackage
+  const previousNpmVersion = mcp.npmVersion?.trim() || 'latest'
+  const previousNpmArgs = mcp.npmArgsList
+  const previousHeaderName = mcp.authHeaderName?.toLowerCase() ?? null
+  const nextHttpUrl = payload.transport === 'http' ? normalizedHttpUrl(payload.httpUrl ?? '') : null
+  const nextNpmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
+  const nextNpmVersion = payload.transport === 'npm' ? payload.npmVersion?.trim() || 'latest' : null
+  const nextNpmArgs = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
+  const persisted = mcp.$isPersisted
+  const httpTargetChanged =
+    persisted && (previousTransport !== 'http' || previousHttpUrl !== nextHttpUrl)
+  const npmTargetChanged =
+    persisted &&
+    (previousTransport !== 'npm' ||
+      previousNpmPackage !== nextNpmPackage ||
+      previousNpmVersion !== nextNpmVersion ||
+      JSON.stringify(previousNpmArgs) !== JSON.stringify(nextNpmArgs))
+  const headerBindingChanged =
+    persisted &&
+    previousTransport === 'http' &&
+    payload.transport === 'http' &&
+    mcp.authType === 'header' &&
+    payload.authType === 'header' &&
+    previousHeaderName !== (payload.authHeaderName?.toLowerCase() ?? null)
+
+  if (
+    httpTargetChanged &&
+    payload.transport === 'http' &&
+    payload.authType === 'bearer' &&
+    McpSecretStore.hasSecret(mcp.authBearer) &&
+    !payload.authBearer
+  ) {
+    mcpValidationError(
+      'authBearer',
+      'Re-enter the bearer token to approve sending it to the new MCP URL',
+      'secretBinding'
+    )
+  }
+  if (
+    (httpTargetChanged || headerBindingChanged) &&
+    payload.transport === 'http' &&
+    payload.authType === 'header' &&
+    McpSecretStore.hasSecret(mcp.authHeaderValue) &&
+    !payload.authHeaderValue
+  ) {
+    mcpValidationError(
+      'authHeaderValue',
+      'Re-enter the header value to approve its new destination or header name',
+      'secretBinding'
+    )
+  }
+
+  const oauthServerChanged =
+    previousTransport !== payload.transport || previousHttpUrl !== nextHttpUrl
   if (oauthServerChanged) {
     clearOAuthConnection(mcp)
+  }
+  if (httpTargetChanged) {
+    mcp.authBearer = null
+    mcp.authHeaderValue = null
+  } else if (headerBindingChanged) {
+    mcp.authHeaderValue = null
+  }
+  if (npmTargetChanged) {
+    mcp.npmEnv = null
   }
 
   mcp.name = payload.name
@@ -145,9 +241,9 @@ export async function assignMcpFromPayload(
   mcp.description = payload.description || null
   mcp.transport = payload.transport
   mcp.httpUrl = nextHttpUrl
-  mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
+  mcp.npmPackage = nextNpmPackage
   mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
-  mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
+  mcp.npmArgsList = nextNpmArgs
   assignNpmEnvironment(mcp, payload)
   mcp.authType = payload.authType
   mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
@@ -276,7 +372,7 @@ export default class McpsController {
     try {
       return response.redirect(await startOauthFlow(session, mcp))
     } catch (error) {
-      session.flash('error', error instanceof Error ? error.message : 'Failed to start OAuth')
+      session.flash('error', sanitizeMcpDiagnostic(error, mcp) ?? 'Failed to start OAuth')
       session.flash('editingMcpId', mcp.id)
       return response.redirect().toRoute('mcps.index')
     }
@@ -288,22 +384,29 @@ export default class McpsController {
     clearOauthSession(session, state)
 
     if (oauthError) {
-      session.flash('error', `OAuth error: ${oauthError}`)
+      const mcp = oauth ? await Mcp.find(oauth.mcpId) : null
+      const message = `OAuth error: ${oauthError}`
+      session.flash(
+        'error',
+        mcp
+          ? (sanitizeMcpDiagnostic(message, mcp) ?? 'OAuth authorization failed')
+          : (sanitizeDiagnostic(message) ?? 'OAuth authorization failed')
+      )
       if (oauth) {
         session.flash('editingMcpId', oauth.mcpId)
       }
-      return response.redirect().toRoute('mcps.index')
+      return response.redirect().withQs(false).toRoute('mcps.index')
     }
 
     if (!oauth || !code || !state || state !== oauth.state) {
       session.flash('error', 'Invalid OAuth callback')
-      return response.redirect().toRoute('mcps.index')
+      return response.redirect().withQs(false).toRoute('mcps.index')
     }
 
     const mcp = await Mcp.find(oauth.mcpId)
     if (!mcp) {
       session.flash('error', 'MCP not found')
-      return response.redirect().toRoute('mcps.index')
+      return response.redirect().withQs(false).toRoute('mcps.index')
     }
 
     try {
@@ -316,12 +419,12 @@ export default class McpsController {
       }
     } catch (error) {
       mcp.status = 'error'
-      mcp.lastError = error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
+      mcp.lastError = sanitizeMcpDiagnostic(error, mcp, 500, [code, state]) ?? 'Unknown error'
       await mcp.save()
       session.flash('error', mcp.lastError)
     }
 
     session.flash('editingMcpId', mcp.id)
-    return response.redirect().toRoute('mcps.index')
+    return response.redirect().withQs(false).toRoute('mcps.index')
   }
 }

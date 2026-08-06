@@ -11,7 +11,9 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
-function mockNotionOAuthServer(options: { rejectMcpToken?: boolean } = {}) {
+function mockNotionOAuthServer(
+  options: { rejectMcpToken?: boolean; rejectTokenExchange?: boolean } = {}
+) {
   const originalFetch = globalThis.fetch
 
   globalThis.fetch = async (input, init) => {
@@ -53,6 +55,16 @@ function mockNotionOAuthServer(options: { rejectMcpToken?: boolean } = {}) {
     }
 
     if (url === 'https://auth.example/token') {
+      if (options.rejectTokenExchange) {
+        const code = new URLSearchParams(body).get('code')
+        return jsonResponse(
+          {
+            error: 'invalid_grant',
+            error_description: `authorization code ${code} rejected`,
+          },
+          400
+        )
+      }
       return jsonResponse({
         access_token: 'access-token',
         token_type: 'bearer',
@@ -196,10 +208,9 @@ test.group('MCP OAuth routes', (group) => {
         .redirects(0)
 
       callbackResponse.assertStatus(302)
-      assert.equal(
-        new URL(callbackResponse.header('location')!, 'http://localhost').pathname,
-        '/mcps'
-      )
+      const callbackRedirect = new URL(callbackResponse.header('location')!, 'http://localhost')
+      assert.equal(callbackRedirect.pathname, '/mcps')
+      assert.equal(callbackRedirect.search, '')
       const saved = await Mcp.findOrFail(mcp.id)
       assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'access-token')
       assert.equal(saved.status, 'ready')
@@ -248,7 +259,7 @@ test.group('MCP OAuth routes', (group) => {
       callbackResponse.assertStatus(302)
       callbackResponse.assertFlashMessage(
         'error',
-        'OAuth token rejected. MCP server returned HTTP 401. Response: {"error":"invalid_token","error_description":"The access token audience is invalid"} | WWW-Authenticate: Bearer error="invalid_token", error_description="The access token audience is invalid"'
+        'OAuth token rejected. MCP server rejected the configured credentials (HTTP 401).'
       )
       assert.isUndefined(callbackResponse.flashMessage('success'))
 
@@ -256,6 +267,106 @@ test.group('MCP OAuth routes', (group) => {
       assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'access-token')
       assert.equal(saved.status, 'error')
       assert.isTrue(Boolean(saved.oauthRequired))
+    } finally {
+      restoreFetch()
+    }
+  })
+
+  test('redacts callback credentials echoed by a failed token exchange', async ({
+    client,
+    assert,
+  }) => {
+    const restoreFetch = mockNotionOAuthServer({ rejectTokenExchange: true })
+
+    try {
+      const admin = await createAdmin({ email: 'exchange-error@example.com' })
+      const mcp = await createMcp(admin.id, {
+        name: 'Failed token exchange',
+        authType: 'auto',
+        oauthRequired: true,
+        httpUrl: 'https://mcp.notion.com/mcp',
+        status: 'draft',
+      })
+
+      const loginResponse = await client
+        .post('/login')
+        .withCsrfToken()
+        .redirects(0)
+        .form({ email: 'exchange-error@example.com', password: 'password123' })
+
+      const startResponse = await client
+        .get(`/mcps/${mcp.id}/oauth/start`)
+        .withSession(loginResponse.session())
+        .redirects(0)
+      const authorizationUrl = new URL(startResponse.header('location')!)
+      const callbackUrl = new URL(authorizationUrl.searchParams.get('redirect_uri')!)
+      const code = 'authorization-code-sensitive-value'
+      callbackUrl.searchParams.set('code', code)
+      callbackUrl.searchParams.set('state', authorizationUrl.searchParams.get('state')!)
+
+      const callbackResponse = await client
+        .get(`${callbackUrl.pathname}${callbackUrl.search}`)
+        .withSession(startResponse.session())
+        .redirects(0)
+
+      callbackResponse.assertStatus(302)
+      assert.notInclude(String(callbackResponse.flashMessage('error')), code)
+      assert.include(String(callbackResponse.flashMessage('error')), '[REDACTED]')
+      assert.equal(new URL(callbackResponse.header('location')!, 'http://localhost').search, '')
+
+      const saved = await Mcp.findOrFail(mcp.id)
+      assert.notInclude(saved.lastError!, code)
+      assert.include(saved.lastError!, '[REDACTED]')
+    } finally {
+      restoreFetch()
+    }
+  })
+
+  test('redacts a configured secret from a provider-controlled OAuth callback error', async ({
+    client,
+    assert,
+  }) => {
+    const restoreFetch = mockNotionOAuthServer()
+
+    try {
+      const admin = await createAdmin({ email: 'callback-error@example.com' })
+      const mcp = await createMcp(admin.id, {
+        name: 'OAuth callback error',
+        authType: 'auto',
+        oauthRequired: true,
+        httpUrl: 'https://mcp.notion.com/mcp',
+        status: 'draft',
+      })
+      const secret = 'exact-callback-secret-value'
+      mcp.authBearer = McpSecretStore.encrypt(secret)
+      await mcp.save()
+
+      const loginResponse = await client
+        .post('/login')
+        .withCsrfToken()
+        .redirects(0)
+        .form({ email: 'callback-error@example.com', password: 'password123' })
+
+      const startResponse = await client
+        .get(`/mcps/${mcp.id}/oauth/start`)
+        .withSession(loginResponse.session())
+        .redirects(0)
+      const authorizationUrl = new URL(startResponse.header('location')!)
+      const callbackUrl = new URL(authorizationUrl.searchParams.get('redirect_uri')!)
+      callbackUrl.searchParams.set('state', authorizationUrl.searchParams.get('state')!)
+      callbackUrl.searchParams.set('error', `provider echoed ${secret}`)
+
+      const callbackResponse = await client
+        .get(`${callbackUrl.pathname}${callbackUrl.search}`)
+        .withSession(startResponse.session())
+        .redirects(0)
+
+      callbackResponse.assertStatus(302)
+      callbackResponse.assertFlashMessage('error', 'OAuth error: provider echoed [REDACTED]')
+      const callbackRedirect = new URL(callbackResponse.header('location')!, 'http://localhost')
+      assert.equal(callbackRedirect.pathname, '/mcps')
+      assert.equal(callbackRedirect.search, '')
+      assert.notInclude(callbackResponse.header('location')!, secret)
     } finally {
       restoreFetch()
     }

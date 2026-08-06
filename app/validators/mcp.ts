@@ -38,7 +38,13 @@ const mcpPayload = {
     .maxLength(2048)
     .optional()
     .requiredWhen('transport', '=', 'http'),
-  npmPackage: vine.string().trim().maxLength(254).optional().requiredWhen('transport', '=', 'npm'),
+  npmPackage: vine
+    .string()
+    .trim()
+    .maxLength(254)
+    .regex(/^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*\/)?[A-Za-z0-9][A-Za-z0-9._~-]*$/)
+    .optional()
+    .requiredWhen('transport', '=', 'npm'),
   npmVersion: vine.string().trim().maxLength(64).optional(),
   npmArgs: vine
     .string()

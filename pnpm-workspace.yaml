@@ -1,6 +1,9 @@
 confirmModulesPurge: false
 minimumReleaseAge: 360
 
+overrides:
+  hono: ^4.12.34
+
 allowBuilds:
   '@astryxdesign/cli': true
   '@astryxdesign/core': true

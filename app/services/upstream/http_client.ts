@@ -4,6 +4,8 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { refreshOauthAccessToken } from '#services/upstream/oauth'
+import { fetchWithoutRedirects } from '#services/upstream/safe_fetch'
+import { ensureSafeHttpUrl } from '#services/http_url'
 
 export type UpstreamTool = {
   name: string
@@ -17,36 +19,13 @@ export type ConnectedHttpUpstream = {
   close: () => Promise<void>
 }
 
-type UnauthorizedResponse = {
-  body: string
-  wwwAuthenticate: string
-}
-
 export class UpstreamUnauthorizedError extends Error {
   readonly status = 401
 
-  constructor(details: UnauthorizedResponse, options?: ErrorOptions) {
-    const context = [
-      details.body ? `Response: ${details.body}` : null,
-      details.wwwAuthenticate ? `WWW-Authenticate: ${details.wwwAuthenticate}` : null,
-    ].filter(Boolean)
-
-    super(
-      context.length > 0
-        ? `MCP server returned HTTP 401. ${context.join(' | ')}`
-        : 'MCP server returned HTTP 401 Unauthorized.',
-      options
-    )
+  constructor(options?: ErrorOptions) {
+    super('MCP server rejected the configured credentials (HTTP 401).', options)
     this.name = 'UpstreamUnauthorizedError'
   }
-}
-
-function compactDiagnostic(value: string | null, limit = 240) {
-  if (!value) {
-    return ''
-  }
-  const compacted = value.replace(/\s+/g, ' ').trim()
-  return compacted.length > limit ? `${compacted.slice(0, limit - 1)}…` : compacted
 }
 
 function buildAuthHeaders(mcp: Mcp): Record<string, string> {
@@ -83,29 +62,22 @@ export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstre
   if (!mcp.httpUrl) {
     throw new Error('HTTP MCP is missing a URL')
   }
+  const endpoint = ensureSafeHttpUrl(mcp.httpUrl, 'MCP URL')
 
   if (mcp.authType === 'auto' && mcp.oauthAccessToken) {
     await refreshOauthAccessToken(mcp)
   }
 
   const headers = buildAuthHeaders(mcp)
-  let unauthorizedResponse: UnauthorizedResponse | null = null
+  let unauthorizedResponse = false
   const diagnosticFetch: typeof fetch = async (input, init) => {
-    const response = await fetch(input, init)
+    const response = await fetchWithoutRedirects(input, init, 'MCP endpoint')
     if (response.status === 401) {
-      unauthorizedResponse = {
-        body: compactDiagnostic(
-          await response
-            .clone()
-            .text()
-            .catch(() => '')
-        ),
-        wwwAuthenticate: compactDiagnostic(response.headers.get('WWW-Authenticate')),
-      }
+      unauthorizedResponse = true
     }
     return response
   }
-  const transport = new StreamableHTTPClientTransport(new URL(mcp.httpUrl), {
+  const transport = new StreamableHTTPClientTransport(endpoint, {
     fetch: diagnosticFetch,
     requestInit: { headers },
   })
@@ -114,7 +86,7 @@ export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstre
     await client.connect(transport)
   } catch (error) {
     if (unauthorizedResponse) {
-      throw new UpstreamUnauthorizedError(unauthorizedResponse, { cause: error })
+      throw new UpstreamUnauthorizedError({ cause: error })
     }
     throw error
   }

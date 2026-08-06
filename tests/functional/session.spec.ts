@@ -14,6 +14,50 @@ test.group('session authentication', (group) => {
 
     response.assertStatus(200)
     response.assertTextIncludes('MyMCPs')
+    response.assertHeader('content-security-policy')
+    response.assertTextIncludes('nonce=')
+  })
+
+  test('rate-limits repeated credential attempts by resolved client IP', async ({
+    client,
+    assert,
+  }) => {
+    await createAdmin({ email: 'limited@example.com' })
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const response = await client
+        .post('/login')
+        .header('x-forwarded-for', '198.51.100.77')
+        .withCsrfToken()
+        .form({ email: 'limited@example.com', password: 'wrong-password' })
+      assert.notEqual(response.status(), 429)
+    }
+
+    const limited = await client
+      .post('/login')
+      .header('x-forwarded-for', '198.51.100.77')
+      .withCsrfToken()
+      .form({ email: 'limited@example.com', password: 'wrong-password' })
+
+    limited.assertStatus(429)
+    limited.assertHeader('retry-after')
+    limited.assertBodyContains({ error: 'too_many_requests' })
+  })
+
+  test('does not charge successful logins against the credential failure budget', async ({
+    client,
+  }) => {
+    await createAdmin({ email: 'successful@example.com' })
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const response = await client
+        .post('/login')
+        .header('x-forwarded-for', '198.51.100.78')
+        .withCsrfToken()
+        .redirects(0)
+        .form({ email: 'successful@example.com', password: 'password123' })
+      response.assertStatus(302)
+    }
   })
 
   test('redirects guests away from authenticated routes', async ({ client, assert }) => {

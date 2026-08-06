@@ -1,4 +1,12 @@
+import app from '@adonisjs/core/services/app'
 import { defineConfig } from '@adonisjs/shield'
+
+const developmentScriptSources = app.inProduction
+  ? []
+  : ["'unsafe-inline'", "'unsafe-eval'", 'http://localhost:*', 'http://127.0.0.1:*']
+const developmentConnectSources = app.inProduction
+  ? []
+  : ['http://localhost:*', 'http://127.0.0.1:*', 'ws://localhost:*', 'ws://127.0.0.1:*']
 
 const shieldConfig = defineConfig({
   /**
@@ -9,12 +17,24 @@ const shieldConfig = defineConfig({
     /**
      * Enable the Content-Security-Policy header.
      */
-    enabled: false,
+    enabled: true,
 
     /**
      * Per-resource CSP directives.
      */
-    directives: {},
+    useDefaults: false,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", '@nonce', ...developmentScriptSources],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      fontSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'", ...developmentConnectSources],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
 
     /**
      * Report violations without blocking resources.

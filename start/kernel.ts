@@ -53,4 +53,5 @@ export const middleware = router.named({
   needsSetup: () => import('#middleware/needs_setup_middleware'),
   setupComplete: () => import('#middleware/setup_complete_middleware'),
   mcpBearer: () => import('#middleware/mcp_bearer_middleware'),
+  rateLimit: () => import('#middleware/rate_limit_middleware'),
 })

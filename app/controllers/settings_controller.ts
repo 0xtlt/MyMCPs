@@ -5,6 +5,7 @@ import {
 } from '#validators/user'
 import type { HttpContext } from '@adonisjs/core/http'
 import McpCallLogService from '#services/mcp_call_log_service'
+import User from '#models/user'
 
 export default class SettingsController {
   async index({ inertia, auth }: HttpContext) {
@@ -40,6 +41,11 @@ export default class SettingsController {
     await user.validatePassword(payload.currentPassword)
     user.password = payload.newPassword
     await user.save()
+
+    const rememberTokens = await User.rememberMeTokens.all(user)
+    await Promise.all(
+      rememberTokens.map((token) => User.rememberMeTokens.delete(user, token.identifier))
+    )
 
     session.flash('success', 'Password updated')
     return response.redirect().toRoute('settings.index')

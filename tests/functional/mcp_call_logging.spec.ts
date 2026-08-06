@@ -2,7 +2,8 @@ import { test } from '@japa/runner'
 import type { ApiClient } from '@japa/api-client'
 import InstanceSetting from '#models/instance_setting'
 import McpCallLog from '#models/mcp_call_log'
-import McpCallLogService from '#services/mcp_call_log_service'
+import McpCallLogService, { MAX_CAPTURE_BYTES } from '#services/mcp_call_log_service'
+import McpSecretStore from '#services/mcp_secret_store'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { createAccessToken, createAdmin, createMcp } from '#tests/helpers/factories'
 
@@ -61,7 +62,9 @@ function mockToolServer() {
       })
     }
     if (message.method === 'tools/call' && message.params?.name === 'explode') {
-      throw new Error('Bearer very-secret-token failed at https://user:pass@example.test')
+      throw new Error(
+        'Bearer very-secret-token failed at https://user:pass@example.test {"client_secret":"oauth-secret"} opaque-custom-value'
+      )
     }
     if (message.method === 'tools/call') {
       const isError = message.params?.name === 'fail'
@@ -234,6 +237,8 @@ test.group('MCP call capture', (group) => {
         slug: 'logging',
         httpUrl: 'https://logging.example/mcp',
       })
+      mcp.authHeaderValue = McpSecretStore.encrypt('opaque-custom-value')
+      await mcp.save()
       const { plaintext } = await createAccessToken(admin.id, { mcpIds: [mcp.id] })
 
       const response = await callGateway(client, plaintext, 'logging__explode')
@@ -246,6 +251,40 @@ test.group('MCP call capture', (group) => {
       assert.include(log.errorSummary!, 'https://[REDACTED]@example.test')
       assert.notInclude(log.errorSummary!, 'very-secret-token')
       assert.notInclude(log.errorSummary!, 'user:pass')
+      assert.notInclude(log.errorSummary!, 'opaque-custom-value')
+      assert.notInclude(log.errorSummary!, 'oauth-secret')
+    } finally {
+      restoreFetch()
+    }
+  })
+
+  test('caps oversized argument captures', async ({ client, assert }) => {
+    const restoreFetch = mockToolServer()
+    try {
+      const admin = await createAdmin()
+      const mcp = await createMcp(admin.id, {
+        slug: 'logging',
+        httpUrl: 'https://logging.example/mcp',
+      })
+      const { plaintext } = await createAccessToken(admin.id, { mcpIds: [mcp.id] })
+      const settings = await InstanceSetting.findOrFail(1)
+      settings.mcpLogLevel = 'arguments'
+      await settings.save()
+
+      const response = await callGateway(client, plaintext, 'logging__echo', {
+        payload: 'x'.repeat(MAX_CAPTURE_BYTES + 1),
+      })
+      response.assertStatus(200)
+
+      const log = await McpCallLog.firstOrFail()
+      const capture = JSON.parse(log.arguments!) as {
+        truncated: boolean
+        originalBytes: number
+        preview: string
+      }
+      assert.isTrue(capture.truncated)
+      assert.isAbove(capture.originalBytes, MAX_CAPTURE_BYTES)
+      assert.isBelow(Buffer.byteLength(log.arguments!), MAX_CAPTURE_BYTES)
     } finally {
       restoreFetch()
     }

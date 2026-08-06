@@ -20,6 +20,7 @@ import {
   parseNamespacedTool,
   probeUpstream,
 } from '#services/upstream/manager'
+import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
 
 /**
  * Agent-facing MCP gateway: aggregate tools from allowed upstreams behind one URL.
@@ -113,7 +114,7 @@ export default class GatewayController {
             }
           } catch (error) {
             logger.warn(
-              { err: error, mcpId: mcp.id, slug: mcp.slug },
+              { error: sanitizeMcpDiagnostic(error, mcp), mcpId: mcp.id, slug: mcp.slug },
               'Lazy gateway tool search failed'
             )
             return {
@@ -250,7 +251,7 @@ export default class GatewayController {
 
     nodeRes.on('finish', () => {
       void server.close().catch((error) => {
-        logger.debug({ err: error }, 'Gateway MCP server close failed')
+        logger.debug({ error: sanitizeDiagnostic(error) }, 'Gateway MCP server close failed')
       })
     })
 
@@ -285,7 +286,11 @@ export default class GatewayController {
       return result
     } catch (error) {
       logger.warn(
-        { err: error, mcpId: params.mcp.id, tool: params.toolName },
+        {
+          error: sanitizeMcpDiagnostic(error, params.mcp),
+          mcpId: params.mcp.id,
+          tool: params.toolName,
+        },
         'Upstream tool call failed'
       )
       McpCallLogService.record({

@@ -59,7 +59,7 @@ The deployment exposes port `3333`, checks `/health`, and runs database migratio
 
 `APP_KEY` is required, but you do not need to create it in Coolify. On the first start, the container generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable.
 
-The Coolify profile sets `TRUST_PROXY=true` so logs use the forwarded client IP instead of the proxy's IP.
+Set `TRUST_PROXY` to the Coolify proxy's IP address or CIDR so logs and login throttling use the real client IP. Avoid `TRUST_PROXY=true` unless untrusted clients cannot reach the app without that proxy; the Compose default trusts loopback only.
 
 ## Useful commands
 

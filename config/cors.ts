@@ -1,6 +1,18 @@
 import app from '@adonisjs/core/services/app'
 import { defineConfig } from '@adonisjs/cors'
 
+export function resolveCorsOrigin(
+  requestOrigin: string | undefined,
+  requestUrl: string,
+  isDevelopment: boolean
+) {
+  const pathname = requestUrl.split('?', 1)[0]
+  if (pathname === '/mcp') {
+    return requestOrigin || true
+  }
+  return isDevelopment ? true : []
+}
+
 /**
  * Configuration options to tweak the CORS policy. The following
  * options are documented on the official documentation website.
@@ -18,10 +30,7 @@ const corsConfig = defineConfig({
    * Only the bearer `/mcp` gateway reflects arbitrary origins (agents, no cookies).
    */
   origin: (requestOrigin, ctx) => {
-    if (ctx.request.url().startsWith('/mcp')) {
-      return requestOrigin || true
-    }
-    return app.inDev ? true : []
+    return resolveCorsOrigin(requestOrigin, ctx.request.url(), app.inDev)
   },
 
   /**
