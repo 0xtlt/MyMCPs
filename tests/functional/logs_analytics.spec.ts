@@ -212,4 +212,149 @@ test.group('MCP logs and analytics administration', (group) => {
     assert.equal(currentLocalBucket.total, 2)
     assert.equal(currentLocalBucket.errors, 1)
   })
+
+  test('filters analytics by an exact custom time range', async ({ client, assert }) => {
+    const admin = await createAdmin()
+    const token = await createStoredAccessToken(admin.id, { name: 'Custom range token' })
+    const customStart = DateTime.now()
+      .setZone('Europe/Paris')
+      .startOf('hour')
+      .minus({ hours: 6 })
+      .plus({ minutes: 30 })
+    const customEnd = customStart.plus({ hours: 4 })
+
+    await createMcpCallLog(token, {
+      durationMs: 50,
+      createdAt: customStart.minus({ minutes: 1 }).toUTC(),
+    })
+    await createMcpCallLog(token, {
+      durationMs: 100,
+      createdAt: customStart.toUTC(),
+    })
+    await createMcpCallLog(token, {
+      durationMs: 300,
+      outcome: 'error',
+      createdAt: customEnd.minus({ minutes: 1 }).toUTC(),
+    })
+    await createMcpCallLog(token, {
+      durationMs: 500,
+      createdAt: customEnd.toUTC(),
+    })
+
+    const start = customStart.toUTC().toISO({ suppressSeconds: true, suppressMilliseconds: true })!
+    const end = customEnd.toUTC().toISO({ suppressSeconds: true, suppressMilliseconds: true })!
+    const page = await client
+      .get(
+        `/analytics?range=custom&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&timeZone=Europe%2FParis`
+      )
+      .withInertia()
+      .loginAs(admin)
+
+    page.assertStatus(200)
+    page.assertInertiaPropsContains({
+      range: 'custom',
+      timeZone: 'Europe/Paris',
+      metrics: {
+        total: 2,
+        successes: 1,
+        errors: 1,
+        successRate: 50,
+        errorRate: 50,
+        averageDurationMs: 200,
+      },
+    })
+
+    assert.lengthOf(page.inertiaProps.timeline, 4)
+    assert.deepEqual(
+      page.inertiaProps.timeline.map((point: { total: number }) => point.total),
+      [1, 0, 0, 1]
+    )
+    assert.equal(
+      DateTime.fromISO(page.inertiaProps.start, { setZone: true }).toUTC().toMillis(),
+      customStart.toUTC().toMillis()
+    )
+    assert.equal(
+      DateTime.fromISO(page.inertiaProps.end, { setZone: true }).toUTC().toMillis(),
+      customEnd.toUTC().toMillis()
+    )
+    assert.equal(page.inertiaProps.timeline[0].bucket, customStart.toUTC().toISO())
+    assert.equal(
+      page.inertiaProps.timeline.at(-1).bucket,
+      customEnd.minus({ hours: 1 }).toUTC().toISO()
+    )
+  })
+
+  test('keeps custom instants exact across daylight-saving transitions', async ({
+    client,
+    assert,
+  }) => {
+    const admin = await createAdmin()
+    const transitions = [
+      {
+        start: '2026-03-29T00:30Z',
+        end: '2026-03-29T01:30Z',
+        localStart: '2026-03-29T01:30+01:00',
+        localEnd: '2026-03-29T03:30+02:00',
+      },
+      {
+        start: '2026-10-25T00:30Z',
+        end: '2026-10-25T01:30Z',
+        localStart: '2026-10-25T02:30+02:00',
+        localEnd: '2026-10-25T02:30+01:00',
+      },
+    ]
+
+    for (const transition of transitions) {
+      const page = await client
+        .get(
+          `/analytics?range=custom&start=${encodeURIComponent(transition.start)}&end=${encodeURIComponent(transition.end)}&timeZone=Europe%2FParis`
+        )
+        .withInertia()
+        .loginAs(admin)
+
+      page.assertStatus(200)
+      page.assertInertiaPropsContains({
+        range: 'custom',
+        start: transition.localStart,
+        end: transition.localEnd,
+        timeZone: 'Europe/Paris',
+      })
+      assert.lengthOf(page.inertiaProps.timeline, 1)
+    }
+
+    const offsetFreeGap = await client
+      .get(
+        '/analytics?range=custom&start=2026-03-29T02%3A30&end=2026-03-29T03%3A30&timeZone=Europe%2FParis'
+      )
+      .withInertia()
+      .loginAs(admin)
+    offsetFreeGap.assertStatus(200)
+    offsetFreeGap.assertInertiaPropsContains({ range: '7d', timeZone: 'Europe/Paris' })
+
+    const fractionalBoundary = await client
+      .get(
+        '/analytics?range=custom&start=2026-03-29T00%3A30%3A00.500Z&end=2026-03-29T01%3A30%3A00.500Z&timeZone=Europe%2FParis'
+      )
+      .withInertia()
+      .loginAs(admin)
+    fractionalBoundary.assertStatus(200)
+    fractionalBoundary.assertInertiaPropsContains({ range: '7d', timeZone: 'Europe/Paris' })
+
+    const invalidRanges = [
+      { start: 'not-a-date+01:00', end: '2026-03-29T03:30+02:00' },
+      { start: '2026-03-29T03:30+02:00', end: '2026-03-29T01:30+01:00' },
+      { start: '2025-01-01T00:00Z', end: '2026-01-02T00:00Z' },
+      { start: '2026-03-29T00:30:00.0001Z', end: '2026-03-29T01:30Z' },
+    ]
+    for (const invalidRange of invalidRanges) {
+      const invalidPage = await client
+        .get(
+          `/analytics?range=custom&start=${encodeURIComponent(invalidRange.start)}&end=${encodeURIComponent(invalidRange.end)}&timeZone=Europe%2FParis`
+        )
+        .withInertia()
+        .loginAs(admin)
+      invalidPage.assertStatus(200)
+      invalidPage.assertInertiaPropsContains({ range: '7d', timeZone: 'Europe/Paris' })
+    }
+  })
 })

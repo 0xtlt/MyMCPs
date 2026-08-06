@@ -326,7 +326,7 @@ export default function LogsIndex({
         content={
           <LayoutContent padding={isMobile ? 0 : 6} label="MCP call logs">
             <Head title="MCP call logs" />
-            <VStack gap={isMobile ? 4 : 6} width="100%">
+            <VStack gap={isMobile ? 4 : 6} paddingBlock={isMobile ? 3 : 4} width="100%">
               <HStack gap={4} hAlign="between" vAlign="start" wrap="wrap">
                 <StackItem size="fill">
                   <VStack gap={2}>

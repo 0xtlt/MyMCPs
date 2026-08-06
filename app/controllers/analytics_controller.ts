@@ -4,7 +4,7 @@ import McpCallLog from '#models/mcp_call_log'
 import McpCallLogService from '#services/mcp_call_log_service'
 import { analyticsQueryValidator } from '#validators/mcp_call_log'
 
-type AnalyticsRange = '24h' | '7d' | '30d'
+type AnalyticsRange = '24h' | '7d' | '30d' | 'custom'
 type AggregateRow = {
   total: number | string
   errors: number | string
@@ -21,13 +21,55 @@ function resolveTimeZone(timeZone: string | undefined) {
   return timeZone && IANAZone.isValidZone(timeZone) ? timeZone : 'UTC'
 }
 
-function rangeConfig(range: AnalyticsRange, timeZone: string) {
+function presetRangeConfig(range: Exclude<AnalyticsRange, 'custom'>, timeZone: string) {
   const now = DateTime.now().setZone(timeZone)
   if (range === '24h') {
-    return { start: now.startOf('hour').minus({ hours: 23 }), unit: 'hour' as const, count: 24 }
+    const start = now.startOf('hour').minus({ hours: 23 })
+    return { range, start, end: start.plus({ hours: 24 }), unit: 'hour' as const, count: 24 }
   }
   const count = range === '7d' ? 7 : 30
-  return { start: now.startOf('day').minus({ days: count - 1 }), unit: 'day' as const, count }
+  const start = now.startOf('day').minus({ days: count - 1 })
+  return { range, start, end: start.plus({ days: count }), unit: 'day' as const, count }
+}
+
+function rangeConfig(
+  range: AnalyticsRange,
+  timeZone: string,
+  startInput?: string,
+  endInput?: string
+) {
+  if (range !== 'custom' || !startInput || !endInput) {
+    return presetRangeConfig(range === 'custom' ? '7d' : range, timeZone)
+  }
+
+  const hasExplicitOffset = (value: string) => /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+  const hasUnsupportedFraction = (value: string) => {
+    const fraction = value.match(/:\d{2}\.([0-9]+)(?:Z|[+-]\d{2}:\d{2})$/i)?.[1]
+    return fraction ? /[1-9]/.test(fraction) : false
+  }
+  const start = DateTime.fromISO(startInput, { setZone: true }).setZone(timeZone)
+  const end = DateTime.fromISO(endInput, { setZone: true }).setZone(timeZone)
+  if (
+    !hasExplicitOffset(startInput) ||
+    !hasExplicitOffset(endInput) ||
+    hasUnsupportedFraction(startInput) ||
+    hasUnsupportedFraction(endInput) ||
+    !start.isValid ||
+    !end.isValid ||
+    start.millisecond !== 0 ||
+    end.millisecond !== 0 ||
+    end.toMillis() <= start.toMillis() ||
+    end.toMillis() > start.plus({ days: 365 }).toMillis()
+  ) {
+    return presetRangeConfig('7d', timeZone)
+  }
+
+  const durationHours = end.diff(start, 'hours').hours
+  const unit = durationHours <= 48 ? ('hour' as const) : ('day' as const)
+  const duration = unit === 'hour' ? durationHours : end.diff(start, 'days').days
+  const count = Math.max(1, Math.ceil(duration))
+
+  return { range, start, end, unit, count }
 }
 
 function numeric(value: number | string | null | undefined) {
@@ -35,28 +77,30 @@ function numeric(value: number | string | null | undefined) {
 }
 
 function sqliteTimestamp(value: DateTime) {
-  return value.toUTC().toSQL({ includeOffset: false })!
+  return value.toUTC().toFormat('yyyy-LL-dd HH:mm:ss')
 }
 
 export default class AnalyticsController {
   async index({ request, inertia }: HttpContext) {
     await McpCallLogService.pruneExpired()
     const filters = await request.validateUsing(analyticsQueryValidator)
-    const range = filters.range ?? '7d'
+    const requestedRange = filters.range ?? '7d'
     const timeZone = resolveTimeZone(filters.timeZone)
-    const config = rangeConfig(range, timeZone)
+    const config = rangeConfig(requestedRange, timeZone, filters.start, filters.end)
     const buckets = Array.from({ length: config.count }, (_, index) => {
       const start = config.start.plus({ [config.unit === 'hour' ? 'hours' : 'days']: index })
+      const candidateEnd = start.plus({ [config.unit === 'hour' ? 'hours' : 'days']: 1 })
       return {
         key: `bucket-${index}`,
         start,
-        end: start.plus({ [config.unit === 'hour' ? 'hours' : 'days']: 1 }),
+        end: candidateEnd.toMillis() < config.end.toMillis() ? candidateEnd : config.end,
         label: config.unit === 'hour' ? start.toFormat('HH:mm') : start.toFormat('LLL d'),
       }
     })
     const periodQuery = () =>
       McpCallLog.query()
-        .withScopes((scopes) => scopes.inPeriod(config.start.toUTC()))
+        .where('created_at', '>=', sqliteTimestamp(config.start))
+        .where('created_at', '<', sqliteTimestamp(config.end))
         .pojo()
 
     const metricsQuery = periodQuery()
@@ -132,7 +176,9 @@ export default class AnalyticsController {
     const averageDurationMs = Math.round(numeric(metricsRow?.average_duration_ms))
 
     return inertia.render('analytics/index', {
-      range,
+      range: config.range,
+      start: config.start.toISO({ suppressSeconds: true, suppressMilliseconds: true })!,
+      end: config.end.toISO({ suppressSeconds: true, suppressMilliseconds: true })!,
       timeZone,
       loggingLevel: settings.mcpLogLevel,
       metrics: {
