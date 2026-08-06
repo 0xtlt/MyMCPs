@@ -339,5 +339,22 @@ test.group('MCP logs and analytics administration', (group) => {
       .loginAs(admin)
     fractionalBoundary.assertStatus(200)
     fractionalBoundary.assertInertiaPropsContains({ range: '7d', timeZone: 'Europe/Paris' })
+
+    const invalidRanges = [
+      { start: 'not-a-date+01:00', end: '2026-03-29T03:30+02:00' },
+      { start: '2026-03-29T03:30+02:00', end: '2026-03-29T01:30+01:00' },
+      { start: '2025-01-01T00:00Z', end: '2026-01-02T00:00Z' },
+      { start: '2026-03-29T00:30:00.0001Z', end: '2026-03-29T01:30Z' },
+    ]
+    for (const invalidRange of invalidRanges) {
+      const invalidPage = await client
+        .get(
+          `/analytics?range=custom&start=${encodeURIComponent(invalidRange.start)}&end=${encodeURIComponent(invalidRange.end)}&timeZone=Europe%2FParis`
+        )
+        .withInertia()
+        .loginAs(admin)
+      invalidPage.assertStatus(200)
+      invalidPage.assertInertiaPropsContains({ range: '7d', timeZone: 'Europe/Paris' })
+    }
   })
 })

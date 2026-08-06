@@ -43,11 +43,17 @@ function rangeConfig(
   }
 
   const hasExplicitOffset = (value: string) => /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+  const hasUnsupportedFraction = (value: string) => {
+    const fraction = value.match(/:\d{2}\.([0-9]+)(?:Z|[+-]\d{2}:\d{2})$/i)?.[1]
+    return fraction ? /[1-9]/.test(fraction) : false
+  }
   const start = DateTime.fromISO(startInput, { setZone: true }).setZone(timeZone)
   const end = DateTime.fromISO(endInput, { setZone: true }).setZone(timeZone)
   if (
     !hasExplicitOffset(startInput) ||
     !hasExplicitOffset(endInput) ||
+    hasUnsupportedFraction(startInput) ||
+    hasUnsupportedFraction(endInput) ||
     !start.isValid ||
     !end.isValid ||
     start.millisecond !== 0 ||

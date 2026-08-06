@@ -118,10 +118,13 @@ function selectedDateTime(
   value: string,
   sourceValue: string,
   timeZone: string,
-  boundary: 'start' | 'end'
+  boundary: 'start' | 'end',
+  preserveSource: boolean
 ) {
   const source = DateTime.fromISO(sourceValue, { setZone: true }).setZone(timeZone)
-  if (source.isValid && source.toFormat("yyyy-MM-dd'T'HH:mm") === value) return source
+  if (preserveSource && source.isValid && source.toFormat("yyyy-MM-dd'T'HH:mm") === value) {
+    return source
+  }
 
   const entered = DateTime.fromISO(value, { zone: timeZone })
   const possibleOffsets = entered.getPossibleOffsets()
@@ -170,6 +173,8 @@ export default function AnalyticsIndex({
     rangeTime(start)
   )
   const [customEndTime, setCustomEndTime] = useState<ISOTimeString | undefined>(rangeTime(end))
+  const [isCustomStartDirty, setIsCustomStartDirty] = useState(false)
+  const [isCustomEndDirty, setIsCustomEndDirty] = useState(false)
 
   const customStart =
     customDates && customStartTime ? `${customDates.start}T${customStartTime}` : undefined
@@ -179,6 +184,8 @@ export default function AnalyticsIndex({
     setCustomDates(rangeDates(start, end))
     setCustomStartTime(rangeTime(start))
     setCustomEndTime(rangeTime(end))
+    setIsCustomStartDirty(false)
+    setIsCustomEndDirty(false)
     setIsCustomRangeOpen(true)
   }
 
@@ -195,8 +202,14 @@ export default function AnalyticsIndex({
       return { error: 'Choose both a start and an end time.' }
     }
 
-    const customStartDate = selectedDateTime(customStart, start, timeZone, 'start')
-    const customEndDate = selectedDateTime(customEnd, end, timeZone, 'end')
+    const customStartDate = selectedDateTime(
+      customStart,
+      start,
+      timeZone,
+      'start',
+      !isCustomStartDirty
+    )
+    const customEndDate = selectedDateTime(customEnd, end, timeZone, 'end', !isCustomEndDirty)
     if (
       !customStartDate.isValid ||
       !customEndDate.isValid ||
@@ -212,7 +225,7 @@ export default function AnalyticsIndex({
       return { error: 'Custom ranges can span up to 365 days.' }
     }
     return { error: null, start: customStartDate, end: customEndDate }
-  }, [customEnd, customStart, end, start, timeZone])
+  }, [customEnd, customStart, end, isCustomEndDirty, isCustomStartDirty, start, timeZone])
 
   function applyCustomRange() {
     if (customRange.error || !customRange.start || !customRange.end) return
@@ -405,7 +418,11 @@ export default function AnalyticsIndex({
                 <DateRangeInput
                   label="Dates"
                   value={customDates}
-                  onChange={setCustomDates}
+                  onChange={(value) => {
+                    setCustomDates(value)
+                    setIsCustomStartDirty(true)
+                    setIsCustomEndDirty(true)
+                  }}
                   numberOfMonths={1}
                   width="100%"
                   isRequired
@@ -414,7 +431,10 @@ export default function AnalyticsIndex({
                   <TimeInput
                     label="Start time"
                     value={customStartTime}
-                    onChange={setCustomStartTime}
+                    onChange={(value) => {
+                      setCustomStartTime(value)
+                      setIsCustomStartDirty(true)
+                    }}
                     hourFormat="24h"
                     increment={5}
                     width={240}
@@ -423,7 +443,10 @@ export default function AnalyticsIndex({
                   <TimeInput
                     label="End time"
                     value={customEndTime}
-                    onChange={setCustomEndTime}
+                    onChange={(value) => {
+                      setCustomEndTime(value)
+                      setIsCustomEndDirty(true)
+                    }}
                     hourFormat="24h"
                     increment={5}
                     width={240}
