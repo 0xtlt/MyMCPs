@@ -386,11 +386,13 @@ export default class McpsController {
     if (oauthError) {
       const mcp = oauth ? await Mcp.find(oauth.mcpId) : null
       const message = `OAuth error: ${oauthError}`
+      const callbackCredentials = [code, state].filter((value): value is string => Boolean(value))
       session.flash(
         'error',
         mcp
-          ? (sanitizeMcpDiagnostic(message, mcp) ?? 'OAuth authorization failed')
-          : (sanitizeDiagnostic(message) ?? 'OAuth authorization failed')
+          ? (sanitizeMcpDiagnostic(message, mcp, 500, callbackCredentials) ??
+              'OAuth authorization failed')
+          : (sanitizeDiagnostic(message, 500, callbackCredentials) ?? 'OAuth authorization failed')
       )
       if (oauth) {
         session.flash('editingMcpId', oauth.mcpId)

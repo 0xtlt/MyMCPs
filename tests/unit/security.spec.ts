@@ -8,8 +8,6 @@ import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_re
 import { fetchWithoutRedirects } from '#services/upstream/safe_fetch'
 import { connectHttpUpstream } from '#services/upstream/http_client'
 import { createDenoStartupError } from '#services/upstream/deno_runner'
-import RateLimitMiddleware, { refundRateLimit } from '#middleware/rate_limit_middleware'
-import type { HttpContext } from '@adonisjs/core/http'
 import { resolveCorsOrigin } from '#config/cors'
 import { createMcpValidator } from '#validators/mcp'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
@@ -298,60 +296,6 @@ test.group('security boundaries', (group) => {
     assert.include(error.message, '[REDACTED]')
     assert.notInclude(error.message, secret)
     assert.notInclude(error.message, secret.slice(0, 300))
-  })
-
-  test('does not apply a stale login refund to a replacement rate-limit bucket', async ({
-    assert,
-  }) => {
-    const middleware = new RateLimitMiddleware()
-    const options = { name: 'stale-refund-test', limit: 1, windowMs: 100 }
-    const originalNow = Date.now
-    let now = 1_000
-    Date.now = () => now
-
-    function fakeContext() {
-      const response = {
-        header() {},
-        status() {
-          return response
-        },
-        json(body: unknown) {
-          return body
-        },
-      }
-      return {
-        request: { ip: () => '198.51.100.90' },
-        response,
-      } as unknown as HttpContext
-    }
-
-    let finishFirst!: () => void
-    try {
-      const first = fakeContext()
-      const pendingFirst = middleware.handle(
-        first,
-        () =>
-          new Promise<void>((resolve) => {
-            finishFirst = resolve
-          }),
-        options
-      )
-
-      now += options.windowMs
-      await middleware.handle(fakeContext(), async () => undefined, options)
-      refundRateLimit(first)
-      const blocked = await middleware.handle(fakeContext(), async () => 'allowed', options)
-
-      assert.deepEqual(blocked, {
-        error: 'too_many_requests',
-        message: 'Too many attempts. Wait before trying again.',
-      })
-      finishFirst()
-      await pendingFirst
-    } finally {
-      Date.now = originalNow
-      finishFirst?.()
-    }
   })
 
   test('redacts structured and header-shaped credentials from diagnostics', ({ assert }) => {

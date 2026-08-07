@@ -1,5 +1,5 @@
 import User from '#models/user'
-import { refundRateLimit } from '#middleware/rate_limit_middleware'
+import { loginRateLimiter } from '#start/limiter'
 import { loginValidator } from '#validators/user'
 import type { HttpContext } from '@adonisjs/core/http'
 
@@ -11,10 +11,15 @@ export default class SessionController {
   async store(ctx: HttpContext) {
     const { request, auth, response } = ctx
     const { email, password } = await request.validateUsing(loginValidator)
-    const user = await User.verifyCredentials(email, password)
+    const [rateLimitError, user] = await loginRateLimiter.penalize(`login:${request.ip()}`, () =>
+      User.verifyCredentials(email, password)
+    )
+
+    if (rateLimitError) {
+      throw rateLimitError
+    }
 
     await auth.use('web').login(user, true)
-    refundRateLimit(ctx)
     response.redirect().toRoute('home')
   }
 

@@ -9,6 +9,7 @@
 
 import { middleware } from '#start/kernel'
 import { controllers } from '#generated/controllers'
+import { inviteAcceptanceThrottle, onboardingThrottle } from '#start/limiter'
 import router from '@adonisjs/core/services/router'
 
 /**
@@ -25,7 +26,7 @@ router
     router.get('onboarding', [controllers.Onboarding, 'show']).as('onboarding.show')
     router
       .post('onboarding', [controllers.Onboarding, 'store'])
-      .use(middleware.rateLimit({ name: 'onboarding', limit: 5, windowMs: 15 * 60 * 1_000 }))
+      .use(onboardingThrottle)
       .as('onboarding.store')
   })
   .use(middleware.setupComplete())
@@ -49,10 +50,7 @@ router
     router
       .group(() => {
         router.get('login', [controllers.Session, 'create']).as('session.create')
-        router
-          .post('login', [controllers.Session, 'store'])
-          .use(middleware.rateLimit({ name: 'login', limit: 5, windowMs: 15 * 60 * 1_000 }))
-          .as('session.store')
+        router.post('login', [controllers.Session, 'store']).as('session.store')
       })
       .use(middleware.guest())
 
@@ -61,7 +59,7 @@ router
         router.get('invite/:token', [controllers.Invites, 'show']).as('invites.show')
         router
           .post('invite/:token', [controllers.Invites, 'accept'])
-          .use(middleware.rateLimit({ name: 'invite-accept', limit: 5, windowMs: 15 * 60 * 1_000 }))
+          .use(inviteAcceptanceThrottle)
           .as('invites.accept')
       })
       .use(middleware.guest())

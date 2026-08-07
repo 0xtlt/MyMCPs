@@ -52,11 +52,10 @@ export const http = defineConfig({
    */
   redirect: {
     /**
-     * When enabled, all redirects automatically carry over the current
-     * request's query string parameters to the redirect destination.
-     * Use withQs(false) to opt out for a specific redirect.
+     * Query strings may contain credentials or other untrusted data. Forward
+     * them only on the individual redirects that explicitly require it.
      */
-    forwardQueryString: true,
+    forwardQueryString: false,
   },
 
   /**

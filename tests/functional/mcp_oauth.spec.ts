@@ -353,8 +353,14 @@ test.group('MCP OAuth routes', (group) => {
         .redirects(0)
       const authorizationUrl = new URL(startResponse.header('location')!)
       const callbackUrl = new URL(authorizationUrl.searchParams.get('redirect_uri')!)
-      callbackUrl.searchParams.set('state', authorizationUrl.searchParams.get('state')!)
-      callbackUrl.searchParams.set('error', `provider echoed ${secret}`)
+      const callbackState = authorizationUrl.searchParams.get('state')!
+      const callbackCode = 'provider-error-code'
+      callbackUrl.searchParams.set('state', callbackState)
+      callbackUrl.searchParams.set('code', callbackCode)
+      callbackUrl.searchParams.set(
+        'error',
+        `provider echoed ${secret} ${callbackCode} ${callbackState}`
+      )
 
       const callbackResponse = await client
         .get(`${callbackUrl.pathname}${callbackUrl.search}`)
@@ -362,7 +368,10 @@ test.group('MCP OAuth routes', (group) => {
         .redirects(0)
 
       callbackResponse.assertStatus(302)
-      callbackResponse.assertFlashMessage('error', 'OAuth error: provider echoed [REDACTED]')
+      callbackResponse.assertFlashMessage(
+        'error',
+        'OAuth error: provider echoed [REDACTED] [REDACTED] [REDACTED]'
+      )
       const callbackRedirect = new URL(callbackResponse.header('location')!, 'http://localhost')
       assert.equal(callbackRedirect.pathname, '/mcps')
       assert.equal(callbackRedirect.search, '')

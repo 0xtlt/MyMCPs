@@ -1,9 +1,11 @@
 import { test } from '@japa/runner'
 import User from '#models/user'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
+import limiter from '@adonisjs/limiter/services/main'
 
 test.group('onboarding browser flow', (group) => {
   group.each.setup(beginTestTransaction)
+  group.each.setup(() => limiter.clear(['memory']))
   group.each.teardown(rollbackTestTransaction)
 
   test('creates an admin account and reaches the dashboard', async ({ visit }) => {
