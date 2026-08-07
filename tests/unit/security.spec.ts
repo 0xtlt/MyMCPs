@@ -41,16 +41,12 @@ test.group('security boundaries', (group) => {
   group.each.setup(beginTestTransaction)
   group.each.teardown(rollbackTestTransaction)
 
-  test('allows endpoint query configuration but rejects unsupported URL forms', async ({
+  test('allows endpoint query and URL credentials while requiring an HTTP URL', async ({
     assert,
   }) => {
     const admin = await createAdmin()
 
-    for (const httpUrl of [
-      'file:///tmp/socket',
-      'https://user:password@example.test/mcp',
-      'https://example.test/mcp#secret',
-    ]) {
+    for (const httpUrl of ['file:///tmp/socket', 'https://example.test/mcp#secret']) {
       const mcp = new Mcp()
       mcp.status = 'draft'
       mcp.createdBy = admin.id
@@ -63,7 +59,8 @@ test.group('security boundaries', (group) => {
     const mcp = new Mcp()
     mcp.status = 'draft'
     mcp.createdBy = admin.id
-    const httpUrl = 'https://example.test/mcp?api_key=provider-required&code=fr&key=primary'
+    const httpUrl =
+      'https://user:password@example.test/mcp?api_key=provider-required&code=fr&key=primary'
 
     await assignMcpFromPayload(mcp, await httpPayload({ httpUrl }))
 
@@ -86,7 +83,9 @@ test.group('security boundaries', (group) => {
     const calls: string[] = []
     globalThis.fetch = async (input, init) => {
       assert.equal(init?.redirect, 'manual')
-      calls.push(input instanceof Request ? input.url : String(input))
+      const request = new Request(input, init)
+      assert.equal(request.headers.get('Authorization'), 'Basic dXNlcjpwQHNz')
+      calls.push(request.url)
       if (calls.length === 1) {
         return new Response(null, {
           status: 307,
@@ -99,7 +98,7 @@ test.group('security boundaries', (group) => {
 
     try {
       const response = await fetchWithSameOriginRedirects(
-        'https://trusted.example/mcp',
+        'https://user:p%40ss@trusted.example/mcp',
         {},
         'MCP endpoint'
       )

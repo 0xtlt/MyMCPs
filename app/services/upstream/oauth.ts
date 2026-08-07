@@ -51,6 +51,15 @@ function oauthSessionKey(state: string) {
 
 function normalizedHttpUrl(value: string, label: string) {
   const url = parseHttpUrl(value, label)
+  return url.pathname === '/' && !url.search && !url.username && !url.password
+    ? url.origin
+    : url.toString()
+}
+
+function comparableOAuthIssuer(value: string, label: string) {
+  const url = parseHttpUrl(value, label)
+  url.username = ''
+  url.password = ''
   return url.pathname === '/' && !url.search ? url.origin : url.toString()
 }
 
@@ -67,8 +76,8 @@ function validateOAuthMetadata(metadata: AuthorizationServerMetadata, expectedIs
     parseHttpUrl(metadata.issuer, 'OAuth issuer')
     if (
       expectedIssuer &&
-      normalizedHttpUrl(metadata.issuer, 'OAuth issuer') !==
-        normalizedHttpUrl(expectedIssuer, 'OAuth authorization server')
+      comparableOAuthIssuer(metadata.issuer, 'OAuth issuer') !==
+        comparableOAuthIssuer(expectedIssuer, 'OAuth authorization server')
     ) {
       throw new Error('OAuth issuer metadata does not match the authorization server')
     }
@@ -85,7 +94,10 @@ function inferIssuer(mcp: Mcp) {
   if (!endpoint) {
     return null
   }
-  return new URL(endpoint).origin
+  const url = parseHttpUrl(endpoint, 'OAuth endpoint')
+  url.pathname = '/'
+  url.search = ''
+  return url.username || url.password ? url.toString() : url.origin
 }
 
 function fallbackMetadata(mcp: Mcp, issuer: string): AuthorizationServerMetadata | undefined {

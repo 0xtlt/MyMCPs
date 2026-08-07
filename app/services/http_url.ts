@@ -1,7 +1,6 @@
 /**
- * Parse an MCP or OAuth endpoint and reject URL forms unsupported by Fetch.
- * Query parameters are intentionally preserved because some providers require
- * them as part of the endpoint configuration.
+ * Parse an MCP or OAuth endpoint. Query parameters and URL credentials are
+ * intentionally preserved because some providers require them.
  */
 export function parseHttpUrl(value: string, label: string) {
   let url: URL
@@ -12,9 +11,6 @@ export function parseHttpUrl(value: string, label: string) {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error(`${label} must use HTTP or HTTPS`)
-  }
-  if (url.username || url.password) {
-    throw new Error(`${label} must not include URL credentials`)
   }
   if (url.hash) {
     throw new Error(`${label} must not include a fragment`)

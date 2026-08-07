@@ -1,6 +1,40 @@
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
 const MAX_REDIRECTS = 5
 
+function decodedUrlCredential(value: string) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function requestWithUrlCredentials(url: URL, init?: RequestInit) {
+  const requestUrl = new URL(url)
+  const headers = new Headers(init?.headers)
+
+  if (requestUrl.username || requestUrl.password) {
+    if (!headers.has('Authorization')) {
+      const username = decodedUrlCredential(requestUrl.username)
+      const password = decodedUrlCredential(requestUrl.password)
+      headers.set(
+        'Authorization',
+        `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+      )
+    }
+    requestUrl.username = ''
+    requestUrl.password = ''
+  }
+
+  return new Request(requestUrl, { ...init, headers })
+}
+
+function initialRequest(input: Parameters<typeof fetch>[0], init?: RequestInit) {
+  return input instanceof Request
+    ? new Request(input, init)
+    : requestWithUrlCredentials(new URL(input.toString()), init)
+}
+
 function switchesToGet(status: number, method: string) {
   return (
     (status === 303 && method !== 'GET' && method !== 'HEAD') ||
@@ -17,7 +51,7 @@ export async function fetchWithSameOriginRedirects(
   init: Parameters<typeof fetch>[1],
   endpointLabel: string
 ) {
-  let request = new Request(input, init)
+  let request = initialRequest(input, init)
 
   for (let redirects = 0; ; redirects++) {
     const replay = request.clone()
@@ -61,6 +95,6 @@ export async function fetchWithSameOriginRedirects(
       body = await replay.arrayBuffer()
     }
 
-    request = new Request(nextUrl, { method, headers, body })
+    request = requestWithUrlCredentials(nextUrl, { method, headers, body })
   }
 }

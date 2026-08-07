@@ -40,8 +40,9 @@ permissions.
 - Repeated failed logins are rate-limited per resolved client IP.
 - Authenticated upstream requests and OAuth token requests follow redirects only
   within the same origin.
-- MCP and OAuth endpoints must use HTTP(S) and cannot embed username/password
-  credentials. Prefer the encrypted authentication fields for secrets.
+- MCP and OAuth endpoints must use HTTP(S). Query parameters and embedded URL
+  credentials are supported; prefer the encrypted authentication fields when
+  the provider allows them.
 - Upstream error details are redacted before logging or display, and optional MCP
   argument/response captures are capped at 64 KiB per field.
 - The browser UI sends a restrictive Content Security Policy with per-response
