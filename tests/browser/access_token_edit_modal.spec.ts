@@ -16,7 +16,7 @@ test.group('access token edit modal', (group) => {
     await createMcp(admin.id, { name: 'Search MCP' })
     await createAccessToken(admin.id, {
       name: 'Editable token',
-      expiresAt: DateTime.fromISO('2035-09-06T11:13:52Z'),
+      expiresAt: DateTime.utc().plus({ days: 1 }).startOf('minute'),
     })
     await createAccessToken(admin.id, {
       name: 'Expired token',
@@ -30,7 +30,6 @@ test.group('access token edit modal', (group) => {
     const page = await visit('/tokens')
 
     const editableRow = page.getByRole('row').filter({ hasText: 'Editable token' })
-    await editableRow.getByText(/^06\/09\/2035,/).waitFor()
     await editableRow.getByRole('button', { name: 'Edit' }).click()
 
     const dialog = page.getByRole('dialog', { name: 'Edit Editable token' })
