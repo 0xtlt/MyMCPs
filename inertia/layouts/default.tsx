@@ -111,7 +111,7 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
             heading={
               <TopNavHeading
                 heading="MyMCPs"
-                href={user ? '/' : undefined}
+                headingHref={user ? '/' : undefined}
                 logo={<img src={logoUrl} alt="" className="app-logo" />}
               />
             }
