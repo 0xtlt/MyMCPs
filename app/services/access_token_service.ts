@@ -3,11 +3,19 @@ import { DateTime } from 'luxon'
 import AccessToken from '#models/access_token'
 import Mcp from '#models/mcp'
 import db from '@adonisjs/lucid/services/db'
+import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 export type CreatedAccessToken = {
   token: AccessToken
   plaintext: string
 }
+
+export type CreatedOauthTokens = CreatedAccessToken & {
+  refreshToken: string | null
+}
+
+export type OauthGrantRotation =
+  { status: 'rotated'; tokens: CreatedOauthTokens } | { status: 'invalid' | 'reused' }
 
 export default class AccessTokenService {
   static generatePlaintext() {
@@ -20,6 +28,10 @@ export default class AccessTokenService {
 
   static prefix(plaintext: string) {
     return plaintext.slice(0, 12)
+  }
+
+  static generateRefreshToken() {
+    return `mcp_refresh_${randomBytes(32).toString('base64url')}`
   }
 
   static async create(params: {
@@ -37,6 +49,7 @@ export default class AccessTokenService {
       scopeMode: params.scopeMode,
       expiresAt: params.expiresAt,
       createdBy: params.createdBy,
+      source: 'manual',
     })
 
     if (params.scopeMode === 'selected' && params.mcpIds.length > 0) {
@@ -44,6 +57,157 @@ export default class AccessTokenService {
     }
 
     return { token, plaintext }
+  }
+
+  static async createOauthGrant(params: {
+    name: string
+    clientId: number
+    clientSupportsRefresh: boolean
+    scopes: string
+    resource: string
+    createdBy: number
+    trx?: TransactionClientContract
+  }): Promise<CreatedOauthTokens> {
+    const plaintext = this.generatePlaintext()
+    const refreshToken = params.clientSupportsRefresh ? this.generateRefreshToken() : null
+    const token = await AccessToken.create(
+      {
+        name: params.name,
+        tokenPrefix: this.prefix(plaintext),
+        tokenHash: this.hash(plaintext),
+        scopeMode: 'all',
+        source: 'oauth',
+        expiresAt: DateTime.utc().plus({ hours: 1 }),
+        createdBy: params.createdBy,
+        oauthClientId: params.clientId,
+        oauthScopes: params.scopes,
+        oauthResource: params.resource,
+        oauthRefreshTokenHash: refreshToken ? this.hash(refreshToken) : null,
+        oauthRefreshTokenPrefix: refreshToken ? this.prefix(refreshToken) : null,
+        oauthRefreshExpiresAt: refreshToken ? DateTime.utc().plus({ days: 30 }) : null,
+      },
+      params.trx ? { client: params.trx } : undefined
+    )
+
+    return { token, plaintext, refreshToken }
+  }
+
+  static async rotateOauthGrant(params: {
+    refreshToken: string
+    clientId: number
+    resource: string
+  }): Promise<OauthGrantRotation> {
+    const refreshHash = this.hash(params.refreshToken)
+    if (await this.revokeOauthGrantForRefreshReuse(refreshHash, params.clientId, params.resource)) {
+      return { status: 'reused' }
+    }
+
+    const current = await AccessToken.query()
+      .where('oauth_refresh_token_hash', refreshHash)
+      .where('oauth_client_id', params.clientId)
+      .where('oauth_resource', params.resource)
+      .where('source', 'oauth')
+      .whereNull('revoked_at')
+      .first()
+
+    if (
+      !current ||
+      !current.oauthRefreshExpiresAt ||
+      current.oauthRefreshExpiresAt <= DateTime.utc()
+    ) {
+      return { status: 'invalid' }
+    }
+
+    const plaintext = this.generatePlaintext()
+    const nextRefreshToken = this.generateRefreshToken()
+    const nextExpiresAt = DateTime.utc().plus({ hours: 1 }).toSQL({ includeOffset: false })
+
+    const rotated = await db.transaction(async (trx) => {
+      const updated = await AccessToken.query({ client: trx })
+        .where('id', current.id)
+        .where('oauth_refresh_token_hash', refreshHash)
+        .whereNull('revoked_at')
+        .update({
+          tokenHash: this.hash(plaintext),
+          tokenPrefix: this.prefix(plaintext),
+          expiresAt: nextExpiresAt,
+          oauthRefreshTokenHash: this.hash(nextRefreshToken),
+          oauthRefreshTokenPrefix: this.prefix(nextRefreshToken),
+          lastUsedAt: null,
+        })
+        .returning('id')
+
+      if (updated.length !== 1) {
+        return null
+      }
+
+      await trx
+        .insertQuery()
+        .table('oauth_refresh_token_history')
+        .insert({
+          access_token_id: current.id,
+          token_hash: refreshHash,
+          invalidated_at: DateTime.utc().toSQL({ includeOffset: false }),
+        })
+
+      const token = await AccessToken.query({ client: trx }).where('id', current.id).firstOrFail()
+      return { token, plaintext, refreshToken: nextRefreshToken }
+    })
+
+    if (rotated) return { status: 'rotated', tokens: rotated }
+    if (await this.revokeOauthGrantForRefreshReuse(refreshHash, params.clientId, params.resource)) {
+      return { status: 'reused' }
+    }
+    return { status: 'invalid' }
+  }
+
+  private static async findOauthGrantByRefreshHistory(
+    refreshHash: string,
+    clientId: number,
+    resource?: string
+  ) {
+    const history = await db
+      .from('oauth_refresh_token_history')
+      .where('token_hash', refreshHash)
+      .first()
+    if (!history) return null
+
+    const query = AccessToken.query()
+      .where('id', history.access_token_id)
+      .where('oauth_client_id', clientId)
+      .where('source', 'oauth')
+    if (resource !== undefined) query.where('oauth_resource', resource)
+    return query.first()
+  }
+
+  private static async revokeOauthGrantForRefreshReuse(
+    refreshHash: string,
+    clientId: number,
+    resource: string
+  ) {
+    const token = await this.findOauthGrantByRefreshHistory(refreshHash, clientId, resource)
+    if (!token) return false
+    if (!token.isRevoked) await this.revoke(token)
+    return true
+  }
+
+  static async revokeOauthToken(clientId: number, plaintext: string) {
+    const hash = this.hash(plaintext)
+    let token = await AccessToken.query()
+      .where('oauth_client_id', clientId)
+      .where('source', 'oauth')
+      .where((query) => {
+        query.where('token_hash', hash).orWhere('oauth_refresh_token_hash', hash)
+      })
+      .first()
+
+    if (!token) {
+      token = await this.findOauthGrantByRefreshHistory(hash, clientId)
+    }
+
+    if (token && !token.isRevoked) {
+      await this.revoke(token)
+    }
   }
 
   static async findUsableByPlaintext(plaintext: string) {

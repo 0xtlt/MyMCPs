@@ -12,6 +12,54 @@ const routes = {
     tokens: [{"old":"/health","type":0,"val":"health","end":""}],
     types: placeholder as Registry['health']['types'],
   },
+  'oauth.metadata': {
+    methods: ["GET","HEAD"],
+    pattern: '/.well-known/oauth-authorization-server',
+    tokens: [{"old":"/.well-known/oauth-authorization-server","type":0,"val":".well-known","end":""},{"old":"/.well-known/oauth-authorization-server","type":0,"val":"oauth-authorization-server","end":""}],
+    types: placeholder as Registry['oauth.metadata']['types'],
+  },
+  'oauth.resourceMetadata': {
+    methods: ["GET","HEAD"],
+    pattern: '/.well-known/oauth-protected-resource',
+    tokens: [{"old":"/.well-known/oauth-protected-resource","type":0,"val":".well-known","end":""},{"old":"/.well-known/oauth-protected-resource","type":0,"val":"oauth-protected-resource","end":""}],
+    types: placeholder as Registry['oauth.resourceMetadata']['types'],
+  },
+  'oauth_server.protected_resource_metadata': {
+    methods: ["GET","HEAD"],
+    pattern: '/.well-known/oauth-protected-resource/mcp',
+    tokens: [{"old":"/.well-known/oauth-protected-resource/mcp","type":0,"val":".well-known","end":""},{"old":"/.well-known/oauth-protected-resource/mcp","type":0,"val":"oauth-protected-resource","end":""},{"old":"/.well-known/oauth-protected-resource/mcp","type":0,"val":"mcp","end":""}],
+    types: placeholder as Registry['oauth_server.protected_resource_metadata']['types'],
+  },
+  'oauth.register': {
+    methods: ["POST"],
+    pattern: '/register',
+    tokens: [{"old":"/register","type":0,"val":"register","end":""}],
+    types: placeholder as Registry['oauth.register']['types'],
+  },
+  'oauth.authorize': {
+    methods: ["GET","HEAD"],
+    pattern: '/authorize',
+    tokens: [{"old":"/authorize","type":0,"val":"authorize","end":""}],
+    types: placeholder as Registry['oauth.authorize']['types'],
+  },
+  'oauth_server.authorize': {
+    methods: ["POST"],
+    pattern: '/authorize',
+    tokens: [{"old":"/authorize","type":0,"val":"authorize","end":""}],
+    types: placeholder as Registry['oauth_server.authorize']['types'],
+  },
+  'oauth.token': {
+    methods: ["POST"],
+    pattern: '/token',
+    tokens: [{"old":"/token","type":0,"val":"token","end":""}],
+    types: placeholder as Registry['oauth.token']['types'],
+  },
+  'oauth.revoke': {
+    methods: ["POST"],
+    pattern: '/revoke',
+    tokens: [{"old":"/revoke","type":0,"val":"revoke","end":""}],
+    types: placeholder as Registry['oauth.revoke']['types'],
+  },
   'onboarding.show': {
     methods: ["GET","HEAD"],
     pattern: '/onboarding',
@@ -191,6 +239,12 @@ const routes = {
     pattern: '/tokens',
     tokens: [{"old":"/tokens","type":0,"val":"tokens","end":""}],
     types: placeholder as Registry['tokens.store']['types'],
+  },
+  'tokens.update': {
+    methods: ["PUT"],
+    pattern: '/tokens/:id',
+    tokens: [{"old":"/tokens/:id","type":0,"val":"tokens","end":""},{"old":"/tokens/:id","type":1,"val":"id","end":""}],
+    types: placeholder as Registry['tokens.update']['types'],
   },
   'tokens.revoke': {
     methods: ["POST"],

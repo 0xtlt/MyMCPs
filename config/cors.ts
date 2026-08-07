@@ -7,7 +7,17 @@ export function resolveCorsOrigin(
   isDevelopment: boolean
 ) {
   const pathname = requestUrl.split('?', 1)[0]
-  if (pathname === '/mcp') {
+  if (
+    [
+      '/mcp',
+      '/register',
+      '/token',
+      '/revoke',
+      '/.well-known/oauth-authorization-server',
+      '/.well-known/oauth-protected-resource',
+      '/.well-known/oauth-protected-resource/mcp',
+    ].includes(pathname)
+  ) {
     return requestOrigin || true
   }
   return isDevelopment ? true : []
@@ -26,8 +36,8 @@ const corsConfig = defineConfig({
   enabled: true,
 
   /**
-   * Session UI stays locked down in production.
-   * Only the bearer `/mcp` gateway reflects arbitrary origins (agents, no cookies).
+   * Session UI stays locked down in production. The MCP and OAuth protocol endpoints may be
+   * called by installed clients, so those routes reflect the caller's origin.
    */
   origin: (requestOrigin, ctx) => {
     return resolveCorsOrigin(requestOrigin, ctx.request.url(), app.inDev)
@@ -47,7 +57,7 @@ const corsConfig = defineConfig({
   /**
    * Response headers exposed to the browser.
    */
-  exposeHeaders: [],
+  exposeHeaders: ['WWW-Authenticate'],
 
   /**
    * Allow cookies/authorization headers on cross-origin requests.

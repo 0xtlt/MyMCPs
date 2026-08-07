@@ -7,18 +7,21 @@ import {
   createAccessTokenValidator,
   updateAccessTokenValidator,
 } from '#validators/mcp'
-import { publicAppUrl } from '#services/public_url'
+import { publicOauthAppUrl } from '#services/public_url'
 import AccessTokenTransformer from '#transformers/access_token_transformer'
 import McpTransformer from '#transformers/mcp_transformer'
 
 export default class AccessTokensController {
   async index({ inertia, session }: HttpContext) {
-    const tokens = await AccessToken.query().preload('mcps').orderBy('created_at', 'desc')
+    const tokens = await AccessToken.query()
+      .preload('mcps')
+      .preload('oauthClient')
+      .orderBy('created_at', 'desc')
     const mcps = await Mcp.query().orderBy('name', 'asc')
 
     const createdPlaintextRaw = session.flashMessages.get('createdPlaintext')
     const createdPlaintext = typeof createdPlaintextRaw === 'string' ? createdPlaintextRaw : null
-    const appUrl = publicAppUrl()
+    const appUrl = publicOauthAppUrl()
 
     return inertia.render('tokens/index', {
       tokens: AccessTokenTransformer.transform(tokens),
@@ -62,6 +65,10 @@ export default class AccessTokensController {
     }
     if (token.isRevoked) {
       session.flash('error', 'Revoked tokens cannot be edited')
+      return response.redirect().toRoute('tokens.index')
+    }
+    if (token.source === 'oauth') {
+      session.flash('error', 'OAuth connections cannot be edited — revoke the connection instead')
       return response.redirect().toRoute('tokens.index')
     }
 

@@ -10,6 +10,7 @@ export default class AccessTokenTransformer extends BaseTransformer<AccessToken>
         'id',
         'name',
         'tokenPrefix',
+        'source',
         'scopeMode',
         'expiresAt',
         'revokedAt',
@@ -18,6 +19,14 @@ export default class AccessTokenTransformer extends BaseTransformer<AccessToken>
       ]),
       mcpIds,
       isUsable: this.resource.isUsable,
+      isActive: this.resource.isActive,
+      canRevoke:
+        this.resource.source === 'oauth' ? !this.resource.isRevoked : this.resource.isUsable,
+      displayExpiresAt:
+        this.resource.source === 'oauth'
+          ? this.resource.oauthRefreshExpiresAt
+          : this.resource.expiresAt,
+      oauthClientName: this.resource.oauthClient?.clientName ?? null,
     }
   }
 }

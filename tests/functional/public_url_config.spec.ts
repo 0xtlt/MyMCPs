@@ -62,4 +62,45 @@ test.group('missing public app URL', (group) => {
       globalThis.fetch = originalFetch
     }
   })
+
+  test('refuses gateway OAuth endpoints with an insecure public origin', async ({
+    client,
+    assert,
+  }) => {
+    env.set('APP_URL', 'http://mcp.example.com')
+    const admin = await createAdmin()
+
+    const tokens = await client.get('/tokens').withInertia().loginAs(admin)
+    tokens.assertStatus(200)
+    tokens.assertInertiaPropsContains({
+      appUrlConfigured: false,
+      gatewayUrl: null,
+    })
+
+    const responses = [
+      {
+        label: 'authorization metadata',
+        response: await client.get('/.well-known/oauth-authorization-server'),
+      },
+      {
+        label: 'resource metadata',
+        response: await client.get('/.well-known/oauth-protected-resource/mcp'),
+      },
+      { label: 'registration', response: await client.post('/register').json({}) },
+      { label: 'authorization', response: await client.get('/authorize') },
+      { label: 'token exchange', response: await client.post('/token').form({}) },
+      { label: 'revocation', response: await client.post('/revoke').form({}) },
+    ]
+    for (const { label, response } of responses) {
+      assert.equal(response.status(), 503, label)
+      assert.equal(
+        response.body().error_description,
+        'OAuth requires APP_URL to be a public HTTPS origin'
+      )
+    }
+
+    const challenge = await client.get('/mcp')
+    challenge.assertStatus(401)
+    assert.notInclude(challenge.header('www-authenticate'), 'resource_metadata=')
+  })
 })

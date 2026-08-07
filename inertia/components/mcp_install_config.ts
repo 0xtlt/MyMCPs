@@ -1,4 +1,5 @@
 export type McpClient = 'codex' | 'claude' | 'cursor'
+export type McpInstallAuthMode = 'oauth' | 'token'
 
 export type McpInstallConfig = {
   code: string
@@ -24,9 +25,10 @@ export function createMcpInstallConfig(
   client: McpClient,
   gatewayUrl: string,
   token: string,
-  enableLazyToolMode = false
+  enableLazyToolMode = false,
+  authMode: McpInstallAuthMode = 'token'
 ): McpInstallConfig {
-  const authorization = authorizationHeader(token)
+  const authorization = authMode === 'token' ? authorizationHeader(token) : null
 
   if (client === 'codex') {
     return {
@@ -35,7 +37,11 @@ export function createMcpInstallConfig(
       code: [
         '[mcp_servers.mymcps]',
         `url = ${tomlString(gatewayUrl)}`,
-        `http_headers = { Authorization = ${tomlString(authorization)}${enableLazyToolMode ? ', "X-MyMCPs-Tool-Mode" = "lazy"' : ''} }`,
+        ...(authorization || enableLazyToolMode
+          ? [
+              `http_headers = { ${authorization ? `Authorization = ${tomlString(authorization)}` : ''}${authorization && enableLazyToolMode ? ', ' : ''}${enableLazyToolMode ? '"X-MyMCPs-Tool-Mode" = "lazy"' : ''} }`,
+            ]
+          : []),
       ].join('\n'),
       restartInstruction: 'Save the file, then restart Codex or restart the IDE extension.',
       verifyInstruction: 'Open /mcp in Codex and confirm that mymcps is connected.',
@@ -44,15 +50,16 @@ export function createMcpInstallConfig(
 
   if (client === 'claude') {
     const headers = [
-      `Authorization: ${authorization}`,
+      ...(authorization ? [`Authorization: ${authorization}`] : []),
       ...(enableLazyToolMode ? ['X-MyMCPs-Tool-Mode: lazy'] : []),
     ]
+    const addCommand = `claude mcp add --transport http --scope user mymcps ${shellArgument(gatewayUrl)}`
 
     return {
       language: 'bash',
       title: 'Terminal',
       code: [
-        `claude mcp add --transport http --scope user mymcps ${shellArgument(gatewayUrl)} \\`,
+        headers.length > 0 ? `${addCommand} \\` : addCommand,
         ...headers.map(
           (header, index) =>
             `  --header ${shellArgument(header)}${index < headers.length - 1 ? ' \\' : ''}`
@@ -73,10 +80,14 @@ export function createMcpInstallConfig(
           mymcps: {
             type: 'http',
             url: gatewayUrl,
-            headers: {
-              Authorization: authorization,
-              ...(enableLazyToolMode ? { 'X-MyMCPs-Tool-Mode': 'lazy' } : {}),
-            },
+            ...(authorization || enableLazyToolMode
+              ? {
+                  headers: {
+                    ...(authorization ? { Authorization: authorization } : {}),
+                    ...(enableLazyToolMode ? { 'X-MyMCPs-Tool-Mode': 'lazy' } : {}),
+                  },
+                }
+              : {}),
           },
         },
       },

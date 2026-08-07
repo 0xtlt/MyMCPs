@@ -3,6 +3,18 @@ import type { routes } from './index.ts'
 
 export interface ApiDefinition {
   health: typeof routes['health']
+  oauth: {
+    metadata: typeof routes['oauth.metadata']
+    resourceMetadata: typeof routes['oauth.resourceMetadata']
+    register: typeof routes['oauth.register']
+    authorize: typeof routes['oauth.authorize']
+    token: typeof routes['oauth.token']
+    revoke: typeof routes['oauth.revoke']
+  }
+  oauthServer: {
+    protectedResourceMetadata: typeof routes['oauth_server.protected_resource_metadata']
+    authorize: typeof routes['oauth_server.authorize']
+  }
   onboarding: {
     show: typeof routes['onboarding.show']
     store: typeof routes['onboarding.store']
@@ -52,6 +64,7 @@ export interface ApiDefinition {
   tokens: {
     index: typeof routes['tokens.index']
     store: typeof routes['tokens.store']
+    update: typeof routes['tokens.update']
     revoke: typeof routes['tokens.revoke']
   }
 }

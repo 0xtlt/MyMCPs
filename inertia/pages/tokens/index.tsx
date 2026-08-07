@@ -3,7 +3,6 @@ import { Head, router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
 import { Banner } from '@astryxdesign/core/Banner'
 import { useAppShellMobile } from '@astryxdesign/core/AppShell'
-import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
 import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
@@ -30,12 +29,17 @@ import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
-import { createMcpInstallConfig, type McpClient } from '~/components/mcp_install_config'
+import {
+  createMcpInstallConfig,
+  type McpClient,
+  type McpInstallAuthMode,
+} from '~/components/mcp_install_config'
 
 type TokenRow = {
   id: number
   name: string
   tokenPrefix: string
+  source: 'manual' | 'oauth'
   scopeMode: 'all' | 'selected'
   mcpIds: number[]
   expiresAt: string | null
@@ -43,6 +47,10 @@ type TokenRow = {
   lastUsedAt: string | null
   createdAt: string | null
   isUsable: boolean
+  isActive: boolean
+  canRevoke: boolean
+  displayExpiresAt: string | null
+  oauthClientName: string | null
 }
 
 type McpOption = {
@@ -83,11 +91,11 @@ function EyeIcon(props: SVGProps<SVGSVGElement>) {
 
 function tokenStatus(token: TokenRow): {
   label: string
-  variant: 'success' | 'warning' | 'neutral'
+  color: 'green' | 'orange' | 'gray'
 } {
-  if (token.revokedAt) return { label: 'Revoked', variant: 'neutral' }
-  if (token.isUsable) return { label: 'Active', variant: 'success' }
-  return { label: 'Expired', variant: 'warning' }
+  if (token.revokedAt) return { label: 'Revoked', color: 'gray' }
+  if (token.isActive) return { label: 'Active', color: 'green' }
+  return { label: 'Expired', color: 'orange' }
 }
 
 function scopeLabel(token: TokenRow) {
@@ -217,6 +225,9 @@ export default function TokensIndex({
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isInstallOpen, setIsInstallOpen] = useState(Boolean(createdPlaintext))
   const [installClient, setInstallClient] = useState<McpClient>('codex')
+  const [installAuthMode, setInstallAuthMode] = useState<McpInstallAuthMode>(
+    createdPlaintext || !gatewayUrl ? 'token' : 'oauth'
+  )
   const [installToken, setInstallToken] = useState(createdPlaintext ?? '')
   const [isInstallTokenVisible, setIsInstallTokenVisible] = useState(Boolean(createdPlaintext))
   const [isLazyToolModeEnabled, setIsLazyToolModeEnabled] = useState(false)
@@ -265,6 +276,7 @@ export default function TokensIndex({
 
   function openInstall() {
     setInstallClient('codex')
+    setInstallAuthMode(gatewayUrl ? 'oauth' : 'token')
     setInstallToken('')
     setIsInstallTokenVisible(false)
     setIsLazyToolModeEnabled(false)
@@ -275,6 +287,7 @@ export default function TokensIndex({
     setIsInstallOpen(isOpen)
     if (!isOpen) {
       setInstallToken('')
+      setInstallAuthMode(gatewayUrl ? 'oauth' : 'token')
       setIsInstallTokenVisible(false)
       setIsLazyToolModeEnabled(false)
     }
@@ -284,12 +297,13 @@ export default function TokensIndex({
     installClient,
     gatewayUrl ?? '<YOUR_GATEWAY_URL>',
     installToken || '<YOUR_ACCESS_TOKEN>',
-    isLazyToolModeEnabled
+    isLazyToolModeEnabled,
+    installAuthMode
   )
-  const canCopyInstallConfig = Boolean(gatewayUrl && installToken)
+  const canCopyInstallConfig = Boolean(gatewayUrl && (installAuthMode === 'oauth' || installToken))
   const installStatus = !gatewayUrl
     ? 'Configure APP_URL before copying this configuration.'
-    : !installToken
+    : installAuthMode === 'token' && !installToken
       ? 'Paste an access token to enable copying.'
       : null
 
@@ -302,6 +316,18 @@ export default function TokensIndex({
         <Text type="body" weight="bold">
           {token.name}
         </Text>
+      ),
+    },
+    {
+      key: 'source',
+      header: 'Type',
+      width: pixel(100),
+      renderCell: (token) => (
+        <Token
+          label={token.source === 'oauth' ? 'OAuth' : 'Manual'}
+          color={token.source === 'oauth' ? 'blue' : 'gray'}
+          size="sm"
+        />
       ),
     },
     {
@@ -330,7 +356,7 @@ export default function TokensIndex({
       width: proportional(2),
       renderCell: (token) => (
         <Text type="supporting" color="secondary">
-          {token.expiresAt ? new Date(token.expiresAt).toLocaleString() : 'No expiry'}
+          {token.displayExpiresAt ? new Date(token.displayExpiresAt).toLocaleString() : 'No expiry'}
         </Text>
       ),
     },
@@ -340,7 +366,7 @@ export default function TokensIndex({
       width: pixel(110),
       renderCell: (token) => {
         const status = tokenStatus(token)
-        return <Badge label={status.label} variant={status.variant} />
+        return <Token label={status.label} color={status.color} size="sm" />
       },
     },
     {
@@ -359,8 +385,10 @@ export default function TokensIndex({
 
         return (
           <HStack gap={2} hAlign="end">
-            <Button label="Edit" variant="secondary" size="sm" onClick={() => openEdit(token)} />
-            {token.isUsable ? (
+            {token.source === 'manual' ? (
+              <Button label="Edit" variant="secondary" size="sm" onClick={() => openEdit(token)} />
+            ) : null}
+            {token.canRevoke ? (
               <Form route="tokens.revoke" routeParams={{ id: token.id }}>
                 {({ processing }) => (
                   <Button
@@ -387,8 +415,8 @@ export default function TokensIndex({
           <VStack gap={2}>
             <Heading level={1}>Access tokens</Heading>
             <Text type="body" color="secondary">
-              Identifiers agents use to call the MyMCPs gateway. Scope a token to all MCPs (new ones
-              included automatically) or to a selected list.
+              Manage manual access tokens and OAuth connections used by MCP clients. Revoking an
+              OAuth connection stops both its access and refresh tokens.
             </Text>
           </VStack>
         </StackItem>
@@ -419,7 +447,8 @@ export default function TokensIndex({
             <Button label="Install MCP" variant="primary" size="sm" onClick={openInstall} />
           </HStack>
           <Text type="supporting" color="secondary">
-            Send Authorization: Bearer &lt;token&gt; on every request.
+            MCP clients can sign in with OAuth. Manual integrations can still send Authorization:
+            Bearer &lt;token&gt; on every request.
           </Text>
           <Banner
             status="info"
@@ -466,8 +495,10 @@ export default function TokensIndex({
           {tokens.map((token) => {
             const status = tokenStatus(token)
             const actions = [
-              { label: 'Edit', onClick: () => openEdit(token) },
-              ...(token.isUsable
+              ...(token.source === 'manual'
+                ? [{ label: 'Edit', onClick: () => openEdit(token) }]
+                : []),
+              ...(token.canRevoke
                 ? [
                     {
                       label: 'Revoke',
@@ -487,18 +518,19 @@ export default function TokensIndex({
                 description={
                   <VStack gap={0}>
                     <Text type="supporting" color="secondary">
-                      {token.tokenPrefix}… · {scopeLabel(token)}
+                      {token.source === 'oauth' ? 'OAuth' : 'Manual'} · {token.tokenPrefix}… ·{' '}
+                      {scopeLabel(token)}
                     </Text>
                     <Text type="supporting" color="secondary">
-                      {token.expiresAt
-                        ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
+                      {token.displayExpiresAt
+                        ? `Expires ${new Date(token.displayExpiresAt).toLocaleDateString()}`
                         : 'No expiry'}
                     </Text>
                   </VStack>
                 }
                 endContent={
                   <VStack gap={1} hAlign="end">
-                    <Badge label={status.label} variant={status.variant} />
+                    <Token label={status.label} color={status.color} size="sm" />
                     {actions.length > 0 ? (
                       <DropdownMenu
                         button={{
@@ -545,43 +577,72 @@ export default function TokensIndex({
           content={
             <LayoutContent isScrollable>
               <VStack gap={4} hAlign="stretch">
-                <Banner
-                  status="warning"
-                  title="Your token will be stored in plaintext"
-                  description="These quick-install configurations include the access token directly. Keep the configuration private and revoke the token immediately if it is exposed."
-                  container="card"
-                />
-                <InputGroup
-                  label="Access token"
-                  description="This value stays in this browser tab and is cleared when you close the modal."
-                >
-                  <TextInput
-                    type={isInstallTokenVisible ? 'text' : 'password'}
-                    label="Access token"
-                    isLabelHidden
-                    value={installToken}
-                    onChange={setInstallToken}
-                    placeholder="Paste your MyMCPs access token"
-                    hasClear
+                {gatewayUrl ? (
+                  <TabList
+                    value={installAuthMode}
+                    onChange={(value) => setInstallAuthMode(value as McpInstallAuthMode)}
+                    layout="fill"
+                    hasDivider
+                  >
+                    <Tab value="oauth" label="OAuth (recommended)" />
+                    <Tab value="token" label="Access token" />
+                  </TabList>
+                ) : (
+                  <Banner
+                    status="warning"
+                    title="OAuth is unavailable"
+                    description="Set APP_URL to this instance's public HTTPS origin to enable OAuth installation."
+                    container="card"
                   />
-                  <ToggleButton
-                    label={isInstallTokenVisible ? 'Hide access token' : 'Show access token'}
-                    tooltip={isInstallTokenVisible ? 'Hide access token' : 'Show access token'}
-                    icon={<Icon icon={EyeIcon} />}
-                    pressedIcon={<Icon icon="eyeSlash" />}
-                    isPressed={isInstallTokenVisible}
-                    onPressedChange={setIsInstallTokenVisible}
-                    isIconOnly
-                    style={{
-                      borderWidth: 'var(--border-width)',
-                      borderStyle: 'solid',
-                      borderColor: 'var(--color-border)',
-                      borderStartStartRadius: 'var(--radius-none)',
-                      borderEndStartRadius: 'var(--radius-none)',
-                      marginInlineStart: 'calc(-1 * var(--border-width))',
-                    }}
+                )}
+                {installAuthMode === 'oauth' ? (
+                  <Banner
+                    status="info"
+                    title="No token to copy"
+                    description="Add the gateway URL to your MCP client. The client will open this instance in your browser so you can sign in and approve the connection."
+                    container="card"
                   />
-                </InputGroup>
+                ) : (
+                  <VStack gap={3} hAlign="stretch">
+                    <Banner
+                      status="warning"
+                      title="Your token will be stored in plaintext"
+                      description="These quick-install configurations include the access token directly. Keep the configuration private and revoke the token immediately if it is exposed."
+                      container="card"
+                    />
+                    <InputGroup
+                      label="Access token"
+                      description="This value stays in this browser tab and is cleared when you close the modal."
+                    >
+                      <TextInput
+                        type={isInstallTokenVisible ? 'text' : 'password'}
+                        label="Access token"
+                        isLabelHidden
+                        value={installToken}
+                        onChange={setInstallToken}
+                        placeholder="Paste your MyMCPs access token"
+                        hasClear
+                      />
+                      <ToggleButton
+                        label={isInstallTokenVisible ? 'Hide access token' : 'Show access token'}
+                        tooltip={isInstallTokenVisible ? 'Hide access token' : 'Show access token'}
+                        icon={<Icon icon={EyeIcon} />}
+                        pressedIcon={<Icon icon="eyeSlash" />}
+                        isPressed={isInstallTokenVisible}
+                        onPressedChange={setIsInstallTokenVisible}
+                        isIconOnly
+                        style={{
+                          borderWidth: 'var(--border-width)',
+                          borderStyle: 'solid',
+                          borderColor: 'var(--color-border)',
+                          borderStartStartRadius: 'var(--radius-none)',
+                          borderEndStartRadius: 'var(--radius-none)',
+                          marginInlineStart: 'calc(-1 * var(--border-width))',
+                        }}
+                      />
+                    </InputGroup>
+                  </VStack>
+                )}
                 <Switch
                   label="Enable lazy tool mode"
                   description="Adds X-MyMCPs-Tool-Mode: lazy so clients discover tools on demand."
@@ -652,6 +713,7 @@ export default function TokensIndex({
             if (typeof newToken !== 'string') return
 
             setInstallClient('codex')
+            setInstallAuthMode('token')
             setInstallToken(newToken)
             setIsInstallTokenVisible(true)
             setIsInstallOpen(true)

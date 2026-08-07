@@ -19,6 +19,102 @@ export interface Registry {
       errorResponse: unknown
     }
   }
+  'oauth.metadata': {
+    methods: ["GET","HEAD"]
+    pattern: '/.well-known/oauth-authorization-server'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['authorizationMetadata']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['authorizationMetadata']>>>
+    }
+  }
+  'oauth.resourceMetadata': {
+    methods: ["GET","HEAD"]
+    pattern: '/.well-known/oauth-protected-resource'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['protectedResourceMetadata']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['protectedResourceMetadata']>>>
+    }
+  }
+  'oauth_server.protected_resource_metadata': {
+    methods: ["GET","HEAD"]
+    pattern: '/.well-known/oauth-protected-resource/mcp'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['protectedResourceMetadata']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['protectedResourceMetadata']>>>
+    }
+  }
+  'oauth.register': {
+    methods: ["POST"]
+    pattern: '/register'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['register']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['register']>>>
+    }
+  }
+  'oauth.authorize': {
+    methods: ["GET","HEAD"]
+    pattern: '/authorize'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['authorize']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['authorize']>>>
+    }
+  }
+  'oauth_server.authorize': {
+    methods: ["POST"]
+    pattern: '/authorize'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['authorize']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['authorize']>>>
+    }
+  }
+  'oauth.token': {
+    methods: ["POST"]
+    pattern: '/token'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['token']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['token']>>>
+    }
+  }
+  'oauth.revoke': {
+    methods: ["POST"]
+    pattern: '/revoke'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['revoke']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/oauth_server_controller').default['revoke']>>>
+    }
+  }
   'onboarding.show': {
     methods: ["GET","HEAD"]
     pattern: '/onboarding'
@@ -377,6 +473,18 @@ export interface Registry {
       query: ExtractQuery<InferInput<(typeof import('#validators/mcp').createAccessTokenValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['store']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'tokens.update': {
+    methods: ["PUT"]
+    pattern: '/tokens/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/mcp').updateAccessTokenValidator)>|InferInput<(typeof import('#validators/mcp').accessTokenParamsValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/mcp').updateAccessTokenValidator)>|InferInput<(typeof import('#validators/mcp').accessTokenParamsValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'tokens.revoke': {
