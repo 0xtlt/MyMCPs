@@ -22,7 +22,7 @@ importers:
         version: 3.0.0(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@adonisjs/core@7.3.5(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@vinejs/vine@4.4.0)(edge.js@6.5.1)(pino-pretty@13.1.3)(supports-color@10.2.2)(youch@4.1.1))
       '@adonisjs/inertia':
         specifier: ^4.2.0
-        version: 4.2.0(690b1d46d535adf4ac16d6af8be1dfe0)
+        version: 4.2.0(e16e6013294980a2e58776c087c173bf)
       '@adonisjs/limiter':
         specifier: ^3.0.1
         version: 3.0.1(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@adonisjs/core@7.3.5(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@vinejs/vine@4.4.0)(edge.js@6.5.1)(pino-pretty@13.1.3)(supports-color@10.2.2)(youch@4.1.1))(@adonisjs/lucid@22.4.2(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@adonisjs/core@7.3.5(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@vinejs/vine@4.4.0)(edge.js@6.5.1)(pino-pretty@13.1.3)(supports-color@10.2.2)(youch@4.1.1))(@vinejs/vine@4.4.0)(better-sqlite3@12.11.1)(luxon@3.7.2)(supports-color@10.2.2))
@@ -40,7 +40,7 @@ importers:
         version: 2.0.1(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@adonisjs/core@7.3.5(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@vinejs/vine@4.4.0)(edge.js@6.5.1)(pino-pretty@13.1.3)(supports-color@10.2.2)(youch@4.1.1))(supports-color@10.2.2)
       '@adonisjs/vite':
         specifier: ^5.1.1
-        version: 5.1.1(bbe14b9f55beb4121d842ceafb9292c2)
+        version: 5.1.1(5f52d7f770dc2cd71f7fd742584adf52)
       '@astryxdesign/core':
         specifier: ^0.3.0
         version: 0.3.0(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -124,8 +124,8 @@ importers:
         specifier: ^3.7.1
         version: 3.7.3
       '@types/node':
-        specifier: ~25.9.1
-        version: 25.9.5
+        specifier: ~26.1.2
+        version: 26.1.2
       '@types/react':
         specifier: ^19.2.15
         version: 19.2.18
@@ -134,7 +134,7 @@ importers:
         version: 19.2.4(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: ^5.2.0
-        version: 5.2.0(supports-color@10.2.2)(vite@7.3.6(@types/node@25.9.5)(jiti@2.7.0))
+        version: 5.2.0(supports-color@10.2.2)(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0))
       eslint:
         specifier: ^10.4.0
         version: 10.8.0(jiti@2.7.0)(supports-color@10.2.2)
@@ -161,10 +161,10 @@ importers:
         version: 6.0.3
       vite:
         specifier: ^7.3.3
-        version: 7.3.6(@types/node@25.9.5)(jiti@2.7.0)
+        version: 7.3.6(@types/node@26.1.2)(jiti@2.7.0)
       vite-imagetools:
         specifier: ^10.0.1
-        version: 10.0.1(@types/node@25.9.5)(rollup@4.62.4)(vite@7.3.6(@types/node@25.9.5)(jiti@2.7.0))
+        version: 10.0.1(@types/node@26.1.2)(rollup@4.62.4)(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0))
       youch:
         specifier: ^4.1.1
         version: 4.1.1
@@ -1766,8 +1766,8 @@ packages:
   '@types/methods@1.1.4':
     resolution: {integrity: sha512-ymXWVrDiCxTBE3+RIrrP533E70eA+9qu7zdWoHuOmGujkYtzf4HQF96b8nwHLqhuf4ykX61IGRIB38CC6/sImQ==}
 
-  '@types/node@25.9.5':
-    resolution: {integrity: sha512-OScDchr2fwuUmWdf4kZ9h7PcJiYDVInhJizG/biAq3cAvqwYktuy/TYGGdZNMtNTFUP7rnb0NU4TUdm82kt4Rg==}
+  '@types/node@26.1.2':
+    resolution: {integrity: sha512-Vu4a5UFA9rIIFJ7rB/Vaafh9lrCQszopTCx6KjFboXTGQbPNasehVR5TEiithSDGyd1DEiUByggTZsg8jukeIg==}
 
   '@types/normalize-package-data@2.4.4':
     resolution: {integrity: sha512-37i+OaWTh9qeK4LSHPsyRC7NahnGotNuZvjLSgcPzblpHB3rrCJxAOgI5gCdKm7coonsaX1Of0ILiTcnZjbfxA==}
@@ -4248,8 +4248,8 @@ packages:
     resolution: {integrity: sha512-nWJ91DjeOkej/TA8pXQ3myruKpKEYgqvpw9lz4OPHj/NWFNluYrjbz9j01CJ8yKQd2g4jFoOkINCTW2I5LEEyw==}
     engines: {node: '>= 0.4'}
 
-  undici-types@7.24.6:
-    resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
+  undici-types@8.3.0:
+    resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
 
   unicorn-magic@0.3.0:
     resolution: {integrity: sha512-+QBBXBCvifc56fsbuxZQ6Sic3wqqc3WWaqxs58gvJrcOuN83HGTCwz3oS5phzU9LthRNE9VrJCFCLUgHeeFnfA==}
@@ -4631,11 +4631,11 @@ snapshots:
       '@poppinss/exception': 1.2.3
       '@poppinss/types': 1.2.1
 
-  '@adonisjs/inertia@4.2.0(690b1d46d535adf4ac16d6af8be1dfe0)':
+  '@adonisjs/inertia@4.2.0(e16e6013294980a2e58776c087c173bf)':
     dependencies:
       '@adonisjs/core': 7.3.5(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@vinejs/vine@4.4.0)(edge.js@6.5.1)(pino-pretty@13.1.3)(supports-color@10.2.2)(youch@4.1.1)
       '@adonisjs/session': 8.1.0(0e0b4a8601d3419e2b5bd47dd6c6335b)
-      '@adonisjs/vite': 5.1.1(bbe14b9f55beb4121d842ceafb9292c2)
+      '@adonisjs/vite': 5.1.1(5f52d7f770dc2cd71f7fd742584adf52)
       '@poppinss/utils': 7.0.1
       edge-error: 4.0.2
       edge.js: 6.5.1
@@ -4750,13 +4750,13 @@ snapshots:
 
   '@adonisjs/tsconfig@2.0.0': {}
 
-  '@adonisjs/vite@5.1.1(bbe14b9f55beb4121d842ceafb9292c2)':
+  '@adonisjs/vite@5.1.1(5f52d7f770dc2cd71f7fd742584adf52)':
     dependencies:
       '@adonisjs/core': 7.3.5(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@vinejs/vine@4.4.0)(edge.js@6.5.1)(pino-pretty@13.1.3)(supports-color@10.2.2)(youch@4.1.1)
       '@poppinss/utils': 7.0.1
       edge-error: 4.0.2
-      vite: 7.3.6(@types/node@25.9.5)(jiti@2.7.0)
-      vite-plugin-restart: 2.0.0(vite@7.3.6(@types/node@25.9.5)(jiti@2.7.0))
+      vite: 7.3.6(@types/node@26.1.2)(jiti@2.7.0)
+      vite-plugin-restart: 2.0.0(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0))
     optionalDependencies:
       '@adonisjs/assembler': 8.4.0(typescript@6.0.3)
       '@adonisjs/shield': 9.0.0(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@adonisjs/core@7.3.5(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@vinejs/vine@4.4.0)(edge.js@6.5.1)(pino-pretty@13.1.3)(supports-color@10.2.2)(youch@4.1.1))(@adonisjs/session@8.1.0(0e0b4a8601d3419e2b5bd47dd6c6335b))(@japa/api-client@3.2.1(@japa/assert@4.2.0(@japa/runner@5.3.0))(@japa/runner@5.3.0)(supports-color@10.2.2))(@japa/plugin-adonisjs@5.2.0(@adonisjs/core@7.3.5(@adonisjs/assembler@8.4.0(typescript@6.0.3))(@vinejs/vine@4.4.0)(edge.js@6.5.1)(pino-pretty@13.1.3)(supports-color@10.2.2)(youch@4.1.1))(@japa/api-client@3.2.1(@japa/assert@4.2.0(@japa/runner@5.3.0))(@japa/runner@5.3.0)(supports-color@10.2.2))(@japa/browser-client@2.3.0(@japa/assert@4.2.0(@japa/runner@5.3.0))(@japa/runner@5.3.0)(playwright@1.62.1))(@japa/runner@5.3.0)(playwright@1.62.1))(edge.js@6.5.1)
@@ -5846,9 +5846,9 @@ snapshots:
 
   '@types/methods@1.1.4': {}
 
-  '@types/node@25.9.5':
+  '@types/node@26.1.2':
     dependencies:
-      undici-types: 7.24.6
+      undici-types: 8.3.0
 
   '@types/normalize-package-data@2.4.4': {}
 
@@ -5866,7 +5866,7 @@ snapshots:
     dependencies:
       '@types/cookiejar': 2.1.5
       '@types/methods': 1.1.4
-      '@types/node': 25.9.5
+      '@types/node': 26.1.2
       form-data: 4.0.6
 
   '@types/validator@13.15.10': {}
@@ -5977,7 +5977,7 @@ snapshots:
       normalize-url: 8.1.1
       validator: 13.15.35
 
-  '@vitejs/plugin-react@5.2.0(supports-color@10.2.2)(vite@7.3.6(@types/node@25.9.5)(jiti@2.7.0))':
+  '@vitejs/plugin-react@5.2.0(supports-color@10.2.2)(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0))':
     dependencies:
       '@babel/core': 7.29.7(supports-color@10.2.2)
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7(supports-color@10.2.2))
@@ -5985,7 +5985,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-rc.3
       '@types/babel__core': 7.20.5
       react-refresh: 0.18.0
-      vite: 7.3.6(@types/node@25.9.5)(jiti@2.7.0)
+      vite: 7.3.6(@types/node@26.1.2)(jiti@2.7.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -8195,7 +8195,7 @@ snapshots:
     dependencies:
       kind-of: 6.0.3
 
-  sharp@0.35.3(@types/node@25.9.5):
+  sharp@0.35.3(@types/node@26.1.2):
     dependencies:
       '@img/colour': 1.1.0
       detect-libc: 2.1.2
@@ -8226,7 +8226,7 @@ snapshots:
       '@img/sharp-win32-arm64': 0.35.3
       '@img/sharp-win32-ia32': 0.35.3
       '@img/sharp-win32-x64': 0.35.3
-      '@types/node': 25.9.5
+      '@types/node': 26.1.2
 
   shebang-command@2.0.0:
     dependencies:
@@ -8581,7 +8581,7 @@ snapshots:
       has-symbols: 1.1.0
       which-boxed-primitive: 1.1.1
 
-  undici-types@7.24.6: {}
+  undici-types@8.3.0: {}
 
   unicorn-magic@0.3.0: {}
 
@@ -8610,22 +8610,22 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite-imagetools@10.0.1(@types/node@25.9.5)(rollup@4.62.4)(vite@7.3.6(@types/node@25.9.5)(jiti@2.7.0)):
+  vite-imagetools@10.0.1(@types/node@26.1.2)(rollup@4.62.4)(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0)):
     dependencies:
       '@rollup/pluginutils': 5.4.0(rollup@4.62.4)
       imagetools-core: 10.0.0
-      sharp: 0.35.3(@types/node@25.9.5)
-      vite: 7.3.6(@types/node@25.9.5)(jiti@2.7.0)
+      sharp: 0.35.3(@types/node@26.1.2)
+      vite: 7.3.6(@types/node@26.1.2)(jiti@2.7.0)
     transitivePeerDependencies:
       - '@types/node'
       - rollup
 
-  vite-plugin-restart@2.0.0(vite@7.3.6(@types/node@25.9.5)(jiti@2.7.0)):
+  vite-plugin-restart@2.0.0(vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0)):
     dependencies:
       micromatch: 4.0.8
-      vite: 7.3.6(@types/node@25.9.5)(jiti@2.7.0)
+      vite: 7.3.6(@types/node@26.1.2)(jiti@2.7.0)
 
-  vite@7.3.6(@types/node@25.9.5)(jiti@2.7.0):
+  vite@7.3.6(@types/node@26.1.2)(jiti@2.7.0):
     dependencies:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.5)
@@ -8634,7 +8634,7 @@ snapshots:
       rollup: 4.62.4
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 25.9.5
+      '@types/node': 26.1.2
       fsevents: 2.3.3
       jiti: 2.7.0
 
