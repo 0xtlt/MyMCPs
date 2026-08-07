@@ -7,6 +7,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 ### Added
 
 - Added OAuth login for MCP clients, including discovery, dynamic client registration, PKCE authorization, consent, refresh-token rotation, connection revocation, and OAuth-managed access tokens ([#53](https://github.com/0xtlt/MyMCPs/pull/53)).
+- Added an admin setting for the instance-wide default MCP tool discovery mode, with per-request header overrides.
 
 ### Changed
 

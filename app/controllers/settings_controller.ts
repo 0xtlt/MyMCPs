@@ -13,6 +13,7 @@ export default class SettingsController {
     return inertia.render('settings/index', {
       mcpLogging: mcpLogging
         ? {
+            gatewayToolMode: mcpLogging.gatewayToolMode,
             level: mcpLogging.mcpLogLevel,
             retentionDays: mcpLogging.mcpLogRetentionDays,
           }
@@ -54,13 +55,14 @@ export default class SettingsController {
   async updateMcpLogging({ request, auth, response, session }: HttpContext) {
     const payload = await request.validateUsing(updateMcpLoggingValidator)
     const settings = await McpCallLogService.settings()
+    settings.gatewayToolMode = payload.gatewayToolMode
     settings.mcpLogLevel = payload.mcpLogLevel
     settings.mcpLogRetentionDays = payload.mcpLogRetentionDays
     settings.updatedBy = auth.user!.id
     await settings.save()
     await McpCallLogService.pruneExpired({ force: true })
 
-    session.flash('success', 'MCP logging settings updated')
+    session.flash('success', 'Instance settings updated')
     return response.redirect().toRoute('settings.index')
   }
 }

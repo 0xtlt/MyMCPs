@@ -28,7 +28,7 @@ test.group('MCP logs and analytics administration', (group) => {
       .loginAs(member)
       .withCsrfToken()
       .redirects(0)
-      .form({ mcpLogLevel: 'off', mcpLogRetentionDays: 14 })
+      .form({ gatewayToolMode: 'eager', mcpLogLevel: 'off', mcpLogRetentionDays: 14 })
 
     assertRedirectTo(assert, anonymousLogs, '/login')
     for (const response of [memberLogs, memberAnalytics, memberUpdate]) {
@@ -43,7 +43,7 @@ test.group('MCP logs and analytics administration', (group) => {
     adminAnalytics.assertInertiaComponent('analytics/index')
   })
 
-  test('shows defaults and updates logging level and retention', async ({ client, assert }) => {
+  test('shows defaults and updates instance settings', async ({ client, assert }) => {
     const admin = await createAdmin()
     const token = await createStoredAccessToken(admin.id)
     await createMcpCallLog(token, {
@@ -52,7 +52,7 @@ test.group('MCP logs and analytics administration', (group) => {
 
     const settingsPage = await client.get('/settings').withInertia().loginAs(admin)
     settingsPage.assertInertiaPropsContains({
-      mcpLogging: { level: 'metadata', retentionDays: 14 },
+      mcpLogging: { gatewayToolMode: 'eager', level: 'metadata', retentionDays: 14 },
     })
 
     const response = await client
@@ -60,13 +60,14 @@ test.group('MCP logs and analytics administration', (group) => {
       .loginAs(admin)
       .withCsrfToken()
       .redirects(0)
-      .form({ mcpLogLevel: 'responses', mcpLogRetentionDays: 1 })
+      .form({ gatewayToolMode: 'lazy', mcpLogLevel: 'responses', mcpLogRetentionDays: 1 })
 
     response.assertStatus(302)
     assertRedirectTo(assert, response, '/settings')
-    response.assertFlashMessage('success', 'MCP logging settings updated')
+    response.assertFlashMessage('success', 'Instance settings updated')
 
     const settings = await InstanceSetting.findOrFail(1)
+    assert.equal(settings.gatewayToolMode, 'lazy')
     assert.equal(settings.mcpLogLevel, 'responses')
     assert.equal(settings.mcpLogRetentionDays, 1)
     assert.equal(settings.updatedBy, admin.id)
@@ -80,14 +81,15 @@ test.group('MCP logs and analytics administration', (group) => {
     )
   })
 
-  test('rejects invalid logging settings', async ({ client, assert }) => {
+  test('rejects invalid instance settings', async ({ client, assert }) => {
     const admin = await createAdmin()
 
     for (const payload of [
-      { mcpLogLevel: 'everything', mcpLogRetentionDays: 14 },
-      { mcpLogLevel: 'metadata', mcpLogRetentionDays: 0 },
-      { mcpLogLevel: 'metadata', mcpLogRetentionDays: 366 },
-      { mcpLogLevel: 'metadata', mcpLogRetentionDays: 1.5 },
+      { gatewayToolMode: 'sometimes', mcpLogLevel: 'metadata', mcpLogRetentionDays: 14 },
+      { gatewayToolMode: 'eager', mcpLogLevel: 'everything', mcpLogRetentionDays: 14 },
+      { gatewayToolMode: 'eager', mcpLogLevel: 'metadata', mcpLogRetentionDays: 0 },
+      { gatewayToolMode: 'eager', mcpLogLevel: 'metadata', mcpLogRetentionDays: 366 },
+      { gatewayToolMode: 'eager', mcpLogLevel: 'metadata', mcpLogRetentionDays: 1.5 },
     ]) {
       const response = await client
         .patch('/settings/mcp-logging')

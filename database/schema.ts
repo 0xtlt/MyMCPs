@@ -85,6 +85,7 @@ export class AccessTokenSchema extends BaseModel {
 export class InstanceSettingSchema extends BaseModel {
   static $columns = [
     'createdAt',
+    'gatewayToolMode',
     'id',
     'mcpLogLevel',
     'mcpLogRetentionDays',
@@ -94,6 +95,8 @@ export class InstanceSettingSchema extends BaseModel {
   $columns = InstanceSettingSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
+  @column()
+  declare gatewayToolMode: string
   @column({ isPrimary: true })
   declare id: number
   @column()

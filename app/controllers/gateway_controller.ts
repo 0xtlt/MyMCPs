@@ -4,6 +4,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
+import InstanceSetting from '#models/instance_setting'
 import McpCallLogService from '#services/mcp_call_log_service'
 import {
   LAZY_GATEWAY_TOOLS,
@@ -27,7 +28,11 @@ import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_re
  */
 export default class GatewayController {
   async handle(ctx: HttpContext) {
-    const toolMode = parseGatewayToolMode(ctx.request.header('x-mymcps-tool-mode'))
+    const settings = await InstanceSetting.current()
+    const toolMode = parseGatewayToolMode(
+      ctx.request.header('x-mymcps-tool-mode'),
+      settings.gatewayToolMode
+    )
     if (!toolMode) {
       return ctx.response.status(400).json({
         error: 'invalid_tool_mode',

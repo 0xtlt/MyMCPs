@@ -31,6 +31,7 @@ export const updatePasswordValidator = vine.create({
 })
 
 export const updateMcpLoggingValidator = vine.create({
+  gatewayToolMode: vine.enum(['eager', 'lazy'] as const),
   mcpLogLevel: vine.enum(['off', 'metadata', 'arguments', 'responses'] as const),
   mcpLogRetentionDays: vine.number().withoutDecimals().min(1).max(365),
 })
