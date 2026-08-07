@@ -18,6 +18,7 @@ import {
   oauthRegistrationRateLimiter,
   oauthTokenRateLimiter,
 } from '#start/limiter'
+import { requirePublicAppUrl } from '#services/public_url'
 
 function requiredString(input: Record<string, unknown>, key: string) {
   const value = input[key]
@@ -41,32 +42,46 @@ function authorizationReturnPath(request: Awaited<ReturnType<typeof parseAuthori
   return `/authorize?${params}`
 }
 
+function redirectToOauthClient(ctx: HttpContext, location: string) {
+  if (ctx.request.header('x-inertia')) {
+    ctx.response.header('X-Inertia-Location', location)
+    return ctx.response.status(409).send('')
+  }
+  return ctx.response.redirect(location)
+}
+
 export default class OauthServerController {
   async authorizationMetadata({ response }: HttpContext) {
     try {
+      const metadata = authorizationServerMetadata()
       response.header('Cache-Control', 'public, max-age=3600')
-      return response.ok(authorizationServerMetadata())
+      return response.ok(metadata)
     } catch {
+      response.header('Cache-Control', 'no-store')
       return response.status(503).json({
         error: 'temporarily_unavailable',
-        error_description: 'OAuth requires APP_URL to be configured',
+        error_description: 'OAuth requires APP_URL to be a public HTTPS origin',
       })
     }
   }
 
   async protectedResourceMetadata({ response }: HttpContext) {
     try {
+      const metadata = protectedResourceMetadata()
       response.header('Cache-Control', 'public, max-age=3600')
-      return response.ok(protectedResourceMetadata())
+      return response.ok(metadata)
     } catch {
+      response.header('Cache-Control', 'no-store')
       return response.status(503).json({
         error: 'temporarily_unavailable',
-        error_description: 'OAuth requires APP_URL to be configured',
+        error_description: 'OAuth requires APP_URL to be a public HTTPS origin',
       })
     }
   }
 
   async register(ctx: HttpContext) {
+    if (!this.isConfigured(ctx)) return
+
     if (
       !(await oauthRegistrationRateLimiter.attempt(
         `oauth-register:${ctx.request.ip()}`,
@@ -86,6 +101,8 @@ export default class OauthServerController {
   }
 
   async authorize(ctx: HttpContext) {
+    if (!this.isConfigured(ctx)) return
+
     if (
       !(await oauthAuthorizationRateLimiter.attempt(
         `oauth-authorize:${ctx.request.ip()}`,
@@ -128,7 +145,8 @@ export default class OauthServerController {
       }
 
       if (input.decision !== 'approve') {
-        return ctx.response.redirect(
+        return redirectToOauthClient(
+          ctx,
           oauthRedirect(authorizationRequest.redirectUri, {
             error: 'access_denied',
             error_description: 'The user denied the authorization request',
@@ -138,7 +156,8 @@ export default class OauthServerController {
       }
 
       const code = await createAuthorizationCode(authorizationRequest, ctx.auth.user.id)
-      return ctx.response.redirect(
+      return redirectToOauthClient(
+        ctx,
         oauthRedirect(authorizationRequest.redirectUri, {
           code,
           state: authorizationRequest.state,
@@ -146,7 +165,8 @@ export default class OauthServerController {
       )
     } catch (error) {
       if (error instanceof GatewayOauthError && error.redirectUri) {
-        return ctx.response.redirect(
+        return redirectToOauthClient(
+          ctx,
           oauthRedirect(error.redirectUri, {
             error: error.code,
             error_description: error.message,
@@ -159,6 +179,8 @@ export default class OauthServerController {
   }
 
   async token(ctx: HttpContext) {
+    if (!this.isConfigured(ctx)) return
+
     if (!(await oauthTokenRateLimiter.attempt(`oauth-token:${ctx.request.ip()}`, () => true))) {
       return this.error(
         ctx,
@@ -202,6 +224,8 @@ export default class OauthServerController {
   }
 
   async revoke(ctx: HttpContext) {
+    if (!this.isConfigured(ctx)) return
+
     if (!(await oauthTokenRateLimiter.attempt(`oauth-revoke:${ctx.request.ip()}`, () => true))) {
       return this.error(
         ctx,
@@ -224,6 +248,20 @@ export default class OauthServerController {
     ctx.response.header('Cache-Control', 'no-store')
     ctx.response.header('Pragma', 'no-cache')
     return ctx.response.ok(oauthTokenResponse(created))
+  }
+
+  private isConfigured(ctx: HttpContext) {
+    try {
+      requirePublicAppUrl()
+      return true
+    } catch {
+      ctx.response.header('Cache-Control', 'no-store')
+      ctx.response.status(503).json({
+        error: 'temporarily_unavailable',
+        error_description: 'OAuth requires APP_URL to be a public HTTPS origin',
+      })
+      return false
+    }
   }
 
   private error(ctx: HttpContext, error: unknown) {

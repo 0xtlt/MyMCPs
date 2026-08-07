@@ -391,6 +391,19 @@ export class OauthClientSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
+export class OauthRefreshTokenHistorySchema extends BaseModel {
+  static $columns = ['accessTokenId', 'id', 'invalidatedAt', 'tokenHash'] as const
+  $columns = OauthRefreshTokenHistorySchema.$columns
+  @column()
+  declare accessTokenId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column.dateTime()
+  declare invalidatedAt: DateTime
+  @column()
+  declare tokenHash: string
+}
+
 export class RateLimitSchema extends BaseModel {
   static $columns = ['expire', 'key', 'points'] as const
   $columns = RateLimitSchema.$columns

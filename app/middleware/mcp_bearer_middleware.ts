@@ -1,8 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import type AccessToken from '#models/access_token'
 import AccessTokenService from '#services/access_token_service'
-import { GATEWAY_OAUTH_SCOPE } from '#services/gateway_oauth'
-import { publicAppUrl } from '#services/public_url'
+import { GATEWAY_OAUTH_SCOPE, protectedResourceMetadataUrl } from '#services/gateway_oauth'
 
 /**
  * Authenticate agent requests to /mcp with a Bearer access token.
@@ -47,14 +46,15 @@ export default class McpBearerMiddleware {
   }
 
   private challenge(ctx: HttpContext, error?: 'invalid_token') {
-    const appUrl = publicAppUrl()
+    let resourceMetadata: string | null = null
+    try {
+      resourceMetadata = protectedResourceMetadataUrl()
+    } catch {
+      // Keep bearer authentication available while refusing to publish insecure OAuth metadata.
+    }
     const values = [
       ...(error ? [`error="${error}"`] : []),
-      ...(appUrl
-        ? [
-            `resource_metadata="${new URL('/.well-known/oauth-protected-resource/mcp', appUrl).href}"`,
-          ]
-        : []),
+      ...(resourceMetadata ? [`resource_metadata="${resourceMetadata}"`] : []),
       `scope="${GATEWAY_OAUTH_SCOPE}"`,
     ]
     ctx.response.header('WWW-Authenticate', `Bearer ${values.join(', ')}`)

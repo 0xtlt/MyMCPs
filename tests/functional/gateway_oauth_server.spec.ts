@@ -113,6 +113,16 @@ test.group('gateway OAuth server', (group) => {
     })
     unsafe.assertStatus(400)
     assert.equal(unsafe.body().error, 'invalid_redirect_uri')
+
+    const credentialed = await client.post('/register').json({
+      client_name: 'Credentialed redirect client',
+      redirect_uris: ['https://user:password@example.com/callback'],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    })
+    credentialed.assertStatus(400)
+    assert.equal(credentialed.body().error, 'invalid_redirect_uri')
   })
 
   test('returns users to the authorization request after credential login', async ({
@@ -169,12 +179,13 @@ test.group('gateway OAuth server', (group) => {
 
     const approval = await client
       .post('/authorize')
+      .header('x-inertia', 'true')
       .loginAs(admin)
       .withCsrfToken()
       .redirects(0)
       .form({ ...authorization, decision: 'approve' })
-    approval.assertStatus(302)
-    const callback = new URL(approval.header('location')!)
+    approval.assertStatus(409)
+    const callback = new URL(approval.header('x-inertia-location')!)
     assert.equal(callback.origin, 'http://127.0.0.1:49152')
     assert.equal(callback.searchParams.get('state'), 'state-from-client')
     const code = callback.searchParams.get('code')
@@ -231,15 +242,6 @@ test.group('gateway OAuth server', (group) => {
     assert.isNull(await AccessTokenService.findUsableByPlaintext(oldAccessToken))
     assert.isNotNull(await AccessTokenService.findUsableByPlaintext(refresh.body().access_token))
 
-    const replay = await client.post('/token').form({
-      grant_type: 'refresh_token',
-      client_id: registered.client_id,
-      refresh_token: oldRefreshToken,
-      resource,
-    })
-    replay.assertStatus(400)
-    assert.equal(replay.body().error, 'invalid_grant')
-
     const revoke = await client
       .post(`/tokens/${oauthToken.id}/revoke`)
       .loginAs(admin)
@@ -259,6 +261,62 @@ test.group('gateway OAuth server', (group) => {
     })
     refreshAfterRevoke.assertStatus(400)
     assert.equal(refreshAfterRevoke.body().error, 'invalid_grant')
+  })
+
+  test('revokes the active grant when a rotated refresh token is replayed', async ({
+    client,
+    assert,
+  }) => {
+    const admin = await createAdmin()
+    const registered = await registerPublicClient(client, 'Refresh replay client')
+    const authorization = authorizationPayload(registered.client_id)
+    const approval = await client
+      .post('/authorize')
+      .loginAs(admin)
+      .withCsrfToken()
+      .redirects(0)
+      .form({ ...authorization, decision: 'approve' })
+    const code = new URL(approval.header('location')!).searchParams.get('code')!
+    const exchange = await client.post('/token').form({
+      grant_type: 'authorization_code',
+      client_id: registered.client_id,
+      code,
+      code_verifier: codeVerifier,
+      redirect_uri: runtimeRedirectUri,
+      resource,
+    })
+    exchange.assertStatus(200)
+
+    const oldRefreshToken = exchange.body().refresh_token as string
+    const refresh = await client.post('/token').form({
+      grant_type: 'refresh_token',
+      client_id: registered.client_id,
+      refresh_token: oldRefreshToken,
+      resource,
+    })
+    refresh.assertStatus(200)
+
+    const replay = await client.post('/token').form({
+      grant_type: 'refresh_token',
+      client_id: registered.client_id,
+      refresh_token: oldRefreshToken,
+      resource,
+    })
+    replay.assertStatus(400)
+    assert.equal(replay.body().error, 'invalid_grant')
+
+    const grant = await AccessToken.findByOrFail('name', 'Refresh replay client')
+    assert.isTrue(grant.isRevoked)
+    assert.isNull(await AccessTokenService.findUsableByPlaintext(refresh.body().access_token))
+
+    const attackerRefresh = await client.post('/token').form({
+      grant_type: 'refresh_token',
+      client_id: registered.client_id,
+      refresh_token: refresh.body().refresh_token,
+      resource,
+    })
+    attackerRefresh.assertStatus(400)
+    assert.equal(attackerRefresh.body().error, 'invalid_grant')
   })
 
   test('rejects authorization-code replay and an incorrect PKCE verifier', async ({

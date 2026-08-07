@@ -452,11 +452,11 @@ export async function exchangeRefreshToken(params: {
     clientId: params.client.id,
     resource: gatewayResourceUrl(),
   })
-  if (!rotated) {
+  if (rotated.status !== 'rotated') {
     throw new GatewayOauthError('invalid_grant', 'Invalid, expired, or revoked refresh token')
   }
 
-  return rotated
+  return rotated.tokens
 }
 
 export function oauthTokenResponse(
