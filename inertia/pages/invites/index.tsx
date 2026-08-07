@@ -20,6 +20,7 @@ import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/Segme
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
+import { formatLocalDate, formatLocalDateTime } from '~/components/local_time'
 
 type TeamSection = 'members' | 'invites'
 
@@ -103,7 +104,7 @@ export default function InvitesIndex({
       width: proportional(2),
       renderCell: (invite) => (
         <Text type="supporting" color="secondary">
-          {invite.expiresAt ? new Date(invite.expiresAt).toLocaleString() : '—'}
+          {invite.expiresAt ? formatLocalDateTime(invite.expiresAt) : '—'}
         </Text>
       ),
     },
@@ -180,7 +181,7 @@ export default function InvitesIndex({
       width: proportional(2),
       renderCell: (member) => (
         <Text type="supporting" color="secondary">
-          {member.createdAt ? new Date(member.createdAt).toLocaleString() : '—'}
+          {member.createdAt ? formatLocalDateTime(member.createdAt) : '—'}
         </Text>
       ),
     },
@@ -309,7 +310,7 @@ export default function InvitesIndex({
                   label={invite.email}
                   description={
                     invite.expiresAt
-                      ? `Expires ${new Date(invite.expiresAt).toLocaleDateString()}`
+                      ? `Expires ${formatLocalDate(invite.expiresAt)}`
                       : 'No expiration date'
                   }
                   endContent={
