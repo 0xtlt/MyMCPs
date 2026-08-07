@@ -2,6 +2,12 @@
 
 Project-specific guidance for AI coding agents.
 
+## Changelog
+
+- Keep the root `CHANGELOG.md` up to date in every pull request that changes user-visible behavior, security, or operations, including dependency and developer-workflow changes that affect users or operators.
+- Before final validation, add concise English entries under the current UTC date (`## YYYY-MM-DD`), grouped as `Added`, `Changed`, `Fixed`, `Security`, or `Removed`.
+- Consolidate related commits into outcome-focused entries. Do not list commit hashes or merge commits, and omit tests and internal refactors unless they affect users or operators.
+
 <!-- ASTRYX:START -->
 Astryx v0.3.0 · 155 components
 CLI: run every command as `pnpm exec astryx <cmd>` (shown below as `astryx ...`).
