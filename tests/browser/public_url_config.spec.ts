@@ -45,6 +45,15 @@ test.group('missing public app URL browser state', (group) => {
     )
     await page.assertTextContains('body', 'Reduce tool-definition overhead')
     await page.assertTextContains('body', 'X-MyMCPs-Tool-Mode: lazy')
+    await page.getByRole('button', { name: 'Install MCP' }).click()
+    const installDialog = page.getByRole('dialog', { name: 'Install MyMCPs' })
+    assert.include(await installDialog.innerText(), 'OAuth is unavailable')
+    assert.include(await installDialog.innerText(), 'public HTTPS origin')
+    assert.equal(
+      await installDialog.getByRole('button', { name: 'Access token', exact: true }).count(),
+      0
+    )
+    await installDialog.getByRole('button', { name: 'Close' }).last().click()
 
     await page.getByRole('link', { name: 'Invites', exact: true }).click()
     await page.waitForURL((url) => url.pathname === '/invites')

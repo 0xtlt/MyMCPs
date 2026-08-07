@@ -51,6 +51,23 @@ function authorizationPath(clientId: string) {
   return `/authorize?${new URLSearchParams(authorizationPayload(clientId)).toString()}`
 }
 
+function initializeGateway(client: ApiClient, accessToken: string) {
+  return client
+    .post('/mcp')
+    .bearerToken(accessToken)
+    .header('accept', 'application/json, text/event-stream')
+    .json({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'gateway-oauth-test', version: '1.0.0' },
+      },
+    })
+}
+
 test.group('gateway OAuth server', (group) => {
   group.each.setup(beginTestTransaction)
   group.each.setup(() => limiter.clear(['memory']))
@@ -179,6 +196,26 @@ test.group('gateway OAuth server', (group) => {
     })
   })
 
+  test('rejects authorization return paths too large for the cookie session', async ({
+    client,
+    assert,
+  }) => {
+    await createAdmin()
+    const registered = await registerPublicClient(client)
+    const state = 's'.repeat(1400)
+
+    const response = await client
+      .get('/authorize')
+      .qs({ ...authorizationPayload(registered.client_id), state })
+      .redirects(0)
+
+    response.assertStatus(302)
+    const callback = new URL(response.header('location')!)
+    assert.equal(callback.origin, 'http://127.0.0.1:49152')
+    assert.equal(callback.searchParams.get('error'), 'invalid_request')
+    assert.notProperty(response.session(), 'oauthReturnTo')
+  })
+
   test('issues, refreshes, lists, and revokes an OAuth connection', async ({ client, assert }) => {
     const admin = await createAdmin({ email: 'owner@example.com' })
     const registered = await registerPublicClient(client, 'Claude Desktop')
@@ -233,6 +270,24 @@ test.group('gateway OAuth server', (group) => {
     assert.notEqual(oauthToken.oauthRefreshTokenHash, exchange.body().refresh_token)
     assert.isTrue(oauthToken.isActive)
 
+    const oauthAccessToken = exchange.body().access_token as string
+    const accepted = await initializeGateway(client, oauthAccessToken)
+    accepted.assertStatus(200)
+
+    oauthToken.oauthResource = 'https://old-gateway.example.com/mcp'
+    await oauthToken.save()
+    const wrongAudience = await initializeGateway(client, oauthAccessToken)
+    wrongAudience.assertStatus(401)
+
+    oauthToken.oauthResource = resource
+    oauthToken.oauthScopes = 'unsupported:scope'
+    await oauthToken.save()
+    const wrongScope = await initializeGateway(client, oauthAccessToken)
+    wrongScope.assertStatus(401)
+
+    oauthToken.oauthScopes = 'mcp:tools'
+    await oauthToken.save()
+
     const tokenList = await client.get('/tokens').withInertia().loginAs(admin)
     tokenList.assertStatus(200)
     tokenList.assertInertiaComponent('tokens/index')
@@ -248,7 +303,7 @@ test.group('gateway OAuth server', (group) => {
       ],
     })
 
-    const oldAccessToken = exchange.body().access_token as string
+    const oldAccessToken = oauthAccessToken
     const oldRefreshToken = exchange.body().refresh_token as string
     const refresh = await client.post('/token').form({
       grant_type: 'refresh_token',

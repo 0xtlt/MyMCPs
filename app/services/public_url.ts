@@ -38,3 +38,14 @@ export function requirePublicAppUrl() {
   }
   return validatePublicAppUrl(configured, app.inDev || app.inTest)
 }
+
+/**
+ * Return the public origin only when it is safe to use for OAuth endpoints.
+ */
+export function publicOauthAppUrl() {
+  try {
+    return requirePublicAppUrl()
+  } catch {
+    return null
+  }
+}

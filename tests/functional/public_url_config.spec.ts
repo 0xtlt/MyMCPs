@@ -68,7 +68,14 @@ test.group('missing public app URL', (group) => {
     assert,
   }) => {
     env.set('APP_URL', 'http://mcp.example.com')
-    await createAdmin()
+    const admin = await createAdmin()
+
+    const tokens = await client.get('/tokens').withInertia().loginAs(admin)
+    tokens.assertStatus(200)
+    tokens.assertInertiaPropsContains({
+      appUrlConfigured: false,
+      gatewayUrl: null,
+    })
 
     const responses = [
       {

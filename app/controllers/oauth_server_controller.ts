@@ -20,6 +20,8 @@ import {
 } from '#start/limiter'
 import { requirePublicAppUrl } from '#services/public_url'
 
+const MAX_SESSION_RETURN_PATH_BYTES = 1536
+
 function requiredString(input: Record<string, unknown>, key: string) {
   const value = input[key]
   if (typeof value !== 'string' || value.length === 0) {
@@ -39,7 +41,17 @@ function authorizationReturnPath(request: Awaited<ReturnType<typeof parseAuthori
     resource: request.resource,
   })
   if (request.state) params.set('state', request.state)
-  return `/authorize?${params}`
+  const returnPath = `/authorize?${params}`
+  if (Buffer.byteLength(returnPath, 'utf8') > MAX_SESSION_RETURN_PATH_BYTES) {
+    throw new GatewayOauthError(
+      'invalid_request',
+      'The OAuth authorization request is too large',
+      400,
+      request.redirectUri,
+      request.state
+    )
+  }
+  return returnPath
 }
 
 function redirectToOauthClient(ctx: HttpContext, location: string) {

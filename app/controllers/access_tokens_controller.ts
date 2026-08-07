@@ -7,7 +7,7 @@ import {
   createAccessTokenValidator,
   updateAccessTokenValidator,
 } from '#validators/mcp'
-import { publicAppUrl } from '#services/public_url'
+import { publicOauthAppUrl } from '#services/public_url'
 import AccessTokenTransformer from '#transformers/access_token_transformer'
 import McpTransformer from '#transformers/mcp_transformer'
 
@@ -21,7 +21,7 @@ export default class AccessTokensController {
 
     const createdPlaintextRaw = session.flashMessages.get('createdPlaintext')
     const createdPlaintext = typeof createdPlaintextRaw === 'string' ? createdPlaintextRaw : null
-    const appUrl = publicAppUrl()
+    const appUrl = publicOauthAppUrl()
 
     return inertia.render('tokens/index', {
       tokens: AccessTokenTransformer.transform(tokens),

@@ -1,7 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import type AccessToken from '#models/access_token'
 import AccessTokenService from '#services/access_token_service'
-import { GATEWAY_OAUTH_SCOPE, protectedResourceMetadataUrl } from '#services/gateway_oauth'
+import {
+  GATEWAY_OAUTH_SCOPE,
+  gatewayResourceUrl,
+  protectedResourceMetadataUrl,
+} from '#services/gateway_oauth'
 
 /**
  * Authenticate agent requests to /mcp with a Bearer access token.
@@ -28,7 +32,7 @@ export default class McpBearerMiddleware {
     }
 
     const token = await AccessTokenService.findUsableByPlaintext(plaintext)
-    if (!token) {
+    if (!token || !this.hasValidOauthAudienceAndScope(token)) {
       this.challenge(ctx, 'invalid_token')
       return ctx.response.status(401).json({
         error: 'unauthorized',
@@ -43,6 +47,20 @@ export default class McpBearerMiddleware {
     ctx.allowedMcps = allowedMcps
 
     return next()
+  }
+
+  private hasValidOauthAudienceAndScope(token: AccessToken) {
+    if (token.source !== 'oauth') return true
+
+    try {
+      return (
+        token.oauthResource !== null &&
+        new URL(token.oauthResource).href === gatewayResourceUrl() &&
+        token.oauthScopes === GATEWAY_OAUTH_SCOPE
+      )
+    } catch {
+      return false
+    }
   }
 
   private challenge(ctx: HttpContext, error?: 'invalid_token') {

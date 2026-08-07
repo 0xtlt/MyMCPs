@@ -226,7 +226,7 @@ export default function TokensIndex({
   const [isInstallOpen, setIsInstallOpen] = useState(Boolean(createdPlaintext))
   const [installClient, setInstallClient] = useState<McpClient>('codex')
   const [installAuthMode, setInstallAuthMode] = useState<McpInstallAuthMode>(
-    createdPlaintext ? 'token' : 'oauth'
+    createdPlaintext || !gatewayUrl ? 'token' : 'oauth'
   )
   const [installToken, setInstallToken] = useState(createdPlaintext ?? '')
   const [isInstallTokenVisible, setIsInstallTokenVisible] = useState(Boolean(createdPlaintext))
@@ -276,7 +276,7 @@ export default function TokensIndex({
 
   function openInstall() {
     setInstallClient('codex')
-    setInstallAuthMode('oauth')
+    setInstallAuthMode(gatewayUrl ? 'oauth' : 'token')
     setInstallToken('')
     setIsInstallTokenVisible(false)
     setIsLazyToolModeEnabled(false)
@@ -287,7 +287,7 @@ export default function TokensIndex({
     setIsInstallOpen(isOpen)
     if (!isOpen) {
       setInstallToken('')
-      setInstallAuthMode('oauth')
+      setInstallAuthMode(gatewayUrl ? 'oauth' : 'token')
       setIsInstallTokenVisible(false)
       setIsLazyToolModeEnabled(false)
     }
@@ -577,15 +577,24 @@ export default function TokensIndex({
           content={
             <LayoutContent isScrollable>
               <VStack gap={4} hAlign="stretch">
-                <TabList
-                  value={installAuthMode}
-                  onChange={(value) => setInstallAuthMode(value as McpInstallAuthMode)}
-                  layout="fill"
-                  hasDivider
-                >
-                  <Tab value="oauth" label="OAuth (recommended)" />
-                  <Tab value="token" label="Access token" />
-                </TabList>
+                {gatewayUrl ? (
+                  <TabList
+                    value={installAuthMode}
+                    onChange={(value) => setInstallAuthMode(value as McpInstallAuthMode)}
+                    layout="fill"
+                    hasDivider
+                  >
+                    <Tab value="oauth" label="OAuth (recommended)" />
+                    <Tab value="token" label="Access token" />
+                  </TabList>
+                ) : (
+                  <Banner
+                    status="warning"
+                    title="OAuth is unavailable"
+                    description="Set APP_URL to this instance's public HTTPS origin to enable OAuth installation."
+                    container="card"
+                  />
+                )}
                 {installAuthMode === 'oauth' ? (
                   <Banner
                     status="info"
