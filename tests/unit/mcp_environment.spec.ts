@@ -3,7 +3,7 @@ import { errors } from '@vinejs/vine'
 import Mcp from '#models/mcp'
 import { assignMcpFromPayload } from '#controllers/mcps_controller'
 import McpEnvironmentStore from '#services/mcp_environment_store'
-import { buildDenoEnvironment } from '#services/upstream/deno_runner'
+import { buildDenoArgs, buildDenoEnvironment } from '#services/upstream/deno_runner'
 import McpTransformer from '#transformers/mcp_transformer'
 import { createMcpValidator } from '#validators/mcp'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
@@ -158,6 +158,29 @@ test.group('npm MCP environment variables', (group) => {
 
     await assignMcpFromPayload(mcp, await npmPayload({ transport: 'http' }), { excludeId: mcp.id })
     assert.isNull(mcp.npmEnv)
+  })
+
+  test('grants Deno sandbox permissions including os.homedir for Node npm MCPs', async ({
+    assert,
+  }) => {
+    const admin = await createAdmin()
+    const mcp = await createMcp(admin.id, { transport: 'npm' })
+    mcp.npmPackage = '@shopify/dev-mcp'
+    mcp.npmVersion = '1.14.4'
+    mcp.npmArgs = JSON.stringify(['--flag'])
+
+    assert.deepEqual(buildDenoArgs(mcp, '/safe/sandbox'), [
+      'run',
+      '--quiet',
+      '--allow-read=/safe/sandbox',
+      '--allow-write=/safe/sandbox',
+      '--allow-net',
+      '--allow-env',
+      '--allow-sys=homedir',
+      '--no-prompt',
+      'npm:@shopify/dev-mcp@1.14.4',
+      '--flag',
+    ])
   })
 
   test('fails closed when stored JSON or ciphertext is corrupted', ({ assert }) => {
