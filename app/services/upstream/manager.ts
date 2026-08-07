@@ -15,6 +15,7 @@ import {
   listDenoTools,
   type ConnectedDenoUpstream,
 } from '#services/upstream/deno_runner'
+import { sanitizeMcpDiagnostic } from '#services/security_redaction'
 
 export type ConnectedUpstream = ConnectedHttpUpstream | ConnectedDenoUpstream
 
@@ -69,7 +70,7 @@ export async function listNamespacedTools(mcps: Mcp[]) {
       }
     } catch (error) {
       logger.warn(
-        { err: error, mcpId: mcp.id, slug: mcp.slug },
+        { error: sanitizeMcpDiagnostic(error, mcp), mcpId: mcp.id, slug: mcp.slug },
         'Skipping unhealthy upstream while listing gateway tools'
       )
     }
@@ -112,13 +113,13 @@ export async function testAndUpdateStatus(mcp: Mcp) {
       mcp.status = hasOauthAccessToken ? 'error' : 'draft'
       mcp.lastError = hasOauthAccessToken
         ? error instanceof UpstreamUnauthorizedError
-          ? `OAuth token rejected. ${error.message}`.slice(0, 500)
+          ? sanitizeMcpDiagnostic(`OAuth token rejected. ${error.message}`, mcp)!
           : 'OAuth token was rejected by the MCP server (HTTP 401). Re-authorize this MCP.'
         : 'OAuth authorization required'
       mcp.oauthRequired = true
     } else {
       mcp.status = 'error'
-      mcp.lastError = error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
+      mcp.lastError = sanitizeMcpDiagnostic(error, mcp) ?? 'Unknown error'
       mcp.oauthRequired = false
     }
     await mcp.save()

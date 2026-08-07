@@ -42,10 +42,10 @@ function mockNotionOAuthServer() {
   const calls: Array<{ url: string; method: string; body: string }> = []
 
   globalThis.fetch = async (input, init) => {
-    const url =
-      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-    const method = init?.method ?? 'GET'
-    const body = String(init?.body ?? '')
+    const request = new Request(input, init)
+    const url = request.url
+    const method = request.method
+    const body = await request.clone().text()
     calls.push({ url, method, body })
 
     if (url.includes('/.well-known/oauth-protected-resource')) {
@@ -218,8 +218,9 @@ test.group('MCP automatic authentication', (group) => {
   }) => {
     const originalFetch = globalThis.fetch
     const authorizationHeaders: Array<string | null> = []
-    globalThis.fetch = async (_input, init) => {
-      authorizationHeaders.push(new Headers(init?.headers).get('Authorization'))
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      authorizationHeaders.push(request.headers.get('Authorization'))
       return new Response(
         JSON.stringify({
           error: 'invalid_token',
@@ -265,9 +266,8 @@ test.group('MCP automatic authentication', (group) => {
       assert.equal(automatic.lastError, 'OAuth authorization required')
       assert.isTrue(automatic.oauthRequired)
       assert.equal(rejectedToken.status, 'error')
-      assert.include(rejectedToken.lastError, 'OAuth token rejected. MCP server returned HTTP 401.')
-      assert.include(rejectedToken.lastError, 'The access token audience is invalid')
-      assert.include(rejectedToken.lastError, 'WWW-Authenticate')
+      assert.include(rejectedToken.lastError!, 'The access token audience is invalid')
+      assert.notInclude(rejectedToken.lastError!, 'rejected-access-token')
       assert.include(authorizationHeaders, 'Bearer rejected-access-token')
       assert.notInclude(authorizationHeaders, 'bearer rejected-access-token')
       assert.isTrue(rejectedToken.oauthRequired)

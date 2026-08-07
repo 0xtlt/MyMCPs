@@ -4,11 +4,13 @@ import type AccessToken from '#models/access_token'
 import InstanceSetting, { type McpLogLevel } from '#models/instance_setting'
 import McpCallLog, { type McpCallErrorCategory, type McpCallOutcome } from '#models/mcp_call_log'
 import type Mcp from '#models/mcp'
+import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
 
 const DEFAULT_LOG_LEVEL: McpLogLevel = 'metadata'
 const DEFAULT_RETENTION_DAYS = 14
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const MAX_PENDING_WRITES = 1_000
+export const MAX_CAPTURE_BYTES = 64 * 1024
 
 let lastPrunedAt = 0
 
@@ -27,20 +29,24 @@ export type McpCallLogInput = {
   durationMs: number
 }
 
-export function sanitizeErrorSummary(value: unknown): string | null {
-  if (!(value instanceof Error) && typeof value !== 'string') {
-    return null
+export function sanitizeErrorSummary(value: unknown, mcp?: Mcp | null): string | null {
+  return mcp ? sanitizeMcpDiagnostic(value, mcp) : sanitizeDiagnostic(value)
+}
+
+export function serializeCapturedValue(value: unknown) {
+  const serialized = JSON.stringify(value) ?? 'null'
+  const originalBytes = Buffer.byteLength(serialized)
+  if (originalBytes <= MAX_CAPTURE_BYTES) {
+    return serialized
   }
 
-  const raw = value instanceof Error ? value.message : value
-  return raw
-    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
-    .replace(/:\/\/[^\s/:@]+:[^\s/@]+@/g, '://[REDACTED]@')
-    .replace(
-      /([?&](?:access_token|api[_-]?key|authorization|password|secret|token)=)[^&#\s]+/gi,
-      '$1[REDACTED]'
-    )
-    .slice(0, 500)
+  return JSON.stringify({
+    truncated: true,
+    originalBytes,
+    // Eight thousand characters leaves room for JSON escaping while keeping
+    // the complete wrapper below the 64 KiB field budget.
+    preview: serialized.slice(0, 8 * 1024),
+  })
 }
 
 export default class McpCallLogService {
@@ -105,12 +111,14 @@ export default class McpCallLogService {
         toolName: input.toolName?.slice(0, 254) ?? null,
         outcome: input.outcome,
         errorCategory: input.errorCategory ?? null,
-        errorSummary: sanitizeErrorSummary(input.errorSummary),
+        errorSummary: sanitizeErrorSummary(input.errorSummary, input.mcp),
         arguments:
-          argumentsCaptured && input.args !== undefined ? JSON.stringify(input.args) : null,
+          argumentsCaptured && input.args !== undefined ? serializeCapturedValue(input.args) : null,
         argumentsCaptured,
         response:
-          responseCaptured && input.response !== undefined ? JSON.stringify(input.response) : null,
+          responseCaptured && input.response !== undefined
+            ? serializeCapturedValue(input.response)
+            : null,
         responseCaptured,
         durationMs: Math.max(0, Math.round(input.durationMs)),
       })

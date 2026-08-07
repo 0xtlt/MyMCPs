@@ -6,6 +6,7 @@ import env from '#start/env'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type Mcp from '#models/mcp'
+import { sanitizeMcpDiagnostic } from '#services/security_redaction'
 import type { UpstreamTool } from '#services/upstream/http_client'
 
 export type ConnectedDenoUpstream = {
@@ -73,6 +74,11 @@ export function buildDenoEnvironment(mcp: Mcp, sandboxDir: string) {
   }
 }
 
+export function createDenoStartupError(mcp: Mcp, error: unknown) {
+  const detail = sanitizeMcpDiagnostic(error, mcp, 300) ?? 'Unknown error'
+  return new Error(`Failed to start Deno npm MCP "${mcp.npmPackage}". Is Deno installed? ${detail}`)
+}
+
 export async function connectDenoUpstream(mcp: Mcp): Promise<ConnectedDenoUpstream> {
   const sandboxDir = sandboxRootFor(mcp.id)
   await mkdir(sandboxDir, { recursive: true })
@@ -92,10 +98,7 @@ export async function connectDenoUpstream(mcp: Mcp): Promise<ConnectedDenoUpstre
   try {
     await client.connect(transport)
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `Failed to start Deno npm MCP "${mcp.npmPackage}". Is Deno installed? ${detail.slice(0, 300)}`
-    )
+    throw createDenoStartupError(mcp, error)
   }
 
   return {

@@ -20,6 +20,8 @@ import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { requirePublicAppUrl } from '#services/public_url'
 import { oauthSessionValidator } from '#validators/oauth'
+import { fetchWithSameOriginRedirects } from '#services/upstream/safe_fetch'
+import { parseHttpUrl } from '#services/http_url'
 
 type OauthSession = Infer<typeof oauthSessionValidator>
 
@@ -47,12 +49,44 @@ function oauthSessionKey(state: string) {
   return `mcp_oauth:${state}`
 }
 
-function ensureHttpUrl(value: string, label: string) {
-  const url = new URL(value)
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`${label} must use HTTP or HTTPS`)
+function normalizedHttpUrl(value: string, label: string) {
+  const url = parseHttpUrl(value, label)
+  return url.pathname === '/' && !url.search && !url.username && !url.password
+    ? url.origin
+    : url.toString()
+}
+
+function comparableOAuthIssuer(value: string, label: string) {
+  const url = parseHttpUrl(value, label)
+  url.username = ''
+  url.password = ''
+  return url.pathname === '/' && !url.search ? url.origin : url.toString()
+}
+
+const oauthFetch: typeof fetch = (input, init) =>
+  fetchWithSameOriginRedirects(input, init, 'OAuth endpoint')
+
+function validateOAuthMetadata(metadata: AuthorizationServerMetadata, expectedIssuer?: string) {
+  parseHttpUrl(String(metadata.authorization_endpoint), 'OAuth authorization endpoint')
+  parseHttpUrl(String(metadata.token_endpoint), 'OAuth token endpoint')
+  if (metadata.registration_endpoint) {
+    parseHttpUrl(metadata.registration_endpoint, 'OAuth registration endpoint')
   }
-  return url
+  if (metadata.issuer) {
+    parseHttpUrl(metadata.issuer, 'OAuth issuer')
+    if (
+      expectedIssuer &&
+      comparableOAuthIssuer(metadata.issuer, 'OAuth issuer') !==
+        comparableOAuthIssuer(expectedIssuer, 'OAuth authorization server')
+    ) {
+      throw new Error('OAuth issuer metadata does not match the authorization server')
+    }
+  }
+  return metadata
+}
+
+function normalizedTokenEndpoint(metadata: AuthorizationServerMetadata) {
+  return normalizedHttpUrl(String(metadata.token_endpoint), 'OAuth token endpoint')
 }
 
 function inferIssuer(mcp: Mcp) {
@@ -60,7 +94,10 @@ function inferIssuer(mcp: Mcp) {
   if (!endpoint) {
     return null
   }
-  return new URL(endpoint).origin
+  const url = parseHttpUrl(endpoint, 'OAuth endpoint')
+  url.pathname = '/'
+  url.search = ''
+  return url.username || url.password ? url.toString() : url.origin
 }
 
 function fallbackMetadata(mcp: Mcp, issuer: string): AuthorizationServerMetadata | undefined {
@@ -108,30 +145,36 @@ async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
     throw new Error('OAuth is supported only for HTTP MCPs')
   }
 
-  const serverUrl = ensureHttpUrl(mcp.httpUrl, 'MCP URL')
+  const serverUrl = parseHttpUrl(mcp.httpUrl, 'MCP URL')
   let serverInfo: Awaited<ReturnType<typeof discoverOAuthServerInfo>> | undefined
   let discoveryError: unknown
 
   try {
-    serverInfo = await discoverOAuthServerInfo(serverUrl)
+    serverInfo = await discoverOAuthServerInfo(serverUrl, { fetchFn: oauthFetch })
   } catch (error) {
     discoveryError = error
   }
 
-  const authorizationServerUrl =
+  const discoveredAuthorizationServerUrl =
     serverInfo?.authorizationServerUrl ?? mcp.oauthIssuer ?? inferIssuer(mcp)
-  if (!authorizationServerUrl) {
+  if (!discoveredAuthorizationServerUrl) {
     throw new Error(
       discoveryError instanceof Error
         ? `OAuth discovery failed: ${discoveryError.message}`
         : 'OAuth provider metadata could not be discovered'
     )
   }
+  const authorizationServerUrl = normalizedHttpUrl(
+    discoveredAuthorizationServerUrl,
+    'OAuth authorization server'
+  )
 
   let metadata = serverInfo?.authorizationServerMetadata
   if (!metadata) {
     try {
-      metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl)
+      metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl, {
+        fetchFn: oauthFetch,
+      })
     } catch (error) {
       discoveryError = error
     }
@@ -145,8 +188,13 @@ async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
         : 'OAuth provider metadata could not be discovered'
     )
   }
+  validateOAuthMetadata(metadata, authorizationServerUrl)
 
-  const resource = serverInfo?.resourceMetadata?.resource ?? mcp.oauthResource ?? undefined
+  const discoveredResource =
+    serverInfo?.resourceMetadata?.resource ?? mcp.oauthResource ?? undefined
+  const resource = discoveredResource
+    ? normalizedHttpUrl(discoveredResource, 'OAuth resource')
+    : undefined
   const scope =
     mcp.oauthScopes?.trim() ||
     serverInfo?.resourceMetadata?.scopes_supported?.join(' ') ||
@@ -165,9 +213,15 @@ async function metadataForAuthorizationServer(
   mcp: Mcp,
   authorizationServerUrl: string
 ): Promise<AuthorizationServerMetadata> {
+  const normalizedAuthorizationServerUrl = normalizedHttpUrl(
+    authorizationServerUrl,
+    'OAuth authorization server'
+  )
   let metadata: AuthorizationServerMetadata | undefined
   try {
-    metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl)
+    metadata = await discoverAuthorizationServerMetadata(normalizedAuthorizationServerUrl, {
+      fetchFn: oauthFetch,
+    })
   } catch {
     // Manual endpoint settings remain a fallback for OAuth providers without discovery.
   }
@@ -175,7 +229,7 @@ async function metadataForAuthorizationServer(
   if (!metadata) {
     throw new Error('OAuth provider metadata could not be discovered')
   }
-  return metadata
+  return validateOAuthMetadata(metadata, normalizedAuthorizationServerUrl)
 }
 
 function saveOAuthConfiguration(
@@ -188,8 +242,11 @@ function saveOAuthConfiguration(
   mcp.oauthIssuer = context.authorizationServerUrl
   mcp.oauthResource = context.resource ?? null
   mcp.oauthRedirectUri = redirectUri
-  mcp.oauthAuthorizeUrl = String(context.metadata.authorization_endpoint)
-  mcp.oauthTokenUrl = String(context.metadata.token_endpoint)
+  mcp.oauthAuthorizeUrl = normalizedHttpUrl(
+    String(context.metadata.authorization_endpoint),
+    'OAuth authorization endpoint'
+  )
+  mcp.oauthTokenUrl = normalizedTokenEndpoint(context.metadata)
   if (context.scope) {
     mcp.oauthScopes = context.scope
   }
@@ -290,6 +347,7 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
       metadata: context.metadata,
       clientMetadata,
       scope: context.scope,
+      fetchFn: oauthFetch,
     })
     registered = true
   }
@@ -322,7 +380,7 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
     state,
   })
 
-  return authorizationUrl.toString()
+  return parseHttpUrl(authorizationUrl.toString(), 'OAuth authorization URL').toString()
 }
 
 export async function exchangeAuthorizationCode(mcp: Mcp, oauth: OauthSession, code: string) {
@@ -339,6 +397,7 @@ export async function exchangeAuthorizationCode(mcp: Mcp, oauth: OauthSession, c
     codeVerifier: oauth.codeVerifier,
     redirectUri: oauth.redirectUri,
     resource: oauth.resource ? new URL(oauth.resource) : undefined,
+    fetchFn: oauthFetch,
   })
 
   saveOAuthTokens(mcp, tokens)
@@ -369,6 +428,7 @@ export async function refreshOauthAccessToken(mcp: Mcp) {
     clientInformation: client,
     refreshToken: refresh,
     resource: mcp.oauthResource ? new URL(mcp.oauthResource) : undefined,
+    fetchFn: oauthFetch,
   })
 
   saveOAuthTokens(mcp, tokens)

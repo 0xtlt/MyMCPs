@@ -14,6 +14,8 @@ import {
 } from '#services/upstream/oauth'
 import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
+import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
+import { parseHttpUrl } from '#services/http_url'
 
 type McpPayload = Infer<typeof createMcpValidator>
 
@@ -27,6 +29,20 @@ function npmEnvValidationError(field: string, message: string): never {
       rule: 'npmEnvironment',
     },
   ])
+}
+
+function normalizedHttpUrl(value: string) {
+  try {
+    return parseHttpUrl(value, 'MCP URL').toString()
+  } catch (error) {
+    throw new errors.E_VALIDATION_ERROR([
+      {
+        field: 'httpUrl',
+        message: error instanceof Error ? error.message : 'MCP URL is invalid',
+        rule: 'url',
+      },
+    ])
+  }
 }
 
 function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
@@ -134,7 +150,7 @@ export async function assignMcpFromPayload(
   payload: McpPayload,
   options?: { excludeId?: number }
 ) {
-  const nextHttpUrl = payload.transport === 'http' ? (payload.httpUrl ?? null) : null
+  const nextHttpUrl = payload.transport === 'http' ? normalizedHttpUrl(payload.httpUrl ?? '') : null
   const oauthServerChanged = mcp.transport !== payload.transport || mcp.httpUrl !== nextHttpUrl
   if (oauthServerChanged) {
     clearOAuthConnection(mcp)
@@ -276,7 +292,7 @@ export default class McpsController {
     try {
       return response.redirect(await startOauthFlow(session, mcp))
     } catch (error) {
-      session.flash('error', error instanceof Error ? error.message : 'Failed to start OAuth')
+      session.flash('error', sanitizeMcpDiagnostic(error, mcp) ?? 'Failed to start OAuth')
       session.flash('editingMcpId', mcp.id)
       return response.redirect().toRoute('mcps.index')
     }
@@ -288,22 +304,31 @@ export default class McpsController {
     clearOauthSession(session, state)
 
     if (oauthError) {
-      session.flash('error', `OAuth error: ${oauthError}`)
+      const mcp = oauth ? await Mcp.find(oauth.mcpId) : null
+      const message = `OAuth error: ${oauthError}`
+      const callbackCredentials = [code, state].filter((value): value is string => Boolean(value))
+      session.flash(
+        'error',
+        mcp
+          ? (sanitizeMcpDiagnostic(message, mcp, 500, callbackCredentials) ??
+              'OAuth authorization failed')
+          : (sanitizeDiagnostic(message, 500, callbackCredentials) ?? 'OAuth authorization failed')
+      )
       if (oauth) {
         session.flash('editingMcpId', oauth.mcpId)
       }
-      return response.redirect().toRoute('mcps.index')
+      return response.redirect().withQs(false).toRoute('mcps.index')
     }
 
     if (!oauth || !code || !state || state !== oauth.state) {
       session.flash('error', 'Invalid OAuth callback')
-      return response.redirect().toRoute('mcps.index')
+      return response.redirect().withQs(false).toRoute('mcps.index')
     }
 
     const mcp = await Mcp.find(oauth.mcpId)
     if (!mcp) {
       session.flash('error', 'MCP not found')
-      return response.redirect().toRoute('mcps.index')
+      return response.redirect().withQs(false).toRoute('mcps.index')
     }
 
     try {
@@ -316,12 +341,12 @@ export default class McpsController {
       }
     } catch (error) {
       mcp.status = 'error'
-      mcp.lastError = error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
+      mcp.lastError = sanitizeMcpDiagnostic(error, mcp, 500, [code, state]) ?? 'Unknown error'
       await mcp.save()
       session.flash('error', mcp.lastError)
     }
 
     session.flash('editingMcpId', mcp.id)
-    return response.redirect().toRoute('mcps.index')
+    return response.redirect().withQs(false).toRoute('mcps.index')
   }
 }

@@ -96,6 +96,8 @@ test.group('settings', (group) => {
 
   test('updates the password and invalidates the old credential', async ({ client, assert }) => {
     const admin = await createAdmin({ email: 'admin@example.com' })
+    await User.rememberMeTokens.create(admin, '1 year')
+    await User.rememberMeTokens.create(admin, '1 year')
 
     const response = await client
       .patch('/settings/password')
@@ -115,6 +117,7 @@ test.group('settings', (group) => {
     const updatedUser = await User.findOrFail(admin.id)
     assert.isFalse(await updatedUser.verifyPassword('password123'))
     assert.isTrue(await updatedUser.verifyPassword('new-password123'))
+    assert.lengthOf(await User.rememberMeTokens.all(updatedUser), 0)
   })
 
   test('rejects mismatched password confirmation', async ({ client, assert }) => {

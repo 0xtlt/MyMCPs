@@ -29,7 +29,7 @@ export const oauthTokenResponseValidator = vine.create({
  * Query params on `/mcps/oauth/callback` from the authorization server.
  */
 export const oauthCallbackValidator = vine.create({
-  code: vine.string().optional(),
-  state: vine.string().optional(),
-  error: vine.string().optional(),
+  code: vine.string().maxLength(8192).optional(),
+  state: vine.string().maxLength(512).optional(),
+  error: vine.string().maxLength(1024).optional(),
 })
