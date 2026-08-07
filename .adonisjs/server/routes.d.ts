@@ -5,6 +5,14 @@ type ParamValue = string | number | bigint | boolean
 export type ScannedRoutes = {
   ALL: {
     'health': { paramsTuple?: []; params?: {} }
+    'oauth.metadata': { paramsTuple?: []; params?: {} }
+    'oauth.resourceMetadata': { paramsTuple?: []; params?: {} }
+    'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }
+    'oauth.register': { paramsTuple?: []; params?: {} }
+    'oauth.authorize': { paramsTuple?: []; params?: {} }
+    'oauth_server.authorize': { paramsTuple?: []; params?: {} }
+    'oauth.token': { paramsTuple?: []; params?: {} }
+    'oauth.revoke': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
     'onboarding.store': { paramsTuple?: []; params?: {} }
     'gateway.handle': { paramsTuple?: []; params?: {} }
@@ -35,10 +43,15 @@ export type ScannedRoutes = {
     'mcps.oauthStart': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.index': { paramsTuple?: []; params?: {} }
     'tokens.store': { paramsTuple?: []; params?: {} }
+    'tokens.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   GET: {
     'health': { paramsTuple?: []; params?: {} }
+    'oauth.metadata': { paramsTuple?: []; params?: {} }
+    'oauth.resourceMetadata': { paramsTuple?: []; params?: {} }
+    'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }
+    'oauth.authorize': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
@@ -56,6 +69,10 @@ export type ScannedRoutes = {
   }
   HEAD: {
     'health': { paramsTuple?: []; params?: {} }
+    'oauth.metadata': { paramsTuple?: []; params?: {} }
+    'oauth.resourceMetadata': { paramsTuple?: []; params?: {} }
+    'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }
+    'oauth.authorize': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
@@ -72,6 +89,10 @@ export type ScannedRoutes = {
     'tokens.index': { paramsTuple?: []; params?: {} }
   }
   POST: {
+    'oauth.register': { paramsTuple?: []; params?: {} }
+    'oauth_server.authorize': { paramsTuple?: []; params?: {} }
+    'oauth.token': { paramsTuple?: []; params?: {} }
+    'oauth.revoke': { paramsTuple?: []; params?: {} }
     'onboarding.store': { paramsTuple?: []; params?: {} }
     'gateway.handle': { paramsTuple?: []; params?: {} }
     'session.store': { paramsTuple?: []; params?: {} }
@@ -95,6 +116,7 @@ export type ScannedRoutes = {
   }
   PUT: {
     'mcps.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'tokens.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
 }
 declare module '@adonisjs/core/types/http' {

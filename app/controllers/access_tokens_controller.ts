@@ -13,7 +13,10 @@ import McpTransformer from '#transformers/mcp_transformer'
 
 export default class AccessTokensController {
   async index({ inertia, session }: HttpContext) {
-    const tokens = await AccessToken.query().preload('mcps').orderBy('created_at', 'desc')
+    const tokens = await AccessToken.query()
+      .preload('mcps')
+      .preload('oauthClient')
+      .orderBy('created_at', 'desc')
     const mcps = await Mcp.query().orderBy('name', 'asc')
 
     const createdPlaintextRaw = session.flashMessages.get('createdPlaintext')
@@ -62,6 +65,10 @@ export default class AccessTokensController {
     }
     if (token.isRevoked) {
       session.flash('error', 'Revoked tokens cannot be edited')
+      return response.redirect().toRoute('tokens.index')
+    }
+    if (token.source === 'oauth') {
+      session.flash('error', 'OAuth connections cannot be edited — revoke the connection instead')
       return response.redirect().toRoute('tokens.index')
     }
 

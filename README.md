@@ -6,7 +6,7 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 
 - Connects HTTP and npm-based MCP servers.
 - Supports bearer tokens, custom headers, and OAuth.
-- Issues access tokens for all MCPs or a selected set.
+- Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
 - Exposes every allowed upstream through `GET` and `POST /mcp`.
 - Records gateway activity and usage analytics.
 
@@ -29,9 +29,15 @@ Open [http://localhost:3333](http://localhost:3333) and create the admin account
 ## Connect an AI client
 
 1. Add your upstream servers from **MCPs**.
-2. Create a token from **Access tokens**.
-3. Point your AI client to `https://your-domain.example/mcp`.
-4. Send the token as `Authorization: Bearer <token>`.
+2. Open **Access tokens**, select **Install MCP**, and copy the OAuth configuration for your client.
+3. When the client opens MyMCPs, sign in and approve the connection.
+4. Revoke the generated OAuth connection from **Access tokens** when you want to stop it.
+
+OAuth clients connect to `https://your-domain.example/mcp` without a manually copied token. Set
+`APP_URL` to the instance's public HTTPS origin so discovery and authorization URLs are correct.
+
+For clients without OAuth support, create a manual token and send it as
+`Authorization: Bearer <token>` on every `/mcp` request.
 
 Tools use `{mcp-slug}__{tool-name}` names by default. For clients with large tool catalogs, add the following request header to enable progressive discovery:
 
@@ -41,7 +47,7 @@ X-MyMCPs-Tool-Mode: lazy
 
 Lazy mode exposes `list_mcps`, `tool_search`, and `call_tool` instead of loading every tool definition at once.
 
-### OAuth MCPs
+### Upstream OAuth MCPs
 
 For providers that support MCP OAuth discovery and dynamic client registration, choose **OAuth** when adding the server, save it, then select **Connect OAuth**. Set `APP_URL` to the instance's public HTTPS URL so callback URLs are generated correctly.
 

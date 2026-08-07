@@ -30,8 +30,15 @@ export class AccessTokenSchema extends BaseModel {
     'id',
     'lastUsedAt',
     'name',
+    'oauthClientId',
+    'oauthRefreshExpiresAt',
+    'oauthRefreshTokenHash',
+    'oauthRefreshTokenPrefix',
+    'oauthResource',
+    'oauthScopes',
     'revokedAt',
     'scopeMode',
+    'source',
     'tokenHash',
     'tokenPrefix',
     'updatedAt',
@@ -49,10 +56,24 @@ export class AccessTokenSchema extends BaseModel {
   declare lastUsedAt: DateTime | null
   @column()
   declare name: string
+  @column()
+  declare oauthClientId: number | null
+  @column.dateTime()
+  declare oauthRefreshExpiresAt: DateTime | null
+  @column()
+  declare oauthRefreshTokenHash: string | null
+  @column()
+  declare oauthRefreshTokenPrefix: string | null
+  @column()
+  declare oauthResource: string | null
+  @column()
+  declare oauthScopes: string | null
   @column.dateTime()
   declare revokedAt: DateTime | null
   @column()
   declare scopeMode: string
+  @column()
+  declare source: string
   @column()
   declare tokenHash: string
   @column()
@@ -287,6 +308,98 @@ export class McpSchema extends BaseModel {
   declare transport: string
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
+}
+
+export class OauthAuthorizationCodeSchema extends BaseModel {
+  static $columns = [
+    'codeChallenge',
+    'codeHash',
+    'createdAt',
+    'expiresAt',
+    'id',
+    'oauthClientId',
+    'redirectUri',
+    'resource',
+    'scopes',
+    'userId',
+  ] as const
+  $columns = OauthAuthorizationCodeSchema.$columns
+  @column()
+  declare codeChallenge: string
+  @column()
+  declare codeHash: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare expiresAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare oauthClientId: number
+  @column()
+  declare redirectUri: string
+  @column()
+  declare resource: string
+  @column()
+  declare scopes: string
+  @column()
+  declare userId: number
+}
+
+export class OauthClientSchema extends BaseModel {
+  static $columns = [
+    'clientId',
+    'clientName',
+    'clientSecretExpiresAt',
+    'clientSecretHash',
+    'clientSecretPrefix',
+    'createdAt',
+    'grantTypes',
+    'id',
+    'redirectUris',
+    'responseTypes',
+    'scope',
+    'tokenEndpointAuthMethod',
+    'updatedAt',
+  ] as const
+  $columns = OauthClientSchema.$columns
+  @column()
+  declare clientId: string
+  @column()
+  declare clientName: string
+  @column.dateTime()
+  declare clientSecretExpiresAt: DateTime | null
+  @column()
+  declare clientSecretHash: string | null
+  @column()
+  declare clientSecretPrefix: string | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare grantTypes: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare redirectUris: string
+  @column()
+  declare responseTypes: string
+  @column()
+  declare scope: string
+  @column()
+  declare tokenEndpointAuthMethod: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class RateLimitSchema extends BaseModel {
+  static $columns = ['expire', 'key', 'points'] as const
+  $columns = RateLimitSchema.$columns
+  @column()
+  declare expire: bigint | number | null
+  @column({ isPrimary: true })
+  declare key: string
+  @column()
+  declare points: number
 }
 
 export class RememberMeTokenSchema extends BaseModel {

@@ -10,6 +10,7 @@ export const controllers = {
   Invites: () => import('#controllers/invites_controller'),
   Logs: () => import('#controllers/logs_controller'),
   Mcps: () => import('#controllers/mcps_controller'),
+  OauthServer: () => import('#controllers/oauth_server_controller'),
   Onboarding: () => import('#controllers/onboarding_controller'),
   Session: () => import('#controllers/session_controller'),
   Settings: () => import('#controllers/settings_controller'),

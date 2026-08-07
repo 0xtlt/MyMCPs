@@ -9,7 +9,7 @@ export default class SessionController {
   }
 
   async store(ctx: HttpContext) {
-    const { request, auth, response } = ctx
+    const { request, auth, response, session } = ctx
     const { email, password } = await request.validateUsing(loginValidator)
     const [rateLimitError, user] = await loginRateLimiter.penalize(`login:${request.ip()}`, () =>
       User.verifyCredentials(email, password)
@@ -20,6 +20,10 @@ export default class SessionController {
     }
 
     await auth.use('web').login(user, true)
+    const oauthReturnTo = session.pull('oauthReturnTo')
+    if (typeof oauthReturnTo === 'string' && oauthReturnTo.startsWith('/authorize?')) {
+      return response.redirect(oauthReturnTo)
+    }
     response.redirect().toRoute('home')
   }
 

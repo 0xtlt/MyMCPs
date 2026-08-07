@@ -67,11 +67,17 @@ test.group('security boundaries', (group) => {
     assert.equal(mcp.httpUrl, httpUrl)
   })
 
-  test('allows production CORS only on the exact bearer gateway path', ({ assert }) => {
+  test('allows production CORS only on exact MCP protocol paths', ({ assert }) => {
     const origin = 'https://agent.example'
 
     assert.equal(resolveCorsOrigin(origin, '/mcp', false), origin)
     assert.equal(resolveCorsOrigin(origin, '/mcp?session=one', false), origin)
+    assert.equal(resolveCorsOrigin(origin, '/token', false), origin)
+    assert.equal(resolveCorsOrigin(origin, '/register', false), origin)
+    assert.equal(
+      resolveCorsOrigin(origin, '/.well-known/oauth-protected-resource/mcp', false),
+      origin
+    )
     assert.deepEqual(resolveCorsOrigin(origin, '/mcps', false), [])
     assert.deepEqual(resolveCorsOrigin(origin, '/mcps/oauth/callback', false), [])
   })

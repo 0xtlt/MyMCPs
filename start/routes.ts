@@ -18,6 +18,35 @@ import router from '@adonisjs/core/services/router'
 router.get('health', ({ response }) => response.ok({ status: 'ok' })).as('health')
 
 /**
+ * MCP OAuth 2.1 discovery and authorization server endpoints.
+ */
+router
+  .group(() => {
+    router
+      .get('.well-known/oauth-authorization-server', [
+        controllers.OauthServer,
+        'authorizationMetadata',
+      ])
+      .as('oauth.metadata')
+    router
+      .get('.well-known/oauth-protected-resource', [
+        controllers.OauthServer,
+        'protectedResourceMetadata',
+      ])
+      .as('oauth.resourceMetadata')
+    router.get('.well-known/oauth-protected-resource/mcp', [
+      controllers.OauthServer,
+      'protectedResourceMetadata',
+    ])
+    router.post('register', [controllers.OauthServer, 'register']).as('oauth.register')
+    router.get('authorize', [controllers.OauthServer, 'authorize']).as('oauth.authorize')
+    router.post('authorize', [controllers.OauthServer, 'authorize'])
+    router.post('token', [controllers.OauthServer, 'token']).as('oauth.token')
+    router.post('revoke', [controllers.OauthServer, 'revoke']).as('oauth.revoke')
+  })
+  .use(middleware.needsSetup())
+
+/**
  * First-run only. Once an admin exists, these redirect home.
  */
 router

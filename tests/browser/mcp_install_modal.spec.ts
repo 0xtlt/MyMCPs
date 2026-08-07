@@ -18,6 +18,7 @@ test.group('MCP installation modal', (group) => {
     await page.getByRole('button', { name: 'Install MCP' }).click()
 
     const modal = page.getByRole('dialog', { name: 'Install MyMCPs' })
+    await modal.getByRole('button', { name: 'Access token' }).click()
     const tokenInput = modal.getByPlaceholder('Paste your MyMCPs access token')
     assert.equal(await tokenInput.getAttribute('type'), 'password')
     await tokenInput.fill("token'quoted")
@@ -51,15 +52,29 @@ test.group('MCP installation modal', (group) => {
     assert.include(await modal.innerText(), '"X-MyMCPs-Tool-Mode": "lazy"')
   })
 
-  test('requires a token on manual opening', async ({ assert, browserContext, visit }) => {
+  test('opens in OAuth mode without requiring a token', async ({
+    assert,
+    browserContext,
+    visit,
+  }) => {
     const admin = await createAdmin()
     await browserContext.loginAs(admin)
     const page = await visit('/tokens')
 
     await page.getByRole('button', { name: 'Install MCP' }).click()
 
-    assert.equal(await page.getByPlaceholder('Paste your MyMCPs access token').inputValue(), '')
-    await page.assertTextContains('body', 'Paste an access token to enable copying.')
+    const modal = page.getByRole('dialog', { name: 'Install MyMCPs' })
+    assert.include(await modal.innerText(), 'No token to copy')
+    assert.notInclude(await modal.innerText(), 'Authorization =')
+    assert.notInclude(await modal.innerText(), '<YOUR_ACCESS_TOKEN>')
+
+    await modal.getByRole('button', { name: 'Claude' }).click()
+    assert.include(await modal.innerText(), 'claude mcp add --transport http --scope user mymcps')
+    assert.notInclude(await modal.innerText(), '--header')
+
+    await modal.getByRole('button', { name: 'Cursor' }).click()
+    assert.include(await modal.innerText(), '"mcpServers"')
+    assert.notInclude(await modal.innerText(), '"headers"')
   })
 
   test('opens with the newly created access token pre-filled and visible', async ({

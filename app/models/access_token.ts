@@ -4,14 +4,20 @@ import type { BelongsTo, ManyToMany } from '@adonisjs/lucid/types/relations'
 import { DateTime } from 'luxon'
 import User from '#models/user'
 import Mcp from '#models/mcp'
+import OauthClient from '#models/oauth_client'
 
 export type AccessTokenScopeMode = 'all' | 'selected'
+export type AccessTokenSource = 'manual' | 'oauth'
 
 export default class AccessToken extends AccessTokenSchema {
   declare scopeMode: AccessTokenScopeMode
+  declare source: AccessTokenSource
 
   @belongsTo(() => User, { foreignKey: 'createdBy' })
   declare creator: BelongsTo<typeof User>
+
+  @belongsTo(() => OauthClient, { foreignKey: 'oauthClientId' })
+  declare oauthClient: BelongsTo<typeof OauthClient>
 
   @manyToMany(() => Mcp, {
     pivotTable: 'access_token_mcps',
@@ -31,5 +37,15 @@ export default class AccessToken extends AccessTokenSchema {
 
   get isUsable() {
     return !this.isRevoked && !this.isExpired
+  }
+
+  get isOauthSessionActive() {
+    if (this.source !== 'oauth' || this.isRevoked) return false
+    const connectionExpiresAt = this.oauthRefreshExpiresAt ?? this.expiresAt
+    return connectionExpiresAt === null || connectionExpiresAt > DateTime.utc()
+  }
+
+  get isActive() {
+    return this.source === 'oauth' ? this.isOauthSessionActive : this.isUsable
   }
 }
