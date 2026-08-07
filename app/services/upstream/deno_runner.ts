@@ -40,8 +40,10 @@ export function sandboxRootFor(mcpId: number) {
  * Build Deno permission flags for an npm MCP subprocess.
  *
  * Filesystem is deny-by-default outside `sandboxDir` (no Adonis DB / `.env` / app source).
- * Network and env remain allowed because many MCP packages need outbound HTTP and process env;
- * treat upstream packages as trusted software, not a full multi-tenant isolation boundary.
+ * Network and env remain allowed because many MCP packages need outbound HTTP and process env.
+ * `homedir` sys access is required by Node packages that call `os.homedir()` at import time
+ * (for example `@shopify/dev-mcp` via `env-paths`); HOME/TMPDIR still point at `sandboxDir`.
+ * Treat upstream packages as trusted software, not a full multi-tenant isolation boundary.
  */
 export function buildDenoArgs(mcp: Mcp, sandboxDir: string) {
   if (!mcp.npmPackage) {
@@ -59,6 +61,7 @@ export function buildDenoArgs(mcp: Mcp, sandboxDir: string) {
     `--allow-write=${sandboxDir}`,
     '--allow-net',
     '--allow-env',
+    '--allow-sys=homedir',
     '--no-prompt',
     npmSpec,
     ...extraArgs,
