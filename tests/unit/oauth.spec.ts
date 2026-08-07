@@ -40,31 +40,27 @@ function jsonResponse(body: unknown, status = 200) {
 function mockNotionOAuthServer() {
   const originalFetch = globalThis.fetch
   const calls: Array<{ url: string; method: string; body: string }> = []
-  let authorizationServer = 'https://auth.example'
-  let authorizationEndpoint = 'https://auth.example/authorize'
-  let resource = 'https://mcp.notion.com/mcp'
-  let tokenEndpoint = 'https://auth.example/token'
 
   globalThis.fetch = async (input, init) => {
-    const url =
-      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-    const method = init?.method ?? 'GET'
-    const body = String(init?.body ?? '')
+    const request = new Request(input, init)
+    const url = request.url
+    const method = request.method
+    const body = await request.clone().text()
     calls.push({ url, method, body })
 
     if (url.includes('/.well-known/oauth-protected-resource')) {
       return jsonResponse({
-        resource,
-        authorization_servers: [authorizationServer],
+        resource: 'https://mcp.notion.com/mcp',
+        authorization_servers: ['https://auth.example'],
         scopes_supported: ['notion'],
       })
     }
 
-    if (url === `${authorizationServer}/.well-known/oauth-authorization-server`) {
+    if (url === 'https://auth.example/.well-known/oauth-authorization-server') {
       return jsonResponse({
-        issuer: authorizationServer,
-        authorization_endpoint: authorizationEndpoint,
-        token_endpoint: tokenEndpoint,
+        issuer: 'https://auth.example',
+        authorization_endpoint: 'https://auth.example/authorize',
+        token_endpoint: 'https://auth.example/token',
         registration_endpoint: 'https://auth.example/register',
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -84,7 +80,7 @@ function mockNotionOAuthServer() {
       })
     }
 
-    if (url === tokenEndpoint) {
+    if (url === 'https://auth.example/token') {
       if (body.includes('grant_type=refresh_token')) {
         return jsonResponse({
           access_token: 'refreshed-access-token',
@@ -108,18 +104,6 @@ function mockNotionOAuthServer() {
 
   return {
     calls,
-    setAuthorizationServer(value: string) {
-      authorizationServer = value
-    },
-    setAuthorizationEndpoint(value: string) {
-      authorizationEndpoint = value
-    },
-    setResource(value: string) {
-      resource = value
-    },
-    setTokenEndpoint(value: string) {
-      tokenEndpoint = value
-    },
     restore() {
       globalThis.fetch = originalFetch
     },
@@ -223,85 +207,6 @@ test.group('MCP OAuth', (group) => {
       globalThis.fetch = originalFetch
     }
   })
-
-  test('blocks OAuth reuse, exchange, and refresh when security metadata changes', async ({
-    assert,
-  }) => {
-    const mock = mockNotionOAuthServer()
-
-    try {
-      const admin = await createAdmin()
-      const mcp = await createMcp(admin.id, {
-        name: 'Drifting OAuth provider',
-        authType: 'auto',
-        httpUrl: 'https://mcp.notion.com/mcp',
-        status: 'draft',
-      })
-      const { session } = fakeSession()
-      const redirect = await startOauthFlow(session, mcp)
-      const state = new URL(redirect).searchParams.get('state')
-      const oauth = await readOauthSession(session, state ?? undefined)
-
-      const resetRequiredMessage =
-        'OAuth security metadata changed. Switch authentication away from Auto and save before reconnecting this MCP.'
-      const storedTokenEndpoint = mcp.oauthTokenUrl
-      const storedClientId = mcp.oauthClientId
-      const storedAuthorizationEndpoint = mcp.oauthAuthorizeUrl
-      const storedIssuer = mcp.oauthIssuer
-      const storedResource = mcp.oauthResource
-
-      mock.setAuthorizationEndpoint('https://attacker.example/authorize')
-      await assert.rejects(() => startOauthFlow(fakeSession().session, mcp), resetRequiredMessage)
-      mock.setAuthorizationEndpoint('https://auth.example/authorize')
-
-      mock.setResource('https://attacker.example/resource')
-      await assert.rejects(() => startOauthFlow(fakeSession().session, mcp), resetRequiredMessage)
-      mock.setResource('https://mcp.notion.com/mcp')
-
-      mock.setAuthorizationServer('https://attacker.example')
-      await assert.rejects(() => startOauthFlow(fakeSession().session, mcp), resetRequiredMessage)
-      mock.setAuthorizationServer('https://auth.example')
-
-      mock.setTokenEndpoint('https://attacker.example/token')
-      await assert.rejects(() => startOauthFlow(fakeSession().session, mcp), resetRequiredMessage)
-      assert.equal(mcp.oauthTokenUrl, storedTokenEndpoint)
-      assert.equal(mcp.oauthClientId, storedClientId)
-      assert.equal(mcp.oauthAuthorizeUrl, storedAuthorizationEndpoint)
-      assert.equal(mcp.oauthIssuer, storedIssuer)
-      assert.equal(mcp.oauthResource, storedResource)
-      assert.notInclude(
-        mock.calls.map((call) => call.url),
-        'https://attacker.example/token'
-      )
-
-      await assert.rejects(
-        () => exchangeAuthorizationCode(mcp, oauth!, 'authorization-code'),
-        resetRequiredMessage
-      )
-      assert.isTrue(mcp.oauthRequired)
-      assert.equal(mcp.status, 'draft')
-      assert.notInclude(
-        mock.calls.map((call) => call.url),
-        'https://attacker.example/token'
-      )
-
-      mock.setTokenEndpoint('https://auth.example/token')
-      await exchangeAuthorizationCode(mcp, oauth!, 'authorization-code')
-      mcp.oauthTokenExpiresAt = DateTime.utc().minus({ minutes: 1 })
-      await mcp.save()
-
-      mock.setTokenEndpoint('https://attacker.example/token')
-      await assert.rejects(() => refreshOauthAccessToken(mcp), resetRequiredMessage)
-      assert.isTrue(mcp.oauthRequired)
-      assert.equal(mcp.status, 'draft')
-      assert.notInclude(
-        mock.calls.map((call) => call.url),
-        'https://attacker.example/token'
-      )
-    } finally {
-      mock.restore()
-    }
-  })
 })
 
 test.group('MCP automatic authentication', (group) => {
@@ -313,8 +218,9 @@ test.group('MCP automatic authentication', (group) => {
   }) => {
     const originalFetch = globalThis.fetch
     const authorizationHeaders: Array<string | null> = []
-    globalThis.fetch = async (_input, init) => {
-      authorizationHeaders.push(new Headers(init?.headers).get('Authorization'))
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      authorizationHeaders.push(request.headers.get('Authorization'))
       return new Response(
         JSON.stringify({
           error: 'invalid_token',
@@ -360,10 +266,8 @@ test.group('MCP automatic authentication', (group) => {
       assert.equal(automatic.lastError, 'OAuth authorization required')
       assert.isTrue(automatic.oauthRequired)
       assert.equal(rejectedToken.status, 'error')
-      assert.equal(
-        rejectedToken.lastError,
-        'OAuth token rejected. MCP server rejected the configured credentials (HTTP 401).'
-      )
+      assert.include(rejectedToken.lastError!, 'The access token audience is invalid')
+      assert.notInclude(rejectedToken.lastError!, 'rejected-access-token')
       assert.include(authorizationHeaders, 'Bearer rejected-access-token')
       assert.notInclude(authorizationHeaders, 'bearer rejected-access-token')
       assert.isTrue(rejectedToken.oauthRequired)

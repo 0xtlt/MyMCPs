@@ -4,33 +4,13 @@
 |--------------------------------------------------------------------------
 |
 | Adonis's limiter service owns storage, atomic counters, exceptions, and
-| response headers. Route keys keep each anonymous workflow isolated.
+| response headers for repeated credential failures.
 |
 */
 
 import limiter from '@adonisjs/limiter/services/main'
-import type { MiddlewareFn } from '@adonisjs/core/types/http'
 
-const anonymousWriteLimit = 5
-const anonymousWriteWindow = '15 minutes'
-
-const anonymousWriteLimiter = limiter.use({
-  requests: anonymousWriteLimit,
-  duration: anonymousWriteWindow,
+export const loginRateLimiter = limiter.use({
+  requests: 5,
+  duration: '15 minutes',
 })
-
-function throttleAnonymousWrites(name: string): MiddlewareFn {
-  return async (ctx, next) => {
-    await anonymousWriteLimiter.consume(`${name}:${ctx.request.ip()}`)
-    return next()
-  }
-}
-
-export const onboardingThrottle = throttleAnonymousWrites('onboarding')
-export const inviteAcceptanceThrottle = throttleAnonymousWrites('invite-accept')
-
-/**
- * `penalize` consumes a point only when credential verification throws and
- * clears prior failures after a successful login.
- */
-export const loginRateLimiter = anonymousWriteLimiter

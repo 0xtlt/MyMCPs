@@ -20,10 +20,11 @@ function jsonRpcResponse(body: unknown, session = true) {
 function mockToolServer() {
   const originalFetch = globalThis.fetch
 
-  globalThis.fetch = async (_input, init) => {
-    const method = init?.method ?? 'GET'
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init)
+    const method = request.method
     if (method === 'DELETE') return new Response(null, { status: 200 })
-    const rawBody = String(init?.body ?? '')
+    const rawBody = await request.clone().text()
     if (!rawBody) return new Response('Missing body', { status: 400 })
     const message = JSON.parse(rawBody) as {
       id?: string | number

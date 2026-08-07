@@ -32,7 +32,7 @@
     "production": [
       {
         "key": "TRUST_PROXY",
-        "value": "loopback",
+        "value": "true",
         "is_required": true
       }
     ]

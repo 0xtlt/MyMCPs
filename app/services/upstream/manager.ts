@@ -16,7 +16,6 @@ import {
   type ConnectedDenoUpstream,
 } from '#services/upstream/deno_runner'
 import { sanitizeMcpDiagnostic } from '#services/security_redaction'
-import { OAuthReauthorizationRequiredError } from '#services/upstream/oauth'
 
 export type ConnectedUpstream = ConnectedHttpUpstream | ConnectedDenoUpstream
 
@@ -104,14 +103,6 @@ export async function testAndUpdateStatus(mcp: Mcp) {
     mcp.oauthRequired = false
     await mcp.save()
   } catch (error) {
-    if (error instanceof OAuthReauthorizationRequiredError) {
-      mcp.status = 'draft'
-      mcp.lastError = error.message
-      mcp.oauthRequired = true
-      await mcp.save()
-      return mcp
-    }
-
     const authorizationRequired =
       error instanceof UnauthorizedError ||
       error instanceof UpstreamUnauthorizedError ||

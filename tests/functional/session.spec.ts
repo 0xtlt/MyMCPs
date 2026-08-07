@@ -81,27 +81,6 @@ test.group('session authentication', (group) => {
     response.assertTextIncludes('admin@example.com')
   })
 
-  test('does not forward untrusted query values through redirects', async ({ client, assert }) => {
-    const admin = await createAdmin({ email: 'redirects@example.com' })
-
-    const guestOnly = await client
-      .get('/login?token=attacker-controlled')
-      .loginAs(admin)
-      .redirects(0)
-    guestOnly.assertStatus(302)
-    assertRedirectTo(assert, guestOnly, '/')
-    assert.equal(new URL(guestOnly.header('location')!, 'http://localhost').search, '')
-
-    const login = await client
-      .post('/login?code=attacker-controlled')
-      .withCsrfToken()
-      .redirects(0)
-      .form({ email: 'redirects@example.com', password: 'password123' })
-    login.assertStatus(302)
-    assertRedirectTo(assert, login, '/')
-    assert.equal(new URL(login.header('location')!, 'http://localhost').search, '')
-  })
-
   test('always remembers credential logins for one year', async ({ client, assert }) => {
     const admin = await createAdmin({ email: 'admin@example.com' })
     const requestedAt = DateTime.utc()

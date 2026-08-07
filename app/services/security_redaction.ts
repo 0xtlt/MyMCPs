@@ -1,34 +1,44 @@
 import type Mcp from '#models/mcp'
 import McpEnvironmentStore from '#services/mcp_environment_store'
 import McpSecretStore from '#services/mcp_secret_store'
-import { isCredentialKey } from '#services/http_url'
 
-function escapedRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
+const CREDENTIAL_KEYS = new Set([
+  'authorization',
+  'csrftoken',
+  'googleaccessid',
+  'jsessionid',
+  'passphrase',
+  'sessionid',
+  'sig',
+  'xsrftoken',
+])
 
-function percentCaseInsensitiveRegex(value: string) {
-  let pattern = ''
-  let cursor = 0
-  for (const match of value.matchAll(/%([0-9a-f]{2})/gi)) {
-    pattern += escapedRegex(value.slice(cursor, match.index))
-    pattern += `%${[...match[1]]
-      .map((character) =>
-        /[a-f]/i.test(character)
-          ? `[${character.toLowerCase()}${character.toUpperCase()}]`
-          : character
-      )
-      .join('')}`
-    cursor = match.index! + match[0].length
+const CREDENTIAL_KEY_SUFFIXES = [
+  'accesskey',
+  'accountkey',
+  'apikey',
+  'credential',
+  'password',
+  'privatekey',
+  'secret',
+  'sessionkey',
+  'signature',
+  'subscriptionkey',
+  'token',
+]
+
+function isCredentialKey(value: string) {
+  let decoded = value
+  try {
+    decoded = decodeURIComponent(value.replaceAll('+', ' '))
+  } catch {
+    // Check the raw key when malformed percent escapes cannot be decoded.
   }
-  pattern += escapedRegex(value.slice(cursor))
-  return new RegExp(pattern, 'g')
-}
-
-function redactExactVariant(diagnostic: string, secret: string) {
-  return /%[0-9a-f]{2}/i.test(secret)
-    ? diagnostic.replace(percentCaseInsensitiveRegex(secret), '[REDACTED]')
-    : diagnostic.split(secret).join('[REDACTED]')
+  const normalized = decoded.toLowerCase().replaceAll(/[^a-z0-9]/g, '')
+  return (
+    CREDENTIAL_KEYS.has(normalized) ||
+    CREDENTIAL_KEY_SUFFIXES.some((suffix) => normalized.endsWith(suffix))
+  )
 }
 
 function exactSecretVariants(values: Iterable<string>) {
@@ -55,7 +65,7 @@ function exactSecretVariants(values: Iterable<string>) {
 function redactExactCredentials(diagnostic: string, variants: string[]) {
   let redacted = diagnostic
   for (const secret of variants) {
-    redacted = redactExactVariant(redacted, secret)
+    redacted = redacted.split(secret).join('[REDACTED]')
   }
   return redacted
 }
@@ -93,35 +103,11 @@ function redactStructuredCredentialAssignments(diagnostic: string) {
 function redactPatternCredentials(diagnostic: string) {
   const redacted = diagnostic
     .replace(
-      /\b(?:Bearer|Basic)\s+[^\s,;"']+/gi,
+      /\b(?:Bearer|Basic)\s+(?!error\s*=)[^\s,;"']+/gi,
       (match) => `${match.split(/\s/, 1)[0]} [REDACTED]`
     )
     .replace(/:\/\/[^\s/:@]+:[^\s/@]+@/g, '://[REDACTED]@')
-    .replace(/([?&;])([^=&#;\s]+)=([^&#;\s]+)/g, (match, separator, key) =>
-      isCredentialKey(key) ? `${separator}${key}=[REDACTED]` : match
-    )
   return redactStructuredCredentialAssignments(redacted)
-}
-
-function peelJsonEscapeLayer(diagnostic: string) {
-  return diagnostic.replaceAll(/\\(?:["'\\/bfnrt]|u[0-9a-fA-F]{4})/g, (escape) => {
-    if (escape[1].toLowerCase() === 'u') {
-      return String.fromCharCode(Number.parseInt(escape.slice(2), 16))
-    }
-    return (
-      {
-        '"': '"',
-        "'": "'",
-        '\\': '\\',
-        '/': '/',
-        'b': '\b',
-        'f': '\f',
-        'n': '\n',
-        'r': '\r',
-        't': '\t',
-      } as Record<string, string>
-    )[escape[1]]
-  })
 }
 
 /**
@@ -140,16 +126,7 @@ export function sanitizeDiagnostic(
 
   const raw = value instanceof Error ? value.message : value
   const secretVariants = exactSecretVariants(sensitiveValues)
-  let sanitized = raw
-
-  for (let depth = 0; depth < 8; depth++) {
-    sanitized = redactExactCredentials(sanitized, secretVariants)
-    sanitized = redactPatternCredentials(sanitized)
-    const next = peelJsonEscapeLayer(sanitized)
-    if (next === sanitized) return sanitized.slice(0, limit)
-    sanitized = next
-  }
-  sanitized = redactExactCredentials(sanitized, secretVariants)
+  const sanitized = redactExactCredentials(raw, secretVariants)
   return redactPatternCredentials(sanitized).slice(0, limit)
 }
 

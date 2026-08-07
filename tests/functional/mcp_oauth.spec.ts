@@ -17,10 +17,10 @@ function mockNotionOAuthServer(
   const originalFetch = globalThis.fetch
 
   globalThis.fetch = async (input, init) => {
-    const url =
-      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-    const method = init?.method ?? 'GET'
-    const body = String(init?.body ?? '')
+    const request = new Request(input, init)
+    const url = request.url
+    const method = request.method
+    const body = await request.clone().text()
 
     if (url.includes('/.well-known/oauth-protected-resource')) {
       return jsonResponse({
@@ -76,7 +76,7 @@ function mockNotionOAuthServer(
 
     if (
       url.startsWith('https://mcp.notion.com/mcp') &&
-      new Headers(init?.headers).get('Authorization') !== 'Bearer access-token'
+      request.headers.get('Authorization') !== 'Bearer access-token'
     ) {
       return new Response(
         JSON.stringify({
@@ -257,10 +257,9 @@ test.group('MCP OAuth routes', (group) => {
         .redirects(0)
 
       callbackResponse.assertStatus(302)
-      callbackResponse.assertFlashMessage(
-        'error',
-        'OAuth token rejected. MCP server rejected the configured credentials (HTTP 401).'
-      )
+      const error = String(callbackResponse.flashMessage('error'))
+      assert.include(error, 'The access token audience is invalid')
+      assert.notInclude(error, 'access-token')
       assert.isUndefined(callbackResponse.flashMessage('success'))
 
       const saved = await Mcp.findOrFail(mcp.id)

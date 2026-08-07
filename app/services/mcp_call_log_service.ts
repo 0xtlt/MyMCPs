@@ -34,7 +34,7 @@ export function sanitizeErrorSummary(value: unknown, mcp?: Mcp | null): string |
 }
 
 export function serializeCapturedValue(value: unknown) {
-  const serialized = JSON.stringify(value)
+  const serialized = JSON.stringify(value) ?? 'null'
   const originalBytes = Buffer.byteLength(serialized)
   if (originalBytes <= MAX_CAPTURE_BYTES) {
     return serialized
@@ -43,7 +43,9 @@ export function serializeCapturedValue(value: unknown) {
   return JSON.stringify({
     truncated: true,
     originalBytes,
-    preview: serialized.slice(0, 16 * 1024),
+    // Eight thousand characters leaves room for JSON escaping while keeping
+    // the complete wrapper below the 64 KiB field budget.
+    preview: serialized.slice(0, 8 * 1024),
   })
 }
 

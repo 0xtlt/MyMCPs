@@ -13,11 +13,9 @@ import {
   createMcp,
 } from '#tests/helpers/factories'
 import { assertRedirectTo } from '#tests/helpers/http'
-import limiter from '@adonisjs/limiter/services/main'
 
 test.group('invites and member administration', (group) => {
   group.each.setup(beginTestTransaction)
-  group.each.setup(() => limiter.clear(['memory']))
   group.each.teardown(rollbackTestTransaction)
 
   test('restricts invite administration to admins', async ({ client, assert }) => {
@@ -84,28 +82,6 @@ test.group('invites and member administration', (group) => {
     assert.lengthOf(await User.rememberMeTokens.all(member), 1)
     const acceptedInvite = await Invite.findOrFail(invite.id)
     assert.isTrue(acceptedInvite.isAccepted)
-  })
-
-  test('rate-limits repeated invite acceptance attempts', async ({ client, assert }) => {
-    const admin = await createAdmin()
-    const invite = await createInvite(admin.id, { email: 'limited-invite@example.com' })
-
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const response = await client
-        .post(`/invite/${invite.token}`)
-        .withCsrfToken()
-        .form({ fullName: '', password: '', passwordConfirmation: '' })
-      assert.notEqual(response.status(), 429)
-    }
-
-    const limited = await client
-      .post(`/invite/${invite.token}`)
-      .withCsrfToken()
-      .form({ fullName: '', password: '', passwordConfirmation: '' })
-
-    limited.assertStatus(429)
-    limited.assertHeader('retry-after')
-    limited.assertTextIncludes('Too many requests')
   })
 
   test('rejects expired invites', async ({ client, assert }) => {

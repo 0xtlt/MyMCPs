@@ -29,8 +29,6 @@ permissions.
   secrets, generated key, and Deno sandbox cache.
 - Put the application behind a TLS-terminating reverse proxy rather than exposing
   the container directly to the public internet.
-- Set `TRUST_PROXY` to the reverse proxy's IP address or CIDR. Do not use `true`
-  unless the application port is unreachable from every untrusted network.
 - Treat configured npm MCP packages as executable third-party code. Pin versions
   and use a separate, restricted deployment boundary for untrusted packages.
 - Invite only trusted operators. Members can manage the shared MCP registry and
@@ -39,18 +37,11 @@ permissions.
 
 ## Application safeguards
 
-- Login, onboarding, and invite acceptance are rate-limited per resolved client IP.
-- Stored MCP credentials must be re-entered before changing their destination,
-  npm package, version, or process arguments;
-  authenticated upstream requests and OAuth token requests do not follow redirects.
-- MCP and OAuth URLs reject embedded or query-string credentials; use the encrypted
-  authentication fields for secrets.
-- Upgrades disable legacy MCP rows with unsafe URLs, clear those plaintext URLs,
-  and purge historical error summaries that predate secret-aware redaction;
-  re-enter the endpoint and move credentials into encrypted authentication fields.
-- If an OAuth provider changes its issuer, authorization endpoint, token endpoint,
-  or resource, reset authentication away from Auto before reconnecting so existing
-  OAuth secrets cannot follow changed security metadata.
+- Repeated failed logins are rate-limited per resolved client IP.
+- Authenticated upstream requests and OAuth token requests follow redirects only
+  within the same origin.
+- MCP and OAuth endpoints must use HTTP(S) and cannot embed username/password
+  credentials. Prefer the encrypted authentication fields for secrets.
 - Upstream error details are redacted before logging or display, and optional MCP
   argument/response captures are capped at 64 KiB per field.
 - The browser UI sends a restrictive Content Security Policy with per-response

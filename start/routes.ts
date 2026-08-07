@@ -9,7 +9,6 @@
 
 import { middleware } from '#start/kernel'
 import { controllers } from '#generated/controllers'
-import { inviteAcceptanceThrottle, onboardingThrottle } from '#start/limiter'
 import router from '@adonisjs/core/services/router'
 
 /**
@@ -24,10 +23,7 @@ router.get('health', ({ response }) => response.ok({ status: 'ok' })).as('health
 router
   .group(() => {
     router.get('onboarding', [controllers.Onboarding, 'show']).as('onboarding.show')
-    router
-      .post('onboarding', [controllers.Onboarding, 'store'])
-      .use(onboardingThrottle)
-      .as('onboarding.store')
+    router.post('onboarding', [controllers.Onboarding, 'store']).as('onboarding.store')
   })
   .use(middleware.setupComplete())
 
@@ -57,10 +53,7 @@ router
     router
       .group(() => {
         router.get('invite/:token', [controllers.Invites, 'show']).as('invites.show')
-        router
-          .post('invite/:token', [controllers.Invites, 'accept'])
-          .use(inviteAcceptanceThrottle)
-          .as('invites.accept')
+        router.post('invite/:token', [controllers.Invites, 'accept']).as('invites.accept')
       })
       .use(middleware.guest())
 
