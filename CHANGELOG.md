@@ -10,10 +10,12 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
+- Set the application version to 0.1.0 for the first tagged release.
 - Made OAuth the recommended MCP installation method while retaining manual bearer-token configurations ([#53](https://github.com/0xtlt/MyMCPs/pull/53)).
 
 ### Fixed
 
+- Restored Cursor OAuth connections by accepting its exact native-app callback while continuing to reject unapproved custom URI schemes ([#56](https://github.com/0xtlt/MyMCPs/pull/56)).
 - Standardized user-visible dates to day-first format while preserving local-time display and stored ISO values ([#54](https://github.com/0xtlt/MyMCPs/pull/54)).
 
 ### Security

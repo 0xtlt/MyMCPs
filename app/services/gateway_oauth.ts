@@ -12,6 +12,7 @@ export const OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 const AUTHORIZATION_CODE_TTL_MINUTES = 5
 const CLIENT_SECRET_TTL_DAYS = 365
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+const NATIVE_APP_REDIRECT_URIS = new Set(['cursor://anysphere.cursor-mcp/oauth/callback'])
 const CLIENT_AUTH_METHODS = new Set(['none', 'client_secret_post', 'client_secret_basic'])
 
 export class GatewayOauthError extends Error {
@@ -78,6 +79,11 @@ function parseStringList(value: string | undefined, fallback: string[]) {
 function isAllowedRedirectUri(value: string) {
   if (value.length > 2048) return false
 
+  // Cursor historically uses this private-use callback when its localhost
+  // listener is unavailable. Keep the exception exact so arbitrary custom
+  // schemes cannot be registered as OAuth redirect targets.
+  if (NATIVE_APP_REDIRECT_URIS.has(value)) return true
+
   try {
     const url = new URL(value)
     if (url.hash || url.username || url.password) return false
@@ -125,7 +131,7 @@ export async function registerOauthClient(input: unknown) {
   ) {
     throw new GatewayOauthError(
       'invalid_redirect_uri',
-      'Redirect URIs must use HTTPS or HTTP on an exact loopback host'
+      'Redirect URIs must use HTTPS, HTTP on an exact loopback host, or an approved native-app callback'
     )
   }
 
