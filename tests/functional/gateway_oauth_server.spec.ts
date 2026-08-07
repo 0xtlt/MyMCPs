@@ -122,6 +122,17 @@ test.group('gateway OAuth server', (group) => {
     assert.match(registered.client_id, /^mcp_client_[A-Za-z0-9_-]{32}$/)
     assert.equal(registered.token_endpoint_auth_method, 'none')
 
+    const cursor = await client.post('/register').json({
+      client_name: 'Cursor',
+      redirect_uris: ['cursor://anysphere.cursor-mcp/oauth/callback'],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      scope: 'mcp:tools',
+    })
+    cursor.assertStatus(201)
+    assert.deepEqual(cursor.body().redirect_uris, ['cursor://anysphere.cursor-mcp/oauth/callback'])
+
     const unsafe = await client.post('/register').json({
       client_name: 'Unsafe client',
       redirect_uris: ['http://example.com/callback'],
@@ -131,6 +142,16 @@ test.group('gateway OAuth server', (group) => {
     })
     unsafe.assertStatus(400)
     assert.equal(unsafe.body().error, 'invalid_redirect_uri')
+
+    const unapprovedCustomScheme = await client.post('/register').json({
+      client_name: 'Cursor lookalike',
+      redirect_uris: ['cursor://attacker.example/oauth/callback'],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    })
+    unapprovedCustomScheme.assertStatus(400)
+    assert.equal(unapprovedCustomScheme.body().error, 'invalid_redirect_uri')
 
     const credentialed = await client.post('/register').json({
       client_name: 'Credentialed redirect client',
