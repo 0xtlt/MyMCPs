@@ -16,6 +16,7 @@ const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64ur
 
 type RegisteredClient = {
   client_id: string
+  client_secret?: string
   client_name: string
   token_endpoint_auth_method: string
 }
@@ -123,6 +124,25 @@ test.group('gateway OAuth server', (group) => {
     })
     credentialed.assertStatus(400)
     assert.equal(credentialed.body().error, 'invalid_redirect_uri')
+
+    const confidential = await client.post('/register').json({
+      client_name: 'Confidential client',
+      redirect_uris: ['https://client.example.com/callback'],
+      token_endpoint_auth_method: 'client_secret_basic',
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    })
+    confidential.assertStatus(201)
+    const confidentialClient = confidential.body() as RegisteredClient
+    const basicCredentials = Buffer.from(
+      `${encodeURIComponent(confidentialClient.client_id)}:${encodeURIComponent(confidentialClient.client_secret!)}`
+    ).toString('base64')
+    const lowercaseBasic = await client
+      .post('/token')
+      .header('authorization', `basic ${basicCredentials}`)
+      .form({})
+    lowercaseBasic.assertStatus(400)
+    assert.equal(lowercaseBasic.body().error, 'invalid_request')
   })
 
   test('returns users to the authorization request after credential login', async ({

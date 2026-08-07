@@ -324,10 +324,11 @@ export function verifyCodeChallenge(codeVerifier: string, expectedChallenge: str
 type ClientCredentials = { clientId: string; clientSecret: string | null; method: string }
 
 function basicClientCredentials(header: string | undefined): ClientCredentials | null {
-  if (!header?.startsWith('Basic ')) return null
+  const match = header?.match(/^Basic\s+(.+)$/i)
+  if (!match) return null
 
   try {
-    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8')
+    const decoded = Buffer.from(match[1], 'base64').toString('utf8')
     const separator = decoded.indexOf(':')
     if (separator < 0) return null
     return {
