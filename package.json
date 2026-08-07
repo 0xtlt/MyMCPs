@@ -85,7 +85,7 @@
     "@stylexjs/stylex": "^0.19.0",
     "@tuyau/core": "^1.2.2",
     "@vinejs/vine": "^4.4.0",
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^13.0.2",
     "chart.js": "^4.5.1",
     "edge.js": "^6.5.1",
     "luxon": "^3.7.2",
