@@ -34,6 +34,7 @@ import {
   type McpClient,
   type McpInstallAuthMode,
 } from '~/components/mcp_install_config'
+import { formatLocalDate, formatLocalDateTime } from '~/components/local_time'
 
 type TokenRow = {
   id: number
@@ -356,7 +357,7 @@ export default function TokensIndex({
       width: proportional(2),
       renderCell: (token) => (
         <Text type="supporting" color="secondary">
-          {token.displayExpiresAt ? new Date(token.displayExpiresAt).toLocaleString() : 'No expiry'}
+          {token.displayExpiresAt ? formatLocalDateTime(token.displayExpiresAt) : 'No expiry'}
         </Text>
       ),
     },
@@ -523,7 +524,7 @@ export default function TokensIndex({
                     </Text>
                     <Text type="supporting" color="secondary">
                       {token.displayExpiresAt
-                        ? `Expires ${new Date(token.displayExpiresAt).toLocaleDateString()}`
+                        ? `Expires ${formatLocalDate(token.displayExpiresAt)}`
                         : 'No expiry'}
                     </Text>
                   </VStack>
