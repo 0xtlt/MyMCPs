@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-08
+
+### Security
+
+- Pinned the transitive Nano ID dependency to a patched release that prevents zero-length custom generators from looping indefinitely.
+
 ## 2026-08-07
 
 ### Added
