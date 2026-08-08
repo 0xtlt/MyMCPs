@@ -1,0 +1,190 @@
+name: Stable release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semantic version increment
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Validate and publish stable release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out main with tags
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.19.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --config.minimumReleaseAge=360
+
+      - name: Install browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Validate release automation
+        run: pnpm run test:release
+
+      - name: Validate application
+        run: |
+          pnpm run lint
+          pnpm run typecheck
+          pnpm test
+          pnpm run build
+          pnpm audit --audit-level=high
+
+      - name: Prepare version and changelog
+        id: release
+        env:
+          BUMP: ${{ inputs.bump }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_version="$(node --print "JSON.parse(require('node:fs').readFileSync('package.json')).version")"
+          current_tag="v$current_version"
+          head_sha="$(git rev-parse HEAD)"
+          latest_stable_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | awk '!/-/ { print; exit }')"
+          mode="prepare"
+          notes_target="$head_sha"
+
+          if git rev-parse --verify --quiet "refs/tags/$current_tag" >/dev/null && \
+            [[ "$(git rev-list -n 1 "$current_tag")" == "$head_sha" ]]; then
+            if gh release view "$current_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "There are no unreleased commits after $current_tag." >&2
+              exit 1
+            fi
+            mode="recover-tag"
+            previous_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | awk -v current="$current_tag" '$0 != current && !/-/ { print; exit }')"
+            tag="$current_tag"
+            version="$current_version"
+          elif ! git rev-parse --verify --quiet "refs/tags/$current_tag" >/dev/null && \
+            [[ "$(git log -1 --format=%s)" == "chore(release): prepare $current_tag" ]]; then
+            mode="recover-commit"
+            previous_tag="$latest_stable_tag"
+            notes_target="$(git rev-parse HEAD^)"
+            tag="$current_tag"
+            version="$current_version"
+          else
+            if [[ -z "$latest_stable_tag" || "$latest_stable_tag" != "$current_tag" ]]; then
+              echo "package.json version $current_version does not match the latest stable tag ${latest_stable_tag:-<none>}." >&2
+              exit 1
+            fi
+            if [[ "$(git rev-list --count "$latest_stable_tag"..HEAD)" == "0" ]]; then
+              echo "There are no unreleased commits after $latest_stable_tag." >&2
+              exit 1
+            fi
+
+            previous_tag="$latest_stable_tag"
+            node .github/scripts/prepare-release.mjs \
+              --bump "$BUMP" \
+              --date "$(date -u +%F)" \
+              --repository "$GITHUB_REPOSITORY"
+            version="$(node --print "JSON.parse(require('node:fs').readFileSync('package.json')).version")"
+            tag="v$version"
+          fi
+
+          {
+            echo "mode=$mode"
+            echo "notes_target=$notes_target"
+            echo "previous_tag=$previous_tag"
+            echo "tag=$tag"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check generated release files
+        run: |
+          git diff --check
+          pnpm run test:release
+
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES_TARGET: ${{ steps.release.outputs.notes_target }}
+          PREVIOUS_TAG: ${{ steps.release.outputs.previous_tag }}
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          notes_file="$RUNNER_TEMP/stable-release-notes.md"
+          arguments=(
+            --method POST
+            "repos/$GITHUB_REPOSITORY/releases/generate-notes"
+            --field "tag_name=$TAG"
+            --field "target_commitish=$NOTES_TARGET"
+          )
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            arguments+=(--field "previous_tag_name=$PREVIOUS_TAG")
+          fi
+          gh api "${arguments[@]}" --jq .body > "$notes_file"
+          echo "notes_file=$notes_file" >> "$GITHUB_OUTPUT"
+
+      - name: Commit, tag, and push release
+        env:
+          MODE: ${{ steps.release.outputs.mode }}
+          TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [[ "$MODE" == "prepare" ]]; then
+            git add -- package.json CHANGELOG.md
+            git commit --message "chore(release): prepare $TAG"
+          fi
+
+          if ! git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            git tag --annotate "$TAG" --message "Release $TAG"
+          fi
+
+          if [[ "$MODE" == "recover-tag" ]]; then
+            echo "$TAG is already present on the remote; continuing release recovery."
+          else
+            git push --atomic origin HEAD:refs/heads/main "refs/tags/$TAG"
+          fi
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --notes-file "$NOTES_FILE" \
+            --verify-tag
+
+          echo "Published stable release [$TAG](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG)." >> "$GITHUB_STEP_SUMMARY"

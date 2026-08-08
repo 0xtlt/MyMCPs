@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
 import InstanceSetting from '#models/instance_setting'
+import { applicationVersion } from '#services/application_version'
 import McpCallLogService from '#services/mcp_call_log_service'
 import {
   LAZY_GATEWAY_TOOLS,
@@ -50,7 +51,7 @@ export default class GatewayController {
     const tools = toolMode === 'eager' ? await listNamespacedTools(mcps) : []
 
     const server = new Server(
-      { name: 'mymcps', version: '0.1.0' },
+      { name: 'mymcps', version: applicationVersion },
       {
         capabilities: { tools: {} },
         ...(toolMode === 'lazy' ? { instructions: lazyGatewayInstructions(mcps) } : {}),

@@ -2,6 +2,7 @@ import { test } from '@japa/runner'
 import type { ApiClient } from '@japa/api-client'
 import InstanceSetting from '#models/instance_setting'
 import McpCallLog from '#models/mcp_call_log'
+import { applicationVersion } from '#services/application_version'
 import McpCallLogService from '#services/mcp_call_log_service'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { createAccessToken, createAdmin, createMcp } from '#tests/helpers/factories'
@@ -85,7 +86,7 @@ function jsonRpcResponse(body: unknown, sessionId: string) {
 
 function mockUpstreams() {
   const originalFetch = globalThis.fetch
-  const requests: Array<{ host: string; method: string }> = []
+  const requests: Array<{ clientVersion?: string; host: string; method: string }> = []
 
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init)
@@ -95,10 +96,18 @@ function mockUpstreams() {
       ? (JSON.parse(rawBody) as {
           id?: string | number
           method?: string
-          params?: { name?: string; arguments?: Record<string, unknown> }
+          params?: {
+            name?: string
+            arguments?: Record<string, unknown>
+            clientInfo?: { version?: string }
+          }
         })
       : {}
-    requests.push({ host, method: message.method ?? request.method })
+    requests.push({
+      clientVersion: message.params?.clientInfo?.version,
+      host,
+      method: message.method ?? request.method,
+    })
     const sessionId = `${host.replace(/[^a-z0-9]/gi, '-')}-session`
 
     if (request.method === 'DELETE') return new Response(null, { status: 200 })
@@ -283,7 +292,7 @@ test.group('gateway lazy tool mode', (group) => {
       const rpc = parseRpcResponse(response)
       const instructions = String(rpc.result?.instructions)
 
-      assert.deepEqual(rpc.result?.serverInfo, { name: 'mymcps', version: '0.1.0' })
+      assert.deepEqual(rpc.result?.serverInfo, { name: 'mymcps', version: applicationVersion })
       assert.equal(
         instructions,
         [
@@ -408,6 +417,10 @@ test.group('gateway lazy tool mode', (group) => {
       assert.property(result.tools[0].inputSchema, 'properties')
       assert.isTrue(mock.requests.every((request) => request.host === 'issues.example'))
       assert.isTrue(mock.requests.some((request) => request.method === 'tools/list'))
+      assert.equal(
+        mock.requests.find((request) => request.method === 'initialize')?.clientVersion,
+        applicationVersion
+      )
     } finally {
       mock.restore()
     }
