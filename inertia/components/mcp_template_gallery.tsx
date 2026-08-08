@@ -333,7 +333,7 @@ export function McpTemplateGallery({ onSelect }: Props) {
             return (
               <Card
                 key={template.id}
-                minHeight="calc(var(--spacing-12) + var(--spacing-12) + var(--spacing-12) + var(--spacing-12) + var(--spacing-12) + var(--spacing-5))"
+                minHeight="calc(var(--spacing-12) + var(--spacing-12) + var(--spacing-12) + var(--spacing-12) + var(--spacing-12))"
                 padding={5}
               >
                 <VStack gap={4} hAlign="stretch" height="100%">
