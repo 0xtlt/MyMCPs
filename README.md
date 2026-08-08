@@ -77,6 +77,15 @@ pnpm run typecheck  # Check TypeScript
 pnpm run build      # Create a production build
 ```
 
+## Releases
+
+GitHub Actions publishes releases without an AI or an external release service:
+
+- **Nightly release** runs at 02:42 UTC and publishes a GitHub prerelease only when `main` has moved since the previous nightly. Its semantic prerelease tag includes the UTC date and commit, for example `v0.1.1-nightly.20260808.abc1234`. It does not change the stable version in `package.json`.
+- **Stable release** runs only when a repository maintainer starts it from **Actions → Stable release → Run workflow** and chooses a `patch`, `minor`, or `major` increment. It validates the application, updates `package.json` and `CHANGELOG.md`, commits the release, creates the stable tag, and publishes automatically generated GitHub release notes.
+
+Both workflows use the repository-provided `GITHUB_TOKEN`; no release secret or AI service is required. If a run fails after pushing a release commit or tag, rerun the same stable workflow to resume publication instead of incrementing the version again.
+
 ## Stack
 
 MyMCPs uses AdonisJS 7, Inertia, React 19, SQLite, the MCP TypeScript SDK, and Deno. See [SECURITY.md](SECURITY.md) for the deployment security baseline and vulnerability reporting process.
