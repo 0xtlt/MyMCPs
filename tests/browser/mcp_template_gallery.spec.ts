@@ -23,21 +23,32 @@ test.group('MCP template gallery', (group) => {
     assert.include(await gallery.innerText(), 'Atlassian Rovo')
 
     const firstRowButtons = gallery.getByRole('button', { name: /^Set up / })
-    const firstRowButtonTops = await Promise.all(
+    const firstRowButtonPositions = await Promise.all(
       [0, 1, 2].map((index) =>
-        firstRowButtons.nth(index).evaluate(
-          (button) =>
-            (
-              button as unknown as {
-                getBoundingClientRect: () => { top: number }
-              }
-            ).getBoundingClientRect().top
-        )
+        firstRowButtons.nth(index).evaluate((button) => {
+          const element = button as unknown as {
+            closest: (selector: string) => {
+              getBoundingClientRect: () => { left: number }
+            } | null
+            getBoundingClientRect: () => { left: number; top: number }
+          }
+          const card = element.closest('.astryx-card')
+          const buttonBounds = element.getBoundingClientRect()
+
+          return {
+            top: buttonBounds.top,
+            leftOffset: buttonBounds.left - (card?.getBoundingClientRect().left ?? 0),
+          }
+        })
       )
     )
     assert.deepEqual(
-      firstRowButtonTops.map((top) => Math.round(top)),
-      firstRowButtonTops.map(() => Math.round(firstRowButtonTops[0]))
+      firstRowButtonPositions.map(({ top }) => Math.round(top)),
+      firstRowButtonPositions.map(() => Math.round(firstRowButtonPositions[0].top))
+    )
+    assert.deepEqual(
+      firstRowButtonPositions.map(({ leftOffset }) => Math.round(leftOffset)),
+      firstRowButtonPositions.map(() => Math.round(firstRowButtonPositions[0].leftOffset))
     )
 
     await gallery.getByRole('button', { name: 'Development' }).click()

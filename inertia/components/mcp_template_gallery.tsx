@@ -635,7 +635,7 @@ export function McpTemplateGallery({ onSelect }: Props) {
                     </Text>
                   </StackItem>
 
-                  <HStack hAlign="end">
+                  <HStack hAlign="start">
                     <Button
                       label={`Set up ${template.name}`}
                       variant="primary"
