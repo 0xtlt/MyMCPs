@@ -1,5 +1,6 @@
 import { test } from '@japa/runner'
 import type { ApiClient } from '@japa/api-client'
+import InstanceSetting from '#models/instance_setting'
 import McpCallLog from '#models/mcp_call_log'
 import McpCallLogService from '#services/mcp_call_log_service'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
@@ -200,6 +201,53 @@ test.group('gateway lazy tool mode', (group) => {
         error: 'invalid_tool_mode',
         message: 'X-MyMCPs-Tool-Mode must be either eager or lazy',
       })
+    }
+  })
+
+  test('uses the instance default when the header is absent and lets the header override it', async ({
+    client,
+    assert,
+  }) => {
+    const mock = mockUpstreams()
+    try {
+      const admin = await createAdmin()
+      const issues = await createMcp(admin.id, {
+        slug: 'issues',
+        httpUrl: 'https://issues.example/mcp',
+      })
+      const { plaintext } = await createAccessToken(admin.id, {
+        scopeMode: 'selected',
+        mcpIds: [issues.id],
+      })
+      const settings = await InstanceSetting.current()
+      settings.gatewayToolMode = 'lazy'
+      await settings.save()
+
+      const defaultResponse = await gatewayRpc(client, plaintext, toolsListRequest())
+      defaultResponse.assertStatus(200)
+      const defaultTools = parseRpcResponse(defaultResponse).result?.tools as Array<{
+        name: string
+      }>
+
+      assert.deepEqual(
+        defaultTools.map((tool) => tool.name),
+        ['list_mcps', 'tool_search', 'call_tool']
+      )
+      assert.lengthOf(mock.requests, 0)
+
+      const overriddenResponse = await gatewayRpc(client, plaintext, toolsListRequest(), 'eager')
+      overriddenResponse.assertStatus(200)
+      const overriddenTools = parseRpcResponse(overriddenResponse).result?.tools as Array<{
+        name: string
+      }>
+
+      assert.deepEqual(
+        overriddenTools.map((tool) => tool.name),
+        ['issues__create_issue', 'issues__list_issues']
+      )
+      assert.isTrue(mock.requests.some((request) => request.method === 'tools/list'))
+    } finally {
+      mock.restore()
     }
   })
 

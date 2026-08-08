@@ -1,13 +1,11 @@
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
 import type AccessToken from '#models/access_token'
-import InstanceSetting, { type McpLogLevel } from '#models/instance_setting'
+import InstanceSetting from '#models/instance_setting'
 import McpCallLog, { type McpCallErrorCategory, type McpCallOutcome } from '#models/mcp_call_log'
 import type Mcp from '#models/mcp'
 import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
 
-const DEFAULT_LOG_LEVEL: McpLogLevel = 'metadata'
-const DEFAULT_RETENTION_DAYS = 14
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const MAX_PENDING_WRITES = 1_000
 export const MAX_CAPTURE_BYTES = 64 * 1024
@@ -54,15 +52,7 @@ export default class McpCallLogService {
   static #writeQueue: Promise<void> = Promise.resolve()
 
   static async settings() {
-    return InstanceSetting.firstOrCreate(
-      { id: 1 },
-      {
-        id: 1,
-        mcpLogLevel: DEFAULT_LOG_LEVEL,
-        mcpLogRetentionDays: DEFAULT_RETENTION_DAYS,
-        updatedBy: null,
-      }
-    )
+    return InstanceSetting.current()
   }
 
   static record(input: McpCallLogInput) {

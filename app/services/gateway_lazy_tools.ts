@@ -76,9 +76,12 @@ export const LAZY_GATEWAY_TOOLS: Tool[] = [
   },
 ]
 
-export function parseGatewayToolMode(value: string | undefined): GatewayToolMode | null {
+export function parseGatewayToolMode(
+  value: string | undefined,
+  defaultMode: GatewayToolMode = 'eager'
+): GatewayToolMode | null {
   if (value === undefined || value.trim() === '') {
-    return 'eager'
+    return defaultMode
   }
 
   const normalized = value.trim().toLowerCase()

@@ -39,13 +39,13 @@ OAuth clients connect to `https://your-domain.example/mcp` without a manually co
 For clients without OAuth support, create a manual token and send it as
 `Authorization: Bearer <token>` on every `/mcp` request.
 
-Tools use `{mcp-slug}__{tool-name}` names by default. For clients with large tool catalogs, add the following request header to enable progressive discovery:
+Tools use `{mcp-slug}__{tool-name}` names in eager mode. Administrators can choose the instance default under **Settings → My Instance**; existing instances default to eager mode. Clients can override that default per request with either `eager` or `lazy`:
 
 ```text
 X-MyMCPs-Tool-Mode: lazy
 ```
 
-Lazy mode exposes `list_mcps`, `tool_search`, and `call_tool` instead of loading every tool definition at once.
+Lazy mode exposes `list_mcps`, `tool_search`, and `call_tool` instead of loading every tool definition at once. The header takes precedence over the instance setting.
 
 ### Upstream OAuth MCPs
 

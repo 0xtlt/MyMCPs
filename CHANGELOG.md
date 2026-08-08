@@ -2,11 +2,18 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-08
+
+### Security
+
+- Pinned the transitive Nano ID dependency to a patched release that prevents zero-length custom generators from looping indefinitely.
+
 ## 2026-08-07
 
 ### Added
 
 - Added OAuth login for MCP clients, including discovery, dynamic client registration, PKCE authorization, consent, refresh-token rotation, connection revocation, and OAuth-managed access tokens ([#53](https://github.com/0xtlt/MyMCPs/pull/53)).
+- Added an admin setting for the instance-wide default MCP tool discovery mode, with per-request header overrides.
 
 ### Changed
 

@@ -8,6 +8,7 @@ import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from '@astryxdesign/core/Layout'
 import { Section } from '@astryxdesign/core/Section'
 import { NumberInput } from '@astryxdesign/core/NumberInput'
+import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { Selector } from '@astryxdesign/core/Selector'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
@@ -16,6 +17,7 @@ export default function SettingsIndex({
   mcpLogging,
 }: {
   mcpLogging: {
+    gatewayToolMode: 'eager' | 'lazy'
     level: 'off' | 'metadata' | 'arguments' | 'responses'
     retentionDays: number
   } | null
@@ -29,6 +31,7 @@ export default function SettingsIndex({
   const [passwordCurrentPassword, setPasswordCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
+  const [gatewayToolMode, setGatewayToolMode] = useState(mcpLogging?.gatewayToolMode ?? 'eager')
   const [mcpLogLevel, setMcpLogLevel] = useState(mcpLogging?.level ?? 'metadata')
   const [mcpLogRetentionDays, setMcpLogRetentionDays] = useState(mcpLogging?.retentionDays ?? 14)
 
@@ -132,6 +135,29 @@ export default function SettingsIndex({
                       Configure settings that apply to everyone using this MyMCPs instance.
                     </Text>
                   </VStack>
+                  <RadioList
+                    label="Default MCP tool mode"
+                    description="Used when a client does not send X-MyMCPs-Tool-Mode. A request header always overrides this default."
+                    htmlName="gatewayToolMode"
+                    value={gatewayToolMode}
+                    onChange={(value) => setGatewayToolMode(value as 'eager' | 'lazy')}
+                    status={
+                      errors.gatewayToolMode
+                        ? { type: 'error', message: errors.gatewayToolMode }
+                        : undefined
+                    }
+                  >
+                    <RadioListItem
+                      value="eager"
+                      label="Eager"
+                      description="Expose every allowed upstream tool in tools/list."
+                    />
+                    <RadioListItem
+                      value="lazy"
+                      label="Lazy"
+                      description="Expose only list_mcps, tool_search, and call_tool until tools are requested."
+                    />
+                  </RadioList>
                   <Banner
                     status="warning"
                     title="Arguments and responses can contain sensitive data"
@@ -186,7 +212,7 @@ export default function SettingsIndex({
                     <Button
                       className="mobile-full-width"
                       type="submit"
-                      label="Save logging settings"
+                      label="Save instance settings"
                       variant="primary"
                       isLoading={processing}
                     />
