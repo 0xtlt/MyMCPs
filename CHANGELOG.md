@@ -10,6 +10,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
+- Released version [0.1.1](https://github.com/0xtlt/MyMCPs/releases/tag/v0.1.1).
+
 - Extended the typecheck command to validate repository `.mjs` release scripts with TypeScript's strict JavaScript checking.
 
 ### Fixed
