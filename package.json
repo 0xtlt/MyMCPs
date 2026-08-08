@@ -16,7 +16,7 @@
     "test:release": "node --test .github/scripts/prepare-release.test.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit && tsc --noEmit --project inertia/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit --project inertia/tsconfig.json && tsc --project tsconfig.scripts.json",
     "astryx": "node node_modules/@astryxdesign/cli/bin/astryx.mjs"
   },
   "imports": {

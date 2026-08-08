@@ -8,6 +8,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Added nightly prereleases that run only for new commits and a manually triggered stable release workflow that validates the application, increments its semantic version across package metadata and MCP handshakes, updates the changelog, tags the commit, and publishes generated GitHub release notes without an AI service.
 
+### Changed
+
+- Extended the typecheck command to validate repository `.mjs` release scripts with TypeScript's strict JavaScript checking.
+
 ### Security
 
 - Pinned the transitive Nano ID dependency to a patched release that prevents zero-length custom generators from looping indefinitely.

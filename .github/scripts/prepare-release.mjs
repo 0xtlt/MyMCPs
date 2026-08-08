@@ -1,3 +1,5 @@
+// @ts-check
+
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -5,6 +7,10 @@ import { fileURLToPath } from 'node:url'
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const RELEASE_BUMPS = new Set(['major', 'minor', 'patch'])
 
+/**
+ * @param {string} currentVersion
+ * @param {string} bump
+ */
 export function bumpVersion(currentVersion, bump) {
   const match = VERSION_PATTERN.exec(currentVersion)
 
@@ -34,6 +40,11 @@ export function bumpVersion(currentVersion, bump) {
   return `${major}.${minor}.${patch}`
 }
 
+/**
+ * @param {string} currentVersion
+ * @param {string} date
+ * @param {string} shortSha
+ */
 export function nightlyVersion(currentVersion, date, shortSha) {
   if (!/^\d{8}$/.test(date)) {
     throw new Error(`Expected nightly date in YYYYMMDD format, received "${date}"`)
@@ -46,6 +57,10 @@ export function nightlyVersion(currentVersion, date, shortSha) {
   return `${bumpVersion(currentVersion, 'patch')}-nightly.${date}.g${shortSha}`
 }
 
+/**
+ * @param {string} changelog
+ * @param {{ date: string; releaseUrl: string; version: string }} release
+ */
 export function updateChangelog(changelog, { date, releaseUrl, version }) {
   const versionEntry = `- Released version [${version}](${releaseUrl}).`
 
@@ -84,6 +99,9 @@ export function updateChangelog(changelog, { date, releaseUrl, version }) {
   return `${changelog.slice(0, insertionPoint)}\n\n${versionEntry}${changelog.slice(insertionPoint)}`
 }
 
+/**
+ * @param {{ bump: string; date: string; repository: string; rootDirectory: string }} options
+ */
 export async function prepareRelease({ bump, date, repository, rootDirectory }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error(`Expected date in YYYY-MM-DD format, received "${date}"`)
@@ -110,7 +128,9 @@ export async function prepareRelease({ bump, date, repository, rootDirectory }) 
   return { releaseUrl, tag, version }
 }
 
+/** @param {string[]} arguments_ */
 function parseArguments(arguments_) {
+  /** @type {Map<string, string>} */
   const values = new Map()
 
   for (let index = 0; index < arguments_.length; index += 2) {
@@ -129,6 +149,7 @@ function parseArguments(arguments_) {
   return values
 }
 
+/** @returns {Promise<void>} */
 async function main() {
   const arguments_ = parseArguments(process.argv.slice(2))
   const bump = arguments_.get('bump')
