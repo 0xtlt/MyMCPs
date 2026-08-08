@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
+import { applicationVersion } from '#services/application_version'
 import McpSecretStore from '#services/mcp_secret_store'
 import { sanitizeMcpDiagnostic } from '#services/security_redaction'
 import { refreshOauthAccessToken } from '#services/upstream/oauth'
@@ -101,7 +102,7 @@ export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstre
     fetch: diagnosticFetch,
     requestInit: { headers },
   })
-  const client = new Client({ name: 'mymcps-gateway', version: '0.1.0' })
+  const client = new Client({ name: 'mymcps-gateway', version: applicationVersion })
   try {
     await client.connect(transport)
   } catch (error) {

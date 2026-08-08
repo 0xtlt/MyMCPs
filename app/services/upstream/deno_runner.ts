@@ -6,6 +6,7 @@ import env from '#start/env'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type Mcp from '#models/mcp'
+import { applicationVersion } from '#services/application_version'
 import { sanitizeMcpDiagnostic } from '#services/security_redaction'
 import type { UpstreamTool } from '#services/upstream/http_client'
 
@@ -96,7 +97,7 @@ export async function connectDenoUpstream(mcp: Mcp): Promise<ConnectedDenoUpstre
     env: buildDenoEnvironment(mcp, sandboxDir),
   })
 
-  const client = new Client({ name: 'mymcps-gateway', version: '0.1.0' })
+  const client = new Client({ name: 'mymcps-gateway', version: applicationVersion })
 
   try {
     await client.connect(transport)
