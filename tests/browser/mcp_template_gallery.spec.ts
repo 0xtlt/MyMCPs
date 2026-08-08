@@ -20,10 +20,13 @@ test.group('MCP template gallery', (group) => {
     const gallery = page.getByRole('dialog', { name: 'Add an MCP' })
     assert.include(await gallery.innerText(), 'Notion')
     assert.include(await gallery.innerText(), 'Shopify Dev')
+    assert.include(await gallery.innerText(), 'Atlassian Rovo')
 
     await gallery.getByRole('button', { name: 'Development' }).click()
     assert.include(await gallery.innerText(), 'GitHub')
     assert.include(await gallery.innerText(), 'Supabase')
+    assert.include(await gallery.innerText(), 'Postman')
+    assert.include(await gallery.innerText(), 'Microsoft Learn')
     assert.notInclude(await gallery.innerText(), 'Notion')
 
     await gallery.getByRole('textbox', { name: 'Search templates' }).fill('Shopify')
@@ -45,6 +48,41 @@ test.group('MCP template gallery', (group) => {
     assert.include(await returnedGallery.innerText(), 'Shopify Dev')
   })
 
+  test('prefills newly added remote and npm templates', async ({
+    assert,
+    browserContext,
+    visit,
+  }) => {
+    const admin = await createAdmin()
+    await browserContext.loginAs(admin)
+    const page = await visit('/mcps')
+
+    await page.getByRole('button', { name: 'Add MCP' }).click()
+    let gallery = page.getByRole('dialog', { name: 'Add an MCP' })
+    await gallery.getByRole('button', { name: 'All' }).click()
+    assert.include(await gallery.innerText(), '20 templates')
+
+    await gallery.getByRole('textbox', { name: 'Search templates' }).fill('Atlassian')
+    await gallery.getByRole('button', { name: 'Set up Atlassian Rovo' }).click()
+    let setup = page.getByRole('dialog', { name: 'Set up Atlassian Rovo' })
+    assert.equal(
+      await setup.getByLabel('HTTP URL').inputValue(),
+      'https://mcp.atlassian.com/v1/mcp/authv2'
+    )
+
+    await setup.getByRole('button', { name: 'Back to templates' }).click()
+    gallery = page.getByRole('dialog', { name: 'Add an MCP' })
+    await gallery.getByRole('textbox', { name: 'Search templates' }).fill('MongoDB')
+    await gallery.getByRole('button', { name: 'Set up MongoDB' }).click()
+    setup = page.getByRole('dialog', { name: 'Set up MongoDB' })
+    assert.equal(await setup.locator('input[name="npmPackage"]').inputValue(), 'mongodb-mcp-server')
+    assert.equal(await setup.getByLabel('Extra args').inputValue(), '--readOnly')
+    assert.equal(
+      await setup.locator('input[name="npmEnv[0][name]"]').inputValue(),
+      'MDB_MCP_CONNECTION_STRING'
+    )
+  })
+
   test('keeps every category available without horizontal overflow on mobile', async ({
     assert,
     browserContext,
@@ -63,6 +101,9 @@ test.group('MCP template gallery', (group) => {
 
     assert.include(await gallery.innerText(), 'Vercel')
     assert.include(await gallery.innerText(), 'Cloudflare Docs')
+    assert.include(await gallery.innerText(), 'Firebase')
+    assert.include(await gallery.innerText(), 'MongoDB')
+    assert.include(await gallery.innerText(), 'Neon')
     assert.equal(
       await gallery.evaluate((element) => {
         const dialog = element as unknown as { scrollWidth: number; clientWidth: number }
