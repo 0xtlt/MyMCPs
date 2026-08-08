@@ -34,6 +34,18 @@ export function bumpVersion(currentVersion, bump) {
   return `${major}.${minor}.${patch}`
 }
 
+export function nightlyVersion(currentVersion, date, shortSha) {
+  if (!/^\d{8}$/.test(date)) {
+    throw new Error(`Expected nightly date in YYYYMMDD format, received "${date}"`)
+  }
+
+  if (!/^[0-9a-f]{7,40}$/.test(shortSha)) {
+    throw new Error(`Expected a 7-40 character lowercase Git SHA, received "${shortSha}"`)
+  }
+
+  return `${bumpVersion(currentVersion, 'patch')}-nightly.${date}.g${shortSha}`
+}
+
 export function updateChangelog(changelog, { date, releaseUrl, version }) {
   const versionEntry = `- Released version [${version}](${releaseUrl}).`
 

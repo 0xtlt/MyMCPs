@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import { bumpVersion, prepareRelease, updateChangelog } from './prepare-release.mjs'
+import { bumpVersion, nightlyVersion, prepareRelease, updateChangelog } from './prepare-release.mjs'
 
 test('bumps stable semantic versions', () => {
   assert.equal(bumpVersion('1.2.3', 'patch'), '1.2.4')
@@ -14,6 +14,12 @@ test('bumps stable semantic versions', () => {
 test('rejects invalid versions and bump types', () => {
   assert.throws(() => bumpVersion('1.2.3-beta.1', 'patch'), /stable semantic version/)
   assert.throws(() => bumpVersion('1.2.3', 'banana'), /major, minor, or patch/)
+})
+
+test('creates valid nightly versions even for numeric hashes with a leading zero', () => {
+  assert.equal(nightlyVersion('1.2.3', '20260808', '0123456'), '1.2.4-nightly.20260808.g0123456')
+  assert.throws(() => nightlyVersion('1.2.3', '2026-08-08', 'abcdef0'), /YYYYMMDD/)
+  assert.throws(() => nightlyVersion('1.2.3', '20260808', 'ABCDEF0'), /lowercase Git SHA/)
 })
 
 test('adds a release to an existing Changed section', () => {

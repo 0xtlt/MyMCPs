@@ -38,10 +38,10 @@ jobs:
           set -euo pipefail
 
           current_version="$(node --print "JSON.parse(require('node:fs').readFileSync('package.json')).version")"
-          next_version="$(node --input-type=module --eval "import { bumpVersion } from './.github/scripts/prepare-release.mjs'; console.log(bumpVersion(process.argv[1], 'patch'))" "$current_version")"
           short_sha="$(git rev-parse --short=7 HEAD)"
           release_date="$(date -u +%Y%m%d)"
-          tag="v${next_version}-nightly.${release_date}.${short_sha}"
+          nightly_version="$(node --input-type=module --eval "import { nightlyVersion } from './.github/scripts/prepare-release.mjs'; console.log(nightlyVersion(process.argv[1], process.argv[2], process.argv[3]))" "$current_version" "$release_date" "$short_sha")"
+          tag="v$nightly_version"
           last_nightly="$(git tag --list 'v*-nightly.*' --sort=-creatordate | awk 'NR == 1 { print; exit }')"
 
           if [[ -n "$last_nightly" && "$(git rev-list -n 1 "$last_nightly")" == "$(git rev-parse HEAD)" ]]; then
