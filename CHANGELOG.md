@@ -6,6 +6,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Added
 
+- Added a searchable, category-filtered MCP template gallery with popular Notion, Shopify Dev, GitHub, Linear, Stripe, Vercel, Supabase, and Cloudflare setups that prefill the existing MCP form.
+
 - Added nightly prereleases that run only for new commits and a manually triggered stable release workflow that validates the application, increments its semantic version across package metadata and MCP handshakes, updates the changelog, tags the commit, and publishes generated GitHub release notes without an AI service.
 
 ### Changed

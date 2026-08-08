@@ -16,6 +16,7 @@ test.group('MCP environment variable form', (group) => {
     const page = await visit('/mcps')
 
     await page.getByRole('button', { name: 'Add MCP' }).click()
+    await page.getByRole('button', { name: 'Custom MCP' }).click()
     await page.getByRole('radio', { name: /npm package/ }).click()
     await page.getByRole('button', { name: 'Add variable' }).click()
     await page.getByRole('button', { name: 'Add variable' }).click()
@@ -47,7 +48,10 @@ test.group('MCP environment variable form', (group) => {
     const submission = page.waitForRequest(
       (request) => request.method() === 'POST' && new URL(request.url()).pathname === '/mcps'
     )
-    await page.getByLabel('Add MCP').getByRole('button', { name: 'Add MCP' }).click()
+    await page
+      .getByRole('dialog', { name: 'Set up a custom MCP' })
+      .getByRole('button', { name: 'Add MCP' })
+      .click()
 
     const submittedRequest = await submission
     const postData = submittedRequest.postData() ?? ''

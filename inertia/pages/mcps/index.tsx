@@ -25,6 +25,7 @@ import {
   McpFormFields,
   type McpFormValues,
 } from '~/components/mcp_form_fields'
+import { McpTemplateGallery, type McpTemplate } from '~/components/mcp_template_gallery'
 
 type McpRow = {
   id: number
@@ -75,6 +76,8 @@ export default function McpsIndex({
 }) {
   const { isMobile } = useAppShellMobile()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [createView, setCreateView] = useState<'gallery' | 'form'>('gallery')
+  const [selectedTemplate, setSelectedTemplate] = useState<McpTemplate | null>(null)
   const [editingOverride, setEditingOverride] = useState<EditingOverride | null>(null)
   const [createValues, setCreateValues] = useState<McpFormValues>(emptyMcpFormValues)
   const [editValuesOverride, setEditValuesOverride] = useState<McpFormValues | null>(null)
@@ -95,7 +98,27 @@ export default function McpsIndex({
 
   function openCreate() {
     setCreateValues(emptyMcpFormValues())
+    setSelectedTemplate(null)
+    setCreateView('gallery')
     setIsCreateOpen(true)
+  }
+
+  function openCustomCreate() {
+    setCreateValues(emptyMcpFormValues())
+    setSelectedTemplate(null)
+    setCreateView('form')
+  }
+
+  function openTemplateCreate(template: McpTemplate, values: McpFormValues) {
+    setCreateValues(values)
+    setSelectedTemplate(template)
+    setCreateView('form')
+  }
+
+  function returnToGallery() {
+    setCreateValues(emptyMcpFormValues())
+    setSelectedTemplate(null)
+    setCreateView('gallery')
   }
 
   function openEdit(mcp: McpRow) {
@@ -239,53 +262,100 @@ export default function McpsIndex({
       <Dialog
         isOpen={isCreateOpen}
         onOpenChange={setIsCreateOpen}
-        purpose="form"
-        width={640}
+        purpose={createView === 'gallery' ? 'info' : 'form'}
+        width={createView === 'gallery' ? 920 : 640}
         maxHeight="85vh"
       >
-        <Form
-          route="mcps.store"
-          className="dialog-form-fill"
-          onSuccess={() => setIsCreateOpen(false)}
-        >
-          {({ errors, processing }) => (
-            <Layout
-              header={
-                <DialogHeader
-                  title="Add MCP"
-                  subtitle="Register an HTTP or npm upstream server"
-                  onOpenChange={setIsCreateOpen}
-                />
-              }
-              content={
-                <LayoutContent isScrollable>
-                  <McpFormFields
-                    values={createValues}
-                    onChange={(patch) => setCreateValues((current) => ({ ...current, ...patch }))}
-                    errors={errors}
+        {createView === 'gallery' ? (
+          <Layout
+            header={
+              <DialogHeader
+                title="Add an MCP"
+                subtitle="Start from a trusted template or configure your own server"
+                onOpenChange={setIsCreateOpen}
+              />
+            }
+            content={
+              <LayoutContent isScrollable>
+                <McpTemplateGallery onSelect={openTemplateCreate} />
+              </LayoutContent>
+            }
+            footer={
+              <LayoutFooter>
+                <HStack gap={2} hAlign="end">
+                  <Button
+                    label="Cancel"
+                    variant="secondary"
+                    onClick={() => setIsCreateOpen(false)}
                   />
-                </LayoutContent>
-              }
-              footer={
-                <LayoutFooter>
-                  <HStack gap={2} hAlign="end">
-                    <Button
-                      label="Cancel"
-                      variant="secondary"
-                      onClick={() => setIsCreateOpen(false)}
-                    />
-                    <Button
-                      type="submit"
-                      label="Add MCP"
-                      variant="primary"
-                      isLoading={processing}
-                    />
-                  </HStack>
-                </LayoutFooter>
-              }
-            />
-          )}
-        </Form>
+                  <Button label="Custom MCP" variant="secondary" onClick={openCustomCreate} />
+                </HStack>
+              </LayoutFooter>
+            }
+          />
+        ) : (
+          <Form
+            route="mcps.store"
+            className="dialog-form-fill"
+            onSuccess={() => setIsCreateOpen(false)}
+          >
+            {({ errors, processing }) => (
+              <Layout
+                header={
+                  <DialogHeader
+                    title={
+                      selectedTemplate ? `Set up ${selectedTemplate.name}` : 'Set up a custom MCP'
+                    }
+                    subtitle={
+                      selectedTemplate
+                        ? 'Review the prefilled settings, then add this MCP'
+                        : 'Register an HTTP or npm upstream server'
+                    }
+                    onOpenChange={setIsCreateOpen}
+                  />
+                }
+                content={
+                  <LayoutContent isScrollable>
+                    <VStack gap={4} hAlign="stretch">
+                      <HStack hAlign="start">
+                        <Button
+                          label="Back to templates"
+                          variant="secondary"
+                          size="sm"
+                          onClick={returnToGallery}
+                        />
+                      </HStack>
+                      <McpFormFields
+                        values={createValues}
+                        onChange={(patch) =>
+                          setCreateValues((current) => ({ ...current, ...patch }))
+                        }
+                        errors={errors}
+                      />
+                    </VStack>
+                  </LayoutContent>
+                }
+                footer={
+                  <LayoutFooter>
+                    <HStack gap={2} hAlign="end">
+                      <Button
+                        label="Cancel"
+                        variant="secondary"
+                        onClick={() => setIsCreateOpen(false)}
+                      />
+                      <Button
+                        type="submit"
+                        label="Add MCP"
+                        variant="primary"
+                        isLoading={processing}
+                      />
+                    </HStack>
+                  </LayoutFooter>
+                }
+              />
+            )}
+          </Form>
+        )}
       </Dialog>
 
       <Dialog
