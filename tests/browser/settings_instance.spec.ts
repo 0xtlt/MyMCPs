@@ -22,7 +22,7 @@ test.group('instance settings browser flow', (group) => {
 
     await lazy.click()
     await page.getByRole('button', { name: 'Save instance settings' }).click()
-    await page.getByText('Instance settings updated').waitFor()
+    await page.getByLabel('Notifications').getByText('Instance settings updated').waitFor()
 
     assert.isTrue(await lazy.isChecked())
     const settings = await InstanceSetting.current()

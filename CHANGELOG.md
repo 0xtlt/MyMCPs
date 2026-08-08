@@ -12,6 +12,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Extended the typecheck command to validate repository `.mjs` release scripts with TypeScript's strict JavaScript checking.
 
+### Fixed
+
+- Fixed nightly and stable release validation failing when the settings browser test matched both a visible notification and its accessibility live region.
+
 ### Security
 
 - Pinned the transitive Nano ID dependency to a patched release that prevents zero-length custom generators from looping indefinitely.
