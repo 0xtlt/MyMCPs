@@ -331,12 +331,8 @@ export function McpTemplateGallery({ onSelect }: Props) {
             const Logo = logoIcons[template.logo]
 
             return (
-              <Card
-                key={template.id}
-                minHeight="calc(var(--spacing-12) + var(--spacing-12) + var(--spacing-12) + var(--spacing-12) + var(--spacing-12))"
-                padding={5}
-              >
-                <VStack gap={4} hAlign="stretch" height="100%">
+              <Card key={template.id} padding={5}>
+                <VStack gap={4} hAlign="stretch">
                   <HStack gap={3} vAlign="start">
                     <Icon icon={Logo} size="lg" color="primary" />
                     <StackItem size="fill">
@@ -350,11 +346,9 @@ export function McpTemplateGallery({ onSelect }: Props) {
                     {template.popular ? <Badge label="Popular" variant="purple" /> : null}
                   </HStack>
 
-                  <StackItem size="fill">
-                    <Text type="body" color="secondary" maxLines={3}>
-                      {template.description}
-                    </Text>
-                  </StackItem>
+                  <Text type="body" color="secondary" maxLines={3}>
+                    {template.description}
+                  </Text>
 
                   <HStack hAlign="end">
                     <Button
