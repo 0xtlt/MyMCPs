@@ -615,7 +615,7 @@ export function McpTemplateGallery({ onSelect }: Props) {
 
             return (
               <Card key={template.id} padding={5}>
-                <VStack gap={4} hAlign="stretch">
+                <VStack gap={4} hAlign="stretch" height="100%">
                   <HStack gap={3} vAlign="start">
                     <Icon icon={Logo} size="lg" color="primary" />
                     <StackItem size="fill">
@@ -629,9 +629,11 @@ export function McpTemplateGallery({ onSelect }: Props) {
                     {template.popular ? <Badge label="Popular" variant="purple" /> : null}
                   </HStack>
 
-                  <Text type="body" color="secondary" maxLines={3}>
-                    {template.description}
-                  </Text>
+                  <StackItem size="fill">
+                    <Text type="body" color="secondary" maxLines={3}>
+                      {template.description}
+                    </Text>
+                  </StackItem>
 
                   <HStack hAlign="end">
                     <Button

@@ -22,6 +22,24 @@ test.group('MCP template gallery', (group) => {
     assert.include(await gallery.innerText(), 'Shopify Dev')
     assert.include(await gallery.innerText(), 'Atlassian Rovo')
 
+    const firstRowButtons = gallery.getByRole('button', { name: /^Set up / })
+    const firstRowButtonTops = await Promise.all(
+      [0, 1, 2].map((index) =>
+        firstRowButtons.nth(index).evaluate(
+          (button) =>
+            (
+              button as unknown as {
+                getBoundingClientRect: () => { top: number }
+              }
+            ).getBoundingClientRect().top
+        )
+      )
+    )
+    assert.deepEqual(
+      firstRowButtonTops.map((top) => Math.round(top)),
+      firstRowButtonTops.map(() => Math.round(firstRowButtonTops[0]))
+    )
+
     await gallery.getByRole('button', { name: 'Development' }).click()
     assert.include(await gallery.innerText(), 'GitHub')
     assert.include(await gallery.innerText(), 'Supabase')
