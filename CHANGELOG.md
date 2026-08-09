@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-09
+
+### Added
+
+- Added public `linux/amd64` and `linux/arm64` GHCR images for every successful stable and nightly release, with immutable release tags, channel tags, OCI metadata, pre-publish health validation, and cached builds.
+
 ## 2026-08-08
 
 ### Added
