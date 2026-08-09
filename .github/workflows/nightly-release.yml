@@ -17,6 +17,9 @@ jobs:
     name: Validate and publish nightly
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      release_tag: ${{ steps.plan.outputs.tag }}
     steps:
       - name: Check out main with tags
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -133,6 +136,7 @@ jobs:
 
       - name: Publish nightly prerelease
         if: steps.plan.outputs.publish == 'true'
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
@@ -155,4 +159,17 @@ jobs:
             --prerelease \
             --verify-tag
 
+          echo "published=true" >> "$GITHUB_OUTPUT"
           echo "Published nightly prerelease [$TAG](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG)." >> "$GITHUB_STEP_SUMMARY"
+
+  publish-container:
+    name: Publish nightly container
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-container.yml
+    with:
+      release_channel: nightly
+      release_tag: ${{ needs.release.outputs.release_tag }}

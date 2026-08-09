@@ -25,6 +25,9 @@ jobs:
     name: Validate and publish stable release
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      release_tag: ${{ steps.release.outputs.tag }}
     steps:
       - name: Check out main with tags
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -176,6 +179,7 @@ jobs:
           fi
 
       - name: Publish GitHub release
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
@@ -187,4 +191,17 @@ jobs:
             --notes-file "$NOTES_FILE" \
             --verify-tag
 
+          echo "published=true" >> "$GITHUB_OUTPUT"
           echo "Published stable release [$TAG](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG)." >> "$GITHUB_STEP_SUMMARY"
+
+  publish-container:
+    name: Publish stable container
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-container.yml
+    with:
+      release_channel: stable
+      release_tag: ${{ needs.release.outputs.release_tag }}

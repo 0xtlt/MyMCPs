@@ -86,6 +86,29 @@ GitHub Actions publishes releases without an AI or an external release service:
 
 Both workflows use the repository-provided `GITHUB_TOKEN`; no release secret or AI service is required. If a run fails after pushing a release commit or tag, rerun the same stable workflow to resume publication instead of incrementing the version again.
 
+### Release container images
+
+Each published release also produces a public OCI image for `linux/amd64` and `linux/arm64`:
+
+- Stable releases: `ghcr.io/0xtlt/mymcps:stable` and the exact release tag, such as `ghcr.io/0xtlt/mymcps:v0.1.2`.
+- Nightly releases: `ghcr.io/0xtlt/mymcps:nightly` and the exact prerelease tag, such as `ghcr.io/0xtlt/mymcps:v0.1.2-nightly.20260809.gabcdef0`.
+
+Pull a channel image and preserve `/app/tmp`, which contains SQLite data, encrypted secrets, the generated app key, and Deno sandbox data:
+
+```bash
+docker pull ghcr.io/0xtlt/mymcps:stable
+docker run --name mymcps -p 3333:3333 \
+  -e APP_URL=http://localhost:3333 \
+  -e LOG_LEVEL=info \
+  -e SESSION_DRIVER=cookie \
+  -v mymcps-data:/app/tmp \
+  ghcr.io/0xtlt/mymcps:stable
+```
+
+Use `ghcr.io/0xtlt/mymcps:nightly` in the same commands to test the nightly channel. The existing Docker Compose deployment continues to build from source.
+
+After the first image publication, verify the package is anonymously pullable. If GHCR did not inherit the public repository visibility, open the package on GitHub, choose **Package settings → Change package visibility → Public**, and confirm the one-time change. No repository secret is required.
+
 ## Stack
 
 MyMCPs uses AdonisJS 7, Inertia, React 19, SQLite, the MCP TypeScript SDK, and Deno. See [SECURITY.md](SECURITY.md) for the deployment security baseline and vulnerability reporting process.
