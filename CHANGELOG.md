@@ -4,6 +4,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ## 2026-08-09
 
+### Changed
+
+- Released version [0.1.2](https://github.com/0xtlt/MyMCPs/releases/tag/v0.1.2).
+
 ### Added
 
 - Added public `linux/amd64` and `linux/arm64` GHCR images for every successful stable and nightly release, with immutable release tags, channel tags, OCI metadata, pre-publish health validation, and cached builds.
