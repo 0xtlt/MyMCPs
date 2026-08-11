@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-11
+
+### Fixed
+
+- Fixed OAuth discovery for MCP servers that publish a verified same-origin, path-based issuer while relying on legacy root metadata discovery.
+
 ## 2026-08-09
 
 ### Changed

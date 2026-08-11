@@ -85,6 +85,42 @@ function validateOAuthMetadata(metadata: AuthorizationServerMetadata, expectedIs
   return metadata
 }
 
+async function metadataForSameOriginIssuer(
+  metadata: AuthorizationServerMetadata,
+  authorizationServerUrl: string
+) {
+  if (!metadata.issuer) {
+    return null
+  }
+
+  const issuer = normalizedHttpUrl(metadata.issuer, 'OAuth issuer')
+  if (
+    comparableOAuthIssuer(issuer, 'OAuth issuer') ===
+    comparableOAuthIssuer(authorizationServerUrl, 'OAuth authorization server')
+  ) {
+    return null
+  }
+
+  if (new URL(issuer).origin !== new URL(authorizationServerUrl).origin) {
+    return null
+  }
+
+  try {
+    const issuerMetadata = await discoverAuthorizationServerMetadata(issuer, {
+      fetchFn: oauthFetch,
+    })
+    if (!issuerMetadata) {
+      return null
+    }
+    return {
+      authorizationServerUrl: issuer,
+      metadata: validateOAuthMetadata(issuerMetadata, issuer),
+    }
+  } catch {
+    return null
+  }
+}
+
 function normalizedTokenEndpoint(metadata: AuthorizationServerMetadata) {
   return normalizedHttpUrl(String(metadata.token_endpoint), 'OAuth token endpoint')
 }
@@ -164,7 +200,7 @@ async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
         : 'OAuth provider metadata could not be discovered'
     )
   }
-  const authorizationServerUrl = normalizedHttpUrl(
+  let authorizationServerUrl = normalizedHttpUrl(
     discoveredAuthorizationServerUrl,
     'OAuth authorization server'
   )
@@ -180,6 +216,18 @@ async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
     }
   }
   metadata ??= fallbackMetadata(mcp, authorizationServerUrl)
+
+  // Legacy MCP discovery falls back to the resource server's origin when
+  // protected-resource metadata is unavailable. If root metadata advertises a
+  // path-based issuer on that same origin, use it only after independently
+  // retrieving and validating metadata from the issuer's RFC 8414 location.
+  if (metadata && !serverInfo?.resourceMetadata?.authorization_servers?.length) {
+    const issuerDiscovery = await metadataForSameOriginIssuer(metadata, authorizationServerUrl)
+    if (issuerDiscovery) {
+      authorizationServerUrl = issuerDiscovery.authorizationServerUrl
+      metadata = issuerDiscovery.metadata
+    }
+  }
 
   if (!metadata) {
     throw new Error(

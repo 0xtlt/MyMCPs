@@ -184,6 +184,115 @@ test.group('MCP OAuth', (group) => {
     }
   })
 
+  test('verifies a same-origin path issuer discovered through legacy root metadata', async ({
+    assert,
+  }) => {
+    const originalFetch = globalThis.fetch
+    const calls: string[] = []
+    const metadata = {
+      issuer: 'https://mcp.example/mcp',
+      authorization_endpoint: 'https://mcp.example/mcp/authorize',
+      token_endpoint: 'https://mcp.example/mcp/token',
+      registration_endpoint: 'https://mcp.example/mcp/register',
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      token_endpoint_auth_methods_supported: ['none'],
+      code_challenge_methods_supported: ['S256'],
+    }
+
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      calls.push(request.url)
+
+      if (request.url.includes('/.well-known/oauth-protected-resource')) {
+        return new Response('', { status: 404 })
+      }
+      if (
+        request.url === 'https://mcp.example/.well-known/oauth-authorization-server' ||
+        request.url === 'https://mcp.example/.well-known/oauth-authorization-server/mcp'
+      ) {
+        return jsonResponse(metadata)
+      }
+      if (request.url === 'https://mcp.example/mcp/register') {
+        return jsonResponse({
+          client_id: 'path-client-123',
+          redirect_uris: ['http://localhost:3333/mcps/oauth/callback'],
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none',
+          client_name: 'MyMCPs',
+        })
+      }
+
+      return new Response('not found', { status: 404 })
+    }
+
+    try {
+      const admin = await createAdmin()
+      const mcp = await createMcp(admin.id, {
+        name: 'Path issuer',
+        authType: 'auto',
+        httpUrl: 'https://mcp.example/mcp',
+        status: 'draft',
+      })
+
+      const redirect = new URL(await startOauthFlow(fakeSession().session, mcp))
+
+      assert.equal(redirect.origin, 'https://mcp.example')
+      assert.equal(redirect.pathname, '/mcp/authorize')
+      assert.equal(mcp.oauthIssuer, 'https://mcp.example/mcp')
+      assert.include(calls, 'https://mcp.example/.well-known/oauth-authorization-server/mcp')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('rejects a cross-origin issuer from legacy root metadata without requesting it', async ({
+    assert,
+  }) => {
+    const originalFetch = globalThis.fetch
+    const calls: string[] = []
+
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      calls.push(request.url)
+
+      if (request.url.includes('/.well-known/oauth-protected-resource')) {
+        return new Response('', { status: 404 })
+      }
+      if (request.url === 'https://mcp.example/.well-known/oauth-authorization-server') {
+        return jsonResponse({
+          issuer: 'https://untrusted.example/oauth',
+          authorization_endpoint: 'https://untrusted.example/oauth/authorize',
+          token_endpoint: 'https://untrusted.example/oauth/token',
+          registration_endpoint: 'https://untrusted.example/oauth/register',
+          response_types_supported: ['code'],
+          code_challenge_methods_supported: ['S256'],
+        })
+      }
+
+      return new Response('not found', { status: 404 })
+    }
+
+    try {
+      const admin = await createAdmin()
+      const mcp = await createMcp(admin.id, {
+        name: 'Cross-origin issuer',
+        authType: 'auto',
+        httpUrl: 'https://mcp.example/mcp',
+        status: 'draft',
+      })
+
+      await assert.rejects(
+        () => startOauthFlow(fakeSession().session, mcp),
+        'OAuth issuer metadata does not match the authorization server'
+      )
+      assert.isFalse(calls.some((url) => url.startsWith('https://untrusted.example/')))
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test('reports an actionable error when an MCP has no OAuth metadata or client registration', async ({
     assert,
   }) => {
