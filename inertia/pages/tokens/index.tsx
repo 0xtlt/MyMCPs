@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type SVGProps } from 'react'
 import { Head, router } from '@inertiajs/react'
 import { Form } from '@adonisjs/inertia/react'
+import { AlertDialog } from '@astryxdesign/core/AlertDialog'
 import { Banner } from '@astryxdesign/core/Banner'
 import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Button } from '@astryxdesign/core/Button'
 import { Card } from '@astryxdesign/core/Card'
+import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
 import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
 import { CodeBlock } from '@astryxdesign/core/CodeBlock'
 import { DateTimeInput, type ISODateTimeString } from '@astryxdesign/core/DateTimeInput'
@@ -22,13 +24,21 @@ import {
 } from '@astryxdesign/core/Layout'
 import { List, ListItem } from '@astryxdesign/core/List'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
-import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
+import {
+  Table,
+  pixel,
+  proportional,
+  useTableSelection,
+  useTableSelectionState,
+  type TableColumn,
+} from '@astryxdesign/core/Table'
 import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { Switch } from '@astryxdesign/core/Switch'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
 import { ToggleButton } from '@astryxdesign/core/ToggleButton'
+import { Toolbar } from '@astryxdesign/core/Toolbar'
 import {
   createMcpInstallConfig,
   type McpClient,
@@ -50,6 +60,7 @@ type TokenRow = {
   isUsable: boolean
   isActive: boolean
   canRevoke: boolean
+  canDelete: boolean
   displayExpiresAt: string | null
   oauthClientName: string | null
 }
@@ -71,6 +82,11 @@ type TokenFormValues = {
 type TokenFormErrors = Partial<Record<'name' | 'scopeMode' | 'mcpIds' | 'expiresAt', string>>
 
 type CopyState = 'idle' | 'copied' | 'error'
+
+type DeleteTarget = {
+  ids: number[]
+  scope: 'selected' | 'all'
+}
 
 function EyeIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -235,6 +251,9 @@ export default function TokensIndex({
   const [createValues, setCreateValues] = useState<TokenFormValues>(emptyTokenFormValues)
   const [editingToken, setEditingToken] = useState<TokenRow | null>(null)
   const [editValues, setEditValues] = useState<TokenFormValues>(emptyTokenFormValues)
+  const [selectedTokenIds, setSelectedTokenIds] = useState<Set<string>>(() => new Set())
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [gatewayCopyState, setGatewayCopyState] = useState<CopyState>('idle')
   const [tokenCopyState, setTokenCopyState] = useState<CopyState>('idle')
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -308,6 +327,131 @@ export default function TokensIndex({
       ? 'Paste an access token to enable copying.'
       : null
 
+  const deletableTokens = tokens.filter((token) => token.canDelete)
+  const activeTokens = tokens.filter((token) => !token.canDelete)
+  const selectedDeletableTokens = deletableTokens.filter((token) =>
+    selectedTokenIds.has(String(token.id))
+  )
+  const { selectionConfig } = useTableSelectionState({
+    data: tokens,
+    idKey: (token) => String(token.id),
+    selectedKeys: selectedTokenIds,
+    setSelectedKeys: setSelectedTokenIds,
+    getIsItemSelectable: (token) => token.canDelete,
+  })
+  const selectionPlugin = useTableSelection({
+    ...selectionConfig,
+    getRowLabel: (token) => token.name,
+  })
+
+  function requestDelete(targetTokens: TokenRow[], scope: DeleteTarget['scope']) {
+    if (targetTokens.length === 0) return
+    setDeleteTarget({ ids: targetTokens.map((token) => token.id), scope })
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return
+
+    router.delete('/tokens', {
+      data: { ids: deleteTarget.ids },
+      preserveScroll: true,
+      onStart: () => setIsDeleting(true),
+      onFinish: () => setIsDeleting(false),
+      onSuccess: () => {
+        setDeleteTarget(null)
+        setSelectedTokenIds(new Set())
+      },
+    })
+  }
+
+  function renderMobileToken(token: TokenRow) {
+    const status = tokenStatus(token)
+    const actions = [
+      ...(token.source === 'manual' && !token.revokedAt
+        ? [{ label: 'Edit', onClick: () => openEdit(token) }]
+        : []),
+      ...(token.canRevoke
+        ? [
+            {
+              label: 'Revoke',
+              onClick: () =>
+                router.post(`/tokens/${token.id}/revoke`, undefined, {
+                  preserveScroll: true,
+                }),
+            },
+          ]
+        : []),
+      ...(token.canDelete
+        ? [
+            {
+              label: 'Delete',
+              onClick: () => requestDelete([token], 'selected'),
+            },
+          ]
+        : []),
+    ]
+
+    return (
+      <ListItem
+        key={token.id}
+        label={
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            <Text type="body" weight="bold">
+              {token.name}
+            </Text>
+            <Token label={status.label} color={status.color} size="sm" />
+          </HStack>
+        }
+        startContent={
+          token.canDelete ? (
+            <CheckboxInput
+              label={`Select ${token.name} for deletion`}
+              isLabelHidden
+              size="sm"
+              value={selectedTokenIds.has(String(token.id))}
+              onChange={(isSelected) =>
+                setSelectedTokenIds((current) => {
+                  const next = new Set(current)
+                  if (isSelected) next.add(String(token.id))
+                  else next.delete(String(token.id))
+                  return next
+                })
+              }
+            />
+          ) : undefined
+        }
+        description={
+          <VStack gap={0}>
+            <Text type="supporting" color="secondary">
+              {token.source === 'oauth' ? 'OAuth' : 'Manual'} · {token.tokenPrefix}… ·{' '}
+              {scopeLabel(token)}
+            </Text>
+            <Text type="supporting" color="secondary">
+              {token.displayExpiresAt
+                ? `Expires ${formatLocalDate(token.displayExpiresAt)}`
+                : 'No expiry'}
+            </Text>
+          </VStack>
+        }
+        endContent={
+          actions.length > 0 ? (
+            <DropdownMenu
+              button={{
+                label: `Actions for ${token.name}`,
+                children: <Icon icon="moreHorizontal" size="sm" />,
+                variant: 'ghost',
+                size: 'sm',
+              }}
+              hasChevron={false}
+              alignment="end"
+              items={actions}
+            />
+          ) : undefined
+        }
+      />
+    )
+  }
+
   const columns: TableColumn<TokenRow>[] = [
     {
       key: 'name',
@@ -376,11 +520,24 @@ export default function TokensIndex({
       width: pixel(190),
       align: 'end',
       renderCell: (token) => {
-        if (token.revokedAt) {
+        if (token.canDelete) {
           return (
-            <Text type="supporting" color="secondary">
-              —
-            </Text>
+            <HStack gap={2} hAlign="end">
+              {token.source === 'manual' && !token.revokedAt ? (
+                <Button
+                  label="Edit"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openEdit(token)}
+                />
+              ) : null}
+              <Button
+                label="Delete"
+                variant="secondary"
+                size="sm"
+                onClick={() => requestDelete([token], 'selected')}
+              />
+            </HStack>
           )
         }
 
@@ -491,73 +648,99 @@ export default function TokensIndex({
           description="Create a token so agents can call the gateway."
           container="card"
         />
-      ) : isMobile ? (
-        <List header="Issued tokens" density="compact" hasDividers>
-          {tokens.map((token) => {
-            const status = tokenStatus(token)
-            const actions = [
-              ...(token.source === 'manual'
-                ? [{ label: 'Edit', onClick: () => openEdit(token) }]
-                : []),
-              ...(token.canRevoke
-                ? [
-                    {
-                      label: 'Revoke',
-                      onClick: () =>
-                        router.post(`/tokens/${token.id}/revoke`, undefined, {
-                          preserveScroll: true,
-                        }),
-                    },
-                  ]
-                : []),
-            ]
-
-            return (
-              <ListItem
-                key={token.id}
-                label={token.name}
-                description={
-                  <VStack gap={0}>
-                    <Text type="supporting" color="secondary">
-                      {token.source === 'oauth' ? 'OAuth' : 'Manual'} · {token.tokenPrefix}… ·{' '}
-                      {scopeLabel(token)}
-                    </Text>
-                    <Text type="supporting" color="secondary">
-                      {token.displayExpiresAt
-                        ? `Expires ${formatLocalDate(token.displayExpiresAt)}`
-                        : 'No expiry'}
-                    </Text>
-                  </VStack>
-                }
-                endContent={
-                  <VStack gap={1} hAlign="end">
-                    <Token label={status.label} color={status.color} size="sm" />
-                    {actions.length > 0 ? (
-                      <DropdownMenu
-                        button={{
-                          label: `Actions for ${token.name}`,
-                          children: 'Actions',
-                          variant: 'secondary',
-                          size: 'sm',
-                        }}
-                        items={actions}
-                      />
-                    ) : null}
-                  </VStack>
-                }
-              />
-            )
-          })}
-        </List>
       ) : (
-        <Table
-          data={tokens}
-          columns={columns}
-          idKey="id"
-          hasHover
-          density="compact"
-          textOverflow="truncate"
-        />
+        <VStack gap={0} hAlign="stretch" width="100%">
+          {deletableTokens.length > 0 && !isMobile ? (
+            <Toolbar
+              label="Token cleanup"
+              size="sm"
+              variant="muted"
+              startContent={
+                <Text type="supporting">
+                  {selectedDeletableTokens.length > 0
+                    ? `${selectedDeletableTokens.length} selected`
+                    : `${deletableTokens.length} expired or revoked`}
+                </Text>
+              }
+              endContent={
+                <HStack gap={2} wrap="wrap">
+                  {selectedDeletableTokens.length > 0 ? (
+                    <Button
+                      label="Delete selected"
+                      variant="secondary"
+                      onClick={() => requestDelete(selectedDeletableTokens, 'selected')}
+                    />
+                  ) : null}
+                  <Button
+                    label="Delete all"
+                    variant="secondary"
+                    onClick={() => requestDelete(deletableTokens, 'all')}
+                  />
+                </HStack>
+              }
+            />
+          ) : null}
+
+          {isMobile ? (
+            <VStack gap={5} hAlign="stretch">
+              {deletableTokens.length > 0 ? (
+                <List
+                  header={
+                    <HStack gap={3} hAlign="between" vAlign="center">
+                      <StackItem size="fill">
+                        <VStack gap={0}>
+                          <Heading level={2}>Expired &amp; revoked</Heading>
+                          <Text type="supporting" color="secondary">
+                            {selectedDeletableTokens.length > 0
+                              ? `${selectedDeletableTokens.length} selected`
+                              : `${deletableTokens.length} ready to delete`}
+                          </Text>
+                        </VStack>
+                      </StackItem>
+                      <Button
+                        label={
+                          selectedDeletableTokens.length > 0
+                            ? `Delete ${selectedDeletableTokens.length}`
+                            : 'Delete all'
+                        }
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          requestDelete(
+                            selectedDeletableTokens.length > 0
+                              ? selectedDeletableTokens
+                              : deletableTokens,
+                            selectedDeletableTokens.length > 0 ? 'selected' : 'all'
+                          )
+                        }
+                      />
+                    </HStack>
+                  }
+                  density="balanced"
+                  hasDividers
+                >
+                  {deletableTokens.map(renderMobileToken)}
+                </List>
+              ) : null}
+
+              {activeTokens.length > 0 ? (
+                <List header={<Heading level={2}>Active</Heading>} density="balanced" hasDividers>
+                  {activeTokens.map(renderMobileToken)}
+                </List>
+              ) : null}
+            </VStack>
+          ) : (
+            <Table
+              data={tokens}
+              columns={columns}
+              idKey="id"
+              hasHover
+              density="compact"
+              textOverflow="truncate"
+              plugins={{ selection: selectionPlugin }}
+            />
+          )}
+        </VStack>
       )}
 
       <Dialog
@@ -813,6 +996,22 @@ export default function TokensIndex({
           </Form>
         ) : null}
       </Dialog>
+
+      <AlertDialog
+        isOpen={Boolean(deleteTarget)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !isDeleting) setDeleteTarget(null)
+        }}
+        title={
+          deleteTarget?.scope === 'all'
+            ? 'Delete all expired and revoked tokens?'
+            : 'Delete tokens?'
+        }
+        description={`Permanently delete ${deleteTarget?.ids.length ?? 0} token${deleteTarget?.ids.length === 1 ? '' : 's'}? This cannot be undone. Existing activity logs will keep their token names and identifiers.`}
+        actionLabel={deleteTarget?.scope === 'all' ? 'Delete all' : 'Delete tokens'}
+        onAction={confirmDelete}
+        isActionLoading={isDeleting}
+      />
     </VStack>
   )
 }

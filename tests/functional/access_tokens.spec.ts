@@ -212,3 +212,84 @@ test.group('access tokens', (group) => {
     assert.isTrue(revokedToken.isRevoked)
   })
 })
+
+test.group('access token cleanup', (group) => {
+  group.each.setup(beginTestTransaction)
+  group.each.teardown(rollbackTestTransaction)
+
+  test('marks only expired and revoked tokens as deletable', async ({ client }) => {
+    const admin = await createAdmin()
+    const active = await createAccessToken(admin.id, { name: 'Active token' })
+    const expired = await createAccessToken(admin.id, {
+      name: 'Expired token',
+      expiresAt: DateTime.utc().minus({ minutes: 1 }),
+    })
+    const revoked = await createAccessToken(admin.id, { name: 'Revoked token' })
+    revoked.token.revokedAt = DateTime.utc()
+    await revoked.token.save()
+
+    const response = await client.get('/tokens').withInertia().loginAs(admin)
+
+    response.assertStatus(200)
+    response.assertInertiaPropsContains({
+      tokens: [
+        { id: revoked.token.id, canDelete: true },
+        { id: expired.token.id, canDelete: true },
+        { id: active.token.id, canDelete: false },
+      ],
+    })
+  })
+
+  test('deletes selected expired and revoked tokens while preserving active tokens', async ({
+    client,
+    assert,
+  }) => {
+    const admin = await createAdmin()
+    const active = await createAccessToken(admin.id, { name: 'Active token' })
+    const expired = await createAccessToken(admin.id, {
+      name: 'Expired token',
+      expiresAt: DateTime.utc().minus({ minutes: 1 }),
+    })
+    const revoked = await createAccessToken(admin.id, { name: 'Revoked token' })
+    revoked.token.revokedAt = DateTime.utc()
+    await revoked.token.save()
+
+    const response = await client
+      .delete('/tokens')
+      .loginAs(admin)
+      .withCsrfToken()
+      .redirects(0)
+      .json({ ids: [expired.token.id, revoked.token.id] })
+
+    response.assertStatus(302)
+    assertRedirectTo(assert, response, '/tokens')
+    response.assertFlashMessage('success', '2 tokens deleted')
+    assert.isNull(await AccessToken.find(expired.token.id))
+    assert.isNull(await AccessToken.find(revoked.token.id))
+    assert.isNotNull(await AccessToken.find(active.token.id))
+  })
+
+  test('rejects the entire deletion when an active token is selected', async ({
+    client,
+    assert,
+  }) => {
+    const admin = await createAdmin()
+    const active = await createAccessToken(admin.id, { name: 'Active token' })
+    const expired = await createAccessToken(admin.id, {
+      name: 'Expired token',
+      expiresAt: DateTime.utc().minus({ minutes: 1 }),
+    })
+
+    const response = await client
+      .delete('/tokens')
+      .loginAs(admin)
+      .withCsrfToken()
+      .redirects(0)
+      .json({ ids: [active.token.id, expired.token.id] })
+
+    response.assertStatus(302)
+    response.assertFlashMessage('error', 'Active tokens must be revoked before they can be deleted')
+    assert.isNotNull(await AccessToken.find(active.token.id))
+    assert.isNotNull(await AccessToken.find(expired.token.id))
+  })
+})

@@ -12,6 +12,12 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Prevented stable release preparation from adding a blank line at the end of the changelog and failing generated-file validation.
 
+## 2026-08-12
+
+### Added
+
+- Added confirmed cleanup for selected or all expired and revoked access tokens, with a compact grouped mobile layout, neutral triggers, and a destructive final confirmation while preserving active tokens and historical activity labels.
+
 ## 2026-08-11
 
 ### Fixed
