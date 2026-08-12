@@ -78,7 +78,7 @@ export function updateChangelog(changelog, { date, releaseUrl, version }) {
     const suffix = changelog.slice(insertionPoint).trimStart()
     const releaseSection = `${dateHeading}\n\n### Changed\n\n${versionEntry}`
 
-    return `${prefix}\n\n${releaseSection}\n\n${suffix}\n`
+    return `${[prefix, releaseSection, suffix.trimEnd()].filter(Boolean).join('\n\n')}\n`
   }
 
   const nextDateOffset = changelog

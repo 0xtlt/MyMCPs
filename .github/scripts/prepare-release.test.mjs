@@ -84,6 +84,7 @@ Intro.
   const updated = updateChangelog(changelog, release)
 
   assert.ok(updated.indexOf('## 2026-08-08') < updated.indexOf('## 2026-08-07'))
+  assert.doesNotMatch(updated, /\n\n$/)
   assert.equal(updateChangelog(updated, release), updated)
 })
 

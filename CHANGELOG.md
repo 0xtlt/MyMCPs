@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-12
+
+### Fixed
+
+- Prevented stable release preparation from adding a blank line at the end of the changelog and failing generated-file validation.
+
 ## 2026-08-11
 
 ### Fixed
