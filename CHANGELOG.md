@@ -11,6 +11,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 ### Fixed
 
 - Prevented stable release preparation from adding a blank line at the end of the changelog and failing generated-file validation.
+- Hid the inactive access-token bulk selector when no rows can be deleted and restored spacing between the gateway details and token table.
 
 ### Added
 
