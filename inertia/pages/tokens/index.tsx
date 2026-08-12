@@ -664,7 +664,7 @@ export default function TokensIndex({
           container="card"
         />
       ) : (
-        <VStack gap={0} hAlign="stretch" width="100%">
+        <Card variant="transparent" padding={0} width="100%">
           {deletableTokens.length > 0 && !isMobile ? (
             <Toolbar
               label="Token cleanup"
@@ -752,10 +752,10 @@ export default function TokensIndex({
               hasHover
               density="compact"
               textOverflow="truncate"
-              plugins={{ selection: selectionPlugin }}
+              plugins={deletableTokens.length > 0 ? { selection: selectionPlugin } : undefined}
             />
           )}
-        </VStack>
+        </Card>
       )}
 
       <Dialog
