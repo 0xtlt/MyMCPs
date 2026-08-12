@@ -104,3 +104,10 @@ export const updateAccessTokenValidator = vine.create(accessTokenPayload)
 export const accessTokenParamsValidator = vine.create({
   id: vine.number().withoutDecimals().positive(),
 })
+
+/**
+ * Expired or revoked access tokens selected for permanent deletion.
+ */
+export const deleteAccessTokensValidator = vine.create({
+  ids: vine.array(vine.number().withoutDecimals().positive()).minLength(1).maxLength(500),
+})

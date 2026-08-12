@@ -499,4 +499,16 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['revoke']>>>
     }
   }
+  'tokens.destroy': {
+    methods: ["DELETE"]
+    pattern: '/tokens'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/mcp').deleteAccessTokensValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/mcp').deleteAccessTokensValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/access_tokens_controller').default['destroy']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
 }

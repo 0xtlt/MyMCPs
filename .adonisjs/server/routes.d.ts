@@ -45,6 +45,7 @@ export type ScannedRoutes = {
     'tokens.store': { paramsTuple?: []; params?: {} }
     'tokens.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'tokens.destroy': { paramsTuple?: []; params?: {} }
   }
   GET: {
     'health': { paramsTuple?: []; params?: {} }
@@ -113,6 +114,7 @@ export type ScannedRoutes = {
     'invites.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'members.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'tokens.destroy': { paramsTuple?: []; params?: {} }
   }
   PUT: {
     'mcps.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }

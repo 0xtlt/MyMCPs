@@ -66,5 +66,6 @@ export interface ApiDefinition {
     store: typeof routes['tokens.store']
     update: typeof routes['tokens.update']
     revoke: typeof routes['tokens.revoke']
+    destroy: typeof routes['tokens.destroy']
   }
 }

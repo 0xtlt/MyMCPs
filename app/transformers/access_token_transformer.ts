@@ -22,6 +22,7 @@ export default class AccessTokenTransformer extends BaseTransformer<AccessToken>
       isActive: this.resource.isActive,
       canRevoke:
         this.resource.source === 'oauth' ? !this.resource.isRevoked : this.resource.isUsable,
+      canDelete: !this.resource.isActive,
       displayExpiresAt:
         this.resource.source === 'oauth'
           ? this.resource.oauthRefreshExpiresAt
