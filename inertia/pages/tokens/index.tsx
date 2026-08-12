@@ -431,6 +431,11 @@ export default function TokensIndex({
                 ? `Expires ${formatLocalDate(token.displayExpiresAt)}`
                 : 'No expiry'}
             </Text>
+            <Text type="supporting" color="secondary">
+              {token.lastUsedAt
+                ? `Last used ${formatLocalDateTime(token.lastUsedAt)}`
+                : 'Never used'}
+            </Text>
           </VStack>
         }
         endContent={
@@ -502,6 +507,16 @@ export default function TokensIndex({
       renderCell: (token) => (
         <Text type="supporting" color="secondary">
           {token.displayExpiresAt ? formatLocalDateTime(token.displayExpiresAt) : 'No expiry'}
+        </Text>
+      ),
+    },
+    {
+      key: 'lastUsedAt',
+      header: 'Last used',
+      width: proportional(2),
+      renderCell: (token) => (
+        <Text type="supporting" color="secondary">
+          {token.lastUsedAt ? formatLocalDateTime(token.lastUsedAt) : 'Never'}
         </Text>
       ),
     },
