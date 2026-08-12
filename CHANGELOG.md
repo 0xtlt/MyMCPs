@@ -4,6 +4,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ## 2026-08-12
 
+### Changed
+
+- Released version [0.1.3](https://github.com/0xtlt/MyMCPs/releases/tag/v0.1.3).
+
 ### Fixed
 
 - Prevented stable release preparation from adding a blank line at the end of the changelog and failing generated-file validation.
