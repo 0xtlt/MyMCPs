@@ -12,6 +12,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Prevented stable release preparation from adding a blank line at the end of the changelog and failing generated-file validation.
 
+### Added
+
+- Access tokens page shows when each token was last used.
+
 ## 2026-08-12
 
 ### Added
