@@ -439,6 +439,18 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['probe']>>>
     }
   }
+  'mcps.updateNpm': {
+    methods: ["POST"]
+    pattern: '/mcps/:id/update'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['updateNpm']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['updateNpm']>>>
+    }
+  }
   'mcps.oauthStart': {
     methods: ["GET","HEAD"]
     pattern: '/mcps/:id/oauth/start'

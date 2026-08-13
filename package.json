@@ -88,6 +88,7 @@
     "@vinejs/vine": "^4.4.0",
     "better-sqlite3": "^12.10.0",
     "chart.js": "^4.5.1",
+    "croner": "^10.0.1",
     "edge.js": "^6.5.1",
     "luxon": "^3.7.2",
     "react": "^19.2.6",

@@ -10,6 +10,7 @@ import { Section } from '@astryxdesign/core/Section'
 import { NumberInput } from '@astryxdesign/core/NumberInput'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { Selector } from '@astryxdesign/core/Selector'
+import { Switch } from '@astryxdesign/core/Switch'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Heading, Text } from '@astryxdesign/core/Text'
 
@@ -20,6 +21,8 @@ export default function SettingsIndex({
     gatewayToolMode: 'eager' | 'lazy'
     level: 'off' | 'metadata' | 'arguments' | 'responses'
     retentionDays: number
+    autoUpdateEnabled: boolean
+    autoUpdateCron: string
   } | null
 }) {
   const { props } = usePage<Data.SharedProps>()
@@ -34,6 +37,8 @@ export default function SettingsIndex({
   const [gatewayToolMode, setGatewayToolMode] = useState(mcpLogging?.gatewayToolMode ?? 'eager')
   const [mcpLogLevel, setMcpLogLevel] = useState(mcpLogging?.level ?? 'metadata')
   const [mcpLogRetentionDays, setMcpLogRetentionDays] = useState(mcpLogging?.retentionDays ?? 14)
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(mcpLogging?.autoUpdateEnabled ?? false)
+  const [autoUpdateCron, setAutoUpdateCron] = useState(mcpLogging?.autoUpdateCron ?? '0 2 * * *')
 
   function openEmailDialog() {
     setEmail(user.email)
@@ -208,6 +213,35 @@ export default function SettingsIndex({
                       }
                     />
                   </HStack>
+                  <Switch
+                    label="Auto-update Deno npm MCPs"
+                    description="Reloads the Deno cache for npm MCPs that already track latest. Pinned versions are never changed."
+                    htmlName="mcpAutoUpdateEnabled"
+                    value={autoUpdateEnabled}
+                    onChange={setAutoUpdateEnabled}
+                    labelPosition="start"
+                    labelSpacing="spread"
+                    width="100%"
+                    status={
+                      errors.mcpAutoUpdateEnabled
+                        ? { type: 'error', message: errors.mcpAutoUpdateEnabled }
+                        : undefined
+                    }
+                  />
+                  <TextInput
+                    label="Auto-update schedule"
+                    htmlName="mcpAutoUpdateCron"
+                    value={autoUpdateCron}
+                    onChange={setAutoUpdateCron}
+                    placeholder="0 2 * * *"
+                    description="5-field cron in UTC. Default is every day at 02:00."
+                    width="100%"
+                    status={
+                      errors.mcpAutoUpdateCron
+                        ? { type: 'error', message: errors.mcpAutoUpdateCron }
+                        : undefined
+                    }
+                  />
                   <HStack gap={3} hAlign="end">
                     <Button
                       className="mobile-full-width"

@@ -59,6 +59,10 @@ export default defineConfig({
     () => import('@adonisjs/inertia/inertia_provider'),
     () => import('@adonisjs/auth/auth_provider'),
     () => import('#providers/api_provider'),
+    {
+      file: () => import('#providers/mcp_auto_update_provider'),
+      environment: ['web'],
+    },
     () => import('@adonisjs/limiter/limiter_provider'),
   ],
 

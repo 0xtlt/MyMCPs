@@ -5,6 +5,8 @@ import {
 } from '#validators/user'
 import type { HttpContext } from '@adonisjs/core/http'
 import McpCallLogService from '#services/mcp_call_log_service'
+import { DEFAULT_MCP_AUTO_UPDATE_CRON } from '#services/mcp_auto_update_cron'
+import { resyncMcpAutoUpdateScheduler } from '#services/mcp_auto_update_scheduler'
 import User from '#models/user'
 
 export default class SettingsController {
@@ -16,6 +18,8 @@ export default class SettingsController {
             gatewayToolMode: mcpLogging.gatewayToolMode,
             level: mcpLogging.mcpLogLevel,
             retentionDays: mcpLogging.mcpLogRetentionDays,
+            autoUpdateEnabled: mcpLogging.mcpAutoUpdateEnabled,
+            autoUpdateCron: mcpLogging.mcpAutoUpdateCron || DEFAULT_MCP_AUTO_UPDATE_CRON,
           }
         : null,
     })
@@ -58,9 +62,14 @@ export default class SettingsController {
     settings.gatewayToolMode = payload.gatewayToolMode
     settings.mcpLogLevel = payload.mcpLogLevel
     settings.mcpLogRetentionDays = payload.mcpLogRetentionDays
+    settings.mcpAutoUpdateEnabled = payload.mcpAutoUpdateEnabled ?? false
+    if (payload.mcpAutoUpdateCron) {
+      settings.mcpAutoUpdateCron = payload.mcpAutoUpdateCron
+    }
     settings.updatedBy = auth.user!.id
     await settings.save()
     await McpCallLogService.pruneExpired({ force: true })
+    await resyncMcpAutoUpdateScheduler()
 
     session.flash('success', 'Instance settings updated')
     return response.redirect().toRoute('settings.index')

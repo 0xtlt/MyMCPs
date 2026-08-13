@@ -87,6 +87,8 @@ export class InstanceSettingSchema extends BaseModel {
     'createdAt',
     'gatewayToolMode',
     'id',
+    'mcpAutoUpdateCron',
+    'mcpAutoUpdateEnabled',
     'mcpLogLevel',
     'mcpLogRetentionDays',
     'updatedAt',
@@ -99,6 +101,10 @@ export class InstanceSettingSchema extends BaseModel {
   declare gatewayToolMode: string
   @column({ isPrimary: true })
   declare id: number
+  @column()
+  declare mcpAutoUpdateCron: string
+  @column()
+  declare mcpAutoUpdateEnabled: boolean
   @column()
   declare mcpLogLevel: string
   @column()

@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
+import { promisify } from 'node:util'
 import app from '@adonisjs/core/services/app'
 import env from '#start/env'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -16,7 +18,10 @@ export type ConnectedDenoUpstream = {
   close: () => Promise<void>
 }
 
-function resolveDenoBinary() {
+const execFileAsync = promisify(execFile)
+const DENO_CACHE_RELOAD_TIMEOUT_MS = 120_000
+
+export function resolveDenoBinary() {
   const configured = env.get('DENO_PATH', '')
   if (configured && existsSync(configured)) {
     return configured
@@ -75,6 +80,38 @@ export function buildDenoEnvironment(mcp: Mcp, sandboxDir: string) {
     HOME: sandboxDir,
     TMPDIR: sandboxDir,
     NO_COLOR: '1',
+  }
+}
+
+function execFileDetail(error: unknown) {
+  if (error && typeof error === 'object') {
+    const err = error as { stderr?: string; message?: string }
+    const detail = (err.stderr || err.message || 'Unknown error').trim()
+    return detail.slice(0, 300) || 'Unknown error'
+  }
+  return 'Unknown error'
+}
+
+/**
+ * Reload the Deno npm cache for a package at `@latest` without changing any MCP row.
+ */
+export async function reloadDenoNpmPackageCache(npmPackage: string) {
+  const pkg = npmPackage.trim()
+  if (!pkg) {
+    throw new Error('npm MCP is missing a package name')
+  }
+
+  const deno = resolveDenoBinary()
+  const npmSpec = `npm:${pkg}@latest`
+
+  try {
+    await execFileAsync(deno, ['cache', '--reload', '--quiet', npmSpec], {
+      timeout: DENO_CACHE_RELOAD_TIMEOUT_MS,
+      maxBuffer: 1024 * 1024,
+      encoding: 'utf8',
+    })
+  } catch (error) {
+    throw new Error(`Failed to reload Deno cache for "${pkg}". ${execFileDetail(error)}`)
   }
 }
 

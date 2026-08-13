@@ -426,6 +426,20 @@ export default function McpsIndex({
                             })
                           }
                         />
+                        {editingMcp.transport === 'npm' &&
+                        (!editingMcp.npmVersion ||
+                          editingMcp.npmVersion.trim().toLowerCase() === 'latest') ? (
+                          <Button
+                            label="Update MCP"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() =>
+                              router.post(`/mcps/${editingMcp.id}/update`, undefined, {
+                                preserveScroll: true,
+                              })
+                            }
+                          />
+                        ) : null}
                         {editingMcp.authType === 'auto' &&
                         editingMcp.hasOauthAccessToken &&
                         !editingMcp.oauthRequired ? (

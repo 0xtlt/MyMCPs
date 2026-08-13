@@ -40,6 +40,7 @@ export type ScannedRoutes = {
     'mcps.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'mcps.updateNpm': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.oauthStart': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.index': { paramsTuple?: []; params?: {} }
     'tokens.store': { paramsTuple?: []; params?: {} }
@@ -102,6 +103,7 @@ export type ScannedRoutes = {
     'invites.store': { paramsTuple?: []; params?: {} }
     'mcps.store': { paramsTuple?: []; params?: {} }
     'mcps.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'mcps.updateNpm': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.store': { paramsTuple?: []; params?: {} }
     'tokens.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
