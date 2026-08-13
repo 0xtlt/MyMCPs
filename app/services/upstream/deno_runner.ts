@@ -27,6 +27,7 @@ const DENO_CACHE_RELOAD_TIMEOUT_MS = 120_000
  * `none` keeps packages in `$DENO_DIR` instead of creating a local node_modules.
  */
 const DENO_NODE_MODULES_DIR = '--node-modules-dir=none'
+const DENO_NO_LOCK = '--no-lock'
 
 export function resolveDenoBinary() {
   const configured = env.get('DENO_PATH', '')
@@ -157,6 +158,7 @@ export function buildDenoArgs(mcp: Mcp, sandboxDir: string) {
     'run',
     '--quiet',
     DENO_NODE_MODULES_DIR,
+    DENO_NO_LOCK,
     `--allow-read=${sandboxDir},${denoDir}`,
     `--allow-write=${sandboxDir}`,
     '--allow-net',
@@ -189,6 +191,7 @@ function execFileDetail(error: unknown) {
 /**
  * `deno cache --reload` args for an npm package at `@latest`.
  * `--node-modules-dir=none` is required when the process cwd is this Node app.
+ * `--no-lock` avoids writing a Deno lockfile next to package.json.
  */
 export function buildDenoCacheReloadArgs(npmPackage: string) {
   const pkg = npmPackage.trim()
@@ -196,7 +199,7 @@ export function buildDenoCacheReloadArgs(npmPackage: string) {
     throw new Error('npm MCP is missing a package name')
   }
 
-  return ['cache', '--reload', '--quiet', DENO_NODE_MODULES_DIR, `npm:${pkg}@latest`]
+  return ['cache', '--reload', '--quiet', DENO_NODE_MODULES_DIR, DENO_NO_LOCK, `npm:${pkg}@latest`]
 }
 
 /**

@@ -173,6 +173,7 @@ test.group('npm MCP environment variables', (group) => {
       'run',
       '--quiet',
       '--node-modules-dir=none',
+      '--no-lock',
       `--allow-read=/safe/sandbox,${resolveDenoDir()}`,
       '--allow-write=/safe/sandbox',
       '--allow-net',

@@ -84,6 +84,7 @@ test.group('Deno npm cache reload args', () => {
       '--reload',
       '--quiet',
       '--node-modules-dir=none',
+      '--no-lock',
       'npm:@shopify/dev-mcp@latest',
     ])
   })
