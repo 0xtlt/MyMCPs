@@ -15,6 +15,68 @@ import { useToast } from '@astryxdesign/core/Toast'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
 import logoUrl from '~/assets/brand/mymcps-m-logo.png?w=64&format=png&quality=100&img'
 
+function toastIsAlreadyOnTop(toast: Element) {
+  const rect = toast.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) {
+    return false
+  }
+
+  const topEl = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+  return Boolean(topEl && toast.contains(topEl))
+}
+
+function promoteToastViewportAboveDialogs() {
+  if (!document.querySelector('dialog[open]')) {
+    return
+  }
+
+  const toast = document.querySelector('[data-toast-id]')
+  if (!toast || toastIsAlreadyOnTop(toast)) {
+    return
+  }
+
+  const viewport = toast.closest<HTMLElement>('[popover]')
+  if (!viewport || typeof viewport.showPopover !== 'function') {
+    return
+  }
+
+  try {
+    if (viewport.matches(':popover-open')) {
+      viewport.hidePopover()
+    }
+    viewport.showPopover()
+  } catch {
+    // Already showing, or the Popover API is unavailable.
+  }
+}
+
+function ToastTopLayer() {
+  useEffect(() => {
+    let frame = 0
+
+    const schedulePromote = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(promoteToastViewportAboveDialogs)
+    }
+
+    const observer = new MutationObserver(schedulePromote)
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['open'],
+    })
+    schedulePromote()
+
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+    }
+  }, [])
+
+  return null
+}
+
 function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> }) {
   const page = usePage<Data.SharedProps>()
   const showToast = useToast()
@@ -34,6 +96,8 @@ function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> })
         showToast({ body: children.props.flash.success, type: 'info', uniqueID: 'flash-success' })
       )
     }
+
+    requestAnimationFrame(promoteToastViewportAboveDialogs)
   }, [children.props.flash.error, children.props.flash.success, page.url, showToast])
 
   return null
@@ -102,6 +166,7 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
   return (
     <LayerProvider toast={{ position: 'topEnd' }}>
       <FlashToasts>{children}</FlashToasts>
+      <ToastTopLayer />
       <AppShell
         contentPadding={6}
         style={{ height: '100%', minHeight: 0 }}
