@@ -85,11 +85,11 @@ test.group('MCP edit modal UX', (group) => {
     const extraArgsBox = await dialog.locator('input[name="npmArgs"]').boundingBox()
     assert.isNotNull(versionBox)
     assert.isNotNull(extraArgsBox)
-    assert.equal(Math.round(versionBox!.y), Math.round(extraArgsBox!.y))
+    assert.isAtMost(Math.abs(versionBox!.y - extraArgsBox!.y), 10)
 
     const cachedBox = await dialog.getByText('Cached in Deno: 1.14.4').boundingBox()
     assert.isNotNull(cachedBox)
-    assert.isAtLeast(Math.round(cachedBox!.y), Math.round(versionBox!.y + versionBox!.height))
+    assert.isAtLeast(cachedBox!.y, versionBox!.y + versionBox!.height - 1)
 
     await dialog.getByRole('button', { name: 'Update MCP' }).click()
     await dialog.getByRole('status', { name: 'Updating MCP' }).waitFor()

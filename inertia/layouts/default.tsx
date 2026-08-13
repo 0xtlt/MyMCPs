@@ -15,6 +15,14 @@ import { useToast } from '@astryxdesign/core/Toast'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
 import logoUrl from '~/assets/brand/mymcps-m-logo.png?w=64&format=png&quality=100&img'
 
+const TOAST_VIEWPORT_SELECTOR = '[role="region"][popover], [role="region"][data-toast-dialog-host]'
+
+let toastViewportPlaceholder: Comment | null = null
+
+function toastViewportElement() {
+  return document.querySelector<HTMLElement>(TOAST_VIEWPORT_SELECTOR)
+}
+
 function toastIsAlreadyOnTop(toast: Element) {
   const rect = toast.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) {
@@ -25,11 +33,21 @@ function toastIsAlreadyOnTop(toast: Element) {
   return Boolean(topEl && toast.contains(topEl))
 }
 
-function restackPopover(viewport: HTMLElement) {
-  try {
-    viewport.hidePopover()
-  } catch {
-    // Not open yet.
+function restoreToastViewport() {
+  const viewport = toastViewportElement()
+  if (!viewport || !toastViewportPlaceholder?.parentNode) {
+    return
+  }
+  if (viewport.parentNode === toastViewportPlaceholder.parentNode) {
+    return
+  }
+
+  toastViewportPlaceholder.parentNode.insertBefore(viewport, toastViewportPlaceholder)
+  toastViewportPlaceholder.remove()
+  toastViewportPlaceholder = null
+  viewport.removeAttribute('data-toast-dialog-host')
+  if (!viewport.hasAttribute('popover')) {
+    viewport.setAttribute('popover', 'manual')
   }
   try {
     viewport.showPopover()
@@ -39,32 +57,52 @@ function restackPopover(viewport: HTMLElement) {
 }
 
 function promoteToastViewportAboveDialogs() {
-  if (!document.querySelector('dialog[open]')) {
+  const dialog = document.querySelector('dialog[open]')
+  const viewport = toastViewportElement()
+  if (!viewport) {
+    return
+  }
+  if (!dialog) {
+    restoreToastViewport()
     return
   }
 
-  const toast = document.querySelector('[data-toast-id]')
-  if (!toast || toastIsAlreadyOnTop(toast)) {
+  const toast = viewport.querySelector('[data-toast-id]')
+  if (!toast) {
+    return
+  }
+  if (dialog.contains(viewport) && toastIsAlreadyOnTop(toast)) {
     return
   }
 
-  const viewport =
-    toast.closest<HTMLElement>('[popover]') ??
-    document.querySelector<HTMLElement>('[role="region"][popover]')
-  if (!viewport || typeof viewport.showPopover !== 'function') {
-    return
+  if (!dialog.contains(viewport)) {
+    if (!toastViewportPlaceholder) {
+      toastViewportPlaceholder = document.createComment('toast-viewport')
+      viewport.parentNode?.insertBefore(toastViewportPlaceholder, viewport)
+    }
+    try {
+      viewport.hidePopover()
+    } catch {
+      // Not open yet.
+    }
+    dialog.appendChild(viewport)
+    viewport.setAttribute('data-toast-dialog-host', '')
+    viewport.removeAttribute('popover')
   }
-
-  restackPopover(viewport)
 }
 
 function ToastTopLayer() {
   useEffect(() => {
     let frame = 0
+    let timeout = 0
 
     const schedulePromote = () => {
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(promoteToastViewportAboveDialogs)
+      globalThis.clearTimeout(timeout)
+      frame = requestAnimationFrame(() => {
+        promoteToastViewportAboveDialogs()
+        timeout = globalThis.setTimeout(promoteToastViewportAboveDialogs, 50)
+      })
     }
 
     const observer = new MutationObserver(schedulePromote)
@@ -79,6 +117,8 @@ function ToastTopLayer() {
     return () => {
       observer.disconnect()
       cancelAnimationFrame(frame)
+      globalThis.clearTimeout(timeout)
+      restoreToastViewport()
     }
   }, [])
 
