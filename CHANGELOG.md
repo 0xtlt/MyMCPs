@@ -12,6 +12,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
+- Released version [0.2.0](https://github.com/0xtlt/MyMCPs/releases/tag/v0.2.0).
+
 - Hid the MCP edit form behind a centered spinner while Update MCP is running.
 - Moved the Deno cached-version hint below the Version field so Extra args stays aligned.
 
