@@ -45,6 +45,7 @@ type Props = {
   onChange: (patch: Partial<McpFormValues>) => void
   errors?: Errors
   secrets?: McpFormSecrets
+  cachedVersion?: string | null
 }
 
 let nextEnvironmentVariableId = 0
@@ -112,7 +113,13 @@ export function mcpFormValuesFromRow(mcp: {
   }
 }
 
-export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: Props) {
+export function McpFormFields({
+  values,
+  onChange,
+  errors = {},
+  secrets = {},
+  cachedVersion,
+}: Props) {
   return (
     <VStack gap={4} hAlign="stretch">
       <TextInput
@@ -173,6 +180,7 @@ export function McpFormFields({ values, onChange, errors = {}, secrets = {} }: P
               placeholder="latest"
               isOptional
               width={200}
+              description={cachedVersion ? `Cached in Deno: ${cachedVersion}` : undefined}
             />
             <TextInput
               label="Extra args"

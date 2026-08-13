@@ -2,6 +2,14 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-13
+
+### Added
+
+- Added an Update MCP action for Deno npm MCPs that already track `latest`, which reloads the Deno package cache and retests the connection without changing pinned versions.
+- Added instance settings to enable scheduled auto-updates of latest-tracking Deno npm MCPs, with a 5-field UTC cron expression that defaults to every day at 02:00.
+- Added the Deno-cached npm package version in small type on the MCP list and edit form.
+
 ## 2026-08-12
 
 ### Changed

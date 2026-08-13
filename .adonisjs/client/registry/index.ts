@@ -222,6 +222,12 @@ const routes = {
     tokens: [{"old":"/mcps/:id/probe","type":0,"val":"mcps","end":""},{"old":"/mcps/:id/probe","type":1,"val":"id","end":""},{"old":"/mcps/:id/probe","type":0,"val":"probe","end":""}],
     types: placeholder as Registry['mcps.probe']['types'],
   },
+  'mcps.updateNpm': {
+    methods: ["POST"],
+    pattern: '/mcps/:id/update',
+    tokens: [{"old":"/mcps/:id/update","type":0,"val":"mcps","end":""},{"old":"/mcps/:id/update","type":1,"val":"id","end":""},{"old":"/mcps/:id/update","type":0,"val":"update","end":""}],
+    types: placeholder as Registry['mcps.updateNpm']['types'],
+  },
   'mcps.oauthStart': {
     methods: ["GET","HEAD"],
     pattern: '/mcps/:id/oauth/start',

@@ -6,6 +6,7 @@ import McpSecretStore from '#services/mcp_secret_store'
 import { createMcpValidator, updateMcpValidator } from '#validators/mcp'
 import { oauthCallbackValidator } from '#validators/oauth'
 import { testAndUpdateStatus } from '#services/upstream/manager'
+import { McpNpmUpdateError, updateMcpToLatest } from '#services/mcp_npm_update_service'
 import {
   clearOauthSession,
   exchangeAuthorizationCode,
@@ -273,6 +274,33 @@ export default class McpsController {
     } else {
       session.flash('error', mcp.lastError || 'Connection failed')
     }
+    session.flash('editingMcpId', mcp.id)
+    return response.redirect().toRoute('mcps.index')
+  }
+
+  async updateNpm({ params, response, session }: HttpContext) {
+    const mcp = await Mcp.find(params.id)
+    if (!mcp) {
+      session.flash('error', 'MCP not found')
+      return response.redirect().toRoute('mcps.index')
+    }
+
+    try {
+      await updateMcpToLatest(mcp)
+      if (mcp.status === 'ready') {
+        session.flash('success', 'MCP updated to latest')
+      } else {
+        session.flash('error', mcp.lastError || 'Update failed')
+      }
+    } catch (error) {
+      session.flash(
+        'error',
+        error instanceof McpNpmUpdateError
+          ? error.message
+          : (sanitizeMcpDiagnostic(error, mcp) ?? 'Update failed')
+      )
+    }
+
     session.flash('editingMcpId', mcp.id)
     return response.redirect().toRoute('mcps.index')
   }

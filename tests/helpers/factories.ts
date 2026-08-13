@@ -68,18 +68,21 @@ export async function createMcp(
     authType: 'auto' | 'bearer' | 'header'
     oauthRequired: boolean
     httpUrl: string | null
+    npmPackage: string | null
+    npmVersion: string | null
   }> = {}
 ) {
   const name = overrides.name ?? nextValue('MCP')
+  const transport = overrides.transport ?? 'http'
 
   return Mcp.create({
     name,
     slug: overrides.slug ?? Mcp.slugify(name),
     description: null,
-    transport: overrides.transport ?? 'http',
-    httpUrl: overrides.httpUrl ?? 'http://127.0.0.1:9999/mcp',
-    npmPackage: null,
-    npmVersion: null,
+    transport,
+    httpUrl: overrides.httpUrl ?? (transport === 'http' ? 'http://127.0.0.1:9999/mcp' : null),
+    npmPackage: overrides.npmPackage ?? (transport === 'npm' ? '@example/mcp' : null),
+    npmVersion: overrides.npmVersion ?? null,
     npmArgs: null,
     npmEnv: null,
     authType: overrides.authType ?? 'auto',

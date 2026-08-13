@@ -1,6 +1,9 @@
+import { execFile } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { promisify } from 'node:util'
 import app from '@adonisjs/core/services/app'
 import env from '#start/env'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -16,7 +19,10 @@ export type ConnectedDenoUpstream = {
   close: () => Promise<void>
 }
 
-function resolveDenoBinary() {
+const execFileAsync = promisify(execFile)
+const DENO_CACHE_RELOAD_TIMEOUT_MS = 120_000
+
+export function resolveDenoBinary() {
   const configured = env.get('DENO_PATH', '')
   if (configured && existsSync(configured)) {
     return configured
@@ -31,6 +37,88 @@ function resolveDenoBinary() {
     }
   }
   return 'deno'
+}
+
+/**
+ * Directory Deno uses for the npm package cache (`$DENO_DIR/npm/...`).
+ * Docker sets `DENO_DIR=/app/tmp/deno-cache`; local installs follow Deno defaults.
+ */
+export function resolveDenoDir() {
+  const configured = process.env.DENO_DIR?.trim()
+  if (configured) {
+    return configured
+  }
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Caches', 'deno')
+  }
+  if (process.platform === 'win32') {
+    return join(process.env.LOCALAPPDATA || homedir(), 'deno')
+  }
+  const xdgCache = process.env.XDG_CACHE_HOME?.trim()
+  return join(xdgCache || join(homedir(), '.cache'), 'deno')
+}
+
+function isSafePathSegment(value: string) {
+  return Boolean(value) && !value.includes('..') && !value.includes('/') && !value.includes('\\')
+}
+
+function npmCachePackageDir(npmPackage: string) {
+  const pkg = npmPackage.trim()
+  if (!pkg || pkg.includes('..') || pkg.includes('\\') || pkg.startsWith('/')) {
+    return null
+  }
+  const segments = pkg.split('/').filter(Boolean)
+  if (segments.length === 0 || segments.length > 2 || !segments.every(isSafePathSegment)) {
+    return null
+  }
+  return join(resolveDenoDir(), 'npm', 'registry.npmjs.org', ...segments)
+}
+
+function isLatestRequestedVersion(npmVersion: string | null | undefined) {
+  const version = npmVersion?.trim()
+  return !version || version.toLowerCase() === 'latest'
+}
+
+function readCachedLatestTag(packageDir: string) {
+  const registryPath = join(packageDir, 'registry.json')
+  if (!existsSync(registryPath)) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(registryPath, 'utf8')) as {
+      'dist-tags'?: { latest?: string }
+    }
+    const latest = parsed['dist-tags']?.latest?.trim()
+    return latest && isSafePathSegment(latest) ? latest : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Semver currently present in the Deno npm cache for this package.
+ * For `latest`, uses the cached `dist-tags.latest` when that version folder exists.
+ * Pinned versions are returned only when that exact folder is cached.
+ */
+export function readCachedNpmPackageVersion(
+  npmPackage: string | null | undefined,
+  npmVersion: string | null | undefined
+) {
+  if (!npmPackage?.trim()) {
+    return null
+  }
+  const packageDir = npmCachePackageDir(npmPackage)
+  if (!packageDir || !existsSync(packageDir)) {
+    return null
+  }
+
+  const requested = isLatestRequestedVersion(npmVersion)
+    ? readCachedLatestTag(packageDir)
+    : npmVersion!.trim()
+  if (!requested || !isSafePathSegment(requested)) {
+    return null
+  }
+  return existsSync(join(packageDir, requested)) ? requested : null
 }
 
 export function sandboxRootFor(mcpId: number) {
@@ -75,6 +163,38 @@ export function buildDenoEnvironment(mcp: Mcp, sandboxDir: string) {
     HOME: sandboxDir,
     TMPDIR: sandboxDir,
     NO_COLOR: '1',
+  }
+}
+
+function execFileDetail(error: unknown) {
+  if (error && typeof error === 'object') {
+    const err = error as { stderr?: string; message?: string }
+    const detail = (err.stderr || err.message || 'Unknown error').trim()
+    return detail.slice(0, 300) || 'Unknown error'
+  }
+  return 'Unknown error'
+}
+
+/**
+ * Reload the Deno npm cache for a package at `@latest` without changing any MCP row.
+ */
+export async function reloadDenoNpmPackageCache(npmPackage: string) {
+  const pkg = npmPackage.trim()
+  if (!pkg) {
+    throw new Error('npm MCP is missing a package name')
+  }
+
+  const deno = resolveDenoBinary()
+  const npmSpec = `npm:${pkg}@latest`
+
+  try {
+    await execFileAsync(deno, ['cache', '--reload', '--quiet', npmSpec], {
+      timeout: DENO_CACHE_RELOAD_TIMEOUT_MS,
+      maxBuffer: 1024 * 1024,
+      encoding: 'utf8',
+    })
+  } catch (error) {
+    throw new Error(`Failed to reload Deno cache for "${pkg}". ${execFileDetail(error)}`)
   }
 }
 

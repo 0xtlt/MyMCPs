@@ -2,9 +2,19 @@
  * Shared rules for email and password.
  */
 import vine from '@vinejs/vine'
+import { isValidFiveFieldCron } from '#services/mcp_auto_update_cron'
 
 const email = () => vine.string().email().maxLength(254)
 const password = () => vine.string().minLength(8).maxLength(32)
+
+const fiveFieldCron = vine.createRule((value, _options, field) => {
+  if (typeof value !== 'string') {
+    return
+  }
+  if (!isValidFiveFieldCron(value)) {
+    field.report('The {{ field }} field must be a valid 5-field cron expression', 'cron', field)
+  }
+})
 
 /**
  * Change the signed-in user's email address.
@@ -34,6 +44,9 @@ export const updateMcpLoggingValidator = vine.create({
   gatewayToolMode: vine.enum(['eager', 'lazy'] as const),
   mcpLogLevel: vine.enum(['off', 'metadata', 'arguments', 'responses'] as const),
   mcpLogRetentionDays: vine.number().withoutDecimals().min(1).max(365),
+  /** Switch submits "on" when checked; omitted when unchecked. */
+  mcpAutoUpdateEnabled: vine.boolean().optional(),
+  mcpAutoUpdateCron: vine.string().trim().maxLength(64).optional().use(fiveFieldCron()),
 })
 
 /**

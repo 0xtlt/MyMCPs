@@ -59,6 +59,7 @@ export interface ApiDefinition {
     update: typeof routes['mcps.update']
     destroy: typeof routes['mcps.destroy']
     probe: typeof routes['mcps.probe']
+    updateNpm: typeof routes['mcps.updateNpm']
     oauthStart: typeof routes['mcps.oauthStart']
   }
   tokens: {

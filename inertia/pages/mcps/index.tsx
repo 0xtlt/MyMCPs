@@ -36,6 +36,7 @@ type McpRow = {
   httpUrl: string | null
   npmPackage: string | null
   npmVersion: string | null
+  npmCachedVersion: string | null
   npmArgs: string
   npmEnv: Array<{ name: string; hasValue: boolean }>
   authType: 'auto' | 'bearer' | 'header'
@@ -63,6 +64,10 @@ function statusVariant(status: McpRow['status']): 'success' | 'warning' | 'error
 
 function endpointLabel(mcp: McpRow) {
   return mcp.transport === 'http' ? mcp.httpUrl || '—' : mcp.npmPackage || '—'
+}
+
+function cachedVersionLabel(mcp: McpRow) {
+  return mcp.transport === 'npm' && mcp.npmCachedVersion ? `cached ${mcp.npmCachedVersion}` : null
 }
 
 export default function McpsIndex({
@@ -157,11 +162,21 @@ export default function McpsIndex({
       key: 'endpoint',
       header: 'Endpoint',
       width: proportional(3),
-      renderCell: (mcp) => (
-        <Text type="supporting" color="secondary">
-          {endpointLabel(mcp)}
-        </Text>
-      ),
+      renderCell: (mcp) => {
+        const cached = cachedVersionLabel(mcp)
+        return (
+          <VStack gap={0}>
+            <Text type="supporting" color="secondary">
+              {endpointLabel(mcp)}
+            </Text>
+            {cached ? (
+              <Text type="supporting" color="secondary">
+                {cached}
+              </Text>
+            ) : null}
+          </VStack>
+        )
+      },
     },
     {
       key: 'authType',
@@ -232,6 +247,11 @@ export default function McpsIndex({
                   <Text type="supporting" color="secondary" className="mcp-endpoint">
                     {endpointLabel(mcp)}
                   </Text>
+                  {cachedVersionLabel(mcp) ? (
+                    <Text type="supporting" color="secondary">
+                      {cachedVersionLabel(mcp)}
+                    </Text>
+                  ) : null}
                 </VStack>
               }
               endContent={
@@ -426,6 +446,20 @@ export default function McpsIndex({
                             })
                           }
                         />
+                        {editingMcp.transport === 'npm' &&
+                        (!editingMcp.npmVersion ||
+                          editingMcp.npmVersion.trim().toLowerCase() === 'latest') ? (
+                          <Button
+                            label="Update MCP"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() =>
+                              router.post(`/mcps/${editingMcp.id}/update`, undefined, {
+                                preserveScroll: true,
+                              })
+                            }
+                          />
+                        ) : null}
                         {editingMcp.authType === 'auto' &&
                         editingMcp.hasOauthAccessToken &&
                         !editingMcp.oauthRequired ? (
@@ -456,6 +490,7 @@ export default function McpsIndex({
                           hasAuthBearer: editingMcp.hasAuthBearer,
                           hasAuthHeaderValue: editingMcp.hasAuthHeaderValue,
                         }}
+                        cachedVersion={editingMcp.npmCachedVersion}
                       />
                     </VStack>
                   </LayoutContent>
