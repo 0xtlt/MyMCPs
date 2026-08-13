@@ -21,6 +21,12 @@ export type ConnectedDenoUpstream = {
 
 const execFileAsync = promisify(execFile)
 const DENO_CACHE_RELOAD_TIMEOUT_MS = 120_000
+/**
+ * The host app has a package.json, so Deno would otherwise default to
+ * `nodeModules: "manual"` and refuse `npm:` specifier entrypoints.
+ * `none` keeps packages in `$DENO_DIR` instead of creating a local node_modules.
+ */
+const DENO_NODE_MODULES_DIR = '--node-modules-dir=none'
 
 export function resolveDenoBinary() {
   const configured = env.get('DENO_PATH', '')
@@ -128,8 +134,11 @@ export function sandboxRootFor(mcpId: number) {
 /**
  * Build Deno permission flags for an npm MCP subprocess.
  *
- * Filesystem is deny-by-default outside `sandboxDir` (no Adonis DB / `.env` / app source).
- * Network and env remain allowed because many MCP packages need outbound HTTP and process env.
+ * Filesystem is deny-by-default outside `sandboxDir` and the Deno npm cache
+ * (no Adonis DB / `.env` / app source). The cache must be readable because
+ * Node packages often `readFileSync` their own packaged assets (for example
+ * `@shopify/dev-mcp`). Network and env remain allowed because many MCP packages
+ * need outbound HTTP and process env.
  * `homedir` sys access is required by Node packages that call `os.homedir()` at import time
  * (for example `@shopify/dev-mcp` via `env-paths`); HOME/TMPDIR still point at `sandboxDir`.
  * Treat upstream packages as trusted software, not a full multi-tenant isolation boundary.
@@ -142,11 +151,13 @@ export function buildDenoArgs(mcp: Mcp, sandboxDir: string) {
   const version = mcp.npmVersion?.trim() || 'latest'
   const npmSpec = `npm:${mcp.npmPackage}@${version}`
   const extraArgs = mcp.npmArgsList
+  const denoDir = resolveDenoDir()
 
   return [
     'run',
     '--quiet',
-    `--allow-read=${sandboxDir}`,
+    DENO_NODE_MODULES_DIR,
+    `--allow-read=${sandboxDir},${denoDir}`,
     `--allow-write=${sandboxDir}`,
     '--allow-net',
     '--allow-env',
@@ -176,6 +187,19 @@ function execFileDetail(error: unknown) {
 }
 
 /**
+ * `deno cache --reload` args for an npm package at `@latest`.
+ * `--node-modules-dir=none` is required when the process cwd is this Node app.
+ */
+export function buildDenoCacheReloadArgs(npmPackage: string) {
+  const pkg = npmPackage.trim()
+  if (!pkg) {
+    throw new Error('npm MCP is missing a package name')
+  }
+
+  return ['cache', '--reload', '--quiet', DENO_NODE_MODULES_DIR, `npm:${pkg}@latest`]
+}
+
+/**
  * Reload the Deno npm cache for a package at `@latest` without changing any MCP row.
  */
 export async function reloadDenoNpmPackageCache(npmPackage: string) {
@@ -185,10 +209,9 @@ export async function reloadDenoNpmPackageCache(npmPackage: string) {
   }
 
   const deno = resolveDenoBinary()
-  const npmSpec = `npm:${pkg}@latest`
 
   try {
-    await execFileAsync(deno, ['cache', '--reload', '--quiet', npmSpec], {
+    await execFileAsync(deno, buildDenoCacheReloadArgs(pkg), {
       timeout: DENO_CACHE_RELOAD_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
       encoding: 'utf8',

@@ -2,7 +2,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from '@japa/runner'
-import { readCachedNpmPackageVersion } from '#services/upstream/deno_runner'
+import {
+  buildDenoCacheReloadArgs,
+  readCachedNpmPackageVersion,
+} from '#services/upstream/deno_runner'
 
 async function fakeNpmCache(options: { npmPackage: string; versions: string[]; latest?: string }) {
   const denoDir = await mkdtemp(join(tmpdir(), 'mymcps-deno-cache-'))
@@ -71,5 +74,21 @@ test.group('Deno npm cache version', (group) => {
   test('returns null when the package is not in the Deno cache', ({ assert }) => {
     process.env.DENO_DIR = join(tmpdir(), 'mymcps-missing-deno-cache')
     assert.isNull(readCachedNpmPackageVersion('@example/missing-mcp', 'latest'))
+  })
+})
+
+test.group('Deno npm cache reload args', () => {
+  test('ignores the host package.json node_modules mode', ({ assert }) => {
+    assert.deepEqual(buildDenoCacheReloadArgs('@shopify/dev-mcp'), [
+      'cache',
+      '--reload',
+      '--quiet',
+      '--node-modules-dir=none',
+      'npm:@shopify/dev-mcp@latest',
+    ])
+  })
+
+  test('rejects an empty package name', ({ assert }) => {
+    assert.throws(() => buildDenoCacheReloadArgs('  '), 'npm MCP is missing a package name')
   })
 })
