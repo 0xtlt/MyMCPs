@@ -1,6 +1,7 @@
 import { type Data } from '@generated/data'
 import { usePage } from '@inertiajs/react'
-import { type ReactElement, useEffect, useRef } from 'react'
+import { type ReactElement, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Form } from '@adonisjs/inertia/react'
 import { AppShell, useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Avatar } from '@astryxdesign/core/Avatar'
@@ -10,151 +11,44 @@ import { Center } from '@astryxdesign/core/Center'
 import { Divider } from '@astryxdesign/core/Divider'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Link } from '@astryxdesign/core/Link'
-import { LayerProvider } from '@astryxdesign/core/Layer'
-import { useToast } from '@astryxdesign/core/Toast'
+import { Toast } from '@astryxdesign/core/Toast'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
 import logoUrl from '~/assets/brand/mymcps-m-logo.png?w=64&format=png&quality=100&img'
 
-const TOAST_VIEWPORT_SELECTOR = '[role="region"][popover], [role="region"][data-toast-dialog-host]'
-
-let toastViewportPlaceholder: Comment | null = null
-
-function toastViewportElement() {
-  return document.querySelector<HTMLElement>(TOAST_VIEWPORT_SELECTOR)
-}
-
-function toastIsAlreadyOnTop(toast: Element) {
-  const rect = toast.getBoundingClientRect()
-  if (rect.width <= 0 || rect.height <= 0) {
-    return false
-  }
-
-  const topEl = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
-  return Boolean(topEl && toast.contains(topEl))
-}
-
-function restoreToastViewport() {
-  const viewport = toastViewportElement()
-  if (!viewport || !toastViewportPlaceholder?.parentNode) {
-    return
-  }
-  if (viewport.parentNode === toastViewportPlaceholder.parentNode) {
-    return
-  }
-
-  toastViewportPlaceholder.parentNode.insertBefore(viewport, toastViewportPlaceholder)
-  toastViewportPlaceholder.remove()
-  toastViewportPlaceholder = null
-  viewport.removeAttribute('data-toast-dialog-host')
-  if (!viewport.hasAttribute('popover')) {
-    viewport.setAttribute('popover', 'manual')
-  }
-  try {
-    viewport.showPopover()
-  } catch {
-    // Already showing, or the Popover API is unavailable.
-  }
-}
-
-function promoteToastViewportAboveDialogs() {
-  const dialog = document.querySelector('dialog[open]')
-  const viewport = toastViewportElement()
-  if (!viewport) {
-    return
-  }
-  if (!dialog) {
-    restoreToastViewport()
-    return
-  }
-
-  const toast = viewport.querySelector('[data-toast-id]')
-  if (!toast) {
-    return
-  }
-  if (dialog.contains(viewport) && toastIsAlreadyOnTop(toast)) {
-    return
-  }
-
-  if (!dialog.contains(viewport)) {
-    if (!toastViewportPlaceholder) {
-      toastViewportPlaceholder = document.createComment('toast-viewport')
-      viewport.parentNode?.insertBefore(toastViewportPlaceholder, viewport)
-    }
-    try {
-      viewport.hidePopover()
-    } catch {
-      // Not open yet.
-    }
-    dialog.appendChild(viewport)
-    viewport.setAttribute('data-toast-dialog-host', '')
-    viewport.removeAttribute('popover')
-  }
-}
-
-function ToastTopLayer() {
-  useEffect(() => {
-    let frame = 0
-    let timeout: ReturnType<typeof setTimeout> | undefined
-
-    const schedulePromote = () => {
-      cancelAnimationFrame(frame)
-      if (timeout !== undefined) {
-        clearTimeout(timeout)
-      }
-      frame = requestAnimationFrame(() => {
-        promoteToastViewportAboveDialogs()
-        timeout = setTimeout(promoteToastViewportAboveDialogs, 50)
-      })
-    }
-
-    const observer = new MutationObserver(schedulePromote)
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['open'],
-    })
-    schedulePromote()
-
-    return () => {
-      observer.disconnect()
-      cancelAnimationFrame(frame)
-      if (timeout !== undefined) {
-        clearTimeout(timeout)
-      }
-      restoreToastViewport()
-    }
-  }, [])
-
-  return null
-}
-
 function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> }) {
   const page = usePage<Data.SharedProps>()
-  const showToast = useToast()
-  const dismissToasts = useRef<Array<() => void>>([])
+  const error = children.props.flash.error
+  const success = children.props.flash.success
+  const flashKey = `${page.url}:${error ?? ''}:${success ?? ''}`
+  const [resolved, setResolved] = useState<{ key: string; host: HTMLElement } | null>(null)
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null)
 
   useEffect(() => {
-    for (const dismiss of dismissToasts.current) dismiss()
-    dismissToasts.current = []
+    const timeout = setTimeout(() => {
+      setResolved({
+        key: flashKey,
+        host: document.querySelector('dialog[open]') ?? document.body,
+      })
+    }, 0)
+    return () => clearTimeout(timeout)
+  }, [flashKey])
 
-    if (children.props.flash.error) {
-      dismissToasts.current.push(
-        showToast({ body: children.props.flash.error, type: 'error', uniqueID: 'flash-error' })
-      )
-    }
-    if (children.props.flash.success) {
-      dismissToasts.current.push(
-        showToast({ body: children.props.flash.success, type: 'info', uniqueID: 'flash-success' })
-      )
-    }
+  const body = error || success
+  const host = resolved?.key === flashKey ? resolved.host : null
+  if (dismissedKey === flashKey || !body || !host) return null
 
-    requestAnimationFrame(() => {
-      requestAnimationFrame(promoteToastViewportAboveDialogs)
-    })
-  }, [children.props.flash.error, children.props.flash.success, page.url, showToast])
-
-  return null
+  return createPortal(
+    <HStack className="flash-toast" hAlign="end" data-flash-toast="">
+      <Toast
+        type={error ? 'error' : 'info'}
+        body={body}
+        isAutoHide={!error}
+        autoHideDuration={5000}
+        onDismiss={() => setDismissedKey(flashKey)}
+      />
+    </HStack>,
+    host
+  )
 }
 
 function DesktopAccountActions({ user }: { user: NonNullable<Data.SharedProps['user']> }) {
@@ -218,9 +112,8 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
   const isAuthScreen = isOnboarding || url.startsWith('/login') || url.startsWith('/invite/')
 
   return (
-    <LayerProvider toast={{ position: 'topEnd' }}>
+    <>
       <FlashToasts>{children}</FlashToasts>
-      <ToastTopLayer />
       <AppShell
         contentPadding={6}
         style={{ height: '100%', minHeight: 0 }}
@@ -287,6 +180,6 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
           </Center>
         </VStack>
       </AppShell>
-    </LayerProvider>
+    </>
   )
 }

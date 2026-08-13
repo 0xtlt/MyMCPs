@@ -13,7 +13,7 @@ function getOpacity(element: unknown) {
   return browser.getComputedStyle(element).opacity
 }
 
-function toastIsHitAtItsCenter() {
+function flashToastIsHitAtItsCenter() {
   const browser = globalThis as unknown as {
     document: {
       querySelector: (selector: string) => {
@@ -23,7 +23,7 @@ function toastIsHitAtItsCenter() {
       elementFromPoint: (x: number, y: number) => unknown
     }
   }
-  const toast = browser.document.querySelector('[data-toast-id]')
+  const toast = browser.document.querySelector('[data-flash-toast]')
   if (!toast) {
     return false
   }
@@ -129,7 +129,7 @@ test.group('MCP edit modal UX', (group) => {
     const formOpacity = await dialog.locator('.dialog-form-updating').evaluate(getOpacity)
     assert.equal(formOpacity, '0')
 
-    await page.getByLabel('Notifications').getByText('MCP updated to latest').waitFor()
-    await page.waitForFunction(toastIsHitAtItsCenter)
+    await page.getByText('MCP updated to latest').waitFor()
+    await page.waitForFunction(flashToastIsHitAtItsCenter)
   })
 })

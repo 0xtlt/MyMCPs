@@ -17,7 +17,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Fixed
 
-- Raised toasts above modal dialog backdrops so flash messages stay readable while an edit dialog is open.
+- Rendered flash toasts into the open modal so they stay readable above the dialog backdrop.
 - Reloaded Deno npm MCP caches with `--node-modules-dir=none` so Update MCP works inside this Node app, where Deno otherwise treats `package.json` as manual `node_modules` and refuses specifiers such as `@shopify/dev-mcp`.
 - Allowed Deno npm MCP sandboxes to read the Deno package cache, so Node packages can load their own packaged files after a cache reload.
 
