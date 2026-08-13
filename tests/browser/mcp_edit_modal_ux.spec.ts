@@ -100,19 +100,20 @@ test.group('MCP edit modal UX', (group) => {
     assert.equal(formOpacity, '0')
 
     await page.getByLabel('Notifications').getByText('MCP updated to latest').waitFor()
-
-    const toastIsOnTop = await page.evaluate(() => {
+    await page.waitForFunction(() => {
       const toast = globalThis.document.querySelector('[data-toast-id]')
       if (!toast) {
         return false
       }
       const rect = toast.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) {
+        return false
+      }
       const topEl = globalThis.document.elementFromPoint(
         rect.left + rect.width / 2,
         rect.top + rect.height / 2
       )
       return Boolean(topEl && toast.contains(topEl))
     })
-    assert.isTrue(toastIsOnTop)
   })
 })

@@ -25,6 +25,19 @@ function toastIsAlreadyOnTop(toast: Element) {
   return Boolean(topEl && toast.contains(topEl))
 }
 
+function restackPopover(viewport: HTMLElement) {
+  try {
+    viewport.hidePopover()
+  } catch {
+    // Not open yet.
+  }
+  try {
+    viewport.showPopover()
+  } catch {
+    // Already showing, or the Popover API is unavailable.
+  }
+}
+
 function promoteToastViewportAboveDialogs() {
   if (!document.querySelector('dialog[open]')) {
     return
@@ -35,19 +48,14 @@ function promoteToastViewportAboveDialogs() {
     return
   }
 
-  const viewport = toast.closest<HTMLElement>('[popover]')
+  const viewport =
+    toast.closest<HTMLElement>('[popover]') ??
+    document.querySelector<HTMLElement>('[role="region"][popover]')
   if (!viewport || typeof viewport.showPopover !== 'function') {
     return
   }
 
-  try {
-    if (viewport.matches(':popover-open')) {
-      viewport.hidePopover()
-    }
-    viewport.showPopover()
-  } catch {
-    // Already showing, or the Popover API is unavailable.
-  }
+  restackPopover(viewport)
 }
 
 function ToastTopLayer() {
@@ -97,7 +105,9 @@ function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> })
       )
     }
 
-    requestAnimationFrame(promoteToastViewportAboveDialogs)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(promoteToastViewportAboveDialogs)
+    })
   }, [children.props.flash.error, children.props.flash.success, page.url, showToast])
 
   return null
