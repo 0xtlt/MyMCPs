@@ -27,6 +27,32 @@
   min-height: 0;
   max-height: 100%;
   overflow: hidden;
+  position: relative;
+}
+
+.dialog-form-updating {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dialog-form-spinner {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.flash-toast {
+  position: fixed;
+  top: 0;
+  inset-inline-end: 0;
+  z-index: 1;
+  padding: var(--spacing-4);
+  pointer-events: none;
+}
+
+.flash-toast > * {
+  pointer-events: auto;
 }
 
 .analytics-metric-cell:not(:first-child) {

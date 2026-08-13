@@ -171,17 +171,23 @@ export function McpFormFields({
             width="100%"
             status={errors.npmPackage ? { type: 'error', message: errors.npmPackage } : undefined}
           />
-          <HStack className="mobile-full-width-fields" gap={3} wrap="wrap">
-            <TextInput
-              label="Version"
-              htmlName="npmVersion"
-              value={values.npmVersion}
-              onChange={(npmVersion) => onChange({ npmVersion })}
-              placeholder="latest"
-              isOptional
-              width={200}
-              description={cachedVersion ? `Cached in Deno: ${cachedVersion}` : undefined}
-            />
+          <HStack className="mobile-full-width-fields" gap={3} wrap="wrap" vAlign="start">
+            <VStack className="mobile-full-width" gap={1} hAlign="stretch" width={200}>
+              <TextInput
+                label="Version"
+                htmlName="npmVersion"
+                value={values.npmVersion}
+                onChange={(npmVersion) => onChange({ npmVersion })}
+                placeholder="latest"
+                isOptional
+                width="100%"
+              />
+              {cachedVersion ? (
+                <Text type="supporting" color="secondary">
+                  Cached in Deno: {cachedVersion}
+                </Text>
+              ) : null}
+            </VStack>
             <TextInput
               label="Extra args"
               htmlName="npmArgs"

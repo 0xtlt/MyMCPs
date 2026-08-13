@@ -92,7 +92,7 @@ test.group('access token cleanup', (group) => {
     await selectedDialog.getByText('Permanently delete 2 tokens?').waitFor()
     await selectedDialog.getByRole('button', { name: 'Delete tokens' }).click()
     await selectedDialog.waitFor({ state: 'hidden' })
-    await page.getByLabel('Notifications').getByText('2 tokens deleted').waitFor()
+    await page.locator('[data-flash-toast]').getByText('2 tokens deleted').waitFor()
 
     await page.getByText('Active token').waitFor()
     await page.getByText('Expired token').waitFor({ state: 'detached' })

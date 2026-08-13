@@ -5,6 +5,7 @@ import { Banner } from '@astryxdesign/core/Banner'
 import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Badge } from '@astryxdesign/core/Badge'
 import { Button } from '@astryxdesign/core/Button'
+import { Center } from '@astryxdesign/core/Center'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
 import { DropdownMenu } from '@astryxdesign/core/DropdownMenu'
 import { List, ListItem } from '@astryxdesign/core/List'
@@ -16,6 +17,7 @@ import {
   StackItem,
   VStack,
 } from '@astryxdesign/core/Layout'
+import { Spinner } from '@astryxdesign/core/Spinner'
 import { StatusDot } from '@astryxdesign/core/StatusDot'
 import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core/Table'
 import { Heading, Text } from '@astryxdesign/core/Text'
@@ -86,6 +88,7 @@ export default function McpsIndex({
   const [editingOverride, setEditingOverride] = useState<EditingOverride | null>(null)
   const [createValues, setCreateValues] = useState<McpFormValues>(emptyMcpFormValues)
   const [editValuesOverride, setEditValuesOverride] = useState<McpFormValues | null>(null)
+  const [isUpdating, setIsUpdating] = useState(false)
 
   const editingId =
     editingOverride?.sourceId === editingMcpId ? editingOverride.editingId : editingMcpId
@@ -132,6 +135,7 @@ export default function McpsIndex({
   }
 
   function closeEdit() {
+    setIsUpdating(false)
     setEditValuesOverride(null)
     setEditingOverride({ sourceId: editingMcpId, editingId: null })
   }
@@ -392,29 +396,91 @@ export default function McpsIndex({
             route="mcps.update"
             routeParams={{ id: editingMcp.id }}
             className="dialog-form-fill"
+            aria-busy={isUpdating}
             onSuccess={closeEdit}
           >
             {({ errors, processing }) => (
-              <Layout
-                header={
-                  <DialogHeader
-                    title={`Edit ${editingMcp.name}`}
-                    subtitle={editingMcp.slug}
-                    onOpenChange={() => closeEdit()}
-                  />
-                }
-                content={
-                  <LayoutContent isScrollable>
-                    <VStack gap={4} hAlign="stretch">
-                      {editingMcp.oauthRequired ? (
-                        <Banner
-                          status="warning"
-                          title="Authorization required"
-                          description="This MCP requires OAuth. Connect your account to finish setup."
-                          container="card"
-                          endContent={
+              <>
+                {isUpdating ? (
+                  <Center axis="both" className="dialog-form-spinner">
+                    <Spinner size="lg" aria-label="Updating MCP" />
+                  </Center>
+                ) : null}
+                <Layout
+                  className={isUpdating ? 'dialog-form-updating' : undefined}
+                  header={
+                    <DialogHeader
+                      title={`Edit ${editingMcp.name}`}
+                      subtitle={editingMcp.slug}
+                      onOpenChange={() => closeEdit()}
+                    />
+                  }
+                  content={
+                    <LayoutContent isScrollable>
+                      <VStack gap={4} hAlign="stretch">
+                        {editingMcp.oauthRequired ? (
+                          <Banner
+                            status="warning"
+                            title="Authorization required"
+                            description="This MCP requires OAuth. Connect your account to finish setup."
+                            container="card"
+                            endContent={
+                              <Button
+                                label={editingMcp.hasOauthAccessToken ? 'Re-authorize' : 'Connect'}
+                                variant="secondary"
+                                size="sm"
+                                isDisabled={!appUrlConfigured}
+                                tooltip={
+                                  !appUrlConfigured
+                                    ? 'Set APP_URL to connect with OAuth'
+                                    : undefined
+                                }
+                                onClick={() =>
+                                  window.location.assign(`/mcps/${editingMcp.id}/oauth/start`)
+                                }
+                              />
+                            }
+                          />
+                        ) : editingMcp.lastError ? (
+                          <Banner
+                            status="error"
+                            title="Last connection error"
+                            description={editingMcp.lastError}
+                            container="card"
+                          />
+                        ) : null}
+                        <HStack gap={2} wrap="wrap">
+                          <Button
+                            label="Test connection"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() =>
+                              router.post(`/mcps/${editingMcp.id}/probe`, undefined, {
+                                preserveScroll: true,
+                              })
+                            }
+                          />
+                          {editingMcp.transport === 'npm' &&
+                          (!editingMcp.npmVersion ||
+                            editingMcp.npmVersion.trim().toLowerCase() === 'latest') ? (
                             <Button
-                              label={editingMcp.hasOauthAccessToken ? 'Re-authorize' : 'Connect'}
+                              label="Update MCP"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() =>
+                                router.post(`/mcps/${editingMcp.id}/update`, undefined, {
+                                  preserveScroll: true,
+                                  onStart: () => setIsUpdating(true),
+                                  onFinish: () => setIsUpdating(false),
+                                })
+                              }
+                            />
+                          ) : null}
+                          {editingMcp.authType === 'auto' &&
+                          editingMcp.hasOauthAccessToken &&
+                          !editingMcp.oauthRequired ? (
+                            <Button
+                              label="Re-authorize"
                               variant="secondary"
                               size="sm"
                               isDisabled={!appUrlConfigured}
@@ -425,102 +491,53 @@ export default function McpsIndex({
                                 window.location.assign(`/mcps/${editingMcp.id}/oauth/start`)
                               }
                             />
+                          ) : null}
+                        </HStack>
+                        <McpFormFields
+                          values={editValues}
+                          onChange={(patch) =>
+                            setEditValuesOverride((current) => ({
+                              ...(current ?? editValues),
+                              ...patch,
+                            }))
                           }
+                          errors={errors}
+                          secrets={{
+                            hasAuthBearer: editingMcp.hasAuthBearer,
+                            hasAuthHeaderValue: editingMcp.hasAuthHeaderValue,
+                          }}
+                          cachedVersion={editingMcp.npmCachedVersion}
                         />
-                      ) : editingMcp.lastError ? (
-                        <Banner
-                          status="error"
-                          title="Last connection error"
-                          description={editingMcp.lastError}
-                          container="card"
-                        />
-                      ) : null}
-                      <HStack gap={2} wrap="wrap">
+                      </VStack>
+                    </LayoutContent>
+                  }
+                  footer={
+                    <LayoutFooter>
+                      <HStack gap={2} hAlign="between" wrap="wrap">
                         <Button
-                          label="Test connection"
-                          variant="secondary"
-                          size="sm"
+                          label="Delete"
+                          variant="destructive"
                           onClick={() =>
-                            router.post(`/mcps/${editingMcp.id}/probe`, undefined, {
+                            router.delete(`/mcps/${editingMcp.id}`, {
                               preserveScroll: true,
+                              onSuccess: closeEdit,
                             })
                           }
                         />
-                        {editingMcp.transport === 'npm' &&
-                        (!editingMcp.npmVersion ||
-                          editingMcp.npmVersion.trim().toLowerCase() === 'latest') ? (
+                        <HStack gap={2}>
+                          <Button label="Cancel" variant="secondary" onClick={closeEdit} />
                           <Button
-                            label="Update MCP"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() =>
-                              router.post(`/mcps/${editingMcp.id}/update`, undefined, {
-                                preserveScroll: true,
-                              })
-                            }
+                            type="submit"
+                            label="Save changes"
+                            variant="primary"
+                            isLoading={processing}
                           />
-                        ) : null}
-                        {editingMcp.authType === 'auto' &&
-                        editingMcp.hasOauthAccessToken &&
-                        !editingMcp.oauthRequired ? (
-                          <Button
-                            label="Re-authorize"
-                            variant="secondary"
-                            size="sm"
-                            isDisabled={!appUrlConfigured}
-                            tooltip={
-                              !appUrlConfigured ? 'Set APP_URL to connect with OAuth' : undefined
-                            }
-                            onClick={() =>
-                              window.location.assign(`/mcps/${editingMcp.id}/oauth/start`)
-                            }
-                          />
-                        ) : null}
+                        </HStack>
                       </HStack>
-                      <McpFormFields
-                        values={editValues}
-                        onChange={(patch) =>
-                          setEditValuesOverride((current) => ({
-                            ...(current ?? editValues),
-                            ...patch,
-                          }))
-                        }
-                        errors={errors}
-                        secrets={{
-                          hasAuthBearer: editingMcp.hasAuthBearer,
-                          hasAuthHeaderValue: editingMcp.hasAuthHeaderValue,
-                        }}
-                        cachedVersion={editingMcp.npmCachedVersion}
-                      />
-                    </VStack>
-                  </LayoutContent>
-                }
-                footer={
-                  <LayoutFooter>
-                    <HStack gap={2} hAlign="between" wrap="wrap">
-                      <Button
-                        label="Delete"
-                        variant="destructive"
-                        onClick={() =>
-                          router.delete(`/mcps/${editingMcp.id}`, {
-                            preserveScroll: true,
-                            onSuccess: closeEdit,
-                          })
-                        }
-                      />
-                      <HStack gap={2}>
-                        <Button label="Cancel" variant="secondary" onClick={closeEdit} />
-                        <Button
-                          type="submit"
-                          label="Save changes"
-                          variant="primary"
-                          isLoading={processing}
-                        />
-                      </HStack>
-                    </HStack>
-                  </LayoutFooter>
-                }
-              />
+                    </LayoutFooter>
+                  }
+                />
+              </>
             )}
           </Form>
         ) : null}

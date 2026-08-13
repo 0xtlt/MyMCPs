@@ -1,6 +1,7 @@
 import { type Data } from '@generated/data'
 import { usePage } from '@inertiajs/react'
-import { type ReactElement, useEffect, useRef } from 'react'
+import { type ReactElement, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Form } from '@adonisjs/inertia/react'
 import { AppShell, useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Avatar } from '@astryxdesign/core/Avatar'
@@ -10,33 +11,44 @@ import { Center } from '@astryxdesign/core/Center'
 import { Divider } from '@astryxdesign/core/Divider'
 import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Link } from '@astryxdesign/core/Link'
-import { LayerProvider } from '@astryxdesign/core/Layer'
-import { useToast } from '@astryxdesign/core/Toast'
+import { Toast } from '@astryxdesign/core/Toast'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
 import logoUrl from '~/assets/brand/mymcps-m-logo.png?w=64&format=png&quality=100&img'
 
 function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> }) {
   const page = usePage<Data.SharedProps>()
-  const showToast = useToast()
-  const dismissToasts = useRef<Array<() => void>>([])
+  const error = children.props.flash.error
+  const success = children.props.flash.success
+  const flashKey = `${page.url}:${error ?? ''}:${success ?? ''}`
+  const [resolved, setResolved] = useState<{ key: string; host: HTMLElement } | null>(null)
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null)
 
   useEffect(() => {
-    for (const dismiss of dismissToasts.current) dismiss()
-    dismissToasts.current = []
+    const timeout = setTimeout(() => {
+      setResolved({
+        key: flashKey,
+        host: document.querySelector('dialog[open]') ?? document.body,
+      })
+    }, 0)
+    return () => clearTimeout(timeout)
+  }, [flashKey])
 
-    if (children.props.flash.error) {
-      dismissToasts.current.push(
-        showToast({ body: children.props.flash.error, type: 'error', uniqueID: 'flash-error' })
-      )
-    }
-    if (children.props.flash.success) {
-      dismissToasts.current.push(
-        showToast({ body: children.props.flash.success, type: 'info', uniqueID: 'flash-success' })
-      )
-    }
-  }, [children.props.flash.error, children.props.flash.success, page.url, showToast])
+  const body = error || success
+  const host = resolved?.key === flashKey ? resolved.host : null
+  if (dismissedKey === flashKey || !body || !host) return null
 
-  return null
+  return createPortal(
+    <HStack className="flash-toast" hAlign="end" data-flash-toast="">
+      <Toast
+        type={error ? 'error' : 'info'}
+        body={body}
+        isAutoHide={!error}
+        autoHideDuration={5000}
+        onDismiss={() => setDismissedKey(flashKey)}
+      />
+    </HStack>,
+    host
+  )
 }
 
 function DesktopAccountActions({ user }: { user: NonNullable<Data.SharedProps['user']> }) {
@@ -100,7 +112,7 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
   const isAuthScreen = isOnboarding || url.startsWith('/login') || url.startsWith('/invite/')
 
   return (
-    <LayerProvider toast={{ position: 'topEnd' }}>
+    <>
       <FlashToasts>{children}</FlashToasts>
       <AppShell
         contentPadding={6}
@@ -168,6 +180,6 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
           </Center>
         </VStack>
       </AppShell>
-    </LayerProvider>
+    </>
   )
 }
