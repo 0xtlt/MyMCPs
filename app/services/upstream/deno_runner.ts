@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import app from '@adonisjs/core/services/app'
 import env from '#start/env'
@@ -36,6 +37,88 @@ export function resolveDenoBinary() {
     }
   }
   return 'deno'
+}
+
+/**
+ * Directory Deno uses for the npm package cache (`$DENO_DIR/npm/...`).
+ * Docker sets `DENO_DIR=/app/tmp/deno-cache`; local installs follow Deno defaults.
+ */
+export function resolveDenoDir() {
+  const configured = process.env.DENO_DIR?.trim()
+  if (configured) {
+    return configured
+  }
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Caches', 'deno')
+  }
+  if (process.platform === 'win32') {
+    return join(process.env.LOCALAPPDATA || homedir(), 'deno')
+  }
+  const xdgCache = process.env.XDG_CACHE_HOME?.trim()
+  return join(xdgCache || join(homedir(), '.cache'), 'deno')
+}
+
+function isSafePathSegment(value: string) {
+  return Boolean(value) && !value.includes('..') && !value.includes('/') && !value.includes('\\')
+}
+
+function npmCachePackageDir(npmPackage: string) {
+  const pkg = npmPackage.trim()
+  if (!pkg || pkg.includes('..') || pkg.includes('\\') || pkg.startsWith('/')) {
+    return null
+  }
+  const segments = pkg.split('/').filter(Boolean)
+  if (segments.length === 0 || segments.length > 2 || !segments.every(isSafePathSegment)) {
+    return null
+  }
+  return join(resolveDenoDir(), 'npm', 'registry.npmjs.org', ...segments)
+}
+
+function isLatestRequestedVersion(npmVersion: string | null | undefined) {
+  const version = npmVersion?.trim()
+  return !version || version.toLowerCase() === 'latest'
+}
+
+function readCachedLatestTag(packageDir: string) {
+  const registryPath = join(packageDir, 'registry.json')
+  if (!existsSync(registryPath)) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(registryPath, 'utf8')) as {
+      'dist-tags'?: { latest?: string }
+    }
+    const latest = parsed['dist-tags']?.latest?.trim()
+    return latest && isSafePathSegment(latest) ? latest : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Semver currently present in the Deno npm cache for this package.
+ * For `latest`, uses the cached `dist-tags.latest` when that version folder exists.
+ * Pinned versions are returned only when that exact folder is cached.
+ */
+export function readCachedNpmPackageVersion(
+  npmPackage: string | null | undefined,
+  npmVersion: string | null | undefined
+) {
+  if (!npmPackage?.trim()) {
+    return null
+  }
+  const packageDir = npmCachePackageDir(npmPackage)
+  if (!packageDir || !existsSync(packageDir)) {
+    return null
+  }
+
+  const requested = isLatestRequestedVersion(npmVersion)
+    ? readCachedLatestTag(packageDir)
+    : npmVersion!.trim()
+  if (!requested || !isSafePathSegment(requested)) {
+    return null
+  }
+  return existsSync(join(packageDir, requested)) ? requested : null
 }
 
 export function sandboxRootFor(mcpId: number) {
