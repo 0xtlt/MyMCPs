@@ -6,6 +6,38 @@ import { mcpNpmUpdateRuntime, resetMcpNpmUpdateRuntime } from '#services/mcp_npm
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { createAdmin, createMcp } from '#tests/helpers/factories'
 
+function getOpacity(element: unknown) {
+  const browser = globalThis as unknown as {
+    getComputedStyle: (target: unknown) => { opacity: string }
+  }
+  return browser.getComputedStyle(element).opacity
+}
+
+function toastIsHitAtItsCenter() {
+  const browser = globalThis as unknown as {
+    document: {
+      querySelector: (selector: string) => {
+        getBoundingClientRect: () => { left: number; top: number; width: number; height: number }
+        contains: (node: unknown) => boolean
+      } | null
+      elementFromPoint: (x: number, y: number) => unknown
+    }
+  }
+  const toast = browser.document.querySelector('[data-toast-id]')
+  if (!toast) {
+    return false
+  }
+  const rect = toast.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) {
+    return false
+  }
+  const topEl = browser.document.elementFromPoint(
+    rect.left + rect.width / 2,
+    rect.top + rect.height / 2
+  )
+  return Boolean(topEl && toast.contains(topEl))
+}
+
 async function fakeNpmCache(options: { npmPackage: string; versions: string[]; latest?: string }) {
   const denoDir = await mkdtemp(join(tmpdir(), 'mymcps-edit-modal-deno-'))
   const packageDir = join(denoDir, 'npm', 'registry.npmjs.org', ...options.npmPackage.split('/'))
@@ -94,26 +126,10 @@ test.group('MCP edit modal UX', (group) => {
     await dialog.getByRole('button', { name: 'Update MCP' }).click()
     await dialog.getByRole('status', { name: 'Updating MCP' }).waitFor()
 
-    const formOpacity = await dialog.locator('.dialog-form-updating').evaluate((element) => {
-      return globalThis.getComputedStyle(element).opacity
-    })
+    const formOpacity = await dialog.locator('.dialog-form-updating').evaluate(getOpacity)
     assert.equal(formOpacity, '0')
 
     await page.getByLabel('Notifications').getByText('MCP updated to latest').waitFor()
-    await page.waitForFunction(() => {
-      const toast = globalThis.document.querySelector('[data-toast-id]')
-      if (!toast) {
-        return false
-      }
-      const rect = toast.getBoundingClientRect()
-      if (rect.width <= 0 || rect.height <= 0) {
-        return false
-      }
-      const topEl = globalThis.document.elementFromPoint(
-        rect.left + rect.width / 2,
-        rect.top + rect.height / 2
-      )
-      return Boolean(topEl && toast.contains(topEl))
-    })
+    await page.waitForFunction(toastIsHitAtItsCenter)
   })
 })

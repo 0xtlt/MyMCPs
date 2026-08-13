@@ -94,14 +94,16 @@ function promoteToastViewportAboveDialogs() {
 function ToastTopLayer() {
   useEffect(() => {
     let frame = 0
-    let timeout = 0
+    let timeout: ReturnType<typeof setTimeout> | undefined
 
     const schedulePromote = () => {
       cancelAnimationFrame(frame)
-      globalThis.clearTimeout(timeout)
+      if (timeout !== undefined) {
+        clearTimeout(timeout)
+      }
       frame = requestAnimationFrame(() => {
         promoteToastViewportAboveDialogs()
-        timeout = globalThis.setTimeout(promoteToastViewportAboveDialogs, 50)
+        timeout = setTimeout(promoteToastViewportAboveDialogs, 50)
       })
     }
 
@@ -117,7 +119,9 @@ function ToastTopLayer() {
     return () => {
       observer.disconnect()
       cancelAnimationFrame(frame)
-      globalThis.clearTimeout(timeout)
+      if (timeout !== undefined) {
+        clearTimeout(timeout)
+      }
       restoreToastViewport()
     }
   }, [])
