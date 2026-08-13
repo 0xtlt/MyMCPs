@@ -3,7 +3,7 @@ import { errors } from '@vinejs/vine'
 import Mcp from '#models/mcp'
 import { assignMcpFromPayload } from '#controllers/mcps_controller'
 import McpEnvironmentStore from '#services/mcp_environment_store'
-import { buildDenoArgs, buildDenoEnvironment } from '#services/upstream/deno_runner'
+import { buildDenoArgs, buildDenoEnvironment, resolveDenoDir } from '#services/upstream/deno_runner'
 import McpTransformer from '#transformers/mcp_transformer'
 import { createMcpValidator } from '#validators/mcp'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
@@ -172,7 +172,9 @@ test.group('npm MCP environment variables', (group) => {
     assert.deepEqual(buildDenoArgs(mcp, '/safe/sandbox'), [
       'run',
       '--quiet',
-      '--allow-read=/safe/sandbox',
+      '--node-modules-dir=none',
+      '--no-lock',
+      `--allow-read=/safe/sandbox,${resolveDenoDir()}`,
       '--allow-write=/safe/sandbox',
       '--allow-net',
       '--allow-env',

@@ -10,6 +10,11 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Added instance settings to enable scheduled auto-updates of latest-tracking Deno npm MCPs, with a 5-field UTC cron expression that defaults to every day at 02:00.
 - Added the Deno-cached npm package version in small type on the MCP list and edit form.
 
+### Fixed
+
+- Reloaded Deno npm MCP caches with `--node-modules-dir=none` so Update MCP works inside this Node app, where Deno otherwise treats `package.json` as manual `node_modules` and refuses specifiers such as `@shopify/dev-mcp`.
+- Allowed Deno npm MCP sandboxes to read the Deno package cache, so Node packages can load their own packaged files after a cache reload.
+
 ## 2026-08-12
 
 ### Changed
