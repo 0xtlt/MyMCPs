@@ -1,10 +1,8 @@
 import './css/app.css'
-import { type ReactElement } from 'react'
 import { client } from './client'
 import Layout from '~/layouts/default'
-import { type Data } from '@generated/data'
 import { createRoot } from 'react-dom/client'
-import { createInertiaApp } from '@inertiajs/react'
+import { createInertiaApp, type ResolvedComponent } from '@inertiajs/react'
 import { Link as InertiaLink, TuyauProvider } from '@adonisjs/inertia/react'
 import { resolvePageComponent } from '@adonisjs/inertia/helpers'
 import { Theme } from '@astryxdesign/core/theme'
@@ -15,12 +13,13 @@ const appName = import.meta.env.VITE_APP_NAME || 'MyMCPs'
 
 createInertiaApp({
   title: (title) => (title ? `${title} - ${appName}` : appName),
-  resolve: (name) => {
-    return resolvePageComponent(
+  resolve: async (name) => {
+    const resolved = await resolvePageComponent(
       `./pages/${name}.tsx`,
-      import.meta.glob('./pages/**/*.tsx'),
-      (page: ReactElement<Data.SharedProps>) => <Layout children={page} />
+      import.meta.glob<{ default: ResolvedComponent }>('./pages/**/*.tsx'),
+      Layout
     )
+    return resolved.default
   },
   setup({ el, App, props }) {
     createRoot(el).render(

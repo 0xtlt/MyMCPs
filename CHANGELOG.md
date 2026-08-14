@@ -2,6 +2,13 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-14
+
+### Changed
+
+- Upgraded the Inertia adapter to version 5 with Inertia v3, `@adonisjs/vite` 6, and Vite 8.
+- Delivered success and error toasts through Inertia's flash bag instead of shared page props.
+
 ## 2026-08-13
 
 ### Added

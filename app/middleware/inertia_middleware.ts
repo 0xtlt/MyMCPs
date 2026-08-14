@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
+import type { InferSharedProps } from '@adonisjs/inertia/types'
 import User from '#models/user'
 import UserTransformer from '#transformers/user_transformer'
 import { publicOauthAppUrl } from '#services/public_url'
@@ -15,15 +16,7 @@ export default class InertiaMiddleware extends BaseInertiaMiddleware {
      * In that case, we must always assume that HttpContext is not fully hydrated
      * with all the properties
      */
-    const { session, auth } = ctx as Partial<HttpContext>
-
-    /**
-     * Fetching the first error from the flash messages
-     */
-    const errorRaw = session?.flashMessages.get('error')
-    const successRaw = session?.flashMessages.get('success')
-    const error = typeof errorRaw === 'string' ? errorRaw : undefined
-    const success = typeof successRaw === 'string' ? successRaw : undefined
+    const { auth } = ctx as Partial<HttpContext>
 
     /**
      * Data shared with all Inertia pages. Make sure you are using
@@ -31,13 +24,20 @@ export default class InertiaMiddleware extends BaseInertiaMiddleware {
      */
     return {
       errors: ctx.inertia.always(this.getValidationErrors(ctx)),
-      flash: ctx.inertia.always({
-        error,
-        success,
-      }),
       user: ctx.inertia.always(auth?.user ? UserTransformer.transform(auth.user) : undefined),
       setupComplete: ctx.inertia.always(await User.setupComplete()),
       appUrlConfigured: ctx.inertia.always(Boolean(publicOauthAppUrl())),
+    }
+  }
+
+  flash(ctx: HttpContext) {
+    const { session } = ctx as Partial<HttpContext>
+    const errorRaw = session?.flashMessages.get('error')
+    const successRaw = session?.flashMessages.get('success')
+
+    return {
+      error: typeof errorRaw === 'string' ? errorRaw : undefined,
+      success: typeof successRaw === 'string' ? successRaw : undefined,
     }
   }
 
@@ -49,7 +49,8 @@ export default class InertiaMiddleware extends BaseInertiaMiddleware {
   }
 }
 
+type MiddlewareSharedProps = InferSharedProps<InertiaMiddleware>
+
 declare module '@adonisjs/inertia/types' {
-  type MiddlewareSharedProps = InferSharedProps<InertiaMiddleware>
   export interface SharedProps extends MiddlewareSharedProps {}
 }

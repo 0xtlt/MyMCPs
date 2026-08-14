@@ -38,6 +38,7 @@ export const updatePasswordValidator = vine.create({
   newPassword: password().confirmed({
     confirmationField: 'passwordConfirmation',
   }),
+  passwordConfirmation: vine.string(),
 })
 
 export const updateMcpLoggingValidator = vine.create({
@@ -58,6 +59,7 @@ export const onboardingValidator = vine.create({
   password: password().confirmed({
     confirmationField: 'passwordConfirmation',
   }),
+  passwordConfirmation: vine.string(),
 })
 
 /**
@@ -68,6 +70,7 @@ export const acceptInviteValidator = vine.create({
   password: password().confirmed({
     confirmationField: 'passwordConfirmation',
   }),
+  passwordConfirmation: vine.string(),
 })
 
 /**
