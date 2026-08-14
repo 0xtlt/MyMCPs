@@ -5,6 +5,9 @@ overrides:
   hono: ^4.12.34
   nanoid: ^3.3.17
 
+publicHoistPattern:
+  - '*@inertiajs/core*'
+
 allowBuilds:
   '@astryxdesign/cli': true
   '@astryxdesign/core': true

@@ -15,10 +15,10 @@ import { Toast } from '@astryxdesign/core/Toast'
 import { TopNav, TopNavHeading, TopNavItem } from '@astryxdesign/core/TopNav'
 import logoUrl from '~/assets/brand/mymcps-m-logo.png?w=64&format=png&quality=100&img'
 
-function FlashToasts({ children }: { children: ReactElement<Data.SharedProps> }) {
-  const page = usePage<Data.SharedProps>()
-  const error = children.props.flash.error
-  const success = children.props.flash.success
+function FlashToasts() {
+  const page = usePage()
+  const error = page.flash.error
+  const success = page.flash.success
   const flashKey = `${page.url}:${error ?? ''}:${success ?? ''}`
   const [resolved, setResolved] = useState<{ key: string; host: HTMLElement } | null>(null)
   const [dismissedKey, setDismissedKey] = useState<string | null>(null)
@@ -113,7 +113,7 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
 
   return (
     <>
-      <FlashToasts>{children}</FlashToasts>
+      <FlashToasts />
       <AppShell
         contentPadding={6}
         style={{ height: '100%', minHeight: 0 }}
