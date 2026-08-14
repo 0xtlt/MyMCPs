@@ -25,12 +25,12 @@ test.group('missing public app URL', (group) => {
 
     const tokensResponse = await client.get('/tokens').loginAs(admin)
     tokensResponse.assertStatus(200)
-    tokensResponse.assertTextIncludes('&quot;appUrlConfigured&quot;:false')
-    tokensResponse.assertTextIncludes('&quot;gatewayUrl&quot;:null')
+    tokensResponse.assertTextIncludes('"appUrlConfigured":false')
+    tokensResponse.assertTextIncludes('"gatewayUrl":null')
 
     const invitesResponse = await client.get('/invites').loginAs(admin)
     invitesResponse.assertStatus(200)
-    invitesResponse.assertTextIncludes('&quot;appUrl&quot;:null')
+    invitesResponse.assertTextIncludes('"appUrl":null')
   })
 
   test('rejects a direct OAuth start before making an upstream request', async ({
