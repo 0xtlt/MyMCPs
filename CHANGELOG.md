@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-15
+
+### Changed
+
+- Released version [0.3.0](https://github.com/0xtlt/MyMCPs/releases/tag/v0.3.0).
+
 ## 2026-08-14
 
 ### Changed
