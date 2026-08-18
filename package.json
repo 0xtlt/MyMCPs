@@ -65,7 +65,7 @@
     "prettier": "^3.8.3",
     "typescript": "~6.0.3",
     "vite": "^8.0.0",
-    "vite-imagetools": "^10.0.1",
+    "vite-imagetools": "^12.0.0",
     "youch": "^4.1.1"
   },
   "dependencies": {
