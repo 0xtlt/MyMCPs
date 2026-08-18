@@ -89,7 +89,7 @@ test.group('MCP template gallery', (group) => {
     await page.getByRole('button', { name: 'Add MCP' }).click()
     let gallery = page.getByRole('dialog', { name: 'Add an MCP' })
     await gallery.getByRole('button', { name: 'All' }).click()
-    assert.include(await gallery.innerText(), '20 templates')
+    assert.include(await gallery.innerText(), '16 templates')
 
     await gallery.getByRole('textbox', { name: 'Search templates' }).fill('Atlassian')
     await gallery.getByRole('button', { name: 'Set up Atlassian Rovo' }).click()
@@ -128,7 +128,6 @@ test.group('MCP template gallery', (group) => {
     await gallery.getByRole('button', { name: 'Categories' }).click()
     await page.getByRole('menuitemradio', { name: 'Infrastructure' }).click()
 
-    assert.include(await gallery.innerText(), 'Vercel')
     assert.include(await gallery.innerText(), 'Cloudflare Docs')
     assert.include(await gallery.innerText(), 'Firebase')
     assert.include(await gallery.innerText(), 'MongoDB')

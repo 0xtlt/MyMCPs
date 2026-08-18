@@ -4,6 +4,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ## 2026-08-18
 
+### Removed
+
+- Dropped Figma, Vercel, Canva, and Slack from the MCP template gallery because they only accept first-party clients such as Claude or Codex, not a custom MyMCPs OAuth configuration.
+
 ### Changed
 
 - Upgraded the Astryx design system to 0.4.3, including info-banner painting under the neutral theme, tokenized focus rings, and NumberInput/Selector behavior.
