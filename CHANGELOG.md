@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-18
+
+### Changed
+
+- Upgraded the Astryx design system to 0.4.3, including info-banner painting under the neutral theme, tokenized focus rings, and NumberInput/Selector behavior.
+
 ## 2026-08-15
 
 ### Changed
