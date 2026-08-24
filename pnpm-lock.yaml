@@ -104,8 +104,8 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       '@astryxdesign/cli':
-        specifier: ^0.4.3
-        version: 0.4.3(@astryxdesign/core@0.4.3(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.4.3(@astryxdesign/core@0.4.3(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)(supports-color@10.2.2)
+        specifier: ^0.4.5
+        version: 0.4.5(@astryxdesign/core@0.4.3(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.4.3(@astryxdesign/core@0.4.3(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)(supports-color@10.2.2)
       '@japa/api-client':
         specifier: ^3.2.1
         version: 3.2.1(@japa/assert@4.2.0(@japa/runner@5.3.0))(@japa/runner@5.3.0)(supports-color@10.2.2)
@@ -600,8 +600,9 @@ packages:
     resolution: {integrity: sha512-iWuH84nptrXpfrpYAsc93CD6JRnyRLYWFRzP9j1KRMK2hspVMBCbmfRyEoMd2B572dd2sSF3eXIQvY/CqIxYmQ==}
     engines: {node: '>= 10'}
 
-  '@astryxdesign/cli@0.4.3':
-    resolution: {integrity: sha512-U7DZnQYjr5+gjJOdGx+6cH4Wpdnky4u6WjfRpUs5W3kZ2IpBcoOI18GRFRZaEyxeQZRncAlrnNN+u6N9g6yJ5w==}
+  '@astryxdesign/cli@0.4.5':
+    resolution: {integrity: sha512-3kUYK5K5eO77O4trXmzG/GfwMBiFI2Y7MOfsVK3euHZk98zQX/Z04MXag+S89v5qeObS3S2LI27QitkIq7hoOQ==}
+    engines: {node: '>=22.13.0'}
     hasBin: true
     peerDependencies:
       '@astryxdesign/charts': '*'
@@ -2770,12 +2771,12 @@ packages:
     resolution: {integrity: sha512-9UbaD6XdAL97+k/n+N7JwX46K/M6Zc6KcFYskrYL8wbBV/Uyk0CTAMY0VT+qiK5PM7AIc9aTWYtq65U7T+aCNQ==}
     engines: {node: '>=8'}
 
-  flow-estree@0.326.0:
-    resolution: {integrity: sha512-43Qv+Ei9qfabhLx8JGEJku4frHGD5zI2EuL73Hs9HrWqPMbTT/DS18Az7bcodGwdQEv1DVIEI2WowkEbMIk4BQ==}
+  flow-estree@0.328.0:
+    resolution: {integrity: sha512-uMB3dC4nfZYn+dd7/PYkyAK1mqBR4TJ4TWRdOjubpb/ObrLvPFdFSmMTq55fqttCCTygQ4NtD1Zdd+wcjC5t0g==}
     engines: {node: '>=18'}
 
-  flow-parser@0.326.0:
-    resolution: {integrity: sha512-H/Wqt2SDkQ8GH8wpyAj434zN40zomipZWBbKYlAwQYyNdMIQMKqpXTx82FMnITt2iDQ5zrV80NvSPAgIAafwGA==}
+  flow-parser@0.328.0:
+    resolution: {integrity: sha512-F+Ik2Of7ndl2FyPmZ77NrhbZp9lYjIsreDXeq4fo0sjxa3SIFv48QAszBqvPeMMzmw7JzqySJUxGR8CSD7EdXw==}
     engines: {node: '>=0.4.0'}
 
   follow-redirects@1.16.0:
@@ -3931,8 +3932,8 @@ packages:
   real-require@1.0.0:
     resolution: {integrity: sha512-P4nbQYQfePJxRSmY+v/KINxVucm4NF3p3s7pJveMTtom52FR4YGltUQLB8idDXwDDWW+eYrWDFbuzUnjoWHF7g==}
 
-  recast@0.23.19:
-    resolution: {integrity: sha512-T98lym7kH+pnZmRaD8yDRdaNqyUbwnbEBx0MuchrzMFOEMray4AO3ZJoTUZ5r78Ao78X/OhzW0DL8GB85w/I2w==}
+  recast@0.23.21:
+    resolution: {integrity: sha512-mFAyJq9vUbSTARLZUvAEf1z3YxlvAwswbmxMx2mPA/MSm4KmpwvwvhsH/NIrZhyOuwD60Lzyw2qh83uCbgTPYw==}
     engines: {node: '>= 4'}
 
   rechoir@0.8.0:
@@ -4974,7 +4975,7 @@ snapshots:
       '@ast-grep/napi-win32-ia32-msvc': 0.42.3
       '@ast-grep/napi-win32-x64-msvc': 0.42.3
 
-  '@astryxdesign/cli@0.4.3(@astryxdesign/core@0.4.3(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.4.3(@astryxdesign/core@0.4.3(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)(supports-color@10.2.2)':
+  '@astryxdesign/cli@0.4.5(@astryxdesign/core@0.4.3(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.4.3(@astryxdesign/core@0.4.3(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)(supports-color@10.2.2)':
     dependencies:
       commander: 12.1.0
       gpt-tokenizer: 3.4.0
@@ -7132,11 +7133,11 @@ snapshots:
 
   flattie@1.1.1: {}
 
-  flow-estree@0.326.0: {}
+  flow-estree@0.328.0: {}
 
-  flow-parser@0.326.0:
+  flow-parser@0.328.0:
     dependencies:
-      flow-estree: 0.326.0
+      flow-estree: 0.328.0
 
   follow-redirects@1.16.0(debug@4.4.3(supports-color@10.2.2)):
     optionalDependencies:
@@ -7564,12 +7565,12 @@ snapshots:
       '@babel/preset-flow': 7.29.7(@babel/core@7.29.7(supports-color@10.2.2))
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2)
       '@babel/register': 7.29.7(@babel/core@7.29.7(supports-color@10.2.2))
-      flow-parser: 0.326.0
+      flow-parser: 0.328.0
       graceful-fs: 4.2.11
       neo-async: 2.6.2
       picocolors: 1.1.1
       picomatch: 4.0.5
-      recast: 0.23.19
+      recast: 0.23.21
       tmp: 0.2.7
       write-file-atomic: 5.0.1
     transitivePeerDependencies:
@@ -8196,7 +8197,7 @@ snapshots:
 
   real-require@1.0.0: {}
 
-  recast@0.23.19:
+  recast@0.23.21:
     dependencies:
       ast-types: 0.16.1
       esprima: 4.0.1
