@@ -1,6 +1,6 @@
 import { type CSSProperties } from 'react'
 import { useAppShellMobile } from '@astryxdesign/core/AppShell'
-import { HStack } from '@astryxdesign/core/Layout'
+import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { Text } from '@astryxdesign/core/Text'
 
 type TraceTimelineCall = {
@@ -78,29 +78,39 @@ export function TraceTimeline({
           return (
             <li className="debug-timeline-row" key={call.id}>
               <Text type="supporting">{toolLabel}</Text>
-              <section className="debug-timeline-track" aria-label={`${toolLabel} timeline lane`}>
-                <button
-                  type="button"
-                  className="debug-timeline-call"
-                  data-outcome={call.outcome}
-                  data-selected={isSelected || undefined}
-                  aria-current={isSelected || undefined}
-                  style={
-                    {
-                      '--debug-trace-start': `${Math.min(offset, 99.5)}%`,
-                      '--debug-trace-width': `${Math.min(width, 100 - offset)}%`,
-                    } as CSSProperties
-                  }
-                  title={`${toolLabel}: ${formatDuration(call.durationMs)}`}
-                  aria-label={`Inspect ${toolLabel}, ${formatDuration(call.durationMs)}`}
-                  onClick={() => onSelect(call)}
+              <VStack gap={1} hAlign="stretch" width="100%">
+                <section className="debug-timeline-track" aria-label={`${toolLabel} timeline lane`}>
+                  <button
+                    type="button"
+                    className="debug-timeline-call"
+                    data-outcome={call.outcome}
+                    data-selected={isSelected || undefined}
+                    aria-current={isSelected || undefined}
+                    style={
+                      {
+                        '--debug-trace-start': `${Math.min(offset, 99.5)}%`,
+                        '--debug-trace-width': `${Math.min(width, 100 - offset)}%`,
+                      } as CSSProperties
+                    }
+                    title={`${toolLabel}: ${formatDuration(call.durationMs)}`}
+                    aria-label={`Inspect ${toolLabel}, ${formatDuration(call.durationMs)}`}
+                    onClick={() => onSelect(call)}
+                  >
+                    <span className="debug-timeline-bar" aria-hidden="true" />
+                  </button>
+                </section>
+                <Text
+                  type="supporting"
+                  size="xsm"
+                  color="secondary"
+                  display="block"
+                  textWrap="nowrap"
+                  justify="end"
+                  hasTabularNumbers
                 >
-                  <span className="debug-timeline-bar" aria-hidden="true" />
-                </button>
-              </section>
-              <Text type="supporting" color="secondary">
-                {formatDuration(call.durationMs)}
-              </Text>
+                  {formatDuration(call.durationMs)}
+                </Text>
+              </VStack>
             </li>
           )
         })}

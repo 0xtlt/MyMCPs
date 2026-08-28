@@ -74,7 +74,7 @@
 
 .debug-timeline-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(50%, 3fr) min-content;
+  grid-template-columns: minmax(0, 1fr) minmax(50%, 3fr);
   align-items: center;
   gap: var(--spacing-3);
   padding: var(--spacing-2) var(--spacing-3);

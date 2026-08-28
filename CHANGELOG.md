@@ -12,7 +12,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Replaced the compressed debug inspector panel with a focused, responsive call-details dialog that keeps the timeline visible at full width.
 - Reduced repeated capture-state badges in call details, keeping color for the overall outcome and exceptional redaction states.
-- Reworked the debugger timeline as a dedicated high-contrast trace visualization with clearer success, error, hover, focus, and selection states.
+- Reworked the debugger timeline as a dedicated high-contrast trace visualization with clearer success, error, hover, focus, and selection states, plus compact single-line duration labels beneath each lane.
 
 ### Fixed
 
