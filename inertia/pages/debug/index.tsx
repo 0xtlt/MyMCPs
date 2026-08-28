@@ -16,7 +16,6 @@ import {
   StackItem,
   VStack,
 } from '@astryxdesign/core/Layout'
-import { Section } from '@astryxdesign/core/Section'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
@@ -146,37 +145,29 @@ function CallPayload({
   const emptyTitle = label === 'Input' ? 'No input supplied' : 'No output returned'
 
   return (
-    <Section variant="transparent" padding={0} width="100%">
-      <VStack gap={3} hAlign="stretch">
-        <HStack gap={3} hAlign="between" vAlign="center" wrap="wrap">
-          <VStack gap={1}>
-            <Heading level={3}>{label}</Heading>
-            <Text type="supporting" color="secondary">
-              {formatBytes(bytes)}
-            </Text>
-          </VStack>
-          <CaptureState captured={captured} redacted={redacted} />
-        </HStack>
-        {capturedPayload === null ? (
-          <Banner
-            status="info"
-            title={`${label} was not captured`}
-            description="Only metadata is available for this payload."
-            container="section"
-          />
-        ) : capturedPayload === '' ? (
-          <Banner status="info" title={emptyTitle} container="section" />
-        ) : (
-          <CodeBlock
-            code={capturedPayload}
-            language="json"
-            width="100%"
-            maxHeight={360}
-            isWrapped
-          />
-        )}
-      </VStack>
-    </Section>
+    <VStack gap={3} hAlign="stretch" width="100%">
+      <HStack gap={3} hAlign="between" vAlign="center" wrap="wrap">
+        <VStack gap={1}>
+          <Heading level={3}>{label}</Heading>
+          <Text type="supporting" color="secondary">
+            {formatBytes(bytes)}
+          </Text>
+        </VStack>
+        <CaptureState captured={captured} redacted={redacted} />
+      </HStack>
+      {capturedPayload === null ? (
+        <Banner
+          status="info"
+          title={`${label} was not captured`}
+          description="Only metadata is available for this payload."
+          container="section"
+        />
+      ) : capturedPayload === '' ? (
+        <Banner status="info" title={emptyTitle} container="section" />
+      ) : (
+        <CodeBlock code={capturedPayload} language="json" width="100%" maxHeight={360} isWrapped />
+      )}
+    </VStack>
   )
 }
 

@@ -12,6 +12,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Replaced the compressed debug inspector panel with a focused, responsive call-details dialog that keeps the timeline visible at full width.
 
+### Fixed
+
+- Kept input and output payloads aligned with the call-details dialog padding on desktop and mobile.
+
 ## 2026-08-18
 
 ### Removed
