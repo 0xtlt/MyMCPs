@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -93,24 +93,23 @@ function SessionStatus({ status }: { status: DebugSession['status'] }) {
   return <Token label={presentation.label} color={presentation.color} />
 }
 
-function CaptureState({ captured, redacted }: { captured: boolean; redacted: boolean }) {
-  if (!captured) return <Token label="Not captured" color="gray" />
-  return redacted ? (
-    <Token label="Sensitive values redacted" color="orange" />
-  ) : (
-    <Token label="Captured, not redacted" color="green" />
+function PayloadCaptureState({ captured, redacted }: { captured: boolean; redacted: boolean }) {
+  if (!captured) {
+    return (
+      <Text type="supporting" color="secondary">
+        Not captured
+      </Text>
+    )
+  }
+  if (redacted) return <Token label="Redacted" color="orange" />
+  return (
+    <Text type="supporting" color="secondary">
+      Not redacted
+    </Text>
   )
 }
 
-function CallMetric({
-  label,
-  value,
-  children,
-}: {
-  label: string
-  value: string
-  children?: ReactNode
-}) {
+function CallMetric({ label, value }: { label: string; value: string }) {
   return (
     <Card variant="muted" padding={4} width="100%">
       <VStack gap={2} hAlign="stretch">
@@ -118,11 +117,6 @@ function CallMetric({
           {label}
         </Text>
         <Heading level={3}>{value}</Heading>
-        {children ? (
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            {children}
-          </HStack>
-        ) : null}
       </VStack>
     </Card>
   )
@@ -153,7 +147,7 @@ function CallPayload({
             {formatBytes(bytes)}
           </Text>
         </VStack>
-        <CaptureState captured={captured} redacted={redacted} />
+        <PayloadCaptureState captured={captured} redacted={redacted} />
       </HStack>
       {capturedPayload === null ? (
         <Banner
@@ -184,12 +178,8 @@ function CallDetails({ call }: { call: CallRow }) {
               : `+${formatDuration(call.debugSessionElapsedMs)}`
           }
         />
-        <CallMetric label="Input size" value={formatBytes(call.argumentsBytes)}>
-          <CaptureState captured={call.argumentsCaptured} redacted={call.argumentsRedacted} />
-        </CallMetric>
-        <CallMetric label="Output size" value={formatBytes(call.responseBytes)}>
-          <CaptureState captured={call.responseCaptured} redacted={call.responseRedacted} />
-        </CallMetric>
+        <CallMetric label="Input size" value={formatBytes(call.argumentsBytes)} />
+        <CallMetric label="Output size" value={formatBytes(call.responseBytes)} />
       </Grid>
       {call.errorCategory ? (
         <Banner

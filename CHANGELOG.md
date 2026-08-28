@@ -11,6 +11,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 ### Changed
 
 - Replaced the compressed debug inspector panel with a focused, responsive call-details dialog that keeps the timeline visible at full width.
+- Reduced repeated capture-state badges in call details, keeping color for the overall outcome and exceptional redaction states.
 
 ### Fixed
 

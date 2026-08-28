@@ -58,5 +58,7 @@ test.group('debug call details', (group) => {
     assert.isNotNull(outputBox)
     assert.approximately(inputBox!.x, metricBox!.x, 1)
     assert.approximately(outputBox!.x, metricBox!.x, 1)
+    assert.equal(await dialog.locator('.astryx-token[data-color="green"]').count(), 1)
+    assert.equal(await dialog.getByText('Not redacted', { exact: true }).count(), 2)
   })
 })
