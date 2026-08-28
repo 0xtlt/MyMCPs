@@ -90,8 +90,9 @@
   position: relative;
   height: var(--spacing-6);
   overflow: hidden;
+  border: var(--border-width) solid var(--color-border-emphasized);
   border-radius: var(--radius-element);
-  background: var(--color-track);
+  background: var(--color-background-muted);
 }
 
 .debug-timeline-call {
@@ -110,26 +111,26 @@
   inset-inline-start: var(--debug-trace-start);
   width: max(var(--debug-trace-width), var(--spacing-1));
   min-width: var(--spacing-1);
-  border: var(--border-width) solid var(--color-border-blue);
+  border: var(--border-width) solid var(--color-accent);
   border-radius: var(--radius-element);
-  background: var(--color-background-blue);
+  background: var(--color-accent);
 }
 
 .debug-timeline-call[data-outcome='error'] .debug-timeline-bar {
-  border-color: var(--color-border-red);
-  background: var(--color-background-red);
+  border-color: var(--color-error);
+  background: var(--color-error);
 }
 
 .debug-timeline-call:hover .debug-timeline-bar,
 .debug-timeline-call:focus-visible .debug-timeline-bar,
 .debug-timeline-call[data-selected] .debug-timeline-bar {
-  outline: var(--border-width) solid var(--color-accent);
+  outline: var(--focus-outline-width) var(--focus-outline-style) var(--color-text-primary);
   outline-offset: var(--spacing-0-5);
 }
 
 .debug-timeline-call:focus-visible {
-  outline: var(--border-width) solid var(--color-accent);
-  outline-offset: calc(-1 * var(--border-width));
+  outline: var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color);
+  outline-offset: calc(-1 * var(--focus-outline-width));
 }
 
 /* Keep presentation-only responsiveness aligned with AppShell's md breakpoint. */

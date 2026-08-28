@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
@@ -21,6 +21,7 @@ import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
 import { LiveRefreshButton } from '~/components/live_refresh_button'
 import { browserTimeZone, formatLocalDateTime } from '~/components/local_time'
+import { TraceTimeline } from '~/components/trace_timeline'
 
 interface CallRow extends Record<string, JSONDataTypes> {
   id: number
@@ -206,87 +207,6 @@ function CallDetails({ call }: { call: CallRow }) {
         />
       </Grid>
     </VStack>
-  )
-}
-
-function TraceTimeline({
-  calls,
-  session,
-  selectedCallId,
-  isMobile,
-  observedAt,
-  onSelect,
-}: {
-  calls: CallRow[]
-  session: DebugSession
-  selectedCallId: number | null
-  isMobile: boolean
-  observedAt: string
-  onSelect: (call: CallRow) => void
-}) {
-  const callEnds = calls.map((call) => {
-    const callOffset =
-      call.debugSessionElapsedMs ??
-      Math.max(
-        0,
-        new Date(call.startedAt ?? call.createdAt).getTime() - new Date(session.startedAt).getTime()
-      )
-    return callOffset + call.durationMs
-  })
-  const sessionStart = new Date(session.startedAt).getTime()
-  const captureEnd = session.endedAt
-    ? new Date(session.endedAt).getTime()
-    : session.pausedAt
-      ? new Date(session.pausedAt).getTime()
-      : new Date(observedAt).getTime()
-  const windowMs = Math.max(1, captureEnd - sessionStart - session.pausedDurationMs, ...callEnds)
-
-  return (
-    <section className="debug-timeline" data-mobile={isMobile || undefined}>
-      <HStack gap={3} hAlign="between" vAlign="center" padding={3}>
-        <Text type="label">Session start</Text>
-        <Text type="supporting" color="secondary">
-          +{formatDuration(windowMs)}
-        </Text>
-      </HStack>
-      <ol className="debug-timeline-list" aria-label="Debug session call timeline">
-        {calls.map((call) => {
-          const callOffset =
-            call.debugSessionElapsedMs ??
-            Math.max(0, new Date(call.startedAt ?? call.createdAt).getTime() - sessionStart)
-          const offset = Math.max(0, (callOffset / windowMs) * 100)
-          const width = Math.max(0.5, (call.durationMs / windowMs) * 100)
-          const toolLabel = call.toolName ?? call.requestedToolName
-          return (
-            <li className="debug-timeline-row" key={call.id}>
-              <Text type="supporting">{toolLabel}</Text>
-              <section className="debug-timeline-track">
-                <button
-                  type="button"
-                  className="debug-timeline-call"
-                  data-outcome={call.outcome}
-                  data-selected={selectedCallId === call.id || undefined}
-                  style={
-                    {
-                      '--debug-trace-start': `${Math.min(offset, 99.5)}%`,
-                      '--debug-trace-width': `${Math.min(width, 100 - offset)}%`,
-                    } as CSSProperties
-                  }
-                  title={`${toolLabel}: ${formatDuration(call.durationMs)}`}
-                  aria-label={`Inspect ${toolLabel}, ${formatDuration(call.durationMs)}`}
-                  onClick={() => onSelect(call)}
-                >
-                  <span className="debug-timeline-bar" aria-hidden="true" />
-                </button>
-              </section>
-              <Text type="supporting" color="secondary">
-                {formatDuration(call.durationMs)}
-              </Text>
-            </li>
-          )
-        })}
-      </ol>
-    </section>
   )
 }
 
@@ -497,7 +417,6 @@ export default function DebugIndex({
                         calls={calls}
                         session={selectedSession}
                         selectedCallId={selectedCall?.id ?? null}
-                        isMobile={isMobile}
                         observedAt={observedAt}
                         onSelect={(call) => navigate({ callId: call.id })}
                       />
