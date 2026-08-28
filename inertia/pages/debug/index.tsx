@@ -1,21 +1,22 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Head, router } from '@inertiajs/react'
 import type { JSONDataTypes } from '@adonisjs/core/types/transformers'
 import { Banner } from '@astryxdesign/core/Banner'
 import { useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Button } from '@astryxdesign/core/Button'
+import { Card } from '@astryxdesign/core/Card'
 import { CodeBlock } from '@astryxdesign/core/CodeBlock'
 import { Dialog, DialogHeader } from '@astryxdesign/core/Dialog'
+import { Grid } from '@astryxdesign/core/Grid'
 import {
   HStack,
   Layout,
   LayoutContent,
   LayoutFooter,
-  LayoutPanel,
   StackItem,
   VStack,
 } from '@astryxdesign/core/Layout'
-import { MetadataList, MetadataListItem } from '@astryxdesign/core/MetadataList'
+import { Section } from '@astryxdesign/core/Section'
 import { Selector } from '@astryxdesign/core/Selector'
 import { Heading, Text } from '@astryxdesign/core/Text'
 import { Token } from '@astryxdesign/core/Token'
@@ -102,48 +103,103 @@ function CaptureState({ captured, redacted }: { captured: boolean; redacted: boo
   )
 }
 
-function CallDetails({ call, timeZone }: { call: CallRow; timeZone: string }) {
-  const capturedArguments = displayPayload(call.arguments, call.argumentsCaptured)
-  const capturedResponse = displayPayload(call.response, call.responseCaptured)
+function CallMetric({
+  label,
+  value,
+  children,
+}: {
+  label: string
+  value: string
+  children?: ReactNode
+}) {
+  return (
+    <Card variant="muted" padding={4} width="100%">
+      <VStack gap={2} hAlign="stretch">
+        <Text type="label" color="secondary">
+          {label}
+        </Text>
+        <Heading level={3}>{value}</Heading>
+        {children ? (
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            {children}
+          </HStack>
+        ) : null}
+      </VStack>
+    </Card>
+  )
+}
+
+function CallPayload({
+  label,
+  payload,
+  captured,
+  redacted,
+  bytes,
+}: {
+  label: 'Input' | 'Output'
+  payload: string | null
+  captured: boolean
+  redacted: boolean
+  bytes: number
+}) {
+  const capturedPayload = displayPayload(payload, captured)
+  const emptyTitle = label === 'Input' ? 'No input supplied' : 'No output returned'
 
   return (
-    <VStack gap={5} hAlign="stretch">
-      <HStack gap={3} hAlign="between" vAlign="center">
-        <Heading level={2}>Call details</Heading>
-        <Token
-          label={call.outcome === 'success' ? 'Success' : 'Error'}
-          color={call.outcome === 'success' ? 'green' : 'red'}
+    <Section variant="transparent" padding={0} width="100%">
+      <VStack gap={3} hAlign="stretch">
+        <HStack gap={3} hAlign="between" vAlign="center" wrap="wrap">
+          <VStack gap={1}>
+            <Heading level={3}>{label}</Heading>
+            <Text type="supporting" color="secondary">
+              {formatBytes(bytes)}
+            </Text>
+          </VStack>
+          <CaptureState captured={captured} redacted={redacted} />
+        </HStack>
+        {capturedPayload === null ? (
+          <Banner
+            status="info"
+            title={`${label} was not captured`}
+            description="Only metadata is available for this payload."
+            container="section"
+          />
+        ) : capturedPayload === '' ? (
+          <Banner status="info" title={emptyTitle} container="section" />
+        ) : (
+          <CodeBlock
+            code={capturedPayload}
+            language="json"
+            width="100%"
+            maxHeight={360}
+            isWrapped
+          />
+        )}
+      </VStack>
+    </Section>
+  )
+}
+
+function CallDetails({ call }: { call: CallRow }) {
+  return (
+    <VStack gap={6} hAlign="stretch">
+      <Grid columns={{ minWidth: 180, max: 4, repeat: 'fit' }} gap={3} width="100%">
+        <CallMetric label="Duration" value={formatDuration(call.durationMs)} />
+        <CallMetric
+          label="Timeline position"
+          value={
+            call.debugSessionElapsedMs === null
+              ? 'Unavailable'
+              : `+${formatDuration(call.debugSessionElapsedMs)}`
+          }
         />
-      </HStack>
-      <MetadataList columns="single" label={{ position: 'top' }}>
-        <MetadataListItem label="Tool">
-          <Text type="body">{call.toolName ?? call.requestedToolName}</Text>
-        </MetadataListItem>
-        <MetadataListItem label="MCP">
-          <Text type="body">{call.mcpName ?? call.mcpSlug ?? 'Gateway'}</Text>
-        </MetadataListItem>
-        <MetadataListItem label="Started">
-          <Text type="body">{formatLocalDateTime(call.startedAt ?? call.createdAt, timeZone)}</Text>
-        </MetadataListItem>
-        <MetadataListItem label="Duration">
-          <Text type="body">{formatDuration(call.durationMs)}</Text>
-        </MetadataListItem>
-        <MetadataListItem label="Input">
-          <HStack gap={2} wrap="wrap" vAlign="center">
-            <Text type="body">{formatBytes(call.argumentsBytes)}</Text>
-            <CaptureState captured={call.argumentsCaptured} redacted={call.argumentsRedacted} />
-          </HStack>
-        </MetadataListItem>
-        <MetadataListItem label="Output">
-          <HStack gap={2} wrap="wrap" vAlign="center">
-            <Text type="body">{formatBytes(call.responseBytes)}</Text>
-            <CaptureState captured={call.responseCaptured} redacted={call.responseRedacted} />
-          </HStack>
-        </MetadataListItem>
-        <MetadataListItem label="Caller IP">
-          <Text type="body">{call.callerIp ?? 'Unknown'}</Text>
-        </MetadataListItem>
-      </MetadataList>
+        <CallMetric label="Input size" value={formatBytes(call.argumentsBytes)}>
+          <CaptureState captured={call.argumentsCaptured} redacted={call.argumentsRedacted} />
+        </CallMetric>
+        <CallMetric label="Output size" value={formatBytes(call.responseBytes)}>
+          <CaptureState captured={call.responseCaptured} redacted={call.responseRedacted} />
+        </CallMetric>
+      </Grid>
       {call.errorCategory ? (
         <Banner
           status="error"
@@ -152,44 +208,22 @@ function CallDetails({ call, timeZone }: { call: CallRow; timeZone: string }) {
           container="section"
         />
       ) : null}
-      {capturedArguments === null ? (
-        <Banner
-          status="info"
-          title="Input was not captured"
-          description="Only metadata is available for this call."
-          container="section"
+      <Grid columns={{ minWidth: 320, max: 2, repeat: 'fit' }} gap={6} width="100%">
+        <CallPayload
+          label="Input"
+          payload={call.arguments}
+          captured={call.argumentsCaptured}
+          redacted={call.argumentsRedacted}
+          bytes={call.argumentsBytes}
         />
-      ) : capturedArguments === '' ? (
-        <Banner status="info" title="No input supplied" container="section" />
-      ) : (
-        <CodeBlock
-          code={capturedArguments}
-          language="json"
-          title="Input"
-          width="100%"
-          maxHeight={320}
-          isWrapped
+        <CallPayload
+          label="Output"
+          payload={call.response}
+          captured={call.responseCaptured}
+          redacted={call.responseRedacted}
+          bytes={call.responseBytes}
         />
-      )}
-      {capturedResponse === null ? (
-        <Banner
-          status="info"
-          title="Output was not captured"
-          description="Only metadata is available for this call."
-          container="section"
-        />
-      ) : capturedResponse === '' ? (
-        <Banner status="info" title="No output returned" container="section" />
-      ) : (
-        <CodeBlock
-          code={capturedResponse}
-          language="json"
-          title="Output"
-          width="100%"
-          maxHeight={440}
-          isWrapped
-        />
-      )}
+      </Grid>
     </VStack>
   )
 }
@@ -355,7 +389,7 @@ export default function DebugIndex({
 
   return (
     <Fragment>
-      {/* Responsive contract: 1440px full timeline + inspector; 768px and 375px use a full-screen call inspector and stacked trace rows. */}
+      {/* Responsive contract: the timeline keeps its full width; details open in a focused dialog, switching to full-screen at 768px and below. */}
       <Layout
         contentWidth={1440}
         height={isMobile ? 'auto' : 'fill'}
@@ -500,13 +534,6 @@ export default function DebugIndex({
             </VStack>
           </LayoutContent>
         }
-        end={
-          selectedCall && !isMobile ? (
-            <LayoutPanel width={420} padding={5} hasDivider label="Call details" isScrollable>
-              <CallDetails call={selectedCall} timeZone={filters.timeZone} />
-            </LayoutPanel>
-          ) : undefined
-        }
       />
 
       {isStartOpen ? (
@@ -560,19 +587,28 @@ export default function DebugIndex({
         </Dialog>
       ) : null}
 
-      {selectedCall && isMobile ? (
+      {selectedCall ? (
         <Dialog
           isOpen
           onOpenChange={(open) => {
             if (!open) navigate({ callId: undefined })
           }}
           purpose="info"
-          variant="fullscreen"
+          width={1040}
+          maxHeight="calc(100dvh - var(--spacing-8))"
+          variant={isMobile ? 'fullscreen' : undefined}
         >
           <Layout
             header={
               <DialogHeader
-                title="Call details"
+                title={selectedCall.toolName ?? selectedCall.requestedToolName}
+                subtitle={`${selectedCall.mcpName ?? selectedCall.mcpSlug ?? 'Gateway'} · ${formatLocalDateTime(selectedCall.startedAt ?? selectedCall.createdAt, filters.timeZone)} · ${selectedCall.callerIp ?? 'Unknown caller IP'}`}
+                endContent={
+                  <Token
+                    label={selectedCall.outcome === 'success' ? 'Success' : 'Error'}
+                    color={selectedCall.outcome === 'success' ? 'green' : 'red'}
+                  />
+                }
                 onOpenChange={(open) => {
                   if (!open) navigate({ callId: undefined })
                 }}
@@ -580,7 +616,7 @@ export default function DebugIndex({
             }
             content={
               <LayoutContent isScrollable>
-                <CallDetails call={selectedCall} timeZone={filters.timeZone} />
+                <CallDetails call={selectedCall} />
               </LayoutContent>
             }
           />
