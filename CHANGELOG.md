@@ -2,6 +2,22 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-28
+
+### Added
+
+- Added per-access-token debug sessions with start, pause, continue, and stop controls, an interactive call timeline, sanitized payload inspection, and input/output size metadata.
+
+### Changed
+
+- Replaced the compressed debug inspector panel with a focused, responsive call-details dialog that keeps the timeline visible at full width.
+- Reduced repeated capture-state badges in call details, keeping color for the overall outcome and exceptional redaction states.
+- Reworked the debugger timeline as a dedicated high-contrast trace visualization with clearer success, error, hover, focus, and selection states, plus compact single-line duration labels beneath each lane.
+
+### Fixed
+
+- Kept input and output payloads aligned with the call-details dialog padding on desktop and mobile.
+
 ## 2026-08-18
 
 ### Removed

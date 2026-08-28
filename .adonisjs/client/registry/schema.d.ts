@@ -295,6 +295,42 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/logs_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
+  'debug.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/debug'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/mcp_debug_session').debugSessionQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/debug_sessions_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/debug_sessions_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'debug.store': {
+    methods: ["POST"]
+    pattern: '/debug-sessions'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/mcp_debug_session').startDebugSessionValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/mcp_debug_session').startDebugSessionValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/debug_sessions_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/debug_sessions_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'debug.update': {
+    methods: ["PATCH"]
+    pattern: '/debug-sessions/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/mcp_debug_session').updateDebugSessionValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/mcp_debug_session').updateDebugSessionValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/debug_sessions_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/debug_sessions_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
   'analytics.index': {
     methods: ["GET","HEAD"]
     pattern: '/analytics'

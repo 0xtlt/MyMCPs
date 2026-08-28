@@ -4,22 +4,28 @@ import { Button } from '@astryxdesign/core/Button'
 
 const LIVE_REFRESH_INTERVAL_MS = 30_000
 
-export function LiveRefreshButton() {
-  const [isLive, setIsLive] = useState(false)
+export function LiveRefreshButton({
+  defaultLive = false,
+  intervalMs = LIVE_REFRESH_INTERVAL_MS,
+}: {
+  defaultLive?: boolean
+  intervalMs?: number
+} = {}) {
+  const [isLive, setIsLive] = useState(defaultLive)
 
   useEffect(() => {
     if (!isLive) return
 
-    const interval = window.setInterval(() => router.reload(), LIVE_REFRESH_INTERVAL_MS)
+    const interval = window.setInterval(() => router.reload(), intervalMs)
     return () => window.clearInterval(interval)
-  }, [isLive])
+  }, [intervalMs, isLive])
 
   return (
     <Button
       label="Live"
       variant={isLive ? 'primary' : 'secondary'}
       aria-pressed={isLive}
-      tooltip={`${isLive ? 'Disable' : 'Enable'} automatic refresh every 30 seconds`}
+      tooltip={`${isLive ? 'Disable' : 'Enable'} automatic refresh`}
       onClick={() => setIsLive((current) => !current)}
     />
   )

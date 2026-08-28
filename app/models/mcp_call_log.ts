@@ -20,4 +20,10 @@ export default class McpCallLog extends McpCallLogSchema {
 
   @column({ consume: (value) => Boolean(value), prepare: (value) => Boolean(value) })
   declare responseCaptured: boolean
+
+  @column({ consume: (value) => Boolean(value), prepare: (value) => Boolean(value) })
+  declare argumentsRedacted: boolean
+
+  @column({ consume: (value) => Boolean(value), prepare: (value) => Boolean(value) })
+  declare responseRedacted: boolean
 }

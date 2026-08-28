@@ -27,7 +27,7 @@ const CREDENTIAL_KEY_SUFFIXES = [
   'token',
 ]
 
-function isCredentialKey(value: string) {
+export function isCredentialKey(value: string) {
   let decoded = value
   try {
     decoded = decodeURIComponent(value.replaceAll('+', ' '))

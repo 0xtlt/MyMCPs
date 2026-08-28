@@ -1,11 +1,18 @@
 import { test } from '@japa/runner'
 import type { ApiClient } from '@japa/api-client'
+import { DateTime } from 'luxon'
 import InstanceSetting from '#models/instance_setting'
 import McpCallLog from '#models/mcp_call_log'
+import McpDebugSession from '#models/mcp_debug_session'
 import McpCallLogService, { MAX_CAPTURE_BYTES } from '#services/mcp_call_log_service'
 import McpSecretStore from '#services/mcp_secret_store'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
-import { createAccessToken, createAdmin, createMcp } from '#tests/helpers/factories'
+import {
+  createAccessToken,
+  createAdmin,
+  createMcp,
+  createMcpDebugSession,
+} from '#tests/helpers/factories'
 
 function jsonRpcResponse(body: unknown, session = true) {
   return new Response(JSON.stringify(body), {
@@ -328,6 +335,108 @@ test.group('MCP call capture', (group) => {
     const response = await callGateway(client, plaintext, 'invalid')
     response.assertStatus(200)
     assert.isNull(await McpCallLog.first())
+  })
+
+  test('captures and redacts one active debug session even when instance logging is off', async ({
+    client,
+    assert,
+  }) => {
+    const restoreFetch = mockToolServer()
+    try {
+      const admin = await createAdmin()
+      const mcp = await createMcp(admin.id, {
+        slug: 'logging',
+        httpUrl: 'https://logging.example/mcp',
+      })
+      mcp.authHeaderValue = McpSecretStore.encrypt('exact-upstream-secret')
+      await mcp.save()
+      const { token, plaintext } = await createAccessToken(admin.id, { mcpIds: [mcp.id] })
+      const debugSession = await createMcpDebugSession(token, admin.id)
+      const settings = await InstanceSetting.findOrFail(1)
+      settings.mcpLogLevel = 'off'
+      await settings.save()
+      const args = {
+        apiKey: 'credential-value',
+        query: 'contains exact-upstream-secret',
+        ordinary: 'visible',
+      }
+
+      const response = await callGateway(client, plaintext, 'logging__echo', args)
+      response.assertStatus(200)
+
+      const log = await McpCallLog.firstOrFail()
+      assert.equal(log.debugSessionId, debugSession.id)
+      assert.isAtLeast(log.debugSessionElapsedMs!, 0)
+      assert.equal(log.startedAt?.isValid, true)
+      assert.isTrue(log.argumentsCaptured)
+      assert.isTrue(log.responseCaptured)
+      assert.isTrue(log.argumentsRedacted)
+      assert.isFalse(log.responseRedacted)
+      assert.equal(log.argumentsBytes, Buffer.byteLength(JSON.stringify(args)))
+      assert.isAbove(log.responseBytes, 0)
+      assert.deepEqual(JSON.parse(log.arguments!), {
+        apiKey: '[REDACTED]',
+        query: 'contains [REDACTED]',
+        ordinary: 'visible',
+      })
+    } finally {
+      restoreFetch()
+    }
+  })
+
+  test('excludes calls made while a debug session is paused', async ({ client, assert }) => {
+    const admin = await createAdmin()
+    const { token, plaintext } = await createAccessToken(admin.id)
+    await createMcpDebugSession(token, admin.id, { status: 'paused' })
+    const settings = await InstanceSetting.findOrFail(1)
+    settings.mcpLogLevel = 'off'
+    await settings.save()
+
+    const response = await callGateway(client, plaintext, 'invalid')
+    response.assertStatus(200)
+    assert.isNull(await McpCallLog.first())
+    const debugSession = await McpDebugSession.firstOrFail()
+    assert.equal(debugSession.status, 'paused')
+  })
+
+  test('drops a queued debug capture after the session state changes', async ({
+    client,
+    assert,
+  }) => {
+    const admin = await createAdmin()
+    const { token, plaintext } = await createAccessToken(admin.id)
+    const debugSession = await createMcpDebugSession(token, admin.id)
+    const settings = await InstanceSetting.findOrFail(1)
+    settings.mcpLogLevel = 'off'
+    await settings.save()
+
+    const originalSettings = McpCallLogService.settings
+    let releaseSettings!: () => void
+    const settingsBlocked = new Promise<void>((resolve) => {
+      releaseSettings = resolve
+    })
+    McpCallLogService.settings = (async () => {
+      await settingsBlocked
+      return originalSettings.call(McpCallLogService)
+    }) as typeof McpCallLogService.settings
+
+    try {
+      const response = await callGateway(client, plaintext, 'invalid', undefined, { flush: false })
+      response.assertStatus(200)
+
+      debugSession.status = 'paused'
+      debugSession.pausedAt = DateTime.utc()
+      debugSession.stateVersion += 1
+      await debugSession.save()
+
+      releaseSettings()
+      await McpCallLogService.flush()
+      assert.isNull(await McpCallLog.first())
+    } finally {
+      releaseSettings()
+      await McpCallLogService.flush()
+      McpCallLogService.settings = originalSettings
+    }
   })
 
   test('does not alter MCP responses when log persistence fails', async ({ client, assert }) => {

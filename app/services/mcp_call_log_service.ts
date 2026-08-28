@@ -3,8 +3,14 @@ import { DateTime } from 'luxon'
 import type AccessToken from '#models/access_token'
 import InstanceSetting from '#models/instance_setting'
 import McpCallLog, { type McpCallErrorCategory, type McpCallOutcome } from '#models/mcp_call_log'
+import McpDebugSession from '#models/mcp_debug_session'
 import type Mcp from '#models/mcp'
-import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
+import {
+  isCredentialKey,
+  mcpSensitiveValues,
+  sanitizeDiagnostic,
+  sanitizeMcpDiagnostic,
+} from '#services/security_redaction'
 
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const MAX_PENDING_WRITES = 1_000
@@ -25,26 +31,77 @@ export type McpCallLogInput = {
   errorCategory?: McpCallErrorCategory | null
   errorSummary?: unknown
   durationMs: number
+  startedAt: DateTime
+  debugSession?: McpDebugSession | null
 }
 
 export function sanitizeErrorSummary(value: unknown, mcp?: Mcp | null): string | null {
   return mcp ? sanitizeMcpDiagnostic(value, mcp) : sanitizeDiagnostic(value)
 }
 
-export function serializeCapturedValue(value: unknown) {
-  const serialized = JSON.stringify(value) ?? 'null'
-  const originalBytes = Buffer.byteLength(serialized)
-  if (originalBytes <= MAX_CAPTURE_BYTES) {
-    return serialized
+type CapturedValue = {
+  serialized: string
+  originalBytes: number
+  redacted: boolean
+}
+
+function safeJson(value: unknown) {
+  try {
+    return JSON.stringify(value) ?? 'null'
+  } catch {
+    return JSON.stringify({ unserializable: true })
+  }
+}
+
+export function captureValue(
+  value: unknown,
+  options: { redact?: boolean; mcp?: Mcp | null } = {}
+): CapturedValue {
+  const original = safeJson(value)
+  const originalBytes = Buffer.byteLength(original)
+  let redacted = false
+  let serialized = original
+
+  if (options.redact) {
+    const sensitiveValues = options.mcp ? mcpSensitiveValues(options.mcp) : []
+    try {
+      serialized =
+        JSON.stringify(value, (key, current) => {
+          if (key && isCredentialKey(key)) {
+            redacted = true
+            return '[REDACTED]'
+          }
+          if (typeof current !== 'string') return current
+
+          const sanitized =
+            sanitizeDiagnostic(current, Number.MAX_SAFE_INTEGER, sensitiveValues) ?? current
+          if (sanitized !== current) redacted = true
+          return sanitized
+        }) ?? 'null'
+    } catch {
+      serialized = JSON.stringify({ unserializable: true })
+    }
   }
 
-  return JSON.stringify({
-    truncated: true,
+  if (Buffer.byteLength(serialized) <= MAX_CAPTURE_BYTES) {
+    return { serialized, originalBytes, redacted }
+  }
+
+  return {
+    serialized: JSON.stringify({
+      truncated: true,
+      originalBytes,
+      // Eight thousand characters leaves room for JSON escaping while keeping
+      // the complete wrapper below the 64 KiB field budget.
+      preview: serialized.slice(0, 8 * 1024),
+    }),
     originalBytes,
-    // Eight thousand characters leaves room for JSON escaping while keeping
-    // the complete wrapper below the 64 KiB field budget.
-    preview: serialized.slice(0, 8 * 1024),
-  })
+    redacted,
+  }
+}
+
+export function serializeCapturedValue(value: unknown) {
+  return captureValue(value).serialized
 }
 
 export default class McpCallLogService {
@@ -82,13 +139,29 @@ export default class McpCallLogService {
   private static async persist(input: McpCallLogInput) {
     try {
       const settings = await this.settings()
-      if (settings.mcpLogLevel === 'off') {
+      const currentDebugSession = input.debugSession
+        ? await McpDebugSession.find(input.debugSession.id)
+        : null
+      const isDebugCapture =
+        currentDebugSession?.status === 'active' &&
+        currentDebugSession.stateVersion === input.debugSession?.stateVersion
+      if (settings.mcpLogLevel === 'off' && !isDebugCapture) {
         return
       }
 
       const argumentsCaptured =
-        settings.mcpLogLevel === 'arguments' || settings.mcpLogLevel === 'responses'
-      const responseCaptured = settings.mcpLogLevel === 'responses'
+        isDebugCapture ||
+        settings.mcpLogLevel === 'arguments' ||
+        settings.mcpLogLevel === 'responses'
+      const responseCaptured = isDebugCapture || settings.mcpLogLevel === 'responses'
+      const argumentCapture = captureValue(input.args, {
+        redact: isDebugCapture,
+        mcp: input.mcp,
+      })
+      const responseCapture = captureValue(input.response, {
+        redact: isDebugCapture,
+        mcp: input.mcp,
+      })
       await McpCallLog.create({
         accessTokenId: input.accessToken.id,
         accessTokenName: input.accessToken.name,
@@ -103,14 +176,27 @@ export default class McpCallLogService {
         errorCategory: input.errorCategory ?? null,
         errorSummary: sanitizeErrorSummary(input.errorSummary, input.mcp),
         arguments:
-          argumentsCaptured && input.args !== undefined ? serializeCapturedValue(input.args) : null,
+          argumentsCaptured && input.args !== undefined ? argumentCapture.serialized : null,
         argumentsCaptured,
+        argumentsBytes: input.args === undefined ? 0 : argumentCapture.originalBytes,
+        argumentsRedacted: argumentsCaptured && argumentCapture.redacted,
         response:
-          responseCaptured && input.response !== undefined
-            ? serializeCapturedValue(input.response)
-            : null,
+          responseCaptured && input.response !== undefined ? responseCapture.serialized : null,
         responseCaptured,
+        responseBytes: input.response === undefined ? 0 : responseCapture.originalBytes,
+        responseRedacted: responseCaptured && responseCapture.redacted,
         durationMs: Math.max(0, Math.round(input.durationMs)),
+        startedAt: input.startedAt,
+        debugSessionId: isDebugCapture ? currentDebugSession.id : null,
+        debugSessionElapsedMs: isDebugCapture
+          ? Math.max(
+              0,
+              Math.round(
+                input.startedAt.diff(currentDebugSession.startedAt).as('milliseconds') -
+                  currentDebugSession.pausedDurationMs
+              )
+            )
+          : null,
       })
     } catch (error) {
       logger.warn({ err: error }, 'MCP call log could not be persisted')

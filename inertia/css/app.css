@@ -59,8 +59,90 @@
   border-inline-start: var(--border-width) solid var(--color-border);
 }
 
+.debug-timeline {
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--color-background-surface);
+}
+
+.debug-timeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.debug-timeline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(50%, 3fr);
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.debug-timeline[data-mobile] .debug-timeline-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-1);
+}
+
+.debug-timeline-track {
+  position: relative;
+  height: var(--spacing-6);
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border-emphasized);
+  border-radius: var(--radius-element);
+  background: var(--color-background-muted);
+}
+
+.debug-timeline-call {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.debug-timeline-bar {
+  position: absolute;
+  inset-block: var(--spacing-1);
+  inset-inline-start: var(--debug-trace-start);
+  width: max(var(--debug-trace-width), var(--spacing-1));
+  min-width: var(--spacing-1);
+  border: var(--border-width) solid var(--color-accent);
+  border-radius: var(--radius-element);
+  background: var(--color-accent);
+}
+
+.debug-timeline-call[data-outcome='error'] .debug-timeline-bar {
+  border-color: var(--color-error);
+  background: var(--color-error);
+}
+
+.debug-timeline-call:hover .debug-timeline-bar,
+.debug-timeline-call:focus-visible .debug-timeline-bar,
+.debug-timeline-call[data-selected] .debug-timeline-bar {
+  outline: var(--focus-outline-width) var(--focus-outline-style) var(--color-text-primary);
+  outline-offset: var(--spacing-0-5);
+}
+
+.debug-timeline-call:focus-visible {
+  outline: var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color);
+  outline-offset: calc(-1 * var(--focus-outline-width));
+}
+
 /* Keep presentation-only responsiveness aligned with AppShell's md breakpoint. */
 @media (max-width: 768px) {
+  .debug-timeline-track {
+    height: var(--spacing-12);
+  }
+
+  .debug-timeline-bar {
+    inset-block: var(--spacing-4);
+  }
+
   .analytics-metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }

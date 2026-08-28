@@ -141,6 +141,11 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
                     <>
                       <TopNavItem label="Logs" href="/logs" isSelected={url.startsWith('/logs')} />
                       <TopNavItem
+                        label="Debugger"
+                        href="/debug"
+                        isSelected={url.startsWith('/debug')}
+                      />
+                      <TopNavItem
                         label="Analytics"
                         href="/analytics"
                         isSelected={url.startsWith('/analytics')}

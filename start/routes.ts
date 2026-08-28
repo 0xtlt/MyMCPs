@@ -105,6 +105,11 @@ router
               .patch('settings/mcp-logging', [controllers.Settings, 'updateMcpLogging'])
               .as('settings.updateMcpLogging')
             router.get('logs', [controllers.Logs, 'index']).as('logs.index')
+            router.get('debug', [controllers.DebugSessions, 'index']).as('debug.index')
+            router.post('debug-sessions', [controllers.DebugSessions, 'store']).as('debug.store')
+            router
+              .patch('debug-sessions/:id', [controllers.DebugSessions, 'update'])
+              .as('debug.update')
             router.get('analytics', [controllers.Analytics, 'index']).as('analytics.index')
             router.get('invites', [controllers.Invites, 'index']).as('invites.index')
             router.post('invites', [controllers.Invites, 'store']).as('invites.store')
