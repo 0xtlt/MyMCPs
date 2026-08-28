@@ -28,6 +28,9 @@ export type ScannedRoutes = {
     'settings.updatePassword': { paramsTuple?: []; params?: {} }
     'settings.updateMcpLogging': { paramsTuple?: []; params?: {} }
     'logs.index': { paramsTuple?: []; params?: {} }
+    'debug.index': { paramsTuple?: []; params?: {} }
+    'debug.store': { paramsTuple?: []; params?: {} }
+    'debug.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'analytics.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'invites.store': { paramsTuple?: []; params?: {} }
@@ -61,6 +64,7 @@ export type ScannedRoutes = {
     'home': { paramsTuple?: []; params?: {} }
     'settings.index': { paramsTuple?: []; params?: {} }
     'logs.index': { paramsTuple?: []; params?: {} }
+    'debug.index': { paramsTuple?: []; params?: {} }
     'analytics.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'mcps.index': { paramsTuple?: []; params?: {} }
@@ -82,6 +86,7 @@ export type ScannedRoutes = {
     'home': { paramsTuple?: []; params?: {} }
     'settings.index': { paramsTuple?: []; params?: {} }
     'logs.index': { paramsTuple?: []; params?: {} }
+    'debug.index': { paramsTuple?: []; params?: {} }
     'analytics.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
     'mcps.index': { paramsTuple?: []; params?: {} }
@@ -100,6 +105,7 @@ export type ScannedRoutes = {
     'session.store': { paramsTuple?: []; params?: {} }
     'invites.accept': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'session.destroy': { paramsTuple?: []; params?: {} }
+    'debug.store': { paramsTuple?: []; params?: {} }
     'invites.store': { paramsTuple?: []; params?: {} }
     'mcps.store': { paramsTuple?: []; params?: {} }
     'mcps.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -111,6 +117,7 @@ export type ScannedRoutes = {
     'settings.updateEmail': { paramsTuple?: []; params?: {} }
     'settings.updatePassword': { paramsTuple?: []; params?: {} }
     'settings.updateMcpLogging': { paramsTuple?: []; params?: {} }
+    'debug.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   DELETE: {
     'invites.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }

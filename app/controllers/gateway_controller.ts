@@ -3,7 +3,9 @@ import logger from '@adonisjs/core/services/logger'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { DateTime } from 'luxon'
 import type Mcp from '#models/mcp'
+import McpDebugSession from '#models/mcp_debug_session'
 import InstanceSetting from '#models/instance_setting'
 import { applicationVersion } from '#services/application_version'
 import McpCallLogService from '#services/mcp_call_log_service'
@@ -71,31 +73,69 @@ export default class GatewayController {
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const startedAt = performance.now()
+      const startedAtUtc = DateTime.utc()
       const accessToken = ctx.accessToken!
       const requestedToolName = request.params.name
       const args = request.params.arguments
+      const debugSession = await McpDebugSession.query()
+        .where('access_token_id', accessToken.id)
+        .where('status', 'active')
+        .orderBy('started_at', 'desc')
+        .first()
 
       if (toolMode === 'lazy') {
         if (requestedToolName === 'list_mcps') {
           const catalog = { mcps: mcpCatalog(mcps) }
-          return {
+          const result = {
             content: [{ type: 'text' as const, text: JSON.stringify(catalog) }],
             structuredContent: catalog,
           }
+          if (debugSession) {
+            McpCallLogService.record({
+              accessToken,
+              callerIp,
+              requestedToolName,
+              toolName: requestedToolName,
+              args,
+              response: result,
+              outcome: 'success',
+              durationMs: performance.now() - startedAt,
+              startedAt: startedAtUtc,
+              debugSession,
+            })
+          }
+          return result
         }
 
         if (requestedToolName === 'tool_search') {
           const input = parseToolSearchInput(args)
           if (typeof input === 'string') {
-            return {
+            const result = {
               content: [{ type: 'text' as const, text: input }],
               isError: true,
             }
+            if (debugSession) {
+              McpCallLogService.record({
+                accessToken,
+                callerIp,
+                requestedToolName,
+                toolName: requestedToolName,
+                args,
+                response: result,
+                outcome: 'error',
+                errorCategory: 'invalid_tool',
+                errorSummary: input,
+                durationMs: performance.now() - startedAt,
+                startedAt: startedAtUtc,
+                debugSession,
+              })
+            }
+            return result
           }
 
           const mcp = bySlug.get(input.mcp)
           if (!mcp) {
-            return {
+            const result = {
               content: [
                 {
                   type: 'text' as const,
@@ -104,26 +144,68 @@ export default class GatewayController {
               ],
               isError: true,
             }
+            if (debugSession) {
+              McpCallLogService.record({
+                accessToken,
+                callerIp,
+                mcpSlug: input.mcp,
+                requestedToolName,
+                toolName: requestedToolName,
+                args,
+                response: result,
+                outcome: 'error',
+                errorCategory: 'disallowed_mcp',
+                errorSummary: 'MCP not allowed for this token',
+                durationMs: performance.now() - startedAt,
+                startedAt: startedAtUtc,
+                debugSession,
+              })
+            }
+            return result
           }
 
           try {
             const upstreamTools = await probeUpstream(mcp)
             const matches = searchUpstreamTools(upstreamTools, input.query, input.limit)
             const result = {
-              mcp: mcpCatalog([mcp])[0],
-              query: input.query,
-              tools: matches,
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify({
+                    mcp: mcpCatalog([mcp])[0],
+                    query: input.query,
+                    tools: matches,
+                  }),
+                },
+              ],
+              structuredContent: {
+                mcp: mcpCatalog([mcp])[0],
+                query: input.query,
+                tools: matches,
+              },
             }
-            return {
-              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-              structuredContent: result,
+            if (debugSession) {
+              McpCallLogService.record({
+                accessToken,
+                callerIp,
+                mcp,
+                requestedToolName,
+                toolName: requestedToolName,
+                args,
+                response: result,
+                outcome: 'success',
+                durationMs: performance.now() - startedAt,
+                startedAt: startedAtUtc,
+                debugSession,
+              })
             }
+            return result
           } catch (error) {
             logger.warn(
               { error: sanitizeMcpDiagnostic(error, mcp), mcpId: mcp.id, slug: mcp.slug },
               'Lazy gateway tool search failed'
             )
-            return {
+            const result = {
               content: [
                 {
                   type: 'text' as const,
@@ -132,32 +214,58 @@ export default class GatewayController {
               ],
               isError: true,
             }
+            if (debugSession) {
+              McpCallLogService.record({
+                accessToken,
+                callerIp,
+                mcp,
+                requestedToolName,
+                toolName: requestedToolName,
+                args,
+                response: result,
+                outcome: 'error',
+                errorCategory: 'upstream_exception',
+                errorSummary: error,
+                durationMs: performance.now() - startedAt,
+                startedAt: startedAtUtc,
+                debugSession,
+              })
+            }
+            return result
           }
         }
 
         if (requestedToolName === 'call_tool') {
           const input = parseCallToolInput(args)
           if (typeof input === 'string') {
+            const result = {
+              content: [{ type: 'text' as const, text: input }],
+              isError: true,
+            }
             McpCallLogService.record({
               accessToken,
               callerIp,
               requestedToolName,
               toolName: null,
               args,
+              response: debugSession ? result : undefined,
               outcome: 'error',
               errorCategory: 'invalid_tool',
               errorSummary: input,
               durationMs: performance.now() - startedAt,
+              startedAt: startedAtUtc,
+              debugSession,
             })
-            return {
-              content: [{ type: 'text' as const, text: input }],
-              isError: true,
-            }
+            return result
           }
 
           const mcp = bySlug.get(input.mcp)
           const targetToolName = `${input.mcp}__${input.tool}`
           if (!mcp) {
+            const result = {
+              content: [{ type: 'text' as const, text: 'MCP not allowed for this token' }],
+              isError: true,
+            }
             McpCallLogService.record({
               accessToken,
               callerIp,
@@ -165,15 +273,15 @@ export default class GatewayController {
               requestedToolName: targetToolName,
               toolName: input.tool,
               args: input.arguments,
+              response: debugSession ? result : undefined,
               outcome: 'error',
               errorCategory: 'disallowed_mcp',
               errorSummary: 'MCP not allowed for this token',
               durationMs: performance.now() - startedAt,
+              startedAt: startedAtUtc,
+              debugSession,
             })
-            return {
-              content: [{ type: 'text' as const, text: 'MCP not allowed for this token' }],
-              isError: true,
-            }
+            return result
           }
 
           return this.callAndRecord({
@@ -184,36 +292,63 @@ export default class GatewayController {
             toolName: input.tool,
             args: input.arguments,
             startedAt,
+            startedAtUtc,
+            debugSession,
           })
         }
 
-        return {
+        const result = {
           content: [{ type: 'text' as const, text: 'Invalid lazy gateway tool name' }],
           isError: true,
         }
+        if (debugSession) {
+          McpCallLogService.record({
+            accessToken,
+            callerIp,
+            requestedToolName,
+            toolName: null,
+            args,
+            response: result,
+            outcome: 'error',
+            errorCategory: 'invalid_tool',
+            errorSummary: 'Invalid lazy gateway tool name',
+            durationMs: performance.now() - startedAt,
+            startedAt: startedAtUtc,
+            debugSession,
+          })
+        }
+        return result
       }
 
       const parsed = parseNamespacedTool(request.params.name)
       if (!parsed) {
+        const result = {
+          content: [{ type: 'text' as const, text: 'Invalid tool name' }],
+          isError: true,
+        }
         McpCallLogService.record({
           accessToken,
           callerIp,
           requestedToolName,
           toolName: null,
           args,
+          response: debugSession ? result : undefined,
           outcome: 'error',
           errorCategory: 'invalid_tool',
           errorSummary: 'Invalid tool name',
           durationMs: performance.now() - startedAt,
+          startedAt: startedAtUtc,
+          debugSession,
         })
-        return {
-          content: [{ type: 'text' as const, text: 'Invalid tool name' }],
-          isError: true,
-        }
+        return result
       }
 
       const mcp = bySlug.get(parsed.slug)
       if (!mcp) {
+        const result = {
+          content: [{ type: 'text' as const, text: 'MCP not allowed for this token' }],
+          isError: true,
+        }
         McpCallLogService.record({
           accessToken,
           callerIp,
@@ -221,15 +356,15 @@ export default class GatewayController {
           requestedToolName,
           toolName: parsed.toolName,
           args,
+          response: debugSession ? result : undefined,
           outcome: 'error',
           errorCategory: 'disallowed_mcp',
           errorSummary: 'MCP not allowed for this token',
           durationMs: performance.now() - startedAt,
+          startedAt: startedAtUtc,
+          debugSession,
         })
-        return {
-          content: [{ type: 'text' as const, text: 'MCP not allowed for this token' }],
-          isError: true,
-        }
+        return result
       }
 
       return this.callAndRecord({
@@ -240,6 +375,8 @@ export default class GatewayController {
         toolName: parsed.toolName,
         args,
         startedAt,
+        startedAtUtc,
+        debugSession,
       })
     })
 
@@ -272,6 +409,8 @@ export default class GatewayController {
     toolName: string
     args: Record<string, unknown> | undefined
     startedAt: number
+    startedAtUtc: DateTime
+    debugSession: McpDebugSession | null
   }) {
     try {
       const result = await callUpstreamTool(params.mcp, params.toolName, params.args)
@@ -288,6 +427,8 @@ export default class GatewayController {
         errorCategory: isError ? 'tool_error' : null,
         errorSummary: isError ? 'Upstream tool returned an error' : null,
         durationMs: performance.now() - params.startedAt,
+        startedAt: params.startedAtUtc,
+        debugSession: params.debugSession,
       })
       return result
     } catch (error) {
@@ -299,6 +440,10 @@ export default class GatewayController {
         },
         'Upstream tool call failed'
       )
+      const result = {
+        content: [{ type: 'text' as const, text: 'Upstream tool call failed' }],
+        isError: true,
+      }
       McpCallLogService.record({
         accessToken: params.accessToken,
         callerIp: params.callerIp,
@@ -306,15 +451,15 @@ export default class GatewayController {
         requestedToolName: params.requestedToolName,
         toolName: params.toolName,
         args: params.args,
+        response: params.debugSession ? result : undefined,
         outcome: 'error',
         errorCategory: 'upstream_exception',
         errorSummary: error instanceof Error ? error : 'Upstream tool call failed',
         durationMs: performance.now() - params.startedAt,
+        startedAt: params.startedAtUtc,
+        debugSession: params.debugSession,
       })
-      return {
-        content: [{ type: 'text' as const, text: 'Upstream tool call failed' }],
-        isError: true,
-      }
+      return result
     }
   }
 }

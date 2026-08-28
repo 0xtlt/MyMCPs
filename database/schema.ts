@@ -154,9 +154,13 @@ export class McpCallLogSchema extends BaseModel {
     'accessTokenName',
     'accessTokenPrefix',
     'arguments',
+    'argumentsBytes',
     'argumentsCaptured',
+    'argumentsRedacted',
     'callerIp',
     'createdAt',
+    'debugSessionElapsedMs',
+    'debugSessionId',
     'durationMs',
     'errorCategory',
     'errorSummary',
@@ -167,7 +171,10 @@ export class McpCallLogSchema extends BaseModel {
     'outcome',
     'requestedToolName',
     'response',
+    'responseBytes',
     'responseCaptured',
+    'responseRedacted',
+    'startedAt',
     'toolName',
   ] as const
   $columns = McpCallLogSchema.$columns
@@ -180,11 +187,19 @@ export class McpCallLogSchema extends BaseModel {
   @column()
   declare arguments: string | null
   @column()
+  declare argumentsBytes: number
+  @column()
   declare argumentsCaptured: boolean
+  @column()
+  declare argumentsRedacted: boolean
   @column()
   declare callerIp: string | null
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
+  @column()
+  declare debugSessionElapsedMs: number | null
+  @column()
+  declare debugSessionId: number | null
   @column()
   declare durationMs: number
   @column()
@@ -206,9 +221,60 @@ export class McpCallLogSchema extends BaseModel {
   @column()
   declare response: string | null
   @column()
+  declare responseBytes: number
+  @column()
   declare responseCaptured: boolean
   @column()
+  declare responseRedacted: boolean
+  @column.dateTime()
+  declare startedAt: DateTime | null
+  @column()
   declare toolName: string | null
+}
+
+export class McpDebugSessionSchema extends BaseModel {
+  static $columns = [
+    'accessTokenId',
+    'accessTokenName',
+    'accessTokenPrefix',
+    'createdAt',
+    'createdBy',
+    'endedAt',
+    'id',
+    'pausedAt',
+    'pausedDurationMs',
+    'startedAt',
+    'stateVersion',
+    'status',
+    'updatedAt',
+  ] as const
+  $columns = McpDebugSessionSchema.$columns
+  @column()
+  declare accessTokenId: number | null
+  @column()
+  declare accessTokenName: string
+  @column()
+  declare accessTokenPrefix: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdBy: number | null
+  @column.dateTime()
+  declare endedAt: DateTime | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column.dateTime()
+  declare pausedAt: DateTime | null
+  @column()
+  declare pausedDurationMs: number
+  @column.dateTime()
+  declare startedAt: DateTime
+  @column()
+  declare stateVersion: number
+  @column()
+  declare status: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
 }
 
 export class McpSchema extends BaseModel {

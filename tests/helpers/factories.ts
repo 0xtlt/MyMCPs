@@ -5,6 +5,7 @@ import Invite from '#models/invite'
 import Mcp from '#models/mcp'
 import User from '#models/user'
 import McpCallLog from '#models/mcp_call_log'
+import McpDebugSession from '#models/mcp_debug_session'
 
 let sequence = 0
 
@@ -167,6 +168,13 @@ export async function createMcpCallLog(
     responseCaptured: boolean
     callerIp: string | null
     durationMs: number
+    debugSessionId: number | null
+    debugSessionElapsedMs: number | null
+    argumentsBytes: number
+    argumentsRedacted: boolean
+    responseBytes: number
+    responseRedacted: boolean
+    startedAt: DateTime | null
     createdAt: DateTime
   }> = {}
 ) {
@@ -188,7 +196,41 @@ export async function createMcpCallLog(
     argumentsCaptured: overrides.argumentsCaptured ?? false,
     response: overrides.response ?? null,
     responseCaptured: overrides.responseCaptured ?? false,
+    argumentsBytes: overrides.argumentsBytes ?? 0,
+    argumentsRedacted: overrides.argumentsRedacted ?? false,
+    responseBytes: overrides.responseBytes ?? 0,
+    responseRedacted: overrides.responseRedacted ?? false,
+    debugSessionId: overrides.debugSessionId ?? null,
+    debugSessionElapsedMs: overrides.debugSessionElapsedMs ?? null,
     durationMs: overrides.durationMs ?? 25,
+    startedAt: overrides.startedAt ?? overrides.createdAt,
     createdAt: overrides.createdAt,
+  })
+}
+
+export async function createMcpDebugSession(
+  accessToken: AccessToken,
+  createdBy: number,
+  overrides: Partial<{
+    status: 'active' | 'paused' | 'stopped'
+    startedAt: DateTime
+    pausedAt: DateTime | null
+    pausedDurationMs: number
+    stateVersion: number
+    endedAt: DateTime | null
+  }> = {}
+) {
+  const status = overrides.status ?? 'active'
+  return McpDebugSession.create({
+    accessTokenId: accessToken.id,
+    accessTokenName: accessToken.name,
+    accessTokenPrefix: accessToken.tokenPrefix,
+    status,
+    createdBy,
+    startedAt: overrides.startedAt ?? DateTime.utc(),
+    pausedAt: overrides.pausedAt ?? (status === 'paused' ? DateTime.utc() : null),
+    pausedDurationMs: overrides.pausedDurationMs ?? 0,
+    stateVersion: overrides.stateVersion ?? 0,
+    endedAt: overrides.endedAt ?? (status === 'stopped' ? DateTime.utc() : null),
   })
 }

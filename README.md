@@ -9,6 +9,7 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 - Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
 - Exposes every allowed upstream through `GET` and `POST /mcp`.
 - Records gateway activity and usage analytics.
+- Runs focused per-access-token debug sessions with a call timeline and sanitized payload inspection.
 
 MyMCPs is self-hosted and invite-only. The first user becomes the administrator during onboarding.
 

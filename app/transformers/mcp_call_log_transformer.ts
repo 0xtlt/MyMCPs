@@ -20,10 +20,17 @@ export default class McpCallLogTransformer extends BaseTransformer<McpCallLog> {
         'errorSummary',
         'arguments',
         'argumentsCaptured',
+        'argumentsBytes',
+        'argumentsRedacted',
         'response',
         'responseCaptured',
+        'responseBytes',
+        'responseRedacted',
         'durationMs',
+        'debugSessionId',
+        'debugSessionElapsedMs',
       ]),
+      startedAt: this.resource.startedAt?.toISO() ?? null,
       createdAt: this.resource.createdAt.toISO()!,
     }
   }

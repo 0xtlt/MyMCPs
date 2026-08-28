@@ -45,6 +45,11 @@ export interface ApiDefinition {
   logs: {
     index: typeof routes['logs.index']
   }
+  debug: {
+    index: typeof routes['debug.index']
+    store: typeof routes['debug.store']
+    update: typeof routes['debug.update']
+  }
   analytics: {
     index: typeof routes['analytics.index']
   }

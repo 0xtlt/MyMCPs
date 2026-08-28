@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-08-28
+
+### Added
+
+- Added per-access-token debug sessions with start, pause, continue, and stop controls, an interactive call timeline, sanitized payload inspection, and input/output size metadata.
+
 ## 2026-08-18
 
 ### Removed

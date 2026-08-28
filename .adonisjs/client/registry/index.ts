@@ -150,6 +150,24 @@ const routes = {
     tokens: [{"old":"/logs","type":0,"val":"logs","end":""}],
     types: placeholder as Registry['logs.index']['types'],
   },
+  'debug.index': {
+    methods: ["GET","HEAD"],
+    pattern: '/debug',
+    tokens: [{"old":"/debug","type":0,"val":"debug","end":""}],
+    types: placeholder as Registry['debug.index']['types'],
+  },
+  'debug.store': {
+    methods: ["POST"],
+    pattern: '/debug-sessions',
+    tokens: [{"old":"/debug-sessions","type":0,"val":"debug-sessions","end":""}],
+    types: placeholder as Registry['debug.store']['types'],
+  },
+  'debug.update': {
+    methods: ["PATCH"],
+    pattern: '/debug-sessions/:id',
+    tokens: [{"old":"/debug-sessions/:id","type":0,"val":"debug-sessions","end":""},{"old":"/debug-sessions/:id","type":1,"val":"id","end":""}],
+    types: placeholder as Registry['debug.update']['types'],
+  },
   'analytics.index': {
     methods: ["GET","HEAD"],
     pattern: '/analytics',
