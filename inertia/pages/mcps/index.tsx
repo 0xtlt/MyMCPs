@@ -384,6 +384,7 @@ export default function McpsIndex({
 
       <Dialog
         isOpen={Boolean(editingMcp)}
+        aria-label={editingMcp ? `Edit ${editingMcp.name}` : undefined}
         onOpenChange={(open) => {
           if (!open) closeEdit()
         }}

@@ -961,6 +961,7 @@ export default function TokensIndex({
 
       <Dialog
         isOpen={Boolean(editingToken)}
+        aria-label={editingToken ? `Edit ${editingToken.name}` : undefined}
         onOpenChange={(open) => {
           if (!open) closeEdit()
         }}

@@ -130,7 +130,7 @@ test.group('access token cleanup', (group) => {
     await dialog.getByRole('button', { name: 'Cancel' }).click()
   })
 
-  test('keeps bulk cleanup and confirmation usable at 768px', async ({
+  test('keeps bulk cleanup usable below and at the 768px breakpoint', async ({
     assert,
     browserContext,
     visit,
@@ -138,7 +138,7 @@ test.group('access token cleanup', (group) => {
     const admin = await createCleanupTokens()
     await browserContext.loginAs(admin)
     const page = await visit('/tokens')
-    await page.setViewportSize({ width: 768, height: 1024 })
+    await page.setViewportSize({ width: 767, height: 1024 })
 
     const gatewayCard = page
       .getByRole('heading', { name: 'Gateway URL' })
@@ -168,5 +168,9 @@ test.group('access token cleanup', (group) => {
       })
     )
     await dialog.getByRole('button', { name: 'Cancel' }).click()
+
+    await page.setViewportSize({ width: 768, height: 1024 })
+    await page.getByRole('group', { name: 'Table' }).waitFor()
+    assert.isTrue(await page.getByRole('checkbox', { name: 'Select all rows' }).isVisible())
   })
 })
