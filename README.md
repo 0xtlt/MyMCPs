@@ -77,6 +77,24 @@ pnpm run typecheck  # Check TypeScript
 pnpm run build      # Create a production build
 ```
 
+### Reset a user password
+
+Run this on the server from the application directory, using the instance's usual environment and database:
+
+```sh
+node ace user:reset-password user@example.com
+```
+
+Enter and confirm the new password at the hidden prompts. Passwords must contain 8–32 characters and are never passed as command-line arguments. The command works for administrator and member accounts without the old password, and exits with a nonzero status if the account does not exist or validation fails.
+
+For Docker Compose (including Coolify), run:
+
+```sh
+docker compose exec mymcps /app/docker-entrypoint.sh node ace user:reset-password user@example.com
+```
+
+The entrypoint loads the persisted application key when needed. Successful resets revoke the account's remember-me tokens. Existing browser sessions can remain active until they expire; MCP access tokens and OAuth connections are unchanged.
+
 ## Releases
 
 GitHub Actions publishes releases without an AI or an external release service:

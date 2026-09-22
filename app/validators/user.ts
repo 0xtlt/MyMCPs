@@ -41,6 +41,16 @@ export const updatePasswordValidator = vine.create({
   passwordConfirmation: vine.string(),
 })
 
+/**
+ * Server-side account recovery without the current password.
+ */
+export const resetPasswordValidator = vine.create({
+  newPassword: password().confirmed({
+    confirmationField: 'passwordConfirmation',
+  }),
+  passwordConfirmation: vine.string(),
+})
+
 export const updateMcpLoggingValidator = vine.create({
   gatewayToolMode: vine.enum(['eager', 'lazy'] as const),
   mcpLogLevel: vine.enum(['off', 'metadata', 'arguments', 'responses'] as const),

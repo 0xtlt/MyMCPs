@@ -2,6 +2,21 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-09-22
+
+### Added
+
+- Added `node ace user:reset-password <email>` for server-side account recovery, with hidden password confirmation, existing password validation, and atomic password hashing and remember-me token revocation. Documented local and Docker Compose usage.
+
+### Changed
+
+- Updated application and development dependencies, refreshed the lockfile, and upgraded pnpm to 12.5.1, bundled Deno to 2.9.7, and pinned GitHub Actions to current releases. TypeScript remains on 6.0.3 because the Adonis assembler and TypeScript ESLint do not support TypeScript 7 yet.
+- Removed pnpm's obsolete module-purge setting for pnpm 12 compatibility and ran the Astryx 0.6 migration checks.
+
+### Fixed
+
+- Preserved accessible names for MCP and access-token edit dialogs after the design-system upgrade.
+
 ## 2026-08-18
 
 ### Removed
