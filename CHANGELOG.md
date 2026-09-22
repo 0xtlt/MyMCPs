@@ -10,6 +10,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
+- Released version [0.4.0](https://github.com/0xtlt/MyMCPs/releases/tag/v0.4.0).
+
 - Updated application and development dependencies, refreshed the lockfile, and upgraded pnpm to 12.5.1, bundled Deno to 2.9.7, and pinned GitHub Actions to current releases. TypeScript remains on 6.0.3 because the Adonis assembler and TypeScript ESLint do not support TypeScript 7 yet.
 - Removed pnpm's obsolete module-purge setting for pnpm 12 compatibility and ran the Astryx 0.6 migration checks.
 
