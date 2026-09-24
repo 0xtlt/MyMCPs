@@ -4,6 +4,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ## 2026-09-24
 
+### Changed
+
+- Released version [0.4.1](https://github.com/0xtlt/MyMCPs/releases/tag/v0.4.1).
+
 ### Fixed
 
 - Share one upstream OAuth refresh across concurrent requests to the same MCP and reload the saved credentials in every caller. Parallel tool calls and health checks no longer reuse a rotating refresh token and accidentally revoke the connection.
