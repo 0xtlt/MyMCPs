@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-09-24
+
+### Fixed
+
+- Share one upstream OAuth refresh across concurrent requests to the same MCP and reload the saved credentials in every caller. Parallel tool calls and health checks no longer reuse a rotating refresh token and accidentally revoke the connection.
+
 ## 2026-09-22
 
 ### Added

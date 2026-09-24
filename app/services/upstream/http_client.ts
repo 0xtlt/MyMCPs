@@ -72,15 +72,16 @@ function buildAuthHeaders(mcp: Mcp): Record<string, string> {
 }
 
 export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstream> {
-  if (!mcp.httpUrl) {
-    throw new Error('HTTP MCP is missing a URL')
-  }
-  const endpoint = parseHttpUrl(mcp.httpUrl, 'MCP URL')
-
   if (mcp.authType === 'auto' && mcp.oauthAccessToken) {
     await refreshOauthAccessToken(mcp)
   }
 
+  // Refresh reloads the model. Resolve the destination and credentials from the
+  // same current configuration, never pair fresh credentials with an old URL.
+  if (!mcp.httpUrl) {
+    throw new Error('HTTP MCP is missing a URL')
+  }
+  const endpoint = parseHttpUrl(mcp.httpUrl, 'MCP URL')
   const headers = buildAuthHeaders(mcp)
   let unauthorizedResponse: UnauthorizedResponse | null = null
   const diagnosticFetch: typeof fetch = async (input, init) => {
