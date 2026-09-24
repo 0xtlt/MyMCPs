@@ -454,11 +454,37 @@ export async function exchangeAuthorizationCode(mcp: Mcp, oauth: OauthSession, c
   await mcp.save()
 }
 
-/**
- * Refresh the access token when expired (or about to expire).
- * Throws when a refresh is required but fails so callers do not use a stale token.
- */
+// The gateway serves parallel requests in one Node process. All model instances
+// of the same MCP must share the rotation, including the save of the new pair.
+// Do not key this by model identity or plaintext credentials.
+const pendingRefreshes = new Map<number, Promise<void>>()
+
+/** Refresh once per MCP; callers never proceed with a stale token on failure. */
 export async function refreshOauthAccessToken(mcp: Mcp) {
+  let pending = pendingRefreshes.get(mcp.id)
+  if (!pending) {
+    pending = refreshCurrentOauthAccessToken(mcp)
+    pendingRefreshes.set(mcp.id, pending)
+  }
+
+  try {
+    await pending
+  } finally {
+    if (pendingRefreshes.get(mcp.id) === pending) {
+      pendingRefreshes.delete(mcp.id)
+    }
+  }
+
+  // Waiting callers have their own Lucid instances. They must use the saved
+  // access token, not the old token from before they joined the shared refresh.
+  await mcp.refresh()
+}
+
+async function refreshCurrentOauthAccessToken(mcp: Mcp) {
+  // A caller can hold an old model even after an earlier rotation has completed.
+  await mcp.refresh()
+  if (mcp.authType !== 'auto') return
+
   const refresh = McpSecretStore.decrypt(mcp.oauthRefreshToken)
   const client = clientInformationFromMcp(mcp)
   const authorizationServerUrl = mcp.oauthIssuer ?? inferIssuer(mcp)
