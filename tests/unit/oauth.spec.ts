@@ -9,6 +9,7 @@ import {
   readOauthSession,
   refreshOauthAccessToken,
   startOauthFlow,
+  usesPastedOauthCallback,
 } from '#services/upstream/oauth'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { createAdmin, createMcp } from '#tests/helpers/factories'
@@ -191,7 +192,12 @@ test.group('MCP OAuth', (group) => {
     assert,
   }) => {
     const originalFetch = globalThis.fetch
-    const requests: Array<{ url: string; body: string; authorization: string | null }> = []
+    const requests: Array<{
+      url: string
+      body: string
+      authorization: string | null
+      userAgent: string | null
+    }> = []
 
     globalThis.fetch = async (input, init) => {
       const request = new Request(input, init)
@@ -199,6 +205,7 @@ test.group('MCP OAuth', (group) => {
         url: request.url,
         body: await request.clone().text(),
         authorization: request.headers.get('Authorization'),
+        userAgent: request.headers.get('User-Agent'),
       })
 
       if (request.url.includes('/.well-known/oauth-protected-resource')) {
@@ -262,6 +269,14 @@ test.group('MCP OAuth', (group) => {
       const registered = JSON.parse(registration!.body)
       assert.equal(registered.client_name, 'Codex')
       assert.deepEqual(registered.redirect_uris, ['http://localhost:45873/callback'])
+      assert.isTrue(usesPastedOauthCallback(mcp))
+      const figmaHostRequests = requests.filter(
+        (request) => new URL(request.url).hostname === 'mcp.figma.com'
+      )
+      assert.isAbove(figmaHostRequests.length, 0)
+      for (const request of figmaHostRequests) {
+        assert.equal(request.userAgent, 'codex-mcp-client/0.0.0')
+      }
       assert.equal(redirect.origin, 'https://www.figma.com')
       assert.equal(redirect.pathname, '/oauth/mcp')
       assert.equal(redirect.searchParams.get('client_id'), 'figma-client-123')
@@ -281,6 +296,95 @@ test.group('MCP OAuth', (group) => {
       )
       assert.include(tokenRequest!.body, 'redirect_uri=http%3A%2F%2Flocalhost%3A45873%2Fcallback')
       assert.equal(McpSecretStore.decrypt(mcp.oauthAccessToken), 'figma-access-token')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test('registers the Strava MCP as Claude Code with the normal app callback', async ({
+    assert,
+  }) => {
+    const originalFetch = globalThis.fetch
+    const requests: Array<{ url: string; body: string; userAgent: string | null }> = []
+
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      requests.push({
+        url: request.url,
+        body: await request.clone().text(),
+        userAgent: request.headers.get('User-Agent'),
+      })
+
+      if (request.url.includes('/.well-known/oauth-protected-resource')) {
+        return jsonResponse({
+          resource: 'https://mcp.strava.com/mcp',
+          authorization_servers: ['https://www.strava.com'],
+          scopes_supported: ['activity:read'],
+        })
+      }
+      if (request.url === 'https://www.strava.com/.well-known/oauth-authorization-server') {
+        return jsonResponse({
+          issuer: 'https://www.strava.com',
+          authorization_endpoint: 'https://www.strava.com/oauth/authorize',
+          token_endpoint: 'https://www.strava.com/oauth/token',
+          registration_endpoint: 'https://mcp.strava.com/register',
+          response_types_supported: ['code'],
+          grant_types_supported: ['authorization_code', 'refresh_token'],
+          token_endpoint_auth_methods_supported: ['none'],
+          code_challenge_methods_supported: ['S256'],
+          scopes_supported: ['activity:read'],
+        })
+      }
+      if (request.url === 'https://mcp.strava.com/register') {
+        return jsonResponse({
+          client_id: 'strava-client-123',
+          redirect_uris: ['http://localhost:3333/mcps/oauth/callback'],
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none',
+          client_name: 'Claude Code',
+        })
+      }
+
+      return new Response('not found', { status: 404 })
+    }
+
+    try {
+      const admin = await createAdmin()
+      const mcp = await createMcp(admin.id, {
+        name: 'Strava',
+        authType: 'auto',
+        httpUrl: 'https://mcp.strava.com/mcp',
+        status: 'draft',
+      })
+      const { session } = fakeSession()
+
+      const redirect = new URL(await startOauthFlow(session, mcp))
+      const registration = requests.find(
+        (request) => request.url === 'https://mcp.strava.com/register'
+      )
+
+      const registered = JSON.parse(registration!.body)
+      assert.equal(registered.client_name, 'Claude Code')
+      assert.deepEqual(registered.redirect_uris, ['http://localhost:3333/mcps/oauth/callback'])
+      assert.isFalse(usesPastedOauthCallback(mcp))
+      assert.equal(registration!.userAgent, 'claude-code/2.1.89 (cli)')
+      const stravaHostRequests = requests.filter(
+        (request) => new URL(request.url).hostname === 'mcp.strava.com'
+      )
+      assert.isAbove(stravaHostRequests.length, 0)
+      for (const request of stravaHostRequests) {
+        assert.equal(request.userAgent, 'claude-code/2.1.89 (cli)')
+      }
+      assert.equal(redirect.origin, 'https://www.strava.com')
+      assert.equal(redirect.pathname, '/oauth/authorize')
+      assert.equal(redirect.searchParams.get('client_id'), 'strava-client-123')
+      assert.equal(
+        redirect.searchParams.get('redirect_uri'),
+        'http://localhost:3333/mcps/oauth/callback'
+      )
+      assert.equal(mcp.oauthRedirectUri, 'http://localhost:3333/mcps/oauth/callback')
+      assert.equal(mcp.oauthClientId, 'strava-client-123')
     } finally {
       globalThis.fetch = originalFetch
     }

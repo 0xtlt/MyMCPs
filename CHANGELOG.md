@@ -6,7 +6,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
-- Detect the Figma remote MCP (`https://mcp.figma.com/mcp`) when connecting OAuth. Figma only registers first-party client names with a localhost redirect, so MyMCPs registers under an allowlisted name, opens Figma in a new tab, and asks the admin to paste the localhost address that tab ends on to finish connecting. Other providers are unchanged.
+- Detect the Figma remote MCP (`https://mcp.figma.com/mcp`) when connecting OAuth. Figma only registers first-party client names with a localhost redirect, so MyMCPs registers as `Codex`, opens Figma in a new tab, and asks the admin to paste the localhost address that tab ends on to finish connecting.
+- Register the Strava remote MCP (`https://mcp.strava.com/mcp`) as `Claude Code`. Upstream HTTP calls to Figma and Strava also use those clients' User-Agent and MCP initialize identity. Other MCP hosts still identify as MyMCPs. Strava uses the normal MyMCPs OAuth callback; only Figma still requires the pasted localhost callback.
 
 ## 2026-09-24
 
