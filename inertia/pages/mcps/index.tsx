@@ -28,6 +28,7 @@ import {
   type McpFormValues,
 } from '~/components/mcp_form_fields'
 import { McpTemplateGallery, type McpTemplate } from '~/components/mcp_template_gallery'
+import { OauthCallbackPaste } from '~/components/oauth_callback_paste'
 
 type McpRow = {
   id: number
@@ -47,6 +48,7 @@ type McpRow = {
   hasAuthHeaderValue: boolean
   hasOauthAccessToken: boolean
   oauthRequired: boolean
+  oauthPastedCallback: boolean
   status: 'draft' | 'ready' | 'error'
   lastError: string | null
   enabled: boolean
@@ -89,6 +91,7 @@ export default function McpsIndex({
   const [createValues, setCreateValues] = useState<McpFormValues>(emptyMcpFormValues)
   const [editValuesOverride, setEditValuesOverride] = useState<McpFormValues | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
+  const [pastingCallbackMcpId, setPastingCallbackMcpId] = useState<number | null>(null)
 
   const editingId =
     editingOverride?.sourceId === editingMcpId ? editingOverride.editingId : editingMcpId
@@ -136,8 +139,21 @@ export default function McpsIndex({
 
   function closeEdit() {
     setIsUpdating(false)
+    setPastingCallbackMcpId(null)
     setEditValuesOverride(null)
     setEditingOverride({ sourceId: editingMcpId, editingId: null })
+  }
+
+  function startOauth(mcp: McpRow) {
+    const startUrl = `/mcps/${mcp.id}/oauth/start`
+    if (!mcp.oauthPastedCallback) {
+      window.location.assign(startUrl)
+      return
+    }
+    // The provider redirects to a loopback address, so this page stays open to
+    // receive the pasted callback.
+    window.open(startUrl, '_blank', 'noopener')
+    setPastingCallbackMcpId(mcp.id)
   }
 
   const columns: TableColumn<McpRow>[] = [
@@ -419,12 +435,17 @@ export default function McpsIndex({
                   content={
                     <LayoutContent isScrollable>
                       <VStack gap={4} hAlign="stretch">
-                        {editingMcp.oauthRequired ? (
+                        {editingMcp.oauthRequired || pastingCallbackMcpId === editingMcp.id ? (
                           <Banner
                             status="warning"
                             title="Authorization required"
-                            description="This MCP requires OAuth. Connect your account to finish setup."
+                            description={
+                              editingMcp.oauthPastedCallback
+                                ? 'This MCP requires OAuth. Connect opens the provider in a new tab; paste the address it ends on below.'
+                                : 'This MCP requires OAuth. Connect your account to finish setup.'
+                            }
                             container="card"
+                            collapsible={false}
                             endContent={
                               <Button
                                 label={editingMcp.hasOauthAccessToken ? 'Re-authorize' : 'Connect'}
@@ -436,12 +457,12 @@ export default function McpsIndex({
                                     ? 'Set APP_URL to connect with OAuth'
                                     : undefined
                                 }
-                                onClick={() =>
-                                  window.location.assign(`/mcps/${editingMcp.id}/oauth/start`)
-                                }
+                                onClick={() => startOauth(editingMcp)}
                               />
                             }
-                          />
+                          >
+                            {editingMcp.oauthPastedCallback ? <OauthCallbackPaste /> : null}
+                          </Banner>
                         ) : editingMcp.lastError ? (
                           <Banner
                             status="error"
@@ -488,9 +509,7 @@ export default function McpsIndex({
                               tooltip={
                                 !appUrlConfigured ? 'Set APP_URL to connect with OAuth' : undefined
                               }
-                              onClick={() =>
-                                window.location.assign(`/mcps/${editingMcp.id}/oauth/start`)
-                              }
+                              onClick={() => startOauth(editingMcp)}
                             />
                           ) : null}
                         </HStack>

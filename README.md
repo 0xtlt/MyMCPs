@@ -51,7 +51,7 @@ Lazy mode exposes `list_mcps`, `tool_search`, and `call_tool` instead of loading
 
 For providers that support MCP OAuth discovery and dynamic client registration, choose **OAuth** when adding the server, save it, then select **Connect OAuth**. Set `APP_URL` to the instance's public HTTPS URL so callback URLs are generated correctly.
 
-The Figma remote MCP (`https://mcp.figma.com/mcp`) only registers client names on its first-party allowlist. MyMCPs detects that URL and registers as `Codex` there automatically; this depends on Figma's allowlist and can stop working if Figma tightens it.
+The Figma remote MCP (`https://mcp.figma.com/mcp`) only registers client names on its first-party allowlist, and only with a localhost redirect. MyMCPs detects that URL and registers as `Codex` there automatically. **Connect** opens Figma in a new tab; after you approve access, that tab lands on a `http://localhost:…/callback?code=…` address that fails to load. Copy it from the address bar and paste it into **Callback address** in the MCP's edit dialog. This depends on Figma's allowlist and can stop working if Figma tightens it.
 
 ## How to deploy to my Coolify
 

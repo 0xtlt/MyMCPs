@@ -1,6 +1,7 @@
 import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { readCachedNpmPackageVersion } from '#services/upstream/deno_runner'
+import { usesPastedOauthCallback } from '#services/upstream/oauth'
 import { BaseTransformer } from '@adonisjs/core/transformers'
 
 export default class McpTransformer extends BaseTransformer<Mcp> {
@@ -32,6 +33,7 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
       hasAuthHeaderValue: McpSecretStore.hasSecret(this.resource.authHeaderValue),
       hasOauthAccessToken: McpSecretStore.hasSecret(this.resource.oauthAccessToken),
       oauthRequired: Boolean(this.resource.oauthRequired),
+      oauthPastedCallback: usesPastedOauthCallback(this.resource),
       npmCachedVersion:
         this.resource.transport === 'npm'
           ? readCachedNpmPackageVersion(this.resource.npmPackage, this.resource.npmVersion)

@@ -154,13 +154,23 @@ function fallbackMetadata(mcp: Mcp, issuer: string): AuthorizationServerMetadata
 }
 
 // Figma's remote MCP only registers clients whose name is on its first-party
-// allowlist, so MyMCPs registers there under a name Figma accepts.
+// allowlist, and only with that client's loopback redirect. MyMCPs registers
+// there under such a name; nothing listens on the loopback URL, so the admin
+// pastes the address the browser lands on back into MyMCPs to finish.
 const FIGMA_MCP_HOSTNAME = 'mcp.figma.com'
 const FIGMA_ALLOWLISTED_CLIENT_NAME = 'Codex'
+const FIGMA_LOOPBACK_REDIRECT_URI = 'http://localhost:45873/callback'
 
-function registrationClientName(mcp: Mcp) {
-  const hostname = mcp.httpUrl ? parseHttpUrl(mcp.httpUrl, 'MCP URL').hostname : null
-  return hostname === FIGMA_MCP_HOSTNAME ? FIGMA_ALLOWLISTED_CLIENT_NAME : 'MyMCPs'
+/** Whether the provider redirects to a loopback URL the admin must paste back. */
+export function usesPastedOauthCallback(mcp: Mcp) {
+  if (mcp.transport !== 'http' || !mcp.httpUrl) {
+    return false
+  }
+  try {
+    return parseHttpUrl(mcp.httpUrl, 'MCP URL').hostname === FIGMA_MCP_HOSTNAME
+  } catch {
+    return false
+  }
 }
 
 function clientInformationFromMcp(mcp: Mcp): OAuthClientInformationMixed | null {
@@ -374,7 +384,8 @@ export function clearOauthSession(session: HttpContext['session'], state: string
  * and create the browser authorization redirect.
  */
 export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) {
-  const redirectUri = oauthCallbackUrl()
+  const pastedCallback = usesPastedOauthCallback(mcp)
+  const redirectUri = pastedCallback ? FIGMA_LOOPBACK_REDIRECT_URI : oauthCallbackUrl()
   const context = await discoverOAuthContext(mcp)
   const existingClient = clientInformationFromMcp(mcp)
   const canReuseExisting =
@@ -394,7 +405,7 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
     }
 
     const clientMetadata: OAuthClientMetadata = {
-      client_name: registrationClientName(mcp),
+      client_name: pastedCallback ? FIGMA_ALLOWLISTED_CLIENT_NAME : 'MyMCPs',
       redirect_uris: [redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],

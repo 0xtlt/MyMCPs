@@ -187,7 +187,7 @@ test.group('MCP OAuth', (group) => {
     }
   })
 
-  test('registers with an allowlisted client name and keeps the issued secret for the Figma MCP', async ({
+  test('registers the Figma MCP with an allowlisted client name and loopback redirect', async ({
     assert,
   }) => {
     const originalFetch = globalThis.fetch
@@ -225,7 +225,7 @@ test.group('MCP OAuth', (group) => {
         return jsonResponse({
           client_id: 'figma-client-123',
           client_secret: 'figma-client-secret',
-          redirect_uris: ['http://localhost:3333/mcps/oauth/callback'],
+          redirect_uris: ['http://localhost:45873/callback'],
           grant_types: ['authorization_code', 'refresh_token'],
           response_types: ['code'],
           token_endpoint_auth_method: 'none',
@@ -259,10 +259,14 @@ test.group('MCP OAuth', (group) => {
         (request) => request.url === 'https://api.figma.com/v1/oauth/mcp/register'
       )
 
-      assert.equal(JSON.parse(registration!.body).client_name, 'Codex')
+      const registered = JSON.parse(registration!.body)
+      assert.equal(registered.client_name, 'Codex')
+      assert.deepEqual(registered.redirect_uris, ['http://localhost:45873/callback'])
       assert.equal(redirect.origin, 'https://www.figma.com')
       assert.equal(redirect.pathname, '/oauth/mcp')
       assert.equal(redirect.searchParams.get('client_id'), 'figma-client-123')
+      assert.equal(redirect.searchParams.get('redirect_uri'), 'http://localhost:45873/callback')
+      assert.equal(mcp.oauthRedirectUri, 'http://localhost:45873/callback')
       assert.equal(McpSecretStore.decrypt(mcp.oauthClientSecret), 'figma-client-secret')
 
       const oauth = await readOauthSession(session, redirect.searchParams.get('state') ?? undefined)
@@ -275,6 +279,7 @@ test.group('MCP OAuth', (group) => {
         tokenRequest!.authorization,
         `Basic ${Buffer.from('figma-client-123:figma-client-secret').toString('base64')}`
       )
+      assert.include(tokenRequest!.body, 'redirect_uri=http%3A%2F%2Flocalhost%3A45873%2Fcallback')
       assert.equal(McpSecretStore.decrypt(mcp.oauthAccessToken), 'figma-access-token')
     } finally {
       globalThis.fetch = originalFetch
