@@ -153,6 +153,16 @@ function fallbackMetadata(mcp: Mcp, issuer: string): AuthorizationServerMetadata
   }
 }
 
+// Figma's remote MCP only registers clients whose name is on its first-party
+// allowlist, so MyMCPs registers there under a name Figma accepts.
+const FIGMA_MCP_HOSTNAME = 'mcp.figma.com'
+const FIGMA_ALLOWLISTED_CLIENT_NAME = 'Codex'
+
+function registrationClientName(mcp: Mcp) {
+  const hostname = mcp.httpUrl ? parseHttpUrl(mcp.httpUrl, 'MCP URL').hostname : null
+  return hostname === FIGMA_MCP_HOSTNAME ? FIGMA_ALLOWLISTED_CLIENT_NAME : 'MyMCPs'
+}
+
 function clientInformationFromMcp(mcp: Mcp): OAuthClientInformationMixed | null {
   if (!mcp.oauthClientId) {
     return null
@@ -384,7 +394,7 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
     }
 
     const clientMetadata: OAuthClientMetadata = {
-      client_name: 'MyMCPs',
+      client_name: registrationClientName(mcp),
       redirect_uris: [redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],

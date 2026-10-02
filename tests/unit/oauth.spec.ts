@@ -177,10 +177,107 @@ test.group('MCP OAuth', (group) => {
       )
       assert.include(tokenBodies[1], 'grant_type=refresh_token')
 
+      const registration = mock.calls.find((call) => call.url === 'https://auth.example/register')
+      assert.equal(JSON.parse(registration!.body).client_name, 'MyMCPs')
+
       clearOauthSession(session, state ?? undefined)
       assert.isNull(await readOauthSession(session, state ?? undefined))
     } finally {
       mock.restore()
+    }
+  })
+
+  test('registers with an allowlisted client name and keeps the issued secret for the Figma MCP', async ({
+    assert,
+  }) => {
+    const originalFetch = globalThis.fetch
+    const requests: Array<{ url: string; body: string; authorization: string | null }> = []
+
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      requests.push({
+        url: request.url,
+        body: await request.clone().text(),
+        authorization: request.headers.get('Authorization'),
+      })
+
+      if (request.url.includes('/.well-known/oauth-protected-resource')) {
+        return jsonResponse({
+          resource: 'https://mcp.figma.com/mcp',
+          authorization_servers: ['https://api.figma.com'],
+          scopes_supported: ['mcp:connect'],
+        })
+      }
+      if (request.url === 'https://api.figma.com/.well-known/oauth-authorization-server') {
+        return jsonResponse({
+          issuer: 'https://api.figma.com',
+          authorization_endpoint: 'https://www.figma.com/oauth/mcp',
+          token_endpoint: 'https://api.figma.com/v1/oauth/token',
+          registration_endpoint: 'https://api.figma.com/v1/oauth/mcp/register',
+          response_types_supported: ['code'],
+          grant_types_supported: ['authorization_code', 'refresh_token'],
+          token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+          code_challenge_methods_supported: ['S256'],
+          scopes_supported: ['mcp:connect'],
+        })
+      }
+      if (request.url === 'https://api.figma.com/v1/oauth/mcp/register') {
+        return jsonResponse({
+          client_id: 'figma-client-123',
+          client_secret: 'figma-client-secret',
+          redirect_uris: ['http://localhost:3333/mcps/oauth/callback'],
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none',
+          client_name: 'Codex',
+        })
+      }
+      if (request.url === 'https://api.figma.com/v1/oauth/token') {
+        return jsonResponse({
+          access_token: 'figma-access-token',
+          token_type: 'bearer',
+          expires_in: 3600,
+          refresh_token: 'figma-refresh-token',
+        })
+      }
+
+      return new Response('not found', { status: 404 })
+    }
+
+    try {
+      const admin = await createAdmin()
+      const mcp = await createMcp(admin.id, {
+        name: 'Figma',
+        authType: 'auto',
+        httpUrl: 'https://mcp.figma.com/mcp',
+        status: 'draft',
+      })
+      const { session } = fakeSession()
+
+      const redirect = new URL(await startOauthFlow(session, mcp))
+      const registration = requests.find(
+        (request) => request.url === 'https://api.figma.com/v1/oauth/mcp/register'
+      )
+
+      assert.equal(JSON.parse(registration!.body).client_name, 'Codex')
+      assert.equal(redirect.origin, 'https://www.figma.com')
+      assert.equal(redirect.pathname, '/oauth/mcp')
+      assert.equal(redirect.searchParams.get('client_id'), 'figma-client-123')
+      assert.equal(McpSecretStore.decrypt(mcp.oauthClientSecret), 'figma-client-secret')
+
+      const oauth = await readOauthSession(session, redirect.searchParams.get('state') ?? undefined)
+      await exchangeAuthorizationCode(mcp, oauth!, 'authorization-code')
+
+      const tokenRequest = requests.find(
+        (request) => request.url === 'https://api.figma.com/v1/oauth/token'
+      )
+      assert.equal(
+        tokenRequest!.authorization,
+        `Basic ${Buffer.from('figma-client-123:figma-client-secret').toString('base64')}`
+      )
+      assert.equal(McpSecretStore.decrypt(mcp.oauthAccessToken), 'figma-access-token')
+    } finally {
+      globalThis.fetch = originalFetch
     }
   })
 
