@@ -51,6 +51,8 @@ Lazy mode exposes `list_mcps`, `tool_search`, and `call_tool` instead of loading
 
 For providers that support MCP OAuth discovery and dynamic client registration, choose **OAuth** when adding the server, save it, then select **Connect OAuth**. Set `APP_URL` to the instance's public HTTPS URL so callback URLs are generated correctly.
 
+The Figma remote MCP (`https://mcp.figma.com/mcp`) only registers client names on its first-party allowlist. MyMCPs detects that URL and registers as `Codex` there automatically; this depends on Figma's allowlist and can stop working if Figma tightens it.
+
 ## How to deploy to my Coolify
 
 This repository includes a production Docker image, a Compose service, and a `coolify.json` profile.

@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-02
+
+### Changed
+
+- Detect the Figma remote MCP (`https://mcp.figma.com/mcp`) when connecting OAuth and register with a client name on Figma's first-party allowlist, so it can be added like any other OAuth MCP. Other providers still see `MyMCPs`.
+
 ## 2026-09-24
 
 ### Changed
