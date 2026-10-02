@@ -20,6 +20,11 @@ import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { requirePublicAppUrl } from '#services/public_url'
 import { oauthSessionValidator } from '#validators/oauth'
+import {
+  allowlistedUpstreamClient,
+  registrationClientName,
+  upstreamIdentityHeaders,
+} from '#services/upstream/allowlisted_client'
 import { fetchWithSameOriginRedirects } from '#services/upstream/safe_fetch'
 import { parseHttpUrl } from '#services/http_url'
 
@@ -63,8 +68,30 @@ function comparableOAuthIssuer(value: string, label: string) {
   return url.pathname === '/' && !url.search ? url.origin : url.toString()
 }
 
-const oauthFetch: typeof fetch = (input, init) =>
-  fetchWithSameOriginRedirects(input, init, 'OAuth endpoint')
+function fetchTargetUrl(input: Parameters<typeof fetch>[0]) {
+  if (input instanceof URL) return input.toString()
+  if (input instanceof Request) return input.url
+  return String(input)
+}
+
+const oauthFetch: typeof fetch = (input, init) => {
+  const identityHeaders = upstreamIdentityHeaders(fetchTargetUrl(input))
+  if (Object.keys(identityHeaders).length === 0) {
+    return fetchWithSameOriginRedirects(input, init, 'OAuth endpoint')
+  }
+
+  const headers = new Headers(input instanceof Request ? input.headers : undefined)
+  if (init?.headers) {
+    new Headers(init.headers).forEach((value, name) => {
+      headers.set(name, value)
+    })
+  }
+  for (const [name, value] of Object.entries(identityHeaders)) {
+    if (!headers.has(name)) headers.set(name, value)
+  }
+
+  return fetchWithSameOriginRedirects(input, { ...init, headers }, 'OAuth endpoint')
+}
 
 function validateOAuthMetadata(metadata: AuthorizationServerMetadata, expectedIssuer?: string) {
   parseHttpUrl(String(metadata.authorization_endpoint), 'OAuth authorization endpoint')
@@ -153,24 +180,19 @@ function fallbackMetadata(mcp: Mcp, issuer: string): AuthorizationServerMetadata
   }
 }
 
-// Figma's remote MCP only registers clients whose name is on its first-party
-// allowlist, and only with that client's loopback redirect. MyMCPs registers
-// there under such a name; nothing listens on the loopback URL, so the admin
-// pastes the address the browser lands on back into MyMCPs to finish.
-const FIGMA_MCP_HOSTNAME = 'mcp.figma.com'
-const FIGMA_ALLOWLISTED_CLIENT_NAME = 'Codex'
-const FIGMA_LOOPBACK_REDIRECT_URI = 'http://localhost:45873/callback'
-
-/** Whether the provider redirects to a loopback URL the admin must paste back. */
+/**
+ * Whether the provider redirects to a loopback URL the admin must paste back.
+ * The loopback URI, when one is required, lives on the allowlisted-client map.
+ */
 export function usesPastedOauthCallback(mcp: Mcp) {
-  if (mcp.transport !== 'http' || !mcp.httpUrl) {
+  if (mcp.transport !== 'http') {
     return false
   }
-  try {
-    return parseHttpUrl(mcp.httpUrl, 'MCP URL').hostname === FIGMA_MCP_HOSTNAME
-  } catch {
-    return false
-  }
+  return Boolean(allowlistedUpstreamClient(mcp.httpUrl)?.loopbackRedirectUri)
+}
+
+function oauthRedirectUri(mcp: Mcp) {
+  return allowlistedUpstreamClient(mcp.httpUrl)?.loopbackRedirectUri ?? oauthCallbackUrl()
 }
 
 function clientInformationFromMcp(mcp: Mcp): OAuthClientInformationMixed | null {
@@ -384,8 +406,7 @@ export function clearOauthSession(session: HttpContext['session'], state: string
  * and create the browser authorization redirect.
  */
 export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) {
-  const pastedCallback = usesPastedOauthCallback(mcp)
-  const redirectUri = pastedCallback ? FIGMA_LOOPBACK_REDIRECT_URI : oauthCallbackUrl()
+  const redirectUri = oauthRedirectUri(mcp)
   const context = await discoverOAuthContext(mcp)
   const existingClient = clientInformationFromMcp(mcp)
   const canReuseExisting =
@@ -405,7 +426,7 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
     }
 
     const clientMetadata: OAuthClientMetadata = {
-      client_name: pastedCallback ? FIGMA_ALLOWLISTED_CLIENT_NAME : 'MyMCPs',
+      client_name: registrationClientName(mcp.httpUrl),
       redirect_uris: [redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],

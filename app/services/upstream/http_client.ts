@@ -2,9 +2,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
-import { applicationVersion } from '#services/application_version'
 import McpSecretStore from '#services/mcp_secret_store'
 import { sanitizeMcpDiagnostic } from '#services/security_redaction'
+import { mcpClientInfoForUrl, upstreamIdentityHeaders } from '#services/upstream/allowlisted_client'
 import { refreshOauthAccessToken } from '#services/upstream/oauth'
 import { fetchWithSameOriginRedirects } from '#services/upstream/safe_fetch'
 import { parseHttpUrl } from '#services/http_url'
@@ -71,6 +71,14 @@ function buildAuthHeaders(mcp: Mcp): Record<string, string> {
   return headers
 }
 
+/** Auth headers plus the spoofed client identity for allowlisted MCP hosts. */
+export function buildUpstreamHeaders(mcp: Mcp): Record<string, string> {
+  return {
+    ...upstreamIdentityHeaders(mcp.httpUrl),
+    ...buildAuthHeaders(mcp),
+  }
+}
+
 export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstream> {
   if (mcp.authType === 'auto' && mcp.oauthAccessToken) {
     await refreshOauthAccessToken(mcp)
@@ -82,7 +90,7 @@ export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstre
     throw new Error('HTTP MCP is missing a URL')
   }
   const endpoint = parseHttpUrl(mcp.httpUrl, 'MCP URL')
-  const headers = buildAuthHeaders(mcp)
+  const headers = buildUpstreamHeaders(mcp)
   let unauthorizedResponse: UnauthorizedResponse | null = null
   const diagnosticFetch: typeof fetch = async (input, init) => {
     const response = await fetchWithSameOriginRedirects(input, init, 'MCP endpoint')
@@ -103,7 +111,7 @@ export async function connectHttpUpstream(mcp: Mcp): Promise<ConnectedHttpUpstre
     fetch: diagnosticFetch,
     requestInit: { headers },
   })
-  const client = new Client({ name: 'mymcps-gateway', version: applicationVersion })
+  const client = new Client(mcpClientInfoForUrl(mcp.httpUrl))
   try {
     await client.connect(transport)
   } catch (error) {
