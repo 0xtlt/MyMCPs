@@ -23,7 +23,7 @@ Setup takes about five minutes: create the application on Strava, paste its two 
 
    The callback domain has no `https://`, no port, and no path. For local development it is `localhost`. MyMCPs shows both values, ready to copy, in the Strava setup dialog.
 
-3. If Strava asks for an application icon, upload any image.
+3. Strava then asks for an application icon (JPG or PNG). Select **Download app icon** in the MyMCPs setup dialog to get one that is ready to upload, or use any image of your own.
 4. Strava now shows the **My API Application** page. Keep it open: you need the **Client ID** (a number) and the **Client Secret**.
 
 Ignore the access token and refresh token printed on that page. They only carry the `read` scope. MyMCPs obtains its own tokens in step 3.
