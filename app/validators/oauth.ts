@@ -30,11 +30,9 @@ export const oauthTokenResponseValidator = vine.create({
 
 /**
  * Query params on `/mcps/oauth/callback` from the authorization server.
- * Strava also reports the scopes the athlete kept checked.
  */
 export const oauthCallbackValidator = vine.create({
   code: vine.string().maxLength(8192).optional(),
   state: vine.string().maxLength(512).optional(),
   error: vine.string().maxLength(1024).optional(),
-  scope: vine.string().maxLength(1024).optional(),
 })
