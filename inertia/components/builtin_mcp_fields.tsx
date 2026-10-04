@@ -7,6 +7,7 @@ import { Link } from '@astryxdesign/core/Link'
 import { Step, Stepper } from '@astryxdesign/core/Stepper'
 import { Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
+import { AppIconDownload } from '~/components/app_icon_download'
 
 /** The instance's public origin, which providers ask for when registering an app. */
 export type PublicApp = { url: string; hostname: string }
@@ -44,9 +45,10 @@ const builtinSetupGuides: Record<string, BuiltinSetupGuide> = {
           size="sm"
         />
         <Text type="supporting" color="secondary">
-          The callback domain has no https:// and no path. If Strava asks for an application icon,
-          any image works.
+          The callback domain has no https:// and no path. Strava then asks for an application icon
+          (JPG or PNG) before it shows the credentials. This one is ready to upload:
         </Text>
+        <AppIconDownload />
       </>
     ),
     clientIdPlaceholder: '123456',
