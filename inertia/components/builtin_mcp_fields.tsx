@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Banner } from '@astryxdesign/core/Banner'
+import { CheckboxInput } from '@astryxdesign/core/CheckboxInput'
 import { CodeBlock } from '@astryxdesign/core/CodeBlock'
 import { VStack } from '@astryxdesign/core/Layout'
 import { Link } from '@astryxdesign/core/Link'
@@ -16,7 +17,10 @@ type BuiltinSetupGuide = {
   createApplication: (publicApp: PublicApp) => ReactNode
   clientIdPlaceholder: string
   credentialsHint: string
-  access: string
+  /** What every authorization can read. */
+  readAccess: string
+  /** What agents can change once write access is allowed. */
+  writeAccess: string
 }
 
 const builtinSetupGuides: Record<string, BuiltinSetupGuide> = {
@@ -47,8 +51,10 @@ const builtinSetupGuides: Record<string, BuiltinSetupGuide> = {
     ),
     clientIdPlaceholder: '123456',
     credentialsHint: 'Both are shown on the My API Application page once the application exists.',
-    access:
-      'MyMCPs asks for read-only access to your profile, activities, routes, and segments, including private ones. Permissions you uncheck on Strava hide the matching tools.',
+    readAccess:
+      'MyMCPs reads your profile, activities, routes, and segments, including private ones. Permissions you uncheck on Strava hide the matching tools.',
+    writeAccess:
+      'Lets agents create manual activities, edit activity details, star segments, and update your weight.',
   },
 }
 
@@ -60,7 +66,12 @@ type Props = {
   builtinKey: string
   clientId: string
   clientSecret: string
-  onChange: (patch: { oauthClientId?: string; oauthClientSecret?: string }) => void
+  writeEnabled: boolean
+  onChange: (patch: {
+    oauthClientId?: string
+    oauthClientSecret?: string
+    builtinWriteEnabled?: boolean
+  }) => void
   errors: Partial<Record<string, string>>
   hasSavedClientSecret: boolean
   isConnected: boolean
@@ -76,6 +87,7 @@ export function BuiltinMcpFields({
   builtinKey,
   clientId,
   clientSecret,
+  writeEnabled,
   onChange,
   errors,
   hasSavedClientSecret,
@@ -153,11 +165,20 @@ export function BuiltinMcpFields({
           </VStack>
         </Step>
         <Step step={2} label={`Connect your ${guide.provider} account`}>
-          <Text type="supporting" color="secondary">
-            {isConnected
-              ? `Connected. ${guide.access}`
-              : `Once this MCP is saved, select Connect and approve access on ${guide.provider}. ${guide.access}`}
-          </Text>
+          <VStack gap={3} hAlign="stretch">
+            <Text type="supporting" color="secondary">
+              {isConnected
+                ? `Connected. ${guide.readAccess}`
+                : `Once this MCP is saved, select Connect and approve access on ${guide.provider}. ${guide.readAccess}`}
+            </Text>
+            <CheckboxInput
+              label="Allow write access"
+              htmlName="builtinWriteEnabled"
+              value={writeEnabled}
+              onChange={(builtinWriteEnabled) => onChange({ builtinWriteEnabled })}
+              description={`${guide.writeAccess} Turning it on applies the next time you connect or re-authorize.`}
+            />
+          </VStack>
         </Step>
       </Stepper>
     </>

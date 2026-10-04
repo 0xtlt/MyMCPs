@@ -51,6 +51,8 @@ type McpRow = {
   hasOauthAccessToken: boolean
   oauthClientId: string | null
   hasOauthClientSecret: boolean
+  builtinWriteEnabled: boolean
+  builtinWriteGranted: boolean
   oauthRequired: boolean
   oauthPastedCallback: boolean
   status: 'draft' | 'ready' | 'error'
@@ -75,6 +77,17 @@ function endpointLabel(mcp: McpRow) {
     return `Built-in · ${builtinProviderName(mcp.builtinKey)} API`
   }
   return mcp.transport === 'http' ? mcp.httpUrl || '—' : mcp.npmPackage || '—'
+}
+
+/** Write access was allowed after the account was connected with read-only scopes. */
+function awaitsWriteAuthorization(mcp: McpRow) {
+  return (
+    mcp.transport === 'builtin' &&
+    mcp.builtinWriteEnabled &&
+    !mcp.builtinWriteGranted &&
+    mcp.hasOauthAccessToken &&
+    !mcp.oauthRequired
+  )
 }
 
 function oauthBannerDescription(mcp: McpRow) {
@@ -480,6 +493,13 @@ export default function McpsIndex({
                           >
                             {editingMcp.oauthPastedCallback ? <OauthCallbackPaste /> : null}
                           </Banner>
+                        ) : awaitsWriteAuthorization(editingMcp) ? (
+                          <Banner
+                            status="warning"
+                            title="Write access not granted yet"
+                            description={`Select Re-authorize and keep the write permissions checked on ${builtinProviderName(editingMcp.builtinKey)}. Until then, only the read tools are available.`}
+                            container="card"
+                          />
                         ) : editingMcp.lastError ? (
                           <Banner
                             status="error"

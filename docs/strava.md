@@ -33,7 +33,9 @@ A new Strava application starts in single-player mode: only the account that cre
 ## 2. Add the MCP in MyMCPs
 
 1. Open **MCPs**, select **Add MCP**, and choose **Strava** (under **Popular** or **Health & fitness**).
-2. Paste the **Client ID** and **Client Secret**, then select **Add MCP**.
+2. Paste the **Client ID** and **Client Secret**.
+3. Leave **Allow write access** unchecked for a read-only MCP, or check it to let agents make changes. See [Write access](#write-access).
+4. Select **Add MCP**.
 
 The secret is encrypted with the instance's `APP_KEY` and is never sent back to the browser. The MCP is saved as a draft until an account is connected.
 
@@ -43,7 +45,7 @@ The secret is encrypted with the instance's `APP_KEY` and is never sent back to 
 2. Strava lists the permissions MyMCPs asks for. Select **Authorize**.
 3. Strava returns you to MyMCPs, which exchanges the code for tokens and checks them with one request to your profile. The MCP status becomes **ready**.
 
-MyMCPs asks for read-only access:
+MyMCPs always asks for these read permissions:
 
 | Strava scope        | What it allows                                       |
 | ------------------- | ---------------------------------------------------- |
@@ -56,9 +58,27 @@ You can uncheck permissions on Strava's screen. MyMCPs records what you granted 
 
 Access tokens last six hours. MyMCPs renews them automatically and stores the rotated refresh token each time.
 
+## Write access
+
+The MCP is read-only unless you check **Allow write access** in its dialog. With it, **Connect** also asks Strava for two more permissions:
+
+| Strava scope     | What it allows                                                   |
+| ---------------- | ---------------------------------------------------------------- |
+| `activity:write` | Create manual activities and edit the details of your activities |
+| `profile:write`  | Update your weight and star or unstar segments                   |
+
+Write tools are exposed only when both conditions hold: write access is allowed in MyMCPs, and Strava granted the matching permission.
+
+- **Turning it on for an account that is already connected** keeps the account connected, but the saved authorization is still read-only. The edit dialog shows **Write access not granted yet**: select **Re-authorize** and keep the new permissions checked on Strava.
+- **Turning it off** hides the write tools from agents immediately. Strava keeps the permission on the authorization until you re-authorize or revoke the application.
+
+Strava's API has no way to delete an activity, so an activity an agent creates by mistake has to be deleted in Strava itself.
+
 ## Tools
 
 Through the gateway, tool names are prefixed with the MCP's slug, such as `strava__list_activities`.
+
+Read tools:
 
 | Tool                     | Returns                                                           |
 | ------------------------ | ----------------------------------------------------------------- |
@@ -80,11 +100,22 @@ Through the gateway, tool names are prefixed with the MCP's slug, such as `strav
 | `list_clubs`             | Clubs you are a member of                                         |
 | `get_gear`               | A bike or pair of shoes and its total distance                    |
 
-Every tool is read-only. Distances and elevations are in meters, durations in seconds, and speeds in meters per second. Responses leave out fields an agent cannot use, such as avatar URLs and encoded map polylines.
+Write tools, available with [write access](#write-access):
+
+| Tool                    | Does                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `create_activity`       | Creates a manual activity: title, sport type, local start time, duration, distance |
+| `update_activity`       | Changes a title, description, sport type, gear, or commute, trainer, muted flags   |
+| `update_athlete_weight` | Sets your weight on your profile                                                   |
+| `star_segment`          | Stars or unstars a segment                                                         |
+
+Strava's API cannot change an activity's visibility, date, distance, or time, and it cannot delete activities.
+
+Distances and elevations are in meters, durations in seconds, and speeds in meters per second. Responses leave out fields an agent cannot use, such as avatar URLs and encoded map polylines.
 
 ## Limits
 
-- **Rate limits.** A Strava application gets 100 read requests per 15 minutes and 1,000 per day by default. Listing tools never calls Strava, so only tool calls count. When the limit is reached, the tool result says so and reports the current usage.
+- **Rate limits.** A Strava application gets 100 read requests per 15 minutes and 1,000 per day by default, within an overall limit of 200 and 2,000 that also counts writes. Listing tools never calls Strava, so only tool calls count. When a limit is reached, the tool result says so and reports the current usage.
 - **Subscription data.** Strava only returns activity zones and segment efforts to athletes with a subscription.
 - **Totals.** `get_athlete_stats` only counts activities visible to Everyone. That is how Strava computes them.
 - **Terms.** Your application is covered by the [Strava API Agreement](https://www.strava.com/legal/api).
@@ -98,6 +129,8 @@ Every tool is read-only. Distances and elevations are in meters, durations in se
 | "Strava rejected the token request … Check the Client ID and Client Secret" | Paste both values again from **My API Application** and save. Saving new credentials disconnects the account, so connect again. |
 | "OAuth error: access_denied"                                                | Access was declined on Strava. Select **Connect** and authorize.                                                                |
 | A tool reports that a Strava permission was not granted                     | Select **Re-authorize** and keep that permission checked.                                                                       |
+| "Write access not granted yet" in the edit dialog                           | Write access was allowed after the account was connected. Select **Re-authorize** and keep the write permissions checked.       |
+| A write tool reports that write access is turned off                        | Check **Allow write access** in the MCP's dialog, save, then **Re-authorize**.                                                  |
 | "Strava rejected the saved authorization"                                   | Access was revoked on Strava. Select **Re-authorize**.                                                                          |
 
 To disconnect completely, delete the MCP in MyMCPs, then revoke the application under **Settings → My Apps** on Strava.

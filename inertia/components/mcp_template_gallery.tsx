@@ -461,7 +461,7 @@ export const mcpTemplates: McpTemplate[] = [
     id: 'strava',
     name: 'Strava',
     description:
-      'Read your activities, training totals, zones, segments, and routes. Runs inside MyMCPs with your own Strava API application.',
+      'Read your activities, training totals, zones, segments, and routes, with optional write access. Runs inside MyMCPs with your own Strava API application.',
     category: 'health',
     popular: true,
     logo: 'strava',

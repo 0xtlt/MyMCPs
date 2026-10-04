@@ -92,3 +92,30 @@ export function isoDateInput(args: Args, name: string) {
   }
   return parsed
 }
+
+export function textInput(args: Args, name: string, maxLength: number) {
+  const raw = args[name]
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'string' || raw.length > maxLength) {
+    throw new BuiltinToolError(`${name} must be text of at most ${maxLength} characters`)
+  }
+  return raw
+}
+
+/**
+ * A wall-clock time in the user's own timezone, which some APIs take as an
+ * ISO 8601 string ending in `Z`. The clock reading is kept as written: an
+ * offset in the input is not converted to UTC.
+ */
+export function localTimestampInput(args: Args, name: string) {
+  const raw = args[name]
+  if (isMissing(raw)) return undefined
+
+  const parsed = typeof raw === 'string' ? DateTime.fromISO(raw.trim(), { setZone: true }) : null
+  if (!parsed?.isValid) {
+    throw new BuiltinToolError(
+      `${name} must be an ISO 8601 local date and time, such as 2026-01-31T18:00:00`
+    )
+  }
+  return parsed.toFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+}

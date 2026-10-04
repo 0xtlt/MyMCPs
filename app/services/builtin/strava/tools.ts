@@ -4,11 +4,13 @@ import {
   enumInput,
   integerInput,
   isoDateInput,
+  localTimestampInput,
   numberInput,
   patternInput,
   required,
+  textInput,
 } from '#services/builtin/tool_input'
-import { stravaGet } from '#services/builtin/strava/api'
+import { stravaGet, stravaRequest } from '#services/builtin/strava/api'
 import {
   activitySummaries,
   compactStravaPayload,
@@ -46,6 +48,11 @@ const DEFAULT_STREAM_KEYS: ReadonlyArray<(typeof STREAM_KEYS)[number]> = [
   'watts',
 ]
 
+const SPORT_TYPE_HINT =
+  'Strava sport type in PascalCase, such as Run, TrailRun, Ride, GravelRide, MountainBikeRide, VirtualRide, Swim, Walk, Hike, WeightTraining, Workout, or Yoga.'
+const MAX_NAME_LENGTH = 255
+const MAX_DESCRIPTION_LENGTH = 5000
+
 const DEFAULT_PAGE_SIZE = 30
 const MAX_PAGE_SIZE = 100
 const DEFAULT_STREAM_POINTS = 200
@@ -82,6 +89,17 @@ function isoTimestamp(args: Args, name: string) {
 
 function idInput(args: Args, name: string) {
   return required(integerInput(args, name, { min: 1 }), name)
+}
+
+function sportTypeInput(args: Args) {
+  return patternInput(args, 'sport_type', /^[A-Z][A-Za-z]{1,39}$/, 'a Strava sport type like Run')
+}
+
+/** The activity as get_activity returns it, without its segment efforts. */
+function activityResult(activity: unknown) {
+  const compacted = compactStravaPayload(activity) as Record<string, unknown>
+  delete compacted.segment_efforts
+  return compacted
 }
 
 async function athleteId(accessToken: string) {
@@ -182,13 +200,10 @@ export const stravaTools: readonly BuiltinTool[] = [
     requiresAnyScope: ACTIVITY_SCOPES,
     run: async (args, { accessToken }) => {
       const includeSegmentEfforts = booleanInput(args, 'include_segment_efforts') ?? false
-      const activity = compactStravaPayload(
-        await stravaGet(accessToken, `/activities/${idInput(args, 'activity_id')}`, {
-          include_all_efforts: includeSegmentEfforts ? true : undefined,
-        })
-      ) as Record<string, unknown>
-      if (!includeSegmentEfforts) delete activity.segment_efforts
-      return activity
+      const activity = await stravaGet(accessToken, `/activities/${idInput(args, 'activity_id')}`, {
+        include_all_efforts: includeSegmentEfforts ? true : undefined,
+      })
+      return includeSegmentEfforts ? compactStravaPayload(activity) : activityResult(activity)
     },
   },
   {
@@ -455,5 +470,169 @@ export const stravaTools: readonly BuiltinTool[] = [
       )
       return compactStravaPayload(await stravaGet(accessToken, `/gear/${gearId}`))
     },
+  },
+  {
+    name: 'create_activity',
+    description: `Create a manual activity on the connected athlete's Strava account, such as a workout recorded without a device. It appears in their feed like any other activity. Strava has no API to delete an activity, so confirm the details with the user first. ${UNITS}`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', maxLength: MAX_NAME_LENGTH, description: 'Activity title.' },
+        sport_type: { type: 'string', description: SPORT_TYPE_HINT },
+        start_date_local: {
+          type: 'string',
+          description:
+            "Start in the athlete's local time as an ISO 8601 date and time, such as 2026-01-31T18:00:00.",
+        },
+        elapsed_time: { type: 'integer', minimum: 1, description: 'Duration in seconds.' },
+        distance: { type: 'number', minimum: 0, description: 'Distance in meters.' },
+        description: { type: 'string', maxLength: MAX_DESCRIPTION_LENGTH },
+        trainer: { type: 'boolean', description: 'Recorded on an indoor trainer or treadmill.' },
+        commute: { type: 'boolean', description: 'Mark the activity as a commute.' },
+      },
+      required: ['name', 'sport_type', 'start_date_local', 'elapsed_time'],
+      additionalProperties: false,
+    },
+    requiresAnyScope: ['activity:write'],
+    write: true,
+    run: async (args, { accessToken }) => {
+      const flag = (name: string) => {
+        const value = booleanInput(args, name)
+        return value === undefined ? undefined : Number(value)
+      }
+      return activityResult(
+        await stravaRequest(accessToken, '/activities', {
+          method: 'POST',
+          form: {
+            name: required(textInput(args, 'name', MAX_NAME_LENGTH)?.trim() || undefined, 'name'),
+            sport_type: required(sportTypeInput(args), 'sport_type'),
+            start_date_local: required(
+              localTimestampInput(args, 'start_date_local'),
+              'start_date_local'
+            ),
+            elapsed_time: required(
+              integerInput(args, 'elapsed_time', { min: 1, max: 30 * 24 * 3600 }),
+              'elapsed_time'
+            ),
+            distance: numberInput(args, 'distance', { min: 0, max: 10_000_000 }),
+            description: textInput(args, 'description', MAX_DESCRIPTION_LENGTH),
+            trainer: flag('trainer'),
+            commute: flag('commute'),
+          },
+        })
+      )
+    },
+  },
+  {
+    name: 'update_activity',
+    description:
+      "Change an activity of the connected athlete: its title, description, sport type, gear, or its commute, trainer, and muted flags. Only the fields you pass are changed. Strava's API cannot change an activity's visibility, date, distance, or time.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...activityIdProperty,
+        name: { type: 'string', maxLength: MAX_NAME_LENGTH, description: 'New title.' },
+        description: {
+          type: 'string',
+          maxLength: MAX_DESCRIPTION_LENGTH,
+          description: 'New description. Pass an empty string to clear it.',
+        },
+        sport_type: { type: 'string', description: SPORT_TYPE_HINT },
+        gear_id: {
+          type: 'string',
+          description:
+            'Gear identifier from get_athlete, such as b1234567, or "none" to remove the gear.',
+        },
+        commute: { type: 'boolean' },
+        trainer: { type: 'boolean' },
+        hide_from_home: {
+          type: 'boolean',
+          description: "Mute the activity so it stays out of followers' home feeds.",
+        },
+      },
+      required: ['activity_id'],
+      additionalProperties: false,
+    },
+    requiresAnyScope: ['activity:write'],
+    write: true,
+    run: async (args, { accessToken }) => {
+      const name = textInput(args, 'name', MAX_NAME_LENGTH)?.trim()
+      if (name === '') {
+        throw new BuiltinToolError('name must not be empty')
+      }
+      const changes = Object.fromEntries(
+        Object.entries({
+          name,
+          description: textInput(args, 'description', MAX_DESCRIPTION_LENGTH),
+          sport_type: sportTypeInput(args),
+          gear_id: patternInput(
+            args,
+            'gear_id',
+            /^([bg]\d{1,20}|none)$/,
+            'a gear identifier such as b1234567, or "none"'
+          ),
+          commute: booleanInput(args, 'commute'),
+          trainer: booleanInput(args, 'trainer'),
+          hide_from_home: booleanInput(args, 'hide_from_home'),
+        }).filter(([, value]) => value !== undefined)
+      )
+      if (Object.keys(changes).length === 0) {
+        throw new BuiltinToolError('Pass at least one field to change')
+      }
+      return activityResult(
+        await stravaRequest(accessToken, `/activities/${idInput(args, 'activity_id')}`, {
+          method: 'PUT',
+          json: changes,
+        })
+      )
+    },
+  },
+  {
+    name: 'update_athlete_weight',
+    description:
+      "Set the connected athlete's weight on their Strava profile, in kilograms. Strava uses it to estimate power and calories.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        weight: { type: 'number', minimum: 20, maximum: 400, description: 'Weight in kilograms.' },
+      },
+      required: ['weight'],
+      additionalProperties: false,
+    },
+    requiresAnyScope: ['profile:write'],
+    write: true,
+    run: async (args, { accessToken }) =>
+      compactStravaPayload(
+        await stravaRequest(accessToken, '/athlete', {
+          method: 'PUT',
+          form: { weight: required(numberInput(args, 'weight', { min: 20, max: 400 }), 'weight') },
+        })
+      ),
+  },
+  {
+    name: 'star_segment',
+    description: 'Star or unstar a segment for the connected athlete.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        segment_id: { type: 'integer', description: 'Segment identifier.' },
+        starred: {
+          type: 'boolean',
+          default: true,
+          description: 'True to star the segment, false to unstar it.',
+        },
+      },
+      required: ['segment_id'],
+      additionalProperties: false,
+    },
+    requiresAnyScope: ['profile:write'],
+    write: true,
+    run: async (args, { accessToken }) =>
+      compactStravaPayload(
+        await stravaRequest(accessToken, `/segments/${idInput(args, 'segment_id')}/starred`, {
+          method: 'PUT',
+          form: { starred: booleanInput(args, 'starred') ?? true },
+        })
+      ),
   },
 ]

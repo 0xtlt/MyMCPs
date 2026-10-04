@@ -466,3 +466,186 @@ test.group('Built-in Strava MCP: gateway', (group) => {
     }
   })
 })
+
+test.group('Built-in Strava MCP: write access', (group) => {
+  group.each.setup(beginTestTransaction)
+  group.each.teardown(rollbackTestTransaction)
+
+  test('stays read-only unless write access is allowed in the form', async ({ client, assert }) => {
+    const admin = await createAdmin()
+    const post = (overrides: Record<string, string>) =>
+      client
+        .post('/mcps')
+        .loginAs(admin)
+        .withCsrfToken()
+        .redirects(0)
+        .form({ ...stravaForm, ...overrides })
+
+    await post({ name: 'Strava read' })
+    await post({ name: 'Strava write', builtinWriteEnabled: 'on' })
+
+    const readOnly = await Mcp.findByOrFail('slug', 'strava-read')
+    const writable = await Mcp.findByOrFail('slug', 'strava-write')
+    assert.isFalse(readOnly.builtinWriteEnabled)
+    assert.isTrue(writable.builtinWriteEnabled)
+  })
+
+  test('requests the write scopes at Connect and exposes the write tools once granted', async ({
+    client,
+    assert,
+  }) => {
+    const strava = mockStrava(({ method, url }) =>
+      method === 'PUT' && url.pathname === '/api/v3/activities/15000000001'
+        ? stravaJson({ id: 15000000001, name: 'Renamed by an agent' })
+        : undefined
+    )
+    try {
+      const admin = await createAdmin({ email: 'writer@example.com' })
+      const mcp = await createStravaMcp(admin.id, { connected: false, writeEnabled: true })
+      const { plaintext } = await createAccessToken(admin.id)
+
+      const login = await client
+        .post('/login')
+        .withCsrfToken()
+        .redirects(0)
+        .form({ email: 'writer@example.com', password: 'password123' })
+      const start = await client
+        .get(`/mcps/${mcp.id}/oauth/start`)
+        .withSession(login.session())
+        .redirects(0)
+      const authorizationUrl = new URL(start.header('location')!)
+      assert.equal(
+        authorizationUrl.searchParams.get('scope'),
+        'read,read_all,profile:read_all,activity:read_all,activity:write,profile:write'
+      )
+
+      const callback = await client
+        .get('/mcps/oauth/callback')
+        .qs({
+          state: authorizationUrl.searchParams.get('state')!,
+          code: 'strava-code',
+          scope: 'read,activity:write,activity:read_all,profile:write,profile:read_all,read_all',
+        })
+        .withSession(start.session())
+        .redirects(0)
+      callback.assertFlashMessage('success', 'OAuth connected')
+
+      const listed = await gatewayRpc(client, plaintext, 'tools/list', {})
+      const names = listed.result!.tools!.map((tool) => tool.name)
+      assert.lengthOf(names, 21)
+      assert.includeMembers(names, [
+        'strava__create_activity',
+        'strava__update_activity',
+        'strava__update_athlete_weight',
+        'strava__star_segment',
+      ])
+
+      const renamed = await gatewayRpc(client, plaintext, 'tools/call', {
+        name: 'strava__update_activity',
+        arguments: { activity_id: 15000000001, name: 'Renamed by an agent' },
+      })
+      assert.isUndefined(renamed.result!.isError)
+      assert.equal(JSON.parse(renamed.result!.content![0].text).name, 'Renamed by an agent')
+      const update = strava.apiRequests().find((request) => request.method === 'PUT')!
+      assert.deepEqual(update.json, { name: 'Renamed by an agent' })
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('keeps the account connected when write access is allowed later and asks to re-authorize', async ({
+    client,
+    assert,
+  }) => {
+    const strava = mockStrava()
+    try {
+      const admin = await createAdmin()
+      const mcp = await createStravaMcp(admin.id)
+      const { plaintext } = await createAccessToken(admin.id)
+
+      const before = await client.get('/mcps').loginAs(admin).withInertia()
+      before.assertInertiaPropsContains({
+        mcps: [{ id: mcp.id, builtinWriteEnabled: false }],
+      })
+
+      const saved = await client
+        .put(`/mcps/${mcp.id}`)
+        .loginAs(admin)
+        .withCsrfToken()
+        .redirects(0)
+        .form({ ...stravaForm, oauthClientSecret: '', builtinWriteEnabled: 'on' })
+      saved.assertFlashMessage('success', 'MCP updated')
+
+      const updated = await Mcp.findOrFail(mcp.id)
+      assert.isTrue(updated.builtinWriteEnabled)
+      assert.equal(updated.status, 'ready')
+      assert.equal(McpSecretStore.decrypt(updated.oauthAccessToken), 'strava-access-token')
+
+      const after = await client.get('/mcps').loginAs(admin).withInertia()
+      after.assertInertiaPropsContains({
+        mcps: [{ id: mcp.id, builtinWriteEnabled: true, builtinWriteGranted: false }],
+      })
+
+      // The saved authorization is still read-only, so agents keep the read tools only.
+      const listed = await gatewayRpc(client, plaintext, 'tools/list', {})
+      assert.lengthOf(listed.result!.tools!, 17)
+      const refused = await gatewayRpc(client, plaintext, 'tools/call', {
+        name: 'strava__update_activity',
+        arguments: { activity_id: 1, name: 'Nope' },
+      })
+      assert.isTrue(refused.result!.isError)
+      assert.include(
+        refused.result!.content![0].text,
+        'needs the Strava permission "activity:write"'
+      )
+      assert.lengthOf(
+        strava.apiRequests().filter((request) => request.method !== 'GET'),
+        0
+      )
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('hides the write tools as soon as write access is turned off', async ({
+    client,
+    assert,
+  }) => {
+    const strava = mockStrava()
+    try {
+      const admin = await createAdmin()
+      const mcp = await createStravaMcp(admin.id, { writeEnabled: true })
+      const { plaintext } = await createAccessToken(admin.id)
+
+      const enabled = await gatewayRpc(client, plaintext, 'tools/list', {})
+      assert.lengthOf(enabled.result!.tools!, 21)
+
+      await client
+        .put(`/mcps/${mcp.id}`)
+        .loginAs(admin)
+        .withCsrfToken()
+        .redirects(0)
+        .form({ ...stravaForm, oauthClientSecret: '' })
+
+      const disabled = await gatewayRpc(client, plaintext, 'tools/list', {})
+      assert.lengthOf(disabled.result!.tools!, 17)
+      const refused = await gatewayRpc(client, plaintext, 'tools/call', {
+        name: 'strava__create_activity',
+        arguments: {
+          name: 'x',
+          sport_type: 'Run',
+          start_date_local: '2026-10-03T08:00:00',
+          elapsed_time: 60,
+        },
+      })
+      assert.isTrue(refused.result!.isError)
+      assert.include(refused.result!.content![0].text, 'write access is turned off for this MCP')
+      assert.lengthOf(
+        strava.apiRequests().filter((request) => request.method !== 'GET'),
+        0
+      )
+    } finally {
+      strava.restore()
+    }
+  })
+})

@@ -1,9 +1,34 @@
 import { test } from '@japa/runner'
+import type { BrowserContext } from 'playwright'
 import Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { createAdmin } from '#tests/helpers/factories'
 import { createStravaMcp, mockStrava } from '#tests/helpers/strava'
+
+/**
+ * Stand in for Strava's consent screen. Playwright does not intercept the
+ * target of a redirect, so read where MyMCPs sends the browser and show a page
+ * whose link returns to the callback the way Strava does on approval, granting
+ * every scope that was requested.
+ */
+async function stubStravaConsent(browserContext: BrowserContext) {
+  const authorizations: URL[] = []
+  await browserContext.route('**/mcps/*/oauth/start', async (route) => {
+    const redirect = await route.fetch({ maxRedirects: 0 })
+    const authorization = new URL(redirect.headers()['location'])
+    authorizations.push(authorization)
+    const callback = new URL(authorization.searchParams.get('redirect_uri')!)
+    callback.searchParams.set('state', authorization.searchParams.get('state')!)
+    callback.searchParams.set('code', 'browser-strava-code')
+    callback.searchParams.set('scope', authorization.searchParams.get('scope')!)
+    await route.fulfill({
+      contentType: 'text/html',
+      body: `<a id="authorize" href="${callback.toString().replaceAll('&', '&amp;')}">Authorize</a>`,
+    })
+  })
+  return authorizations
+}
 
 test.group('Built-in Strava setup', (group) => {
   group.each.setup(beginTestTransaction)
@@ -15,23 +40,7 @@ test.group('Built-in Strava setup', (group) => {
     visit,
   }) => {
     const strava = mockStrava()
-    // Stand in for Strava's consent screen. Playwright does not intercept the
-    // target of a redirect, so read where MyMCPs sends the browser and show a
-    // page whose link returns to the callback the way Strava does on approval.
-    const authorizations: URL[] = []
-    await browserContext.route('**/mcps/*/oauth/start', async (route) => {
-      const redirect = await route.fetch({ maxRedirects: 0 })
-      const authorization = new URL(redirect.headers()['location'])
-      authorizations.push(authorization)
-      const callback = new URL(authorization.searchParams.get('redirect_uri')!)
-      callback.searchParams.set('state', authorization.searchParams.get('state')!)
-      callback.searchParams.set('code', 'browser-strava-code')
-      callback.searchParams.set('scope', 'read,activity:read_all,profile:read_all,read_all')
-      await route.fulfill({
-        contentType: 'text/html',
-        body: `<a id="authorize" href="${callback.toString().replaceAll('&', '&amp;')}">Authorize</a>`,
-      })
-    })
+    const authorizations = await stubStravaConsent(browserContext)
 
     try {
       const admin = await createAdmin()
@@ -56,6 +65,7 @@ test.group('Built-in Strava setup', (group) => {
       assert.equal(await setup.getByRole('radio').count(), 0)
       assert.equal(await setup.locator('input[name="transport"]').inputValue(), 'builtin')
       assert.equal(await setup.locator('input[name="builtinKey"]').inputValue(), 'strava')
+      assert.isFalse(await setup.getByRole('checkbox', { name: 'Allow write access' }).isChecked())
 
       await setup.getByRole('button', { name: 'Add MCP' }).click()
       await setup.getByText('Enter the Client ID of your Strava API application').waitFor()
@@ -105,8 +115,57 @@ test.group('Built-in Strava setup', (group) => {
       const saved = await Mcp.findByOrFail('slug', 'strava')
       assert.equal(saved.status, 'ready')
       assert.equal(McpSecretStore.decrypt(saved.oauthAccessToken), 'strava-access-token')
-      assert.equal(saved.oauthScopes, 'read activity:read_all profile:read_all read_all')
+      assert.equal(saved.oauthScopes, 'read read_all profile:read_all activity:read_all')
+      assert.isFalse(saved.builtinWriteEnabled)
       assert.equal(strava.tokenRequests()[0].form!.get('code'), 'browser-strava-code')
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('asks to re-authorize after write access is allowed on a connected account', async ({
+    assert,
+    browserContext,
+    visit,
+  }) => {
+    const strava = mockStrava()
+    const authorizations = await stubStravaConsent(browserContext)
+
+    try {
+      const admin = await createAdmin()
+      const mcp = await createStravaMcp(admin.id)
+      await browserContext.loginAs(admin)
+      const page = await visit('/mcps')
+
+      await page.getByRole('button', { name: 'Edit' }).click()
+      const edit = page.getByRole('dialog', { name: 'Edit Strava' })
+      assert.equal(await edit.getByText('Write access not granted yet').count(), 0)
+      await edit.getByRole('checkbox', { name: 'Allow write access' }).check()
+      await edit.getByRole('button', { name: 'Save changes' }).click()
+      await page.getByText('MCP updated').waitFor()
+
+      // Saving closes the dialog. The account stays connected with its read-only grant.
+      await page.getByRole('button', { name: 'Edit' }).click()
+      const pending = page.getByRole('dialog', { name: 'Edit Strava' })
+      await pending.getByText('Write access not granted yet').waitFor()
+      assert.isTrue(await pending.getByRole('checkbox', { name: 'Allow write access' }).isChecked())
+
+      await pending.getByRole('button', { name: 'Re-authorize' }).click()
+      await page.locator('#authorize').click()
+      await page.getByText('OAuth connected').waitFor()
+
+      assert.equal(
+        authorizations[0].searchParams.get('scope'),
+        'read,read_all,profile:read_all,activity:read_all,activity:write,profile:write'
+      )
+      const granted = page.getByRole('dialog', { name: 'Edit Strava' })
+      await granted.getByText(/^Connected\./).waitFor()
+      assert.equal(await granted.getByText('Write access not granted yet').count(), 0)
+
+      const saved = await Mcp.findOrFail(mcp.id)
+      assert.isTrue(saved.builtinWriteEnabled)
+      assert.include(saved.oauthScopes!, 'activity:write')
+      assert.include(saved.oauthScopes!, 'profile:write')
     } finally {
       strava.restore()
     }

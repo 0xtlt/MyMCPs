@@ -32,6 +32,18 @@ function isGranted(tool: BuiltinTool, scopes: string[] | null) {
   )
 }
 
+/**
+ * Whether the provider granted any write scope. Unknown scopes count as
+ * granted so the UI does not ask to re-authorize on a guess.
+ */
+export function builtinWriteGranted(mcp: Mcp) {
+  const scopes = grantedScopes(mcp)
+  return (
+    scopes === null ||
+    requireBuiltinMcp(mcp).oauth.writeScopes.some((scope) => scopes.includes(scope))
+  )
+}
+
 function toolError(message: string): CallToolResult {
   return { content: [{ type: 'text', text: message }], isError: true }
 }
@@ -55,7 +67,8 @@ async function authorizedContext(
 
 /**
  * Tool definitions are static, so listing them never calls the provider.
- * Tools whose permission the user unchecked while authorizing are left out.
+ * Write tools are left out until the admin allows write access, and so are
+ * tools whose permission the user unchecked while authorizing.
  */
 export function listBuiltinTools(mcp: Mcp): UpstreamTool[] {
   const definition = requireBuiltinMcp(mcp)
@@ -65,7 +78,7 @@ export function listBuiltinTools(mcp: Mcp): UpstreamTool[] {
 
   const scopes = grantedScopes(mcp)
   return definition.tools
-    .filter((tool) => isGranted(tool, scopes))
+    .filter((tool) => (!tool.write || mcp.builtinWriteEnabled) && isGranted(tool, scopes))
     .map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))
 }
 
@@ -78,6 +91,11 @@ export async function callBuiltinTool(
   const tool = definition.tools.find((candidate) => candidate.name === toolName)
   if (!tool) {
     return toolError(`Unknown ${definition.name} tool: ${toolName}`)
+  }
+  if (tool.write && !mcp.builtinWriteEnabled) {
+    return toolError(
+      `${toolName} changes ${definition.name} data, and write access is turned off for this MCP. An administrator can allow it from the MCPs page in MyMCPs.`
+    )
   }
 
   try {

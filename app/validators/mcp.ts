@@ -61,6 +61,8 @@ const mcpPayload = {
   /** Credentials of the API application the admin registered for a built-in MCP. */
   oauthClientId: vine.string().trim().maxLength(254).optional(),
   oauthClientSecret: vine.string().trim().maxLength(4000).optional(),
+  /** Lets a built-in MCP request write scopes and expose its write tools. */
+  builtinWriteEnabled: vine.boolean().optional(),
   authType,
   authBearer: vine.string().trim().maxLength(4000).optional(),
   authHeaderName: headerName.optional().requiredWhen('authType', '=', 'header'),

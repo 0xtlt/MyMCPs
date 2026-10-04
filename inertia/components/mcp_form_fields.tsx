@@ -36,6 +36,7 @@ export type McpFormValues = {
   builtinKey: string
   oauthClientId: string
   oauthClientSecret: string
+  builtinWriteEnabled: boolean
   authType: McpAuthType
   authBearer: string
   authHeaderName: string
@@ -81,6 +82,7 @@ export function emptyMcpFormValues(): McpFormValues {
     builtinKey: '',
     oauthClientId: '',
     oauthClientSecret: '',
+    builtinWriteEnabled: false,
     authType: 'auto',
     authBearer: '',
     authHeaderName: '',
@@ -100,6 +102,7 @@ export function mcpFormValuesFromRow(mcp: {
   npmEnv: Array<{ name: string; hasValue: boolean }>
   builtinKey: string | null
   oauthClientId: string | null
+  builtinWriteEnabled: boolean
   authType: McpAuthType
   authHeaderName: string | null
   enabled: boolean
@@ -122,6 +125,7 @@ export function mcpFormValuesFromRow(mcp: {
     })),
     builtinKey: mcp.builtinKey ?? '',
     oauthClientId: mcp.oauthClientId ?? '',
+    builtinWriteEnabled: mcp.builtinWriteEnabled,
     authType: mcp.authType,
     authHeaderName: mcp.authHeaderName ?? '',
     enabled: mcp.enabled,
@@ -175,6 +179,7 @@ export function McpFormFields({
           builtinKey={values.builtinKey}
           clientId={values.oauthClientId}
           clientSecret={values.oauthClientSecret}
+          writeEnabled={values.builtinWriteEnabled}
           onChange={onChange}
           errors={errors}
           hasSavedClientSecret={Boolean(secrets.hasOauthClientSecret)}

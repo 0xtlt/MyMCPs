@@ -216,6 +216,8 @@ export async function assignMcpFromPayload(
   mcp.transport = payload.transport
   mcp.httpUrl = nextHttpUrl
   mcp.builtinKey = nextBuiltinKey
+  mcp.builtinWriteEnabled =
+    payload.transport === 'builtin' ? (payload.builtinWriteEnabled ?? false) : false
   mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
   mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
   mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []

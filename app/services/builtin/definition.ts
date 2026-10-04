@@ -29,6 +29,8 @@ export type BuiltinOauthConfig = {
   authorizeUrl: string
   tokenUrl: string
   scopes: readonly string[]
+  /** Requested on top of `scopes` once the admin allows write access. */
+  writeScopes: readonly string[]
   /** RFC 6749 separates scopes with spaces. Some providers expect commas. */
   scopeSeparator: string
   authorizeParams?: Readonly<Record<string, string>>
@@ -49,6 +51,8 @@ export type BuiltinTool = {
   inputSchema: Tool['inputSchema']
   /** The tool needs at least one of these. Omit when any authorization works. */
   requiresAnyScope?: readonly string[]
+  /** Changes data at the provider. Unavailable until the admin allows write access. */
+  write?: true
   /** Returns JSON-serializable data. Throw `BuiltinToolError` for expected failures. */
   run: (args: Record<string, unknown>, context: BuiltinToolContext) => Promise<unknown>
 }

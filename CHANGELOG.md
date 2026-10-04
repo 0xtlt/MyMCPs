@@ -7,7 +7,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 ### Added
 
 - Added built-in MCPs: MCP servers that MyMCPs runs itself for services whose own MCP is closed to self-hosted gateways. They authorize through an API application the admin registers with the service, and their Client Secret and tokens are encrypted like other MCP credentials.
-- Added a built-in Strava MCP with 17 read-only tools for the athlete profile, training totals, zones, activities, activity streams, segments, routes, clubs, and gear. The **Add MCP** dialog walks through creating the Strava API application and shows the Website and Authorization Callback Domain to enter; [docs/strava.md](docs/strava.md) has the full guide.
+- Added a built-in Strava MCP with 17 read tools for the athlete profile, training totals, zones, activities, activity streams, segments, routes, clubs, and gear. It is read-only by default; **Allow write access** adds 4 tools to create manual activities, edit activity details, update the athlete's weight, and star segments. The **Add MCP** dialog walks through creating the Strava API application and shows the Website and Authorization Callback Domain to enter; [docs/strava.md](docs/strava.md) has the full guide.
 
 ### Fixed
 

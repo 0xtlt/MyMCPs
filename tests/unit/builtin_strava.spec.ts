@@ -1,9 +1,9 @@
 import { test } from '@japa/runner'
 import { DateTime } from 'luxon'
 import Mcp from '#models/mcp'
-import { builtinAuthorizationUrl } from '#services/builtin/oauth'
+import { builtinAuthorizationUrl, requestedBuiltinScopes } from '#services/builtin/oauth'
 import { builtinMcp } from '#services/builtin/registry'
-import { callBuiltinTool, listBuiltinTools } from '#services/builtin/runtime'
+import { builtinWriteGranted, callBuiltinTool, listBuiltinTools } from '#services/builtin/runtime'
 import { compactStravaPayload, downsampleStreams } from '#services/builtin/strava/payload'
 import McpSecretStore from '#services/mcp_secret_store'
 import { probeUpstream, testAndUpdateStatus } from '#services/upstream/manager'
@@ -22,14 +22,14 @@ async function connectedStrava(options: Parameters<typeof createStravaMcp>[1] = 
 }
 
 test.group('Built-in Strava MCP: payloads', () => {
-  test('builds the Strava authorization URL with comma-separated read-only scopes', ({
-    assert,
-  }) => {
+  test('builds the Strava authorization URL with comma-separated scopes', ({ assert }) => {
+    const strava = builtinMcp('strava')!
     const url = new URL(
-      builtinAuthorizationUrl(builtinMcp('strava')!, {
+      builtinAuthorizationUrl(strava, {
         clientId: '123456',
         redirectUri: 'https://mcp.example.com/mcps/oauth/callback',
         state: 'state-value',
+        scopes: strava.oauth.scopes,
       })
     )
 
@@ -553,6 +553,298 @@ test.group('Built-in Strava MCP: authorization lifecycle', (group) => {
       assert.equal(mcp.status, 'error')
       assert.isFalse(mcp.oauthRequired)
       assert.include(mcp.lastError!, 'Strava API returned HTTP 503')
+    } finally {
+      strava.restore()
+    }
+  })
+})
+
+test.group('Built-in Strava MCP: write tools', (group) => {
+  group.each.setup(beginTestTransaction)
+  group.each.teardown(rollbackTestTransaction)
+
+  const writeTools = ['create_activity', 'update_activity', 'update_athlete_weight', 'star_segment']
+
+  test('only requests write scopes once write access is allowed', async ({ assert }) => {
+    const strava = builtinMcp('strava')!
+    const readOnly = await connectedStrava({ name: 'Strava read' })
+    const writable = await connectedStrava({ name: 'Strava write', writeEnabled: true })
+
+    assert.deepEqual(requestedBuiltinScopes(strava, readOnly), [
+      'read',
+      'read_all',
+      'profile:read_all',
+      'activity:read_all',
+    ])
+    assert.deepEqual(requestedBuiltinScopes(strava, writable), [
+      'read',
+      'read_all',
+      'profile:read_all',
+      'activity:read_all',
+      'activity:write',
+      'profile:write',
+    ])
+  })
+
+  test('exposes write tools only when allowed here and granted on Strava', async ({ assert }) => {
+    const names = (mcp: Mcp) => listBuiltinTools(mcp).map((tool) => tool.name)
+
+    const readOnly = await connectedStrava({ name: 'Strava read' })
+    assert.lengthOf(names(readOnly), 17)
+    assert.notIncludeMembers(names(readOnly), writeTools)
+
+    const writable = await connectedStrava({ name: 'Strava write', writeEnabled: true })
+    assert.lengthOf(names(writable), 21)
+    assert.includeMembers(names(writable), writeTools)
+
+    // Allowed in MyMCPs after connecting: the saved authorization is still read-only.
+    const awaiting = await connectedStrava({
+      name: 'Strava awaiting',
+      writeEnabled: true,
+      scopes: 'read read_all profile:read_all activity:read_all',
+    })
+    assert.notIncludeMembers(names(awaiting), writeTools)
+    assert.isFalse(builtinWriteGranted(awaiting))
+    assert.isTrue(builtinWriteGranted(writable))
+
+    // The athlete unchecked the profile permission on Strava.
+    const partial = await connectedStrava({
+      name: 'Strava partial',
+      writeEnabled: true,
+      scopes: 'read activity:read_all activity:write',
+    })
+    assert.includeMembers(names(partial), ['create_activity', 'update_activity'])
+    assert.notIncludeMembers(names(partial), ['update_athlete_weight', 'star_segment'])
+
+    // Turned off in MyMCPs while the Strava authorization still carries the scopes.
+    const turnedOff = await connectedStrava({
+      name: 'Strava off',
+      scopes: 'read activity:read_all activity:write profile:write',
+    })
+    assert.notIncludeMembers(names(turnedOff), writeTools)
+  })
+
+  test('refuses write tools while write access is turned off', async ({ assert }) => {
+    const strava = mockStrava()
+    try {
+      const mcp = await connectedStrava({
+        scopes: 'read activity:read_all activity:write profile:write',
+      })
+
+      for (const tool of writeTools) {
+        const result = await callBuiltinTool(mcp, tool, { activity_id: 1, name: 'x' })
+        assert.isTrue(result.isError)
+        assert.include(resultText(result), 'write access is turned off for this MCP')
+      }
+      assert.lengthOf(strava.requests, 0)
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('creates a manual activity with the local start time kept as written', async ({
+    assert,
+  }) => {
+    const strava = mockStrava(({ method, url }) =>
+      method === 'POST' && url.pathname === '/api/v3/activities'
+        ? stravaJson(
+            {
+              ...stravaFixtures.activity,
+              id: 15000000099,
+              name: 'Evening yoga',
+              segment_efforts: [],
+            },
+            201
+          )
+        : undefined
+    )
+    try {
+      const mcp = await connectedStrava({ writeEnabled: true })
+      const result = await callBuiltinTool(mcp, 'create_activity', {
+        name: '  Evening yoga ',
+        sport_type: 'Yoga',
+        start_date_local: '2026-10-03T19:30:00+02:00',
+        elapsed_time: 3600,
+        distance: 0,
+        description: 'Hip mobility',
+        trainer: true,
+      })
+
+      assert.isUndefined(result.isError)
+      const [request] = strava.apiRequests()
+      assert.equal(request.method, 'POST')
+      assert.equal(request.authorization, 'Bearer strava-access-token')
+      assert.deepEqual(Object.fromEntries(request.form!), {
+        name: 'Evening yoga',
+        sport_type: 'Yoga',
+        start_date_local: '2026-10-03T19:30:00Z',
+        elapsed_time: '3600',
+        distance: '0',
+        description: 'Hip mobility',
+        trainer: '1',
+      })
+
+      const created = JSON.parse(resultText(result))
+      assert.equal(created.id, 15000000099)
+      assert.notProperty(created, 'map')
+      assert.notProperty(created, 'segment_efforts')
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('updates only the activity fields that were passed', async ({ assert }) => {
+    const strava = mockStrava(({ method, url }) =>
+      method === 'PUT' && url.pathname === '/api/v3/activities/15000000001'
+        ? stravaJson({ ...stravaFixtures.activity, name: 'Tempo run', description: '' })
+        : undefined
+    )
+    try {
+      const mcp = await connectedStrava({ writeEnabled: true })
+      const result = await callBuiltinTool(mcp, 'update_activity', {
+        activity_id: 15000000001,
+        name: 'Tempo run',
+        description: '',
+        gear_id: 'none',
+        commute: false,
+      })
+
+      assert.isUndefined(result.isError)
+      const [request] = strava.apiRequests()
+      assert.equal(request.method, 'PUT')
+      assert.isNull(request.form)
+      assert.deepEqual(request.json, {
+        name: 'Tempo run',
+        description: '',
+        gear_id: 'none',
+        commute: false,
+      })
+      assert.equal(JSON.parse(resultText(result)).name, 'Tempo run')
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('updates the athlete weight and stars or unstars a segment', async ({ assert }) => {
+    const strava = mockStrava(({ method, url }) => {
+      if (method !== 'PUT') return undefined
+      if (url.pathname === '/api/v3/athlete') {
+        return stravaJson({ ...stravaFixtures.athlete, weight: 68.4 })
+      }
+      if (url.pathname === '/api/v3/segments/229781/starred') {
+        return stravaJson({ id: 229781, name: 'Hawk Hill', starred: false, resource_state: 3 })
+      }
+      return undefined
+    })
+    try {
+      const mcp = await connectedStrava({ writeEnabled: true })
+
+      const athlete = await callBuiltinTool(mcp, 'update_athlete_weight', { weight: 68.4 })
+      assert.equal(JSON.parse(resultText(athlete)).weight, 68.4)
+
+      const segment = await callBuiltinTool(mcp, 'star_segment', {
+        segment_id: 229781,
+        starred: false,
+      })
+      assert.deepEqual(JSON.parse(resultText(segment)), {
+        id: 229781,
+        name: 'Hawk Hill',
+        starred: false,
+      })
+
+      assert.deepEqual(
+        strava
+          .apiRequests()
+          .map((request) => [
+            request.method,
+            request.url.pathname,
+            Object.fromEntries(request.form!),
+          ]),
+        [
+          ['PUT', '/api/v3/athlete', { weight: '68.4' }],
+          ['PUT', '/api/v3/segments/229781/starred', { starred: 'false' }],
+        ]
+      )
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('rejects invalid write arguments before calling Strava', async ({ assert }) => {
+    const strava = mockStrava()
+    try {
+      const mcp = await connectedStrava({ writeEnabled: true })
+      const activity = {
+        name: 'Ride',
+        sport_type: 'Ride',
+        start_date_local: '2026-10-03T08:00:00',
+        elapsed_time: 1800,
+      }
+      const cases: Array<[string, Record<string, unknown>, string]> = [
+        ['create_activity', { ...activity, name: '   ' }, 'name is required'],
+        ['create_activity', { ...activity, sport_type: 'ride; DROP' }, 'sport_type must be'],
+        ['create_activity', { ...activity, start_date_local: 'tomorrow' }, 'start_date_local must'],
+        ['create_activity', { ...activity, elapsed_time: 0 }, 'elapsed_time must be an integer'],
+        ['create_activity', { ...activity, distance: -5 }, 'distance must be a number'],
+        ['update_activity', { activity_id: 1 }, 'Pass at least one field to change'],
+        ['update_activity', { activity_id: 1, name: ' ' }, 'name must not be empty'],
+        ['update_activity', { activity_id: 1, gear_id: '../x' }, 'gear_id must be'],
+        ['update_activity', { name: 'No id' }, 'activity_id is required'],
+        ['update_athlete_weight', { weight: 4 }, 'weight must be a number between 20 and 400'],
+        ['star_segment', { segment_id: 'abc' }, 'segment_id must be an integer'],
+      ]
+
+      for (const [tool, args, message] of cases) {
+        const result = await callBuiltinTool(mcp, tool, args)
+        assert.isTrue(result.isError, `${tool} ${JSON.stringify(args)}`)
+        assert.include(resultText(result), message)
+      }
+      assert.lengthOf(strava.requests, 0)
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('explains write failures reported by Strava', async ({ assert }) => {
+    const responses: Response[] = [
+      stravaJson(
+        {
+          message: 'Authorization Error',
+          errors: [
+            { resource: 'AccessToken', field: 'activity:write_permission', code: 'missing' },
+          ],
+        },
+        401
+      ),
+      stravaJson(
+        {
+          message: 'Bad Request',
+          errors: [{ resource: 'Activity', field: 'sport_type', code: 'invalid' }],
+        },
+        400
+      ),
+      stravaJson({ message: 'Rate Limit Exceeded', errors: [] }, 429, {
+        'X-RateLimit-Limit': '200,2000',
+        'X-RateLimit-Usage': '201,640',
+        'X-ReadRateLimit-Limit': '100,1000',
+        'X-ReadRateLimit-Usage': '12,340',
+      }),
+    ]
+    const strava = mockStrava(({ method }) => (method === 'PUT' ? responses.shift() : undefined))
+    try {
+      const mcp = await connectedStrava({ writeEnabled: true })
+      const rename = async () =>
+        resultText(await callBuiltinTool(mcp, 'update_activity', { activity_id: 7, name: 'New' }))
+
+      assert.include(await rename(), 'Strava permission "activity:write" was not granted')
+      assert.equal(
+        await rename(),
+        'Strava API returned HTTP 400: Bad Request (Activity sport_type invalid)'
+      )
+      assert.include(
+        await rename(),
+        'Strava rate limit reached (201 of 200 requests in 15 minutes, 640 of 2000 today)'
+      )
     } finally {
       strava.restore()
     }

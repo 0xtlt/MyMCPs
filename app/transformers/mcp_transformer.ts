@@ -2,6 +2,8 @@ import type Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
 import { readCachedNpmPackageVersion } from '#services/upstream/deno_runner'
 import { usesPastedOauthCallback } from '#services/upstream/oauth'
+import { builtinMcp } from '#services/builtin/registry'
+import { builtinWriteGranted } from '#services/builtin/runtime'
 import { BaseTransformer } from '@adonisjs/core/transformers'
 
 export default class McpTransformer extends BaseTransformer<Mcp> {
@@ -38,6 +40,10 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
       hasOauthClientSecret:
         this.resource.transport === 'builtin' &&
         McpSecretStore.hasSecret(this.resource.oauthClientSecret),
+      builtinWriteEnabled: Boolean(this.resource.builtinWriteEnabled),
+      // False when write access is on but the saved authorization predates it.
+      builtinWriteGranted:
+        Boolean(builtinMcp(this.resource.builtinKey)) && builtinWriteGranted(this.resource),
       oauthRequired: Boolean(this.resource.oauthRequired),
       oauthPastedCallback: usesPastedOauthCallback(this.resource),
       npmCachedVersion:

@@ -32,6 +32,7 @@ import {
   exchangeBuiltinAuthorizationCode,
   parseOauthScopes,
   refreshBuiltinTokens,
+  requestedBuiltinScopes,
 } from '#services/builtin/oauth'
 import { requireBuiltinMcp } from '#services/builtin/registry'
 
@@ -427,7 +428,12 @@ function startBuiltinOauthFlow(session: HttpContext['session'], mcp: Mcp) {
     state,
   })
 
-  return builtinAuthorizationUrl(definition, { clientId: mcp.oauthClientId, redirectUri, state })
+  return builtinAuthorizationUrl(definition, {
+    clientId: mcp.oauthClientId,
+    redirectUri,
+    state,
+    scopes: requestedBuiltinScopes(definition, mcp),
+  })
 }
 
 /**

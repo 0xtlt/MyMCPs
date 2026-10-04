@@ -14,9 +14,10 @@ export const stravaMcp: BuiltinMcpDefinition = {
     issuer: 'https://www.strava.com',
     authorizeUrl: 'https://www.strava.com/oauth/authorize',
     tokenUrl: 'https://www.strava.com/api/v3/oauth/token',
-    // Read-only. The `_all` scopes add activities and profile data that are
-    // visible to Only You, which the athlete can still uncheck on Strava.
+    // The `_all` scopes add activities and profile data that are visible to
+    // Only You, which the athlete can still uncheck on Strava.
     scopes: ['read', 'read_all', 'profile:read_all', 'activity:read_all'],
+    writeScopes: ['activity:write', 'profile:write'],
     scopeSeparator: ',',
     // Always show the consent screen so re-authorizing can restore a
     // permission that was unchecked the first time.

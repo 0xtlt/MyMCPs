@@ -8,6 +8,7 @@ export type StravaTestRequest = {
   url: URL
   authorization: string | null
   form: URLSearchParams | null
+  json: unknown
 }
 
 type StravaResponder = (
@@ -99,11 +100,13 @@ export function mockStrava(respond: StravaResponder = () => undefined) {
     }
 
     const body = raw.method === 'GET' ? '' : await raw.text()
+    const isJson = raw.headers.get('Content-Type')?.includes('application/json') ?? false
     const request: StravaTestRequest = {
       method: raw.method,
       url,
       authorization: raw.headers.get('Authorization'),
-      form: body ? new URLSearchParams(body) : null,
+      form: body && !isJson ? new URLSearchParams(body) : null,
+      json: body && isJson ? JSON.parse(body) : null,
     }
     requests.push(request)
 
@@ -147,9 +150,14 @@ export async function createStravaMcp(
     connected?: boolean
     scopes?: string | null
     expiresAt?: DateTime | null
+    /** Allow write access and, unless `scopes` says otherwise, grant the write scopes. */
+    writeEnabled?: boolean
   } = {}
 ) {
   const connected = options.connected ?? true
+  const defaultScopes = `read read_all profile:read_all activity:read_all${
+    options.writeEnabled ? ' activity:write profile:write' : ''
+  }`
   const mcp = await createMcp(createdBy, {
     name: options.name ?? 'Strava',
     transport: 'builtin',
@@ -157,6 +165,7 @@ export async function createStravaMcp(
     status: connected ? 'ready' : 'draft',
     oauthRequired: !connected,
   })
+  mcp.builtinWriteEnabled = options.writeEnabled ?? false
   mcp.oauthClientId = '123456'
   mcp.oauthClientSecret = McpSecretStore.encrypt('strava-client-secret')
   if (connected) {
@@ -165,10 +174,7 @@ export async function createStravaMcp(
     mcp.oauthTokenType = 'Bearer'
     mcp.oauthTokenExpiresAt =
       options.expiresAt === undefined ? DateTime.utc().plus({ hours: 5 }) : options.expiresAt
-    mcp.oauthScopes =
-      options.scopes === undefined
-        ? 'read read_all profile:read_all activity:read_all'
-        : options.scopes
+    mcp.oauthScopes = options.scopes === undefined ? defaultScopes : options.scopes
   }
   await mcp.save()
   return Mcp.findOrFail(mcp.id)

@@ -60,7 +60,7 @@ The Strava remote MCP (`https://mcp.strava.com/mcp`) documents Claude Code as it
 
 Some services have an API but no MCP that a self-hosted gateway is allowed to use. MyMCPs implements those MCPs itself: the tools run inside your instance and call the service's public API through an API application that you register with the service.
 
-**Strava** is the first one. Choose **Strava** in the **Add MCP** gallery and follow the steps in the dialog: create an application at [strava.com/settings/api](https://www.strava.com/settings/api) with your instance's hostname as its **Authorization Callback Domain**, paste the Client ID and Client Secret, then select **Connect** to approve read-only access. It does not depend on Strava's client allowlist. See [docs/strava.md](docs/strava.md) for the full walkthrough, the list of tools, and troubleshooting.
+**Strava** is the first one. Choose **Strava** in the **Add MCP** gallery and follow the steps in the dialog: create an application at [strava.com/settings/api](https://www.strava.com/settings/api) with your instance's hostname as its **Authorization Callback Domain**, paste the Client ID and Client Secret, then select **Connect** to approve access. It is read-only unless you check **Allow write access**, which adds tools to create and edit activities. It does not depend on Strava's client allowlist. See [docs/strava.md](docs/strava.md) for the full walkthrough, the list of tools, and troubleshooting.
 
 ## How to deploy to my Coolify
 

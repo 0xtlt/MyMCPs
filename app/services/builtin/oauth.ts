@@ -32,15 +32,23 @@ export function parseOauthScopes(value: string | null | undefined) {
     : []
 }
 
+/** Write scopes are only requested once the admin allowed write access. */
+export function requestedBuiltinScopes(definition: BuiltinMcpDefinition, mcp: Mcp) {
+  return [
+    ...definition.oauth.scopes,
+    ...(mcp.builtinWriteEnabled ? definition.oauth.writeScopes : []),
+  ]
+}
+
 export function builtinAuthorizationUrl(
   definition: BuiltinMcpDefinition,
-  options: { clientId: string; redirectUri: string; state: string }
+  options: { clientId: string; redirectUri: string; state: string; scopes: readonly string[] }
 ) {
   const url = new URL(definition.oauth.authorizeUrl)
   url.searchParams.set('client_id', options.clientId)
   url.searchParams.set('redirect_uri', options.redirectUri)
   url.searchParams.set('response_type', 'code')
-  url.searchParams.set('scope', definition.oauth.scopes.join(definition.oauth.scopeSeparator))
+  url.searchParams.set('scope', options.scopes.join(definition.oauth.scopeSeparator))
   url.searchParams.set('state', options.state)
   for (const [name, value] of Object.entries(definition.oauth.authorizeParams ?? {})) {
     url.searchParams.set(name, value)

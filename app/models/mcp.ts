@@ -36,6 +36,9 @@ export default class Mcp extends McpSchema {
   @column({ consume: (value) => Boolean(value), prepare: (value) => Boolean(value) })
   declare enabled: boolean
 
+  @column({ consume: (value) => Boolean(value), prepare: (value) => Boolean(value) })
+  declare builtinWriteEnabled: boolean
+
   @belongsTo(() => User, { foreignKey: 'createdBy' })
   declare creator: BelongsTo<typeof User>
 
