@@ -5,13 +5,15 @@ import { HStack, VStack } from '@astryxdesign/core/Layout'
 import { RadioList, RadioListItem } from '@astryxdesign/core/RadioList'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { Text } from '@astryxdesign/core/Text'
+import { BuiltinMcpFields, type PublicApp } from '~/components/builtin_mcp_fields'
 
 export type McpAuthType = 'auto' | 'bearer' | 'header'
-export type McpTransport = 'http' | 'npm'
+export type McpTransport = 'http' | 'npm' | 'builtin'
 
 export type McpFormSecrets = {
   hasAuthBearer?: boolean
   hasAuthHeaderValue?: boolean
+  hasOauthClientSecret?: boolean
 }
 
 export type McpEnvironmentVariable = {
@@ -31,6 +33,10 @@ export type McpFormValues = {
   npmVersion: string
   npmArgs: string
   npmEnv: McpEnvironmentVariable[]
+  builtinKey: string
+  oauthClientId: string
+  oauthClientSecret: string
+  builtinWriteEnabled: boolean
   authType: McpAuthType
   authBearer: string
   authHeaderName: string
@@ -46,6 +52,9 @@ type Props = {
   errors?: Errors
   secrets?: McpFormSecrets
   cachedVersion?: string | null
+  /** Built-in MCPs only: where the provider redirects, and whether an account is connected. */
+  publicApp?: PublicApp | null
+  isConnected?: boolean
 }
 
 let nextEnvironmentVariableId = 0
@@ -70,6 +79,10 @@ export function emptyMcpFormValues(): McpFormValues {
     npmVersion: '',
     npmArgs: '',
     npmEnv: [],
+    builtinKey: '',
+    oauthClientId: '',
+    oauthClientSecret: '',
+    builtinWriteEnabled: false,
     authType: 'auto',
     authBearer: '',
     authHeaderName: '',
@@ -87,6 +100,9 @@ export function mcpFormValuesFromRow(mcp: {
   npmVersion: string | null
   npmArgs: string
   npmEnv: Array<{ name: string; hasValue: boolean }>
+  builtinKey: string | null
+  oauthClientId: string | null
+  builtinWriteEnabled: boolean
   authType: McpAuthType
   authHeaderName: string | null
   enabled: boolean
@@ -107,6 +123,9 @@ export function mcpFormValuesFromRow(mcp: {
       hasValue: entry.hasValue,
       originalName: entry.name,
     })),
+    builtinKey: mcp.builtinKey ?? '',
+    oauthClientId: mcp.oauthClientId ?? '',
+    builtinWriteEnabled: mcp.builtinWriteEnabled,
     authType: mcp.authType,
     authHeaderName: mcp.authHeaderName ?? '',
     enabled: mcp.enabled,
@@ -119,9 +138,11 @@ export function McpFormFields({
   errors = {},
   secrets = {},
   cachedVersion,
+  publicApp = null,
+  isConnected = false,
 }: Props) {
-  return (
-    <VStack gap={4} hAlign="stretch">
+  const identityFields = (
+    <>
       <TextInput
         label="Name"
         htmlName="name"
@@ -138,6 +159,41 @@ export function McpFormFields({
         isOptional
         width="100%"
       />
+    </>
+  )
+  const enabledField = (
+    <CheckboxInput
+      label="Enabled"
+      htmlName="enabled"
+      value={values.enabled}
+      onChange={(enabled) => onChange({ enabled })}
+      description="Disabled MCPs are excluded from the gateway"
+    />
+  )
+
+  if (values.transport === 'builtin') {
+    return (
+      <VStack gap={4} hAlign="stretch">
+        {identityFields}
+        <BuiltinMcpFields
+          builtinKey={values.builtinKey}
+          clientId={values.oauthClientId}
+          clientSecret={values.oauthClientSecret}
+          writeEnabled={values.builtinWriteEnabled}
+          onChange={onChange}
+          errors={errors}
+          hasSavedClientSecret={Boolean(secrets.hasOauthClientSecret)}
+          isConnected={isConnected}
+          publicApp={publicApp}
+        />
+        {enabledField}
+      </VStack>
+    )
+  }
+
+  return (
+    <VStack gap={4} hAlign="stretch">
+      {identityFields}
 
       <RadioList
         label="Transport"
@@ -350,13 +406,7 @@ export function McpFormFields({
         </HStack>
       ) : null}
 
-      <CheckboxInput
-        label="Enabled"
-        htmlName="enabled"
-        value={values.enabled}
-        onChange={(enabled) => onChange({ enabled })}
-        description="Disabled MCPs are excluded from the gateway"
-      />
+      {enabledField}
     </VStack>
   )
 }

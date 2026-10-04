@@ -4,11 +4,12 @@
 import vine from '@vinejs/vine'
 
 /**
- * Values we put in the session during the PKCE authorize redirect.
+ * Values we put in the session during the authorize redirect. Built-in MCPs
+ * authenticate with a client secret instead of PKCE and have no code verifier.
  */
 export const oauthSessionValidator = vine.create({
   mcpId: vine.number(),
-  codeVerifier: vine.string().minLength(1),
+  codeVerifier: vine.string().minLength(1).optional(),
   state: vine.string().minLength(1),
   redirectUri: vine.string().url({ require_tld: false }),
   authorizationServerUrl: vine.string().url({ require_tld: false }),
@@ -21,15 +22,19 @@ export const oauthSessionValidator = vine.create({
  */
 export const oauthTokenResponseValidator = vine.create({
   access_token: vine.string().minLength(1),
+  token_type: vine.string().optional(),
   refresh_token: vine.string().optional(),
   expires_in: vine.number().optional(),
+  scope: vine.string().optional(),
 })
 
 /**
  * Query params on `/mcps/oauth/callback` from the authorization server.
+ * Strava also reports the scopes the athlete kept checked.
  */
 export const oauthCallbackValidator = vine.create({
   code: vine.string().maxLength(8192).optional(),
   state: vine.string().maxLength(512).optional(),
   error: vine.string().maxLength(1024).optional(),
+  scope: vine.string().maxLength(1024).optional(),
 })

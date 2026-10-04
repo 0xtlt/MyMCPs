@@ -5,6 +5,7 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 ## What it does
 
 - Connects HTTP and npm-based MCP servers.
+- Includes built-in MCPs for services whose own MCP is closed to self-hosted gateways, starting with Strava.
 - Supports bearer tokens, custom headers, and OAuth.
 - Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
 - Exposes every allowed upstream through `GET` and `POST /mcp`.
@@ -54,6 +55,12 @@ For providers that support MCP OAuth discovery and dynamic client registration, 
 The Figma remote MCP (`https://mcp.figma.com/mcp`) only registers client names on its first-party allowlist, and only with a localhost redirect. MyMCPs detects that URL and registers as `Codex` there automatically. **Connect** opens Figma in a new tab; after you approve access, that tab lands on a `http://localhost:…/callback?code=…` address that fails to load. Copy it from the address bar and paste it into **Callback address** in the MCP's edit dialog. Later requests to that host are also sent as Codex. This depends on Figma's allowlist and can stop working if Figma tightens it.
 
 The Strava remote MCP (`https://mcp.strava.com/mcp`) documents Claude Code as its HTTP client and rejects a generic registration. MyMCPs registers it as `Claude Code` and sends that client's User-Agent and MCP initialize identity on later requests. Strava uses the normal MyMCPs OAuth callback, so **Connect** returns to this app instead of the Figma paste step. Other MCP hosts are unchanged.
+
+### Built-in MCPs
+
+Some services have an API but no MCP that a self-hosted gateway is allowed to use. MyMCPs implements those MCPs itself: the tools run inside your instance and call the service's public API through an API application that you register with the service.
+
+**Strava** is the first one. Choose **Strava** in the **Add MCP** gallery and follow the steps in the dialog: create an application at [strava.com/settings/api](https://www.strava.com/settings/api) with your instance's hostname as its **Authorization Callback Domain**, paste the Client ID and Client Secret, then select **Connect** to approve access. It is read-only unless you check **Allow write access**, which adds tools to create and edit activities. It does not depend on Strava's client allowlist. See [docs/strava.md](docs/strava.md) for the full walkthrough, the list of tools, and troubleshooting.
 
 ## How to deploy to my Coolify
 

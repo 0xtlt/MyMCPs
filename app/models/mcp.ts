@@ -5,7 +5,7 @@ import User from '#models/user'
 import AccessToken from '#models/access_token'
 import McpEnvironmentStore from '#services/mcp_environment_store'
 
-export type McpTransport = 'http' | 'npm'
+export type McpTransport = 'http' | 'npm' | 'builtin'
 export type McpAuthType = 'auto' | 'bearer' | 'header'
 export type McpStatus = 'draft' | 'ready' | 'error'
 
@@ -35,6 +35,9 @@ export default class Mcp extends McpSchema {
 
   @column({ consume: (value) => Boolean(value), prepare: (value) => Boolean(value) })
   declare enabled: boolean
+
+  @column({ consume: (value) => Boolean(value), prepare: (value) => Boolean(value) })
+  declare builtinWriteEnabled: boolean
 
   @belongsTo(() => User, { foreignKey: 'createdBy' })
   declare creator: BelongsTo<typeof User>

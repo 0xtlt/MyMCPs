@@ -64,7 +64,8 @@ export async function createMcp(
     slug: string
     enabled: boolean
     status: 'draft' | 'ready' | 'error'
-    transport: 'http' | 'npm'
+    transport: 'http' | 'npm' | 'builtin'
+    builtinKey: string | null
     authType: 'auto' | 'bearer' | 'header'
     oauthRequired: boolean
     httpUrl: string | null
@@ -80,6 +81,7 @@ export async function createMcp(
     slug: overrides.slug ?? Mcp.slugify(name),
     description: null,
     transport,
+    builtinKey: overrides.builtinKey ?? null,
     httpUrl: overrides.httpUrl ?? (transport === 'http' ? 'http://127.0.0.1:9999/mcp' : null),
     npmPackage: overrides.npmPackage ?? (transport === 'npm' ? '@example/mcp' : null),
     npmVersion: overrides.npmVersion ?? null,
