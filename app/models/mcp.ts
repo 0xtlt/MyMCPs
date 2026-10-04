@@ -5,7 +5,7 @@ import User from '#models/user'
 import AccessToken from '#models/access_token'
 import McpEnvironmentStore from '#services/mcp_environment_store'
 
-export type McpTransport = 'http' | 'npm'
+export type McpTransport = 'http' | 'npm' | 'builtin'
 export type McpAuthType = 'auto' | 'bearer' | 'header'
 export type McpStatus = 'draft' | 'ready' | 'error'
 

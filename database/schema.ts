@@ -217,6 +217,7 @@ export class McpSchema extends BaseModel {
     'authHeaderName',
     'authHeaderValue',
     'authType',
+    'builtinKey',
     'createdAt',
     'createdBy',
     'description',
@@ -257,6 +258,8 @@ export class McpSchema extends BaseModel {
   declare authHeaderValue: string | null
   @column()
   declare authType: string
+  @column()
+  declare builtinKey: string | null
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
   @column()

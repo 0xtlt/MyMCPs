@@ -1,6 +1,7 @@
 import vine from '@vinejs/vine'
+import { BUILTIN_MCP_KEYS } from '#services/builtin/keys'
 
-const transport = vine.enum(['http', 'npm'] as const)
+const transport = vine.enum(['http', 'npm', 'builtin'] as const)
 const authType = vine.enum(['auto', 'bearer', 'header'] as const)
 const reservedNpmEnvNames = ['HOME', 'TMPDIR', 'NO_COLOR']
 
@@ -56,6 +57,10 @@ const mcpPayload = {
         .filter(Boolean)
     }),
   npmEnv: npmEnvironment,
+  builtinKey: vine.enum(BUILTIN_MCP_KEYS).optional().requiredWhen('transport', '=', 'builtin'),
+  /** Credentials of the API application the admin registered for a built-in MCP. */
+  oauthClientId: vine.string().trim().maxLength(254).optional(),
+  oauthClientSecret: vine.string().trim().maxLength(4000).optional(),
   authType,
   authBearer: vine.string().trim().maxLength(4000).optional(),
   authHeaderName: headerName.optional().requiredWhen('authType', '=', 'header'),

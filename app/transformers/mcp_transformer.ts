@@ -16,6 +16,7 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
         'slug',
         'description',
         'transport',
+        'builtinKey',
         'httpUrl',
         'npmPackage',
         'npmVersion',
@@ -32,6 +33,11 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
       hasAuthBearer: McpSecretStore.hasSecret(this.resource.authBearer),
       hasAuthHeaderValue: McpSecretStore.hasSecret(this.resource.authHeaderValue),
       hasOauthAccessToken: McpSecretStore.hasSecret(this.resource.oauthAccessToken),
+      // Other transports register their OAuth client automatically.
+      oauthClientId: this.resource.transport === 'builtin' ? this.resource.oauthClientId : null,
+      hasOauthClientSecret:
+        this.resource.transport === 'builtin' &&
+        McpSecretStore.hasSecret(this.resource.oauthClientSecret),
       oauthRequired: Boolean(this.resource.oauthRequired),
       oauthPastedCallback: usesPastedOauthCallback(this.resource),
       npmCachedVersion:

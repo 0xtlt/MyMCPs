@@ -28,6 +28,7 @@ import {
   type McpFormValues,
 } from '~/components/mcp_form_fields'
 import { McpTemplateGallery, type McpTemplate } from '~/components/mcp_template_gallery'
+import { builtinProviderName, type PublicApp } from '~/components/builtin_mcp_fields'
 import { OauthCallbackPaste } from '~/components/oauth_callback_paste'
 
 type McpRow = {
@@ -35,7 +36,8 @@ type McpRow = {
   name: string
   slug: string
   description: string | null
-  transport: 'http' | 'npm'
+  transport: 'http' | 'npm' | 'builtin'
+  builtinKey: string | null
   httpUrl: string | null
   npmPackage: string | null
   npmVersion: string | null
@@ -47,6 +49,8 @@ type McpRow = {
   hasAuthBearer: boolean
   hasAuthHeaderValue: boolean
   hasOauthAccessToken: boolean
+  oauthClientId: string | null
+  hasOauthClientSecret: boolean
   oauthRequired: boolean
   oauthPastedCallback: boolean
   status: 'draft' | 'ready' | 'error'
@@ -67,7 +71,19 @@ function statusVariant(status: McpRow['status']): 'success' | 'warning' | 'error
 }
 
 function endpointLabel(mcp: McpRow) {
+  if (mcp.transport === 'builtin') {
+    return `Built-in · ${builtinProviderName(mcp.builtinKey)} API`
+  }
   return mcp.transport === 'http' ? mcp.httpUrl || '—' : mcp.npmPackage || '—'
+}
+
+function oauthBannerDescription(mcp: McpRow) {
+  if (mcp.transport === 'builtin') {
+    return `Connect opens ${builtinProviderName(mcp.builtinKey)} so you can approve access with your account.`
+  }
+  return mcp.oauthPastedCallback
+    ? 'This MCP requires OAuth. Connect opens the provider in a new tab; paste the address it ends on below.'
+    : 'This MCP requires OAuth. Connect your account to finish setup.'
 }
 
 function cachedVersionLabel(mcp: McpRow) {
@@ -77,10 +93,12 @@ function cachedVersionLabel(mcp: McpRow) {
 export default function McpsIndex({
   mcps,
   editingMcpId = null,
+  publicApp = null,
   appUrlConfigured,
 }: {
   mcps: McpRow[]
   editingMcpId?: number | null
+  publicApp?: PublicApp | null
   appUrlConfigured: boolean
 }) {
   const { isMobile } = useAppShellMobile()
@@ -204,7 +222,7 @@ export default function McpsIndex({
       width: pixel(100),
       renderCell: (mcp) => (
         <Text type="supporting" color="secondary">
-          {mcp.authType}
+          {mcp.transport === 'builtin' ? 'oauth' : mcp.authType}
         </Text>
       ),
     },
@@ -347,9 +365,11 @@ export default function McpsIndex({
                       selectedTemplate ? `Set up ${selectedTemplate.name}` : 'Set up a custom MCP'
                     }
                     subtitle={
-                      selectedTemplate
-                        ? 'Review the prefilled settings, then add this MCP'
-                        : 'Register an HTTP or npm upstream server'
+                      createValues.transport === 'builtin'
+                        ? 'Runs inside MyMCPs with your own API application'
+                        : selectedTemplate
+                          ? 'Review the prefilled settings, then add this MCP'
+                          : 'Register an HTTP or npm upstream server'
                     }
                     onOpenChange={setIsCreateOpen}
                   />
@@ -371,6 +391,7 @@ export default function McpsIndex({
                           setCreateValues((current) => ({ ...current, ...patch }))
                         }
                         errors={errors}
+                        publicApp={publicApp}
                       />
                     </VStack>
                   </LayoutContent>
@@ -439,11 +460,7 @@ export default function McpsIndex({
                           <Banner
                             status="warning"
                             title="Authorization required"
-                            description={
-                              editingMcp.oauthPastedCallback
-                                ? 'This MCP requires OAuth. Connect opens the provider in a new tab; paste the address it ends on below.'
-                                : 'This MCP requires OAuth. Connect your account to finish setup.'
-                            }
+                            description={oauthBannerDescription(editingMcp)}
                             container="card"
                             collapsible={false}
                             endContent={
@@ -525,8 +542,11 @@ export default function McpsIndex({
                           secrets={{
                             hasAuthBearer: editingMcp.hasAuthBearer,
                             hasAuthHeaderValue: editingMcp.hasAuthHeaderValue,
+                            hasOauthClientSecret: editingMcp.hasOauthClientSecret,
                           }}
                           cachedVersion={editingMcp.npmCachedVersion}
+                          publicApp={publicApp}
+                          isConnected={editingMcp.hasOauthAccessToken && !editingMcp.oauthRequired}
                         />
                       </VStack>
                     </LayoutContent>

@@ -17,6 +17,8 @@ import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
 import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
 import { parseHttpUrl } from '#services/http_url'
+import { builtinMcp } from '#services/builtin/registry'
+import { publicOauthAppUrl } from '#services/public_url'
 
 type McpPayload = Infer<typeof createMcpValidator>
 
@@ -129,6 +131,53 @@ function clearUnusedAuthSecrets(mcp: Mcp) {
   }
 }
 
+/**
+ * Save the API application credentials of a built-in MCP. Tokens belong to
+ * the application that issued them, so new credentials disconnect the account.
+ */
+function assignBuiltinCredentials(mcp: Mcp, payload: McpPayload) {
+  if (payload.transport !== 'builtin') {
+    return
+  }
+
+  const definition = builtinMcp(payload.builtinKey)!
+  const clientId = payload.oauthClientId ?? ''
+  const savedSecret = McpSecretStore.decrypt(mcp.oauthClientSecret)
+  const clientSecret = payload.oauthClientSecret || savedSecret
+
+  // Report both fields at once: they are copied from the same provider page.
+  const failures: Array<{ field: string; message: string; rule: string }> = []
+  if (!clientId) {
+    failures.push({
+      field: 'oauthClientId',
+      message: `Enter the Client ID of your ${definition.name} API application`,
+      rule: 'required',
+    })
+  } else if (definition.oauth.clientIdPattern && !definition.oauth.clientIdPattern.test(clientId)) {
+    failures.push({
+      field: 'oauthClientId',
+      message: definition.oauth.clientIdHint ?? `${definition.name} Client ID is not valid`,
+      rule: 'regex',
+    })
+  }
+  if (!clientSecret) {
+    failures.push({
+      field: 'oauthClientSecret',
+      message: `Enter the Client Secret of your ${definition.name} API application`,
+      rule: 'required',
+    })
+  }
+  if (failures.length > 0 || !clientSecret) {
+    throw new errors.E_VALIDATION_ERROR(failures)
+  }
+
+  if (mcp.oauthClientId !== clientId || savedSecret !== clientSecret) {
+    clearOAuthConnection(mcp)
+  }
+  mcp.oauthClientId = clientId
+  mcp.oauthClientSecret = McpSecretStore.encrypt(clientSecret)
+}
+
 function clearOAuthConnection(mcp: Mcp) {
   mcp.oauthAuthorizeUrl = null
   mcp.oauthTokenUrl = null
@@ -152,7 +201,11 @@ export async function assignMcpFromPayload(
   options?: { excludeId?: number }
 ) {
   const nextHttpUrl = payload.transport === 'http' ? normalizedHttpUrl(payload.httpUrl ?? '') : null
-  const oauthServerChanged = mcp.transport !== payload.transport || mcp.httpUrl !== nextHttpUrl
+  const nextBuiltinKey = payload.transport === 'builtin' ? (payload.builtinKey ?? null) : null
+  const oauthServerChanged =
+    mcp.transport !== payload.transport ||
+    mcp.httpUrl !== nextHttpUrl ||
+    (mcp.builtinKey ?? null) !== nextBuiltinKey
   if (oauthServerChanged) {
     clearOAuthConnection(mcp)
   }
@@ -162,15 +215,18 @@ export async function assignMcpFromPayload(
   mcp.description = payload.description || null
   mcp.transport = payload.transport
   mcp.httpUrl = nextHttpUrl
+  mcp.builtinKey = nextBuiltinKey
   mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
   mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
   mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
   assignNpmEnvironment(mcp, payload)
-  mcp.authType = payload.authType
-  mcp.authHeaderName = payload.authType === 'header' ? (payload.authHeaderName ?? null) : null
+  // Built-in MCPs always authorize through their provider's OAuth.
+  mcp.authType = payload.transport === 'builtin' ? 'auto' : payload.authType
+  mcp.authHeaderName = mcp.authType === 'header' ? (payload.authHeaderName ?? null) : null
   mcp.enabled = payload.enabled ?? false
   clearUnusedAuthSecrets(mcp)
   applySecrets(mcp, payload)
+  assignBuiltinCredentials(mcp, payload)
 }
 
 async function uniqueSlug(name: string, excludeId?: number) {
@@ -199,9 +255,12 @@ export default class McpsController {
       typeof editingMcpIdRaw === 'number' && Number.isFinite(editingMcpIdRaw)
         ? editingMcpIdRaw
         : null
+    const appUrl = publicOauthAppUrl()
     return inertia.render('mcps/index', {
       mcps: McpTransformer.transform(mcps),
       editingMcpId,
+      // Providers of built-in MCPs ask for these when the admin registers an app.
+      publicApp: appUrl ? { url: appUrl, hostname: new URL(appUrl).hostname } : null,
     })
   }
 
@@ -311,7 +370,10 @@ export default class McpsController {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')
     }
-    if (mcp.authType !== 'auto' || (!mcp.oauthRequired && !mcp.oauthAccessToken)) {
+    const usesOauth =
+      mcp.transport === 'builtin' ||
+      (mcp.authType === 'auto' && (mcp.oauthRequired || Boolean(mcp.oauthAccessToken)))
+    if (!usesOauth) {
       session.flash('error', 'This MCP does not require OAuth authorization')
       session.flash('editingMcpId', mcp.id)
       return response.redirect().toRoute('mcps.index')
@@ -327,7 +389,12 @@ export default class McpsController {
   }
 
   async oauthCallback({ request, response, session }: HttpContext) {
-    const { code, state, error: oauthError } = await request.validateUsing(oauthCallbackValidator)
+    const {
+      code,
+      state,
+      error: oauthError,
+      scope,
+    } = await request.validateUsing(oauthCallbackValidator)
     const oauth = await readOauthSession(session, state)
     clearOauthSession(session, state)
 
@@ -360,7 +427,7 @@ export default class McpsController {
     }
 
     try {
-      await exchangeAuthorizationCode(mcp, oauth, code)
+      await exchangeAuthorizationCode(mcp, oauth, code, scope)
       await testAndUpdateStatus(mcp)
       if (mcp.status === 'ready') {
         session.flash('success', 'OAuth connected')

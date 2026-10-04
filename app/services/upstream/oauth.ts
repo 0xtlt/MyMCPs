@@ -27,6 +27,13 @@ import {
 } from '#services/upstream/allowlisted_client'
 import { fetchWithSameOriginRedirects } from '#services/upstream/safe_fetch'
 import { parseHttpUrl } from '#services/http_url'
+import {
+  builtinAuthorizationUrl,
+  exchangeBuiltinAuthorizationCode,
+  parseOauthScopes,
+  refreshBuiltinTokens,
+} from '#services/builtin/oauth'
+import { requireBuiltinMcp } from '#services/builtin/registry'
 
 type OauthSession = Infer<typeof oauthSessionValidator>
 
@@ -42,7 +49,7 @@ type OAuthStartOptions = {
   authorizationServerUrl: string
   resource?: string
   clientId: string
-  codeVerifier: string
+  codeVerifier?: string
   state: string
 }
 
@@ -402,10 +409,36 @@ export function clearOauthSession(session: HttpContext['session'], state: string
 }
 
 /**
+ * Built-in MCPs use the API application the admin registered with the
+ * provider, so there is nothing to discover or register.
+ */
+function startBuiltinOauthFlow(session: HttpContext['session'], mcp: Mcp) {
+  const definition = requireBuiltinMcp(mcp)
+  if (!mcp.oauthClientId || !McpSecretStore.decrypt(mcp.oauthClientSecret)) {
+    throw new Error(`Add the ${definition.name} Client ID and Client Secret before connecting`)
+  }
+
+  const redirectUri = oauthCallbackUrl()
+  const state = base64Url(randomBytes(24))
+  startOauthSession(session, mcp, {
+    redirectUri,
+    authorizationServerUrl: definition.oauth.issuer,
+    clientId: mcp.oauthClientId,
+    state,
+  })
+
+  return builtinAuthorizationUrl(definition, { clientId: mcp.oauthClientId, redirectUri, state })
+}
+
+/**
  * Discover an upstream's OAuth provider, register a public client when needed,
  * and create the browser authorization redirect.
  */
 export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) {
+  if (mcp.transport === 'builtin') {
+    return startBuiltinOauthFlow(session, mcp)
+  }
+
   const redirectUri = oauthRedirectUri(mcp)
   const context = await discoverOAuthContext(mcp)
   const existingClient = clientInformationFromMcp(mcp)
@@ -473,10 +506,35 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
   return parseHttpUrl(authorizationUrl.toString(), 'OAuth authorization URL').toString()
 }
 
-export async function exchangeAuthorizationCode(mcp: Mcp, oauth: OauthSession, code: string) {
+/**
+ * `grantedScope` is the callback's `scope` parameter, for providers that let
+ * the user uncheck permissions and report what is left there.
+ */
+export async function exchangeAuthorizationCode(
+  mcp: Mcp,
+  oauth: OauthSession,
+  code: string,
+  grantedScope?: string
+) {
   const client = clientInformationFromMcp(mcp)
   if (!client || client.client_id !== oauth.clientId) {
     throw new Error('OAuth client information is no longer available')
+  }
+
+  if (mcp.transport === 'builtin') {
+    const tokens = await exchangeBuiltinAuthorizationCode(requireBuiltinMcp(mcp), mcp, code)
+    const scopes = parseOauthScopes(tokens.scope ?? grantedScope)
+    saveOAuthTokens(mcp, { ...tokens, scope: undefined })
+    // Never keep the scopes of an earlier authorization for these tokens.
+    mcp.oauthScopes = scopes.length > 0 ? scopes.join(' ') : null
+    mcp.status = 'ready'
+    mcp.lastError = null
+    await mcp.save()
+    return
+  }
+
+  if (!oauth.codeVerifier) {
+    throw new Error('OAuth session is missing its PKCE code verifier')
   }
 
   const metadata = await metadataForAuthorizationServer(mcp, oauth.authorizationServerUrl)
@@ -528,13 +586,28 @@ async function refreshCurrentOauthAccessToken(mcp: Mcp) {
   if (mcp.authType !== 'auto') return
 
   const refresh = McpSecretStore.decrypt(mcp.oauthRefreshToken)
+  const isFresh =
+    mcp.oauthTokenExpiresAt && mcp.oauthTokenExpiresAt > DateTime.utc().plus({ minutes: 2 })
+
+  if (mcp.transport === 'builtin') {
+    if (!refresh || isFresh) return
+    const tokens = await refreshBuiltinTokens(requireBuiltinMcp(mcp), mcp, refresh)
+    saveOAuthTokens(mcp, {
+      ...tokens,
+      refresh_token: tokens.refresh_token ?? refresh,
+      scope: undefined,
+    })
+    await mcp.save()
+    return
+  }
+
   const client = clientInformationFromMcp(mcp)
   const authorizationServerUrl = mcp.oauthIssuer ?? inferIssuer(mcp)
   if (!refresh || !client || !authorizationServerUrl) {
     return
   }
 
-  if (mcp.oauthTokenExpiresAt && mcp.oauthTokenExpiresAt > DateTime.utc().plus({ minutes: 2 })) {
+  if (isFresh) {
     return
   }
 

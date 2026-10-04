@@ -16,6 +16,8 @@ import {
   type ConnectedDenoUpstream,
 } from '#services/upstream/deno_runner'
 import { sanitizeMcpDiagnostic } from '#services/security_redaction'
+import { BuiltinAuthorizationError } from '#services/builtin/definition'
+import { callBuiltinTool, listBuiltinTools, verifyBuiltin } from '#services/builtin/runtime'
 
 export type ConnectedUpstream = ConnectedHttpUpstream | ConnectedDenoUpstream
 
@@ -51,6 +53,9 @@ export async function probeUpstream(mcp: Mcp): Promise<UpstreamTool[]> {
   if (mcp.transport === 'npm') {
     return listDenoTools(mcp)
   }
+  if (mcp.transport === 'builtin') {
+    return listBuiltinTools(mcp)
+  }
   throw new Error(`Unsupported transport: ${mcp.transport}`)
 }
 
@@ -84,6 +89,10 @@ export async function callUpstreamTool(
   toolName: string,
   args: Record<string, unknown> | undefined
 ) {
+  if (mcp.transport === 'builtin') {
+    return callBuiltinTool(mcp, toolName, args)
+  }
+
   const connected = await connectUpstream(mcp)
   try {
     return await connected.client.callTool({
@@ -95,7 +104,35 @@ export async function callUpstreamTool(
   }
 }
 
+/**
+ * Listing built-in tools is local, so health comes from one authenticated
+ * provider request instead.
+ */
+async function testBuiltinAndUpdateStatus(mcp: Mcp) {
+  const hadAccessToken = Boolean(McpSecretStore.decrypt(mcp.oauthAccessToken))
+  try {
+    await verifyBuiltin(mcp)
+    mcp.status = 'ready'
+    mcp.lastError = null
+    mcp.oauthRequired = false
+  } catch (error) {
+    const authorizationRequired = error instanceof BuiltinAuthorizationError
+    mcp.status = authorizationRequired && !hadAccessToken ? 'draft' : 'error'
+    mcp.lastError =
+      authorizationRequired && !hadAccessToken
+        ? 'OAuth authorization required'
+        : (sanitizeMcpDiagnostic(error, mcp) ?? 'Unknown error')
+    mcp.oauthRequired = authorizationRequired
+  }
+  await mcp.save()
+  return mcp
+}
+
 export async function testAndUpdateStatus(mcp: Mcp) {
+  if (mcp.transport === 'builtin') {
+    return testBuiltinAndUpdateStatus(mcp)
+  }
+
   try {
     await probeUpstream(mcp)
     mcp.status = 'ready'
