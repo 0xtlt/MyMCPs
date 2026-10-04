@@ -12,6 +12,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 ### Fixed
 
 - Stopped the MCP dialog header from sliding out of view when a validation error was focused in a form taller than the dialog.
+- Report a malformed OAuth callback as "Invalid OAuth callback" instead of returning to the app without a message.
 
 ## 2026-10-02
 

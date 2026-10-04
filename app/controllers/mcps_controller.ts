@@ -178,6 +178,19 @@ function assignBuiltinCredentials(mcp: Mcp, payload: McpPayload) {
   mcp.oauthClientSecret = McpSecretStore.encrypt(clientSecret)
 }
 
+/**
+ * Strava reports the granted scopes as `scope=read,activity:read_all`, and the
+ * query parser splits comma-separated values into an array. The value is only
+ * a hint that is sanitized before use, so it is read outside the validator and
+ * can never fail the callback.
+ */
+function grantedScopeFromCallback(value: unknown) {
+  const scopes = (Array.isArray(value) ? value : [value]).filter(
+    (scope): scope is string => typeof scope === 'string'
+  )
+  return scopes.length > 0 ? scopes.join(' ') : undefined
+}
+
 function clearOAuthConnection(mcp: Mcp) {
   mcp.oauthAuthorizeUrl = null
   mcp.oauthTokenUrl = null
@@ -391,12 +404,16 @@ export default class McpsController {
   }
 
   async oauthCallback({ request, response, session }: HttpContext) {
-    const {
-      code,
-      state,
-      error: oauthError,
-      scope,
-    } = await request.validateUsing(oauthCallbackValidator)
+    let callback
+    try {
+      callback = await request.validateUsing(oauthCallbackValidator)
+    } catch (error) {
+      if (!(error instanceof errors.E_VALIDATION_ERROR)) throw error
+      // A validation error would send the browser back without a word.
+      session.flash('error', 'Invalid OAuth callback')
+      return response.redirect().withQs(false).toRoute('mcps.index')
+    }
+    const { code, state, error: oauthError } = callback
     const oauth = await readOauthSession(session, state)
     clearOauthSession(session, state)
 
@@ -429,7 +446,12 @@ export default class McpsController {
     }
 
     try {
-      await exchangeAuthorizationCode(mcp, oauth, code, scope)
+      await exchangeAuthorizationCode(
+        mcp,
+        oauth,
+        code,
+        grantedScopeFromCallback(request.input('scope'))
+      )
       await testAndUpdateStatus(mcp)
       if (mcp.status === 'ready') {
         session.flash('success', 'OAuth connected')

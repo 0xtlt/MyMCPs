@@ -237,10 +237,11 @@ test.group('Built-in Strava MCP: OAuth', (group) => {
       assert.notInclude(authorizationUrl.toString(), 'strava-client-secret')
       assert.lengthOf(strava.requests, 0)
 
+      // Strava separates the granted scopes with literal commas, which the
+      // framework's query parser turns into an array.
       const state = authorizationUrl.searchParams.get('state')!
       const callback = await client
-        .get('/mcps/oauth/callback')
-        .qs({ state, code: 'strava-code', scope: 'read,activity:read_all' })
+        .get(`/mcps/oauth/callback?state=${state}&code=strava-code&scope=read,activity:read_all`)
         .withSession(start.session())
         .redirects(0)
 
@@ -327,6 +328,32 @@ test.group('Built-in Strava MCP: OAuth', (group) => {
         .redirects(0)
 
       callback.assertFlashMessage('error', 'OAuth error: access_denied')
+      const saved = await Mcp.findOrFail(mcp.id)
+      assert.isNull(saved.oauthAccessToken)
+      assert.lengthOf(strava.requests, 0)
+    } finally {
+      strava.restore()
+    }
+  })
+
+  test('reports a malformed callback instead of returning without a message', async ({
+    client,
+    assert,
+  }) => {
+    const strava = mockStrava()
+    try {
+      const { mcp, start } = await startAuthorization(client, 'malformed@example.com')
+      // A comma makes the query parser hand the validator an array.
+      const callback = await client
+        .get('/mcps/oauth/callback?state=one,two&code=strava-code')
+        .withSession(start.session())
+        .redirects(0)
+
+      callback.assertStatus(302)
+      callback.assertFlashMessage('error', 'Invalid OAuth callback')
+      const location = new URL(callback.header('location')!, 'http://localhost')
+      assert.equal(location.pathname, '/mcps')
+      assert.equal(location.search, '')
       const saved = await Mcp.findOrFail(mcp.id)
       assert.isNull(saved.oauthAccessToken)
       assert.lengthOf(strava.requests, 0)
@@ -519,13 +546,11 @@ test.group('Built-in Strava MCP: write access', (group) => {
         'read,read_all,profile:read_all,activity:read_all,activity:write,profile:write'
       )
 
+      const state = authorizationUrl.searchParams.get('state')!
+      const granted =
+        'read,activity:write,activity:read_all,profile:write,profile:read_all,read_all'
       const callback = await client
-        .get('/mcps/oauth/callback')
-        .qs({
-          state: authorizationUrl.searchParams.get('state')!,
-          code: 'strava-code',
-          scope: 'read,activity:write,activity:read_all,profile:write,profile:read_all,read_all',
-        })
+        .get(`/mcps/oauth/callback?state=${state}&code=strava-code&scope=${granted}`)
         .withSession(start.session())
         .redirects(0)
       callback.assertFlashMessage('success', 'OAuth connected')

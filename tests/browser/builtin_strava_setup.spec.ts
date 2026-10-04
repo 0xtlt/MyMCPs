@@ -18,13 +18,15 @@ async function stubStravaConsent(browserContext: BrowserContext) {
     const redirect = await route.fetch({ maxRedirects: 0 })
     const authorization = new URL(redirect.headers()['location'])
     authorizations.push(authorization)
-    const callback = new URL(authorization.searchParams.get('redirect_uri')!)
-    callback.searchParams.set('state', authorization.searchParams.get('state')!)
-    callback.searchParams.set('code', 'browser-strava-code')
-    callback.searchParams.set('scope', authorization.searchParams.get('scope')!)
+    // Like Strava, list the granted scopes with literal commas.
+    const callback = [
+      `${authorization.searchParams.get('redirect_uri')}?state=${authorization.searchParams.get('state')}`,
+      'code=browser-strava-code',
+      `scope=${authorization.searchParams.get('scope')}`,
+    ].join('&amp;')
     await route.fulfill({
       contentType: 'text/html',
-      body: `<a id="authorize" href="${callback.toString().replaceAll('&', '&amp;')}">Authorize</a>`,
+      body: `<a id="authorize" href="${callback}">Authorize</a>`,
     })
   })
   return authorizations
