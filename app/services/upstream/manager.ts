@@ -17,6 +17,7 @@ import {
 } from '#services/upstream/deno_runner'
 import { sanitizeMcpDiagnostic } from '#services/security_redaction'
 import { BuiltinAuthorizationError } from '#services/builtin/definition'
+import { builtinMcp } from '#services/builtin/registry'
 import { callBuiltinTool, listBuiltinTools, verifyBuiltin } from '#services/builtin/runtime'
 
 export type ConnectedUpstream = ConnectedHttpUpstream | ConnectedDenoUpstream
@@ -116,7 +117,10 @@ async function testBuiltinAndUpdateStatus(mcp: Mcp) {
     mcp.lastError = null
     mcp.oauthRequired = false
   } catch (error) {
-    const authorizationRequired = error instanceof BuiltinAuthorizationError
+    // Connect only repairs an OAuth sign-in. A rejected password is an error
+    // to fix in the form.
+    const authorizationRequired =
+      error instanceof BuiltinAuthorizationError && Boolean(builtinMcp(mcp.builtinKey)?.oauth)
     mcp.status = authorizationRequired && !hadAccessToken ? 'draft' : 'error'
     mcp.lastError =
       authorizationRequired && !hadAccessToken

@@ -28,7 +28,11 @@ import {
   type McpFormValues,
 } from '~/components/mcp_form_fields'
 import { McpTemplateGallery, type McpTemplate } from '~/components/mcp_template_gallery'
-import { builtinProviderName, type PublicApp } from '~/components/builtin_mcp_fields'
+import {
+  builtinProviderName,
+  builtinSetupGuide,
+  type PublicApp,
+} from '~/components/builtin_mcp_fields'
 import { OauthCallbackPaste } from '~/components/oauth_callback_paste'
 
 type McpRow = {
@@ -51,6 +55,10 @@ type McpRow = {
   hasOauthAccessToken: boolean
   oauthClientId: string | null
   hasOauthClientSecret: boolean
+  builtinUsername: string | null
+  hasBuiltinPassword: boolean
+  builtinAliases: string[]
+  builtinPermissions: string[]
   builtinWriteEnabled: boolean
   builtinWriteGranted: boolean
   oauthRequired: boolean
@@ -74,9 +82,22 @@ function statusVariant(status: McpRow['status']): 'success' | 'warning' | 'error
 
 function endpointLabel(mcp: McpRow) {
   if (mcp.transport === 'builtin') {
-    return `Built-in · ${builtinProviderName(mcp.builtinKey)} API`
+    return `Built-in · ${builtinSetupGuide(mcp.builtinKey)?.endpoint ?? 'unknown'}`
   }
   return mcp.transport === 'http' ? mcp.httpUrl || '—' : mcp.npmPackage || '—'
+}
+
+function authLabel(mcp: McpRow) {
+  return mcp.transport === 'builtin'
+    ? (builtinSetupGuide(mcp.builtinKey)?.signIn ?? 'oauth')
+    : mcp.authType
+}
+
+/** An OAuth sign-in holds a token. A password is only known to work once it was tested. */
+function isConnected(mcp: McpRow) {
+  return mcp.hasBuiltinPassword
+    ? mcp.status === 'ready'
+    : mcp.hasOauthAccessToken && !mcp.oauthRequired
 }
 
 /** Write access was allowed after the account was connected with read-only scopes. */
@@ -235,7 +256,7 @@ export default function McpsIndex({
       width: pixel(100),
       renderCell: (mcp) => (
         <Text type="supporting" color="secondary">
-          {mcp.transport === 'builtin' ? 'oauth' : mcp.authType}
+          {authLabel(mcp)}
         </Text>
       ),
     },
@@ -379,7 +400,8 @@ export default function McpsIndex({
                     }
                     subtitle={
                       createValues.transport === 'builtin'
-                        ? 'Runs inside MyMCPs with your own API application'
+                        ? (builtinSetupGuide(createValues.builtinKey)?.requirement ??
+                          'Runs inside MyMCPs')
                         : selectedTemplate
                           ? 'Review the prefilled settings, then add this MCP'
                           : 'Register an HTTP or npm upstream server'
@@ -563,10 +585,11 @@ export default function McpsIndex({
                             hasAuthBearer: editingMcp.hasAuthBearer,
                             hasAuthHeaderValue: editingMcp.hasAuthHeaderValue,
                             hasOauthClientSecret: editingMcp.hasOauthClientSecret,
+                            hasBuiltinPassword: editingMcp.hasBuiltinPassword,
                           }}
                           cachedVersion={editingMcp.npmCachedVersion}
                           publicApp={publicApp}
-                          isConnected={editingMcp.hasOauthAccessToken && !editingMcp.oauthRequired}
+                          isConnected={isConnected(editingMcp)}
                         />
                       </VStack>
                     </LayoutContent>

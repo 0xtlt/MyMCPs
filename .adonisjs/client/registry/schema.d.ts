@@ -19,6 +19,18 @@ export interface Registry {
       errorResponse: unknown
     }
   }
+  'builtin.file': {
+    methods: ["GET","HEAD"]
+    pattern: '/files/:id/:reference'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; reference: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/builtin_files_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/builtin_files_controller').default['show']>>>
+    }
+  }
   'oauth.metadata': {
     methods: ["GET","HEAD"]
     pattern: '/.well-known/oauth-authorization-server'

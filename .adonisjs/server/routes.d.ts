@@ -5,6 +5,7 @@ type ParamValue = string | number | bigint | boolean
 export type ScannedRoutes = {
   ALL: {
     'health': { paramsTuple?: []; params?: {} }
+    'builtin.file': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'reference': ParamValue} }
     'oauth.metadata': { paramsTuple?: []; params?: {} }
     'oauth.resourceMetadata': { paramsTuple?: []; params?: {} }
     'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }
@@ -50,6 +51,7 @@ export type ScannedRoutes = {
   }
   GET: {
     'health': { paramsTuple?: []; params?: {} }
+    'builtin.file': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'reference': ParamValue} }
     'oauth.metadata': { paramsTuple?: []; params?: {} }
     'oauth.resourceMetadata': { paramsTuple?: []; params?: {} }
     'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }
@@ -71,6 +73,7 @@ export type ScannedRoutes = {
   }
   HEAD: {
     'health': { paramsTuple?: []; params?: {} }
+    'builtin.file': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'reference': ParamValue} }
     'oauth.metadata': { paramsTuple?: []; params?: {} }
     'oauth.resourceMetadata': { paramsTuple?: []; params?: {} }
     'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }

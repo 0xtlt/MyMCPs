@@ -6,6 +6,7 @@
 export const controllers = {
   AccessTokens: () => import('#controllers/access_tokens_controller'),
   Analytics: () => import('#controllers/analytics_controller'),
+  BuiltinFiles: () => import('#controllers/builtin_files_controller'),
   Gateway: () => import('#controllers/gateway_controller'),
   Invites: () => import('#controllers/invites_controller'),
   Logs: () => import('#controllers/logs_controller'),

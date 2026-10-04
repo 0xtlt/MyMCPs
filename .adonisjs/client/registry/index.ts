@@ -12,6 +12,12 @@ const routes = {
     tokens: [{"old":"/health","type":0,"val":"health","end":""}],
     types: placeholder as Registry['health']['types'],
   },
+  'builtin.file': {
+    methods: ["GET","HEAD"],
+    pattern: '/files/:id/:reference',
+    tokens: [{"old":"/files/:id/:reference","type":0,"val":"files","end":""},{"old":"/files/:id/:reference","type":1,"val":"id","end":""},{"old":"/files/:id/:reference","type":1,"val":"reference","end":""}],
+    types: placeholder as Registry['builtin.file']['types'],
+  },
   'oauth.metadata': {
     methods: ["GET","HEAD"],
     pattern: '/.well-known/oauth-authorization-server',

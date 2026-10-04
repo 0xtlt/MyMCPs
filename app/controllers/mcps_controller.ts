@@ -17,6 +17,10 @@ import McpTransformer from '#transformers/mcp_transformer'
 import type { Infer } from '@vinejs/vine/types'
 import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
 import { parseHttpUrl } from '#services/http_url'
+import type {
+  BuiltinOauthMcpDefinition,
+  BuiltinPasswordMcpDefinition,
+} from '#services/builtin/definition'
 import { builtinMcp } from '#services/builtin/registry'
 import { publicOauthAppUrl } from '#services/public_url'
 
@@ -131,22 +135,25 @@ function clearUnusedAuthSecrets(mcp: Mcp) {
   }
 }
 
+type FieldFailure = { field: string; message: string; rule: string }
+
+const MAX_BUILTIN_ALIASES = 20
+
 /**
  * Save the API application credentials of a built-in MCP. Tokens belong to
  * the application that issued them, so new credentials disconnect the account.
  */
-function assignBuiltinCredentials(mcp: Mcp, payload: McpPayload) {
-  if (payload.transport !== 'builtin') {
-    return
-  }
-
-  const definition = builtinMcp(payload.builtinKey)!
+function assignOauthApplication(
+  mcp: Mcp,
+  payload: McpPayload,
+  definition: BuiltinOauthMcpDefinition
+) {
   const clientId = payload.oauthClientId ?? ''
   const savedSecret = McpSecretStore.decrypt(mcp.oauthClientSecret)
   const clientSecret = payload.oauthClientSecret || savedSecret
 
   // Report both fields at once: they are copied from the same provider page.
-  const failures: Array<{ field: string; message: string; rule: string }> = []
+  const failures: FieldFailure[] = []
   if (!clientId) {
     failures.push({
       field: 'oauthClientId',
@@ -176,6 +183,92 @@ function assignBuiltinCredentials(mcp: Mcp, payload: McpPayload) {
   }
   mcp.oauthClientId = clientId
   mcp.oauthClientSecret = McpSecretStore.encrypt(clientSecret)
+}
+
+/**
+ * Save the account name and app password of a built-in MCP, what agents may
+ * do with them, and which other addresses of the account they may act as. A
+ * blank password keeps the saved one, which is never sent back to the browser.
+ */
+function assignPasswordSignIn(
+  mcp: Mcp,
+  payload: McpPayload,
+  definition: BuiltinPasswordMcpDefinition
+) {
+  const username = payload.builtinUsername ?? ''
+  const password = payload.builtinPassword || McpSecretStore.decrypt(mcp.builtinPassword)
+
+  const failures: FieldFailure[] = []
+  if (!definition.password.usernamePattern.test(username)) {
+    failures.push({
+      field: 'builtinUsername',
+      message: definition.password.usernameHint,
+      rule: username ? 'regex' : 'required',
+    })
+  }
+  if (!password || !definition.password.passwordPattern.test(password)) {
+    failures.push({
+      field: 'builtinPassword',
+      message: definition.password.passwordHint,
+      rule: password ? 'regex' : 'required',
+    })
+  }
+  const requested = payload.builtinPermissions ?? []
+  const unknown = requested.find((name) => !definition.password.permissions.includes(name))
+  if (unknown !== undefined || requested.length === 0) {
+    failures.push({
+      field: 'builtinPermissions',
+      message:
+        unknown === undefined
+          ? 'Allow at least one permission'
+          : `${definition.name} has no "${unknown}" permission`,
+      rule: unknown === undefined ? 'required' : 'enum',
+    })
+  }
+  const seen = new Set([username.toLowerCase()])
+  const aliases = (payload.builtinAliases ?? []).filter((alias) => {
+    const key = alias.toLowerCase()
+    return !seen.has(key) && Boolean(seen.add(key))
+  })
+  if (
+    aliases.length > MAX_BUILTIN_ALIASES ||
+    aliases.some((alias) => !definition.password.usernamePattern.test(alias))
+  ) {
+    failures.push({
+      field: 'builtinAliases',
+      message: definition.password.aliasHint,
+      rule: 'regex',
+    })
+  }
+  if (failures.length > 0 || !password) {
+    throw new errors.E_VALIDATION_ERROR(failures)
+  }
+
+  mcp.builtinUsername = username
+  mcp.builtinPassword = McpSecretStore.encrypt(password)
+  mcp.builtinPermissions = definition.password.permissions
+    .filter((name) => requested.includes(name))
+    .join(' ')
+  mcp.builtinAliases = aliases.length > 0 ? aliases.join(' ') : null
+}
+
+function assignBuiltinCredentials(mcp: Mcp, payload: McpPayload) {
+  const definition = payload.transport === 'builtin' ? builtinMcp(payload.builtinKey) : null
+  if (!definition?.password) {
+    mcp.builtinUsername = null
+    mcp.builtinPassword = null
+    mcp.builtinPermissions = null
+    mcp.builtinAliases = null
+  }
+  if (!definition) {
+    return
+  }
+
+  if (definition.oauth) {
+    assignOauthApplication(mcp, payload, definition)
+  } else {
+    assignPasswordSignIn(mcp, payload, definition)
+  }
 }
 
 /**
@@ -235,13 +328,23 @@ export async function assignMcpFromPayload(
   mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
   mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
   assignNpmEnvironment(mcp, payload)
-  // Built-in MCPs always authorize through their provider's OAuth.
+  // Built-in MCPs sign in the one way their provider supports.
   mcp.authType = payload.transport === 'builtin' ? 'auto' : payload.authType
   mcp.authHeaderName = mcp.authType === 'header' ? (payload.authHeaderName ?? null) : null
   mcp.enabled = payload.enabled ?? false
   clearUnusedAuthSecrets(mcp)
   applySecrets(mcp, payload)
   assignBuiltinCredentials(mcp, payload)
+}
+
+/**
+ * Whether saving left something for the admin to do in the dialog: connect an
+ * account, or correct a sign-in the provider just rejected.
+ */
+function needsAttention(mcp: Mcp) {
+  return (
+    mcp.oauthRequired || (mcp.status === 'error' && Boolean(builtinMcp(mcp.builtinKey)?.password))
+  )
 }
 
 async function uniqueSlug(name: string, excludeId?: number) {
@@ -289,7 +392,7 @@ export default class McpsController {
     await mcp.save()
 
     await testAndUpdateStatus(mcp)
-    if (mcp.oauthRequired) {
+    if (needsAttention(mcp)) {
       session.flash('editingMcpId', mcp.id)
     }
     session.flash('success', 'MCP created')
@@ -318,7 +421,7 @@ export default class McpsController {
     await mcp.save()
 
     await testAndUpdateStatus(mcp)
-    if (mcp.oauthRequired) {
+    if (needsAttention(mcp)) {
       session.flash('editingMcpId', mcp.id)
     }
     session.flash('success', 'MCP updated')
@@ -386,8 +489,9 @@ export default class McpsController {
       return response.redirect().toRoute('mcps.index')
     }
     const usesOauth =
-      mcp.transport === 'builtin' ||
-      (mcp.authType === 'auto' && (mcp.oauthRequired || Boolean(mcp.oauthAccessToken)))
+      mcp.transport === 'builtin'
+        ? Boolean(builtinMcp(mcp.builtinKey)?.oauth)
+        : mcp.authType === 'auto' && (mcp.oauthRequired || Boolean(mcp.oauthAccessToken))
     if (!usesOauth) {
       session.flash('error', 'This MCP does not require OAuth authorization')
       session.flash('editingMcpId', mcp.id)

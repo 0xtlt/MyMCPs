@@ -5,7 +5,7 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 ## What it does
 
 - Connects HTTP and npm-based MCP servers.
-- Includes built-in MCPs for services whose own MCP is closed to self-hosted gateways, starting with Strava.
+- Includes built-in MCPs for services with no MCP a self-hosted gateway can use: Strava and iCloud Mail.
 - Supports bearer tokens, custom headers, and OAuth.
 - Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
 - Exposes every allowed upstream through `GET` and `POST /mcp`.
@@ -58,9 +58,11 @@ The Strava remote MCP (`https://mcp.strava.com/mcp`) documents Claude Code as it
 
 ### Built-in MCPs
 
-Some services have an API but no MCP that a self-hosted gateway is allowed to use. MyMCPs implements those MCPs itself: the tools run inside your instance and call the service's public API through an API application that you register with the service.
+Some services have no MCP that a self-hosted gateway is allowed to use. MyMCPs implements those MCPs itself: the tools run inside your instance and reach the service with credentials that you create there and can revoke.
 
-**Strava** is the first one. Choose **Strava** in the **Add MCP** gallery and follow the steps in the dialog: create an application at [strava.com/settings/api](https://www.strava.com/settings/api) with your instance's hostname as its **Authorization Callback Domain**, paste the Client ID and Client Secret, then select **Connect** to approve access. It is read-only unless you check **Allow write access**, which adds tools to create and edit activities. It does not depend on Strava's client allowlist. See [docs/strava.md](docs/strava.md) for the full walkthrough, the list of tools, and troubleshooting.
+**Strava** signs in through an API application that you register. Choose **Strava** in the **Add MCP** gallery and follow the steps in the dialog: create an application at [strava.com/settings/api](https://www.strava.com/settings/api) with your instance's hostname as its **Authorization Callback Domain**, paste the Client ID and Client Secret, then select **Connect** to approve access. It is read-only unless you check **Allow write access**, which adds tools to create and edit activities. It does not depend on Strava's client allowlist. See [docs/strava.md](docs/strava.md) for the full walkthrough, the list of tools, and troubleshooting.
+
+**iCloud Mail** signs in over IMAP and SMTP with an app-specific password, because Apple has no mail API. Choose **iCloud Mail** in the **Add MCP** gallery, create the password at [account.apple.com](https://account.apple.com/account/manage) under **Sign-In and Security → App-Specific Passwords**, and paste it with your iCloud Mail address. Apple cannot limit what that password reaches, so you choose the permissions in the same dialog and MyMCPs enforces them: **Read mail**, **Save drafts**, **Send mail**, and **Organize mail**. Only **Read mail** is allowed to begin with. Attachments are downloaded through temporary signed links, and you can list the aliases and custom domain addresses agents may send from. See [docs/icloud-mail.md](docs/icloud-mail.md) for the full walkthrough, the permissions, the list of tools, and troubleshooting.
 
 ## How to deploy to my Coolify
 
