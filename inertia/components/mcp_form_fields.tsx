@@ -14,6 +14,7 @@ export type McpFormSecrets = {
   hasAuthBearer?: boolean
   hasAuthHeaderValue?: boolean
   hasOauthClientSecret?: boolean
+  hasBuiltinPassword?: boolean
 }
 
 export type McpEnvironmentVariable = {
@@ -36,6 +37,10 @@ export type McpFormValues = {
   builtinKey: string
   oauthClientId: string
   oauthClientSecret: string
+  builtinUsername: string
+  builtinPassword: string
+  builtinAliases: string
+  builtinPermissions: string[]
   builtinWriteEnabled: boolean
   authType: McpAuthType
   authBearer: string
@@ -52,7 +57,7 @@ type Props = {
   errors?: Errors
   secrets?: McpFormSecrets
   cachedVersion?: string | null
-  /** Built-in MCPs only: where the provider redirects, and whether an account is connected. */
+  /** Built-in MCPs only: where the provider redirects, and whether its sign-in works. */
   publicApp?: PublicApp | null
   isConnected?: boolean
 }
@@ -82,6 +87,10 @@ export function emptyMcpFormValues(): McpFormValues {
     builtinKey: '',
     oauthClientId: '',
     oauthClientSecret: '',
+    builtinUsername: '',
+    builtinPassword: '',
+    builtinAliases: '',
+    builtinPermissions: [],
     builtinWriteEnabled: false,
     authType: 'auto',
     authBearer: '',
@@ -102,6 +111,9 @@ export function mcpFormValuesFromRow(mcp: {
   npmEnv: Array<{ name: string; hasValue: boolean }>
   builtinKey: string | null
   oauthClientId: string | null
+  builtinUsername: string | null
+  builtinAliases: string[]
+  builtinPermissions: string[]
   builtinWriteEnabled: boolean
   authType: McpAuthType
   authHeaderName: string | null
@@ -125,6 +137,9 @@ export function mcpFormValuesFromRow(mcp: {
     })),
     builtinKey: mcp.builtinKey ?? '',
     oauthClientId: mcp.oauthClientId ?? '',
+    builtinUsername: mcp.builtinUsername ?? '',
+    builtinAliases: mcp.builtinAliases.join(', '),
+    builtinPermissions: mcp.builtinPermissions,
     builtinWriteEnabled: mcp.builtinWriteEnabled,
     authType: mcp.authType,
     authHeaderName: mcp.authHeaderName ?? '',
@@ -179,10 +194,15 @@ export function McpFormFields({
           builtinKey={values.builtinKey}
           clientId={values.oauthClientId}
           clientSecret={values.oauthClientSecret}
+          username={values.builtinUsername}
+          password={values.builtinPassword}
+          aliases={values.builtinAliases}
+          permissions={values.builtinPermissions}
           writeEnabled={values.builtinWriteEnabled}
           onChange={onChange}
           errors={errors}
           hasSavedClientSecret={Boolean(secrets.hasOauthClientSecret)}
+          hasSavedPassword={Boolean(secrets.hasBuiltinPassword)}
           isConnected={isConnected}
           publicApp={publicApp}
         />

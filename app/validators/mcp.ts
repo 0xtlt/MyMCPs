@@ -61,6 +61,26 @@ const mcpPayload = {
   /** Credentials of the API application the admin registered for a built-in MCP. */
   oauthClientId: vine.string().trim().maxLength(254).optional(),
   oauthClientSecret: vine.string().trim().maxLength(4000).optional(),
+  /** Sign-in of a built-in MCP whose provider issues passwords for apps. */
+  builtinUsername: vine.string().trim().maxLength(254).optional(),
+  builtinPassword: vine.string().trim().maxLength(4000).optional(),
+  /**
+   * What agents may do through that sign-in, which the provider cannot
+   * restrict. A form posting a single checked permission sends it as a string.
+   */
+  builtinPermissions: vine
+    .array(vine.string().trim().maxLength(32))
+    .maxLength(16)
+    .parse((value) => (typeof value === 'string' ? [value] : value))
+    .optional(),
+  /** Other addresses of the same account, separated by commas or spaces. */
+  builtinAliases: vine
+    .string()
+    .trim()
+    .maxLength(4000)
+    .nullable()
+    .optional()
+    .transform((value): string[] => (value ? value.split(/[\s,;]+/).filter(Boolean) : [])),
   /** Lets a built-in MCP request write scopes and expose its write tools. */
   builtinWriteEnabled: vine.boolean().optional(),
   authType,

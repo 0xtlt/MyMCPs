@@ -40,6 +40,10 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
       hasOauthClientSecret:
         this.resource.transport === 'builtin' &&
         McpSecretStore.hasSecret(this.resource.oauthClientSecret),
+      builtinUsername: this.resource.transport === 'builtin' ? this.resource.builtinUsername : null,
+      hasBuiltinPassword: McpSecretStore.hasSecret(this.resource.builtinPassword),
+      builtinPermissions: this.resource.builtinPermissions?.split(' ') ?? [],
+      builtinAliases: this.resource.builtinAliases?.split(' ') ?? [],
       builtinWriteEnabled: Boolean(this.resource.builtinWriteEnabled),
       // False when write access is on but the saved authorization predates it.
       builtinWriteGranted:

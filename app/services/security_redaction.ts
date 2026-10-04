@@ -141,6 +141,7 @@ export function mcpSensitiveValues(mcp: Mcp) {
     McpSecretStore.decrypt(mcp.oauthClientSecret),
     McpSecretStore.decrypt(mcp.oauthAccessToken),
     McpSecretStore.decrypt(mcp.oauthRefreshToken),
+    McpSecretStore.decrypt(mcp.builtinPassword),
   ].filter((value): value is string => Boolean(value))
 
   try {

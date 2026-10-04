@@ -1,5 +1,8 @@
 import type Mcp from '#models/mcp'
-import { BuiltinAuthorizationError, type BuiltinMcpDefinition } from '#services/builtin/definition'
+import {
+  BuiltinAuthorizationError,
+  type BuiltinOauthMcpDefinition,
+} from '#services/builtin/definition'
 import McpSecretStore from '#services/mcp_secret_store'
 import { fetchWithSameOriginRedirects } from '#services/upstream/safe_fetch'
 import { oauthTokenResponseValidator } from '#validators/oauth'
@@ -33,7 +36,7 @@ export function parseOauthScopes(value: string | null | undefined) {
 }
 
 /** Write scopes are only requested once the admin allowed write access. */
-export function requestedBuiltinScopes(definition: BuiltinMcpDefinition, mcp: Mcp) {
+export function requestedBuiltinScopes(definition: BuiltinOauthMcpDefinition, mcp: Mcp) {
   return [
     ...definition.oauth.scopes,
     ...(mcp.builtinWriteEnabled ? definition.oauth.writeScopes : []),
@@ -41,7 +44,7 @@ export function requestedBuiltinScopes(definition: BuiltinMcpDefinition, mcp: Mc
 }
 
 export function builtinAuthorizationUrl(
-  definition: BuiltinMcpDefinition,
+  definition: BuiltinOauthMcpDefinition,
   options: { clientId: string; redirectUri: string; state: string; scopes: readonly string[] }
 ) {
   const url = new URL(definition.oauth.authorizeUrl)
@@ -79,7 +82,7 @@ function describeTokenFailure(body: unknown) {
 }
 
 async function requestTokens(
-  definition: BuiltinMcpDefinition,
+  definition: BuiltinOauthMcpDefinition,
   mcp: Mcp,
   grant: TokenGrant
 ): Promise<BuiltinOauthTokens> {
@@ -130,7 +133,7 @@ async function requestTokens(
 }
 
 export function exchangeBuiltinAuthorizationCode(
-  definition: BuiltinMcpDefinition,
+  definition: BuiltinOauthMcpDefinition,
   mcp: Mcp,
   code: string
 ) {
@@ -138,7 +141,7 @@ export function exchangeBuiltinAuthorizationCode(
 }
 
 export function refreshBuiltinTokens(
-  definition: BuiltinMcpDefinition,
+  definition: BuiltinOauthMcpDefinition,
   mcp: Mcp,
   refreshToken: string
 ) {

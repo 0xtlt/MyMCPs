@@ -1,4 +1,4 @@
-import type { BuiltinMcpDefinition } from '#services/builtin/definition'
+import type { BuiltinOauthMcpDefinition } from '#services/builtin/definition'
 import { stravaGet } from '#services/builtin/strava/api'
 import { stravaTools } from '#services/builtin/strava/tools'
 
@@ -7,7 +7,7 @@ import { stravaTools } from '#services/builtin/strava/tools'
  * so this one talks to the public API v3 through an API application the admin
  * creates at https://www.strava.com/settings/api.
  */
-export const stravaMcp: BuiltinMcpDefinition = {
+export const stravaMcp: BuiltinOauthMcpDefinition = {
   key: 'strava',
   name: 'Strava',
   oauth: {

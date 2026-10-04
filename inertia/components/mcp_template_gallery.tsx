@@ -32,6 +32,7 @@ type TemplateLogo =
   | 'huggingface'
   | 'context7'
   | 'strava'
+  | 'icloud'
 
 export type McpTemplate = {
   id: string
@@ -164,6 +165,10 @@ const StravaLogo = createBrandLogo(
   'M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169'
 )
 
+const ICloudLogo = createBrandLogo(
+  'M13.762 4.29a6.51 6.51 0 0 0-5.669 3.332 3.571 3.571 0 0 0-1.558-.36 3.571 3.571 0 0 0-3.516 3A4.918 4.918 0 0 0 0 14.796a4.918 4.918 0 0 0 4.92 4.914 4.93 4.93 0 0 0 .617-.045h14.42c2.305-.272 4.041-2.258 4.043-4.589v-.009a4.594 4.594 0 0 0-3.727-4.508 6.51 6.51 0 0 0-6.511-6.27z'
+)
+
 const logoIcons: Record<TemplateLogo, ComponentType<SVGProps<SVGSVGElement>>> = {
   notion: NotionLogo,
   shopify: ShopifyLogo,
@@ -182,6 +187,7 @@ const logoIcons: Record<TemplateLogo, ComponentType<SVGProps<SVGSVGElement>>> = 
   huggingface: HuggingFaceLogo,
   context7: Context7Logo,
   strava: StravaLogo,
+  icloud: ICloudLogo,
 }
 
 export const mcpTemplates: McpTemplate[] = [
@@ -471,6 +477,26 @@ export const mcpTemplates: McpTemplate[] = [
       description: 'Read Strava activities, training totals, zones, segments, and routes.',
       transport: 'builtin',
       builtinKey: 'strava',
+      authType: 'auto',
+    },
+  },
+  {
+    id: 'icloud-mail',
+    name: 'iCloud Mail',
+    description:
+      'Read and search your iCloud mailboxes, with permissions you choose for drafts, sending, and filing. Runs inside MyMCPs with an app-specific password.',
+    category: 'productivity',
+    popular: true,
+    logo: 'icloud',
+    keywords: ['email', 'mail', 'apple', 'inbox', 'imap', 'smtp', 'built-in'],
+    values: {
+      name: 'iCloud Mail',
+      description:
+        'Read, search, draft, send, and file iCloud Mail, within the allowed permissions.',
+      transport: 'builtin',
+      builtinKey: 'icloud-mail',
+      // Read-only until the admin allows more in the setup dialog.
+      builtinPermissions: ['read'],
       authType: 'auto',
     },
   },

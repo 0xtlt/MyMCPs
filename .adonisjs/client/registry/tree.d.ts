@@ -3,6 +3,9 @@ import type { routes } from './index.ts'
 
 export interface ApiDefinition {
   health: typeof routes['health']
+  builtin: {
+    file: typeof routes['builtin.file']
+  }
   oauth: {
     metadata: typeof routes['oauth.metadata']
     resourceMetadata: typeof routes['oauth.resourceMetadata']

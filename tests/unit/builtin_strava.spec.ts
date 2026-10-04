@@ -4,6 +4,7 @@ import Mcp from '#models/mcp'
 import { builtinAuthorizationUrl, requestedBuiltinScopes } from '#services/builtin/oauth'
 import { builtinMcp } from '#services/builtin/registry'
 import { builtinWriteGranted, callBuiltinTool, listBuiltinTools } from '#services/builtin/runtime'
+import { stravaMcp } from '#services/builtin/strava/index'
 import { compactStravaPayload, downsampleStreams } from '#services/builtin/strava/payload'
 import McpSecretStore from '#services/mcp_secret_store'
 import { probeUpstream, testAndUpdateStatus } from '#services/upstream/manager'
@@ -23,7 +24,7 @@ async function connectedStrava(options: Parameters<typeof createStravaMcp>[1] = 
 
 test.group('Built-in Strava MCP: payloads', () => {
   test('builds the Strava authorization URL with comma-separated scopes', ({ assert }) => {
-    const strava = builtinMcp('strava')!
+    const strava = stravaMcp
     const url = new URL(
       builtinAuthorizationUrl(strava, {
         clientId: '123456',
@@ -566,7 +567,7 @@ test.group('Built-in Strava MCP: write tools', (group) => {
   const writeTools = ['create_activity', 'update_activity', 'update_athlete_weight', 'star_segment']
 
   test('only requests write scopes once write access is allowed', async ({ assert }) => {
-    const strava = builtinMcp('strava')!
+    const strava = stravaMcp
     const readOnly = await connectedStrava({ name: 'Strava read' })
     const writable = await connectedStrava({ name: 'Strava write', writeEnabled: true })
 

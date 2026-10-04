@@ -18,6 +18,12 @@ import router from '@adonisjs/core/services/router'
 router.get('health', ({ response }) => response.ok({ status: 'ok' })).as('health')
 
 /**
+ * Files that built-in MCP tools hand out as temporary links, such as mail
+ * attachments. The signature in the link is the only credential.
+ */
+router.get('files/:id/:reference', [controllers.BuiltinFiles, 'show']).as('builtin.file')
+
+/**
  * MCP OAuth 2.1 discovery and authorization server endpoints.
  */
 router

@@ -29,3 +29,9 @@ export const oauthRegistrationRateLimiter = limiter.use({
   requests: 20,
   duration: '1 hour',
 })
+
+/** Each download of a built-in MCP file signs in to its provider. */
+export const builtinFileRateLimiter = limiter.use({
+  requests: 60,
+  duration: '15 minutes',
+})

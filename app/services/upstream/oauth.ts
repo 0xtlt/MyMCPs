@@ -34,7 +34,7 @@ import {
   refreshBuiltinTokens,
   requestedBuiltinScopes,
 } from '#services/builtin/oauth'
-import { requireBuiltinMcp } from '#services/builtin/registry'
+import { requireBuiltinOauthMcp } from '#services/builtin/registry'
 
 type OauthSession = Infer<typeof oauthSessionValidator>
 
@@ -414,7 +414,7 @@ export function clearOauthSession(session: HttpContext['session'], state: string
  * provider, so there is nothing to discover or register.
  */
 function startBuiltinOauthFlow(session: HttpContext['session'], mcp: Mcp) {
-  const definition = requireBuiltinMcp(mcp)
+  const definition = requireBuiltinOauthMcp(mcp)
   if (!mcp.oauthClientId || !McpSecretStore.decrypt(mcp.oauthClientSecret)) {
     throw new Error(`Add the ${definition.name} Client ID and Client Secret before connecting`)
   }
@@ -528,7 +528,7 @@ export async function exchangeAuthorizationCode(
   }
 
   if (mcp.transport === 'builtin') {
-    const tokens = await exchangeBuiltinAuthorizationCode(requireBuiltinMcp(mcp), mcp, code)
+    const tokens = await exchangeBuiltinAuthorizationCode(requireBuiltinOauthMcp(mcp), mcp, code)
     const scopes = parseOauthScopes(tokens.scope ?? grantedScope)
     saveOAuthTokens(mcp, { ...tokens, scope: undefined })
     // Never keep the scopes of an earlier authorization for these tokens.
@@ -597,7 +597,7 @@ async function refreshCurrentOauthAccessToken(mcp: Mcp) {
 
   if (mcp.transport === 'builtin') {
     if (!refresh || isFresh) return
-    const tokens = await refreshBuiltinTokens(requireBuiltinMcp(mcp), mcp, refresh)
+    const tokens = await refreshBuiltinTokens(requireBuiltinOauthMcp(mcp), mcp, refresh)
     saveOAuthTokens(mcp, {
       ...tokens,
       refresh_token: tokens.refresh_token ?? refresh,
