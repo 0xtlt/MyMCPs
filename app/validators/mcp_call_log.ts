@@ -17,3 +17,9 @@ export const analyticsQueryValidator = vine.create({
   end: vine.string().trim().maxLength(40).optional(),
   timeZone: vine.string().trim().maxLength(100).optional(),
 })
+
+/**
+ * An MCP slug as a caller named it. The call log stores it only in the form a
+ * real slug can take.
+ */
+export const loggedMcpSlugValidator = vine.create(vine.string().regex(/^[a-z0-9-]{1,120}$/))

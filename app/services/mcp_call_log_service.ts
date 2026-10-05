@@ -5,6 +5,7 @@ import InstanceSetting from '#models/instance_setting'
 import McpCallLog, { type McpCallErrorCategory, type McpCallOutcome } from '#models/mcp_call_log'
 import type Mcp from '#models/mcp'
 import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
+import { loggedMcpSlugValidator } from '#validators/mcp_call_log'
 
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const MAX_PENDING_WRITES = 1_000
@@ -29,6 +30,28 @@ export type McpCallLogInput = {
 
 export function sanitizeErrorSummary(value: unknown, mcp?: Mcp | null): string | null {
   return mcp ? sanitizeMcpDiagnostic(value, mcp) : sanitizeDiagnostic(value)
+}
+
+/**
+ * The slug of an MCP the token may not use comes straight from the caller.
+ * It is only stored when it could be the slug of a real MCP.
+ */
+async function loggableMcpSlug(slug: string | null | undefined) {
+  const [, loggable] = await loggedMcpSlugValidator.tryValidate(slug)
+  return loggable ?? null
+}
+
+/**
+ * Database errors quote the statement with its values, which here are the
+ * captured arguments and responses. Log the driver's code and a redacted
+ * excerpt instead of the error itself.
+ */
+function persistenceDiagnostic(error: unknown, mcp?: Mcp | null) {
+  const code = error instanceof Error && 'code' in error ? error.code : null
+  return {
+    code: typeof code === 'string' ? code.slice(0, 64) : undefined,
+    error: sanitizeErrorSummary(error, mcp),
+  }
 }
 
 export function serializeCapturedValue(value: unknown) {
@@ -68,7 +91,7 @@ export default class McpCallLogService {
     this.#writeQueue = this.#writeQueue
       .then(() => this.persist(input))
       .catch((error) => {
-        logger.warn({ err: error }, 'MCP call log could not be persisted')
+        logger.warn(persistenceDiagnostic(error, input.mcp), 'MCP call log could not be persisted')
       })
       .finally(() => {
         this.#pendingWrites -= 1
@@ -93,10 +116,10 @@ export default class McpCallLogService {
         accessTokenId: input.accessToken.id,
         accessTokenName: input.accessToken.name,
         accessTokenPrefix: input.accessToken.tokenPrefix,
-        callerIp: input.callerIp,
+        callerIp: input.callerIp?.slice(0, 64) ?? null,
         mcpId: input.mcp?.id ?? null,
         mcpName: input.mcp?.name ?? null,
-        mcpSlug: input.mcp?.slug ?? input.mcpSlug ?? null,
+        mcpSlug: input.mcp?.slug ?? (await loggableMcpSlug(input.mcpSlug)),
         requestedToolName: input.requestedToolName.slice(0, 512),
         toolName: input.toolName?.slice(0, 254) ?? null,
         outcome: input.outcome,
@@ -113,7 +136,7 @@ export default class McpCallLogService {
         durationMs: Math.max(0, Math.round(input.durationMs)),
       })
     } catch (error) {
-      logger.warn({ err: error }, 'MCP call log could not be persisted')
+      logger.warn(persistenceDiagnostic(error, input.mcp), 'MCP call log could not be persisted')
     }
   }
 
@@ -130,7 +153,7 @@ export default class McpCallLogService {
       const deleted = await McpCallLog.query().where('created_at', '<', cutoff.toSQL()!).delete()
       return Array.isArray(deleted) ? deleted.length : Number(deleted)
     } catch (error) {
-      logger.warn({ err: error }, 'Expired MCP call logs could not be pruned')
+      logger.warn(persistenceDiagnostic(error), 'Expired MCP call logs could not be pruned')
       return 0
     }
   }

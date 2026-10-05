@@ -20,7 +20,7 @@ export type McpNpmUpdateRunResult = {
 type McpLatestTracker = Pick<Mcp, 'transport' | 'npmVersion'>
 
 async function defaultReload(mcp: Mcp) {
-  await reloadDenoNpmPackageCache(mcp.npmPackage ?? '')
+  await reloadDenoNpmPackageCache(mcp)
 }
 
 export const mcpNpmUpdateRuntime = {

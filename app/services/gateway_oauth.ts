@@ -5,6 +5,8 @@ import OauthAuthorizationCode from '#models/oauth_authorization_code'
 import OauthClient from '#models/oauth_client'
 import AccessTokenService from '#services/access_token_service'
 import { requirePublicAppUrl } from '#services/public_url'
+import { sanitizeDiagnostic } from '#services/security_redaction'
+import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 
 export const GATEWAY_OAUTH_SCOPE = 'mcp:tools'
@@ -14,6 +16,17 @@ const CLIENT_SECRET_TTL_DAYS = 365
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const NATIVE_APP_REDIRECT_URIS = new Set(['cursor://anysphere.cursor-mcp/oauth/callback'])
 const CLIENT_AUTH_METHODS = new Set(['none', 'client_secret_post', 'client_secret_basic'])
+const CLIENT_GRANT_TYPES = ['authorization_code', 'refresh_token']
+
+/**
+ * Registration is open to anyone, so the number of stored clients is bounded
+ * and clients that nobody has used for the retention period are removed.
+ */
+export const MAX_OAUTH_CLIENTS = 1000
+export const UNUSED_CLIENT_RETENTION_DAYS = 90
+const CLIENT_PRUNE_INTERVAL_MS = 60 * 60 * 1000
+
+let lastClientPruneAt = 0
 
 export class GatewayOauthError extends Error {
   constructor(
@@ -94,6 +107,15 @@ function isAllowedRedirectUri(value: string) {
   }
 }
 
+/** True when the redirect URI points at the user's own device. */
+export function isLoopbackRedirectUri(value: string) {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(value).hostname)
+  } catch {
+    return false
+  }
+}
+
 /** RFC 8252 allows native loopback clients to choose their callback port at runtime. */
 export function redirectUriMatches(requested: string, registered: string) {
   if (requested === registered) return true
@@ -115,6 +137,90 @@ export function redirectUriMatches(requested: string, registered: string) {
   } catch {
     return false
   }
+}
+
+/**
+ * Clients nobody is using: no pending authorization code, and no token that
+ * still works or that was issued or used since `activeSince`. The second part
+ * keeps a client known while its user signs in again after a grant expired.
+ */
+function unusedOauthClients(activeSince: DateTime) {
+  const now = DateTime.utc().toSQL({ includeOffset: false })!
+  const since = activeSince.toSQL({ includeOffset: false })!
+
+  return OauthClient.query()
+    .whereNotExists(
+      db
+        .from('oauth_authorization_codes')
+        .whereColumn('oauth_authorization_codes.oauth_client_id', 'oauth_clients.id')
+        .where('oauth_authorization_codes.expires_at', '>', now)
+    )
+    .whereNotExists(
+      db
+        .from('access_tokens')
+        .whereColumn('access_tokens.oauth_client_id', 'oauth_clients.id')
+        .where((token) => {
+          token.where('access_tokens.updated_at', '>=', since).orWhere((live) => {
+            live.whereNull('access_tokens.revoked_at').where((unexpired) => {
+              unexpired
+                .where('access_tokens.expires_at', '>', now)
+                .orWhere('access_tokens.oauth_refresh_expires_at', '>', now)
+            })
+          })
+        })
+    )
+}
+
+/**
+ * Remove clients that went unused for the whole retention period. Nothing
+ * else deletes them, so this runs with registration, at most once an hour.
+ */
+export async function pruneUnusedOauthClients(options: { force?: boolean } = {}) {
+  const now = Date.now()
+  if (!options.force && now - lastClientPruneAt < CLIENT_PRUNE_INTERVAL_MS) {
+    return
+  }
+  lastClientPruneAt = now
+
+  try {
+    const cutoff = DateTime.utc().minus({ days: UNUSED_CLIENT_RETENTION_DAYS })
+    await unusedOauthClients(cutoff)
+      .where('created_at', '<', cutoff.toSQL({ includeOffset: false })!)
+      .delete()
+  } catch (error) {
+    logger.warn({ error: sanitizeDiagnostic(error) }, 'Unused OAuth clients could not be pruned')
+  }
+}
+
+/**
+ * Keep the client table within its limit. At the limit the oldest unused
+ * clients give way to the new one whatever their age, so that filling the
+ * table with throwaway registrations cannot lock real clients out.
+ */
+async function makeRoomForOauthClient() {
+  const [{ total }] = await db.from('oauth_clients').count('* as total')
+  const excess = Number(total) - MAX_OAUTH_CLIENTS + 1
+  if (excess <= 0) return
+
+  const activeSince = DateTime.utc().minus({ days: UNUSED_CLIENT_RETENTION_DAYS })
+  const evictable = await unusedOauthClients(activeSince)
+    .select('id')
+    .orderBy('id', 'asc')
+    .limit(excess)
+  if (evictable.length < excess) {
+    throw new GatewayOauthError(
+      'temporarily_unavailable',
+      'Too many OAuth clients are registered',
+      503
+    )
+  }
+
+  await unusedOauthClients(activeSince)
+    .whereIn(
+      'id',
+      evictable.map((client) => client.id)
+    )
+    .delete()
 }
 
 export async function registerOauthClient(input: unknown) {
@@ -143,15 +249,17 @@ export async function registerOauthClient(input: unknown) {
     )
   }
 
-  const grantTypes = metadata.grant_types ?? ['authorization_code', 'refresh_token']
+  // Both lists are stored and parsed again on every /authorize and /token
+  // request, so they are reduced to their distinct values, all of them allowed.
+  const grantTypes = [...new Set(metadata.grant_types ?? CLIENT_GRANT_TYPES)]
   if (
     !grantTypes.includes('authorization_code') ||
-    grantTypes.some((grant) => !['authorization_code', 'refresh_token'].includes(grant))
+    grantTypes.some((grant) => !CLIENT_GRANT_TYPES.includes(grant))
   ) {
     throw new GatewayOauthError('invalid_client_metadata', 'Unsupported OAuth grant type')
   }
 
-  const responseTypes = metadata.response_types ?? ['code']
+  const responseTypes = [...new Set(metadata.response_types ?? ['code'])]
   if (responseTypes.length !== 1 || responseTypes[0] !== 'code') {
     throw new GatewayOauthError(
       'invalid_client_metadata',
@@ -168,6 +276,9 @@ export async function registerOauthClient(input: unknown) {
   if (clientName.length > 120) {
     throw new GatewayOauthError('invalid_client_metadata', 'Client name is too long')
   }
+
+  await pruneUnusedOauthClients()
+  await makeRoomForOauthClient()
 
   const clientId = `mcp_client_${randomBytes(24).toString('base64url')}`
   const clientSecret =

@@ -1,4 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import { errors as limiterErrors } from '@adonisjs/limiter'
 import type AccessToken from '#models/access_token'
 import AccessTokenService from '#services/access_token_service'
 import {
@@ -6,9 +7,11 @@ import {
   gatewayResourceUrl,
   protectedResourceMetadataUrl,
 } from '#services/gateway_oauth'
+import { gatewayRateLimiter } from '#services/gateway_rate_limiter'
 
 /**
- * Authenticate agent requests to /mcp with a Bearer access token.
+ * Authenticate agent requests to /mcp with a Bearer access token and hold
+ * each token to its request allowance.
  * Attaches `accessToken` and `allowedMcps` on the HTTP context.
  */
 export default class McpBearerMiddleware {
@@ -37,6 +40,17 @@ export default class McpBearerMiddleware {
       return ctx.response.status(401).json({
         error: 'unauthorized',
         message: 'Invalid, expired, or revoked access token',
+      })
+    }
+
+    try {
+      await gatewayRateLimiter.consume(`mcp:${token.id}`)
+    } catch (error) {
+      if (!(error instanceof limiterErrors.E_TOO_MANY_REQUESTS)) throw error
+      ctx.response.header('Retry-After', String(error.response.availableIn))
+      return ctx.response.status(429).json({
+        error: 'rate_limited',
+        message: 'Too many requests for this access token',
       })
     }
 

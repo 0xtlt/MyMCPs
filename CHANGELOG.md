@@ -13,10 +13,48 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Added temporary attachment links to the iCloud Mail MCP. `get_message` lists the attachments of a message and `get_attachment_link` returns a signed link to download one from the instance, valid for 15 minutes by default and 60 at most. The link needs no sign-in, cannot be altered, only downloads, and stops working when the MCP is disabled or loses **Read mail**. It requires `APP_URL`, and downloads are limited to 60 per 15 minutes for each client address.
 - Added sender addresses to the iCloud Mail MCP. The admin can list the account's aliases, custom domain addresses, and Hide My Email addresses, and agents can then send or draft from them with `from`. Replies are sent from the address the original message was written to.
 
+### Changed
+
+- Updated application and development dependencies and refreshed the lockfile, including AdonisJS core 7.5.2, the MCP SDK 1.32.0, Inertia 3.8.0, Vite 8.3.2, and the Astryx design system 0.6.5.
+- Changed the proxy trust default in Docker Compose and Coolify from `TRUST_PROXY=true` to `loopback,uniquelocal`, so a client can no longer choose the address that rate limits and call logs record. `TRUST_PROXY` now accepts a comma-separated list of proxy IPs, CIDR ranges, and the names `loopback`, `linklocal`, and `uniquelocal`. A deployment that already stores `true` keeps it until you edit it; behind a CDN, add the CDN's address ranges.
+- All npm MCPs now share one Deno cache that packages can read but not write, so **Update MCP** and scheduled updates change the version that actually runs. Each package is downloaded again once after the upgrade. An MCP's sandbox directory is deleted with the MCP and when its package changes, and a failed start reports Deno's own output.
+- The gateway contacts upstream MCPs only to list tools and to call the one in use, instead of connecting to every allowed MCP on each request.
+- The server always runs in UTC and ignores `TZ`, so access tokens and authorization codes expire when intended whatever the host's time zone.
+- The Logs filter lists the MCPs that exist instead of every name found in the log.
+- iCloud Mail `list_messages` and `get_message` cut very long subjects, address lists, and attachment lists, and flag what was cut with `<field>_truncated`.
+- Pull requests and pushes to `main` now run the unit, functional, browser, and release-automation tests in the **Quality** workflow, and CodeQL also analyzes the workflows.
+- The Docker image pins its Node and Deno base images by digest and Dependabot proposes their updates. The `NODE_VERSION` and `DENO_VERSION` build arguments are gone.
+- The dependency audit ignores the `braces` advisory GHSA-vfj7-8cjw-p6xm, which has no fixed release and is only loaded by build tooling.
+
 ### Fixed
 
 - Stopped the MCP dialog header from sliding out of view when a validation error was focused in a form taller than the dialog.
 - Report a malformed OAuth callback as "Invalid OAuth callback" instead of returning to the app without a message.
+- Stopped refreshing an upstream OAuth token on every connection when the provider issues it without `expires_in`.
+- Download an attachment whose filename is not well-formed Unicode instead of returning an error.
+- Kept `state` intact in gateway OAuth redirects, which had the request's query string appended to them.
+- Removed expired rate-limit counters from the database instead of letting them accumulate.
+- Kept pending OAuth connections small enough for the session cookie, so starting several of them no longer loses what the session was saving.
+
+### Security
+
+- Updated the MCP SDK to a release that limits request body size and JSON-RPC batch length in its HTTP server transport and follows client redirects only within the endpoint's origin.
+- Updated Hono to 4.13.13 and its Node.js adapter to 2.1.3, which fix a `serveStatic` path-decoding bypass of middleware on static paths, and raised the pinned Hono floor to 4.13.11. MyMCPs does not serve files through `serveStatic`.
+- Browser sessions are now checked on the server. They end after 2 hours idle or 24 hours, and signing out, changing the password, or running `user:reset-password` revokes the account's sessions, including a copied session cookie. Sessions from before the upgrade are refused once: browsers with a remember-me cookie get a new session automatically, the others sign in again. The upgrade adds a `session_version` column to users.
+- Sign-in attempts are counted before the password is checked and limited to 5 per 15 minutes for each account and client address, and 30 failed attempts per 15 minutes for each client address. A successful sign-in to another account no longer resets the count, and IPv6 clients are counted by /64. Current-password confirmations in settings are limited to 5 per 15 minutes.
+- Multipart request bodies are ignored. An anonymous upload could previously leave up to 20 MB on disk per request.
+- The gateway authorization endpoint records a consent decision only from the CSRF-protected form. A `HEAD` request could previously issue an authorization code without the consent screen. Rejected authorization requests are shown on the instance instead of being redirected, unless the redirect URI is on the user's own device.
+- Limited each access token to 600 gateway requests per minute, and dynamically registered OAuth clients to 1000, removing clients unused for 90 days.
+- A large error response from an upstream MCP can no longer stall the instance while it is redacted. Upstream responses are limited to 32 MiB, error responses to 64 KiB, and a request stays cancellable after a redirect.
+- Refused npm MCP environment variables that configure the Deno sandbox itself, such as `PATH` and loader or Deno runtime variables, which let a member escape the sandbox. Saved ones are ignored when the MCP starts, and Deno is always started from an absolute path.
+- A saved bearer token, header value, or environment value is no longer carried over when an MCP is pointed at another origin, transport, or npm package; enter it again.
+- Starting OAuth for an MCP with a different provider or a newly registered client drops the saved tokens first, and the start link refuses requests coming from another site. An MCP on a public address can no longer send the instance to OAuth endpoints on loopback, private, or link-local addresses, and its OAuth resource indicator must match the MCP URL.
+- iCloud Mail: a crafted message can no longer stall or crash the instance when an agent reads it. HTML messages are converted in a separate short-lived process limited to 5 seconds; when one cannot be converted, `get_message` returns the headers and attachments with a `warning`. A reply is refused when the message being answered would address it to more than 50 recipients.
+- Attachment links check their signature before a download is counted, are limited per MCP and client address, and serve 3 downloads at a time per MCP.
+- Full page loads no longer go blank when stored text, such as a logged tool name or an MCP description, contains markup, and page data kept in the browser history is encrypted and unreadable after sign-out.
+- The production server refuses to start with either `APP_KEY` published in this repository, and the container creates its files in `/app/tmp` with `umask 077`. Run `chmod -R go-rwx /app/tmp` in the container to tighten an existing volume.
+- Server errors returned as JSON no longer include internal messages, failed queries no longer quote their values, and call-log slugs and caller addresses are bounded. The gateway and OAuth endpoints answer cross-origin requests without credentials.
+- Release workflows install and run dependency code with a read-only token; a separate job that installs nothing tags and publishes the validated commit.
 
 ## 2026-10-02
 

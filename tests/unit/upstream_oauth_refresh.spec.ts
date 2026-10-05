@@ -2,6 +2,7 @@ import { test } from '@japa/runner'
 import { DateTime } from 'luxon'
 import Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
+import { addressGuardRuntime, resetAddressGuardRuntime } from '#services/upstream/address_guard'
 import { refreshOauthAccessToken } from '#services/upstream/oauth'
 import { connectHttpUpstream } from '#services/upstream/http_client'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
@@ -16,7 +17,8 @@ function json(body: unknown, status = 200) {
 
 async function connection() {
   const admin = await createAdmin()
-  const mcp = await createMcp(admin.id, { authType: 'auto' })
+  // The saved resource indicator has to be the MCP URL or a parent of it.
+  const mcp = await createMcp(admin.id, { authType: 'auto', httpUrl: 'https://mcp.example/mcp' })
   mcp.oauthIssuer = 'https://oauth.example'
   mcp.oauthAuthorizeUrl = 'https://oauth.example/authorize'
   mcp.oauthTokenUrl = 'https://oauth.example/token'
@@ -57,6 +59,11 @@ function oauthServer(token: (body: URLSearchParams) => Promise<Response>) {
 test.group('Upstream OAuth refresh concurrency', (group) => {
   group.each.setup(beginTestTransaction)
   group.each.teardown(rollbackTestTransaction)
+  // The token endpoint host is resolved before each refresh; keep DNS out of it.
+  group.each.setup(() => {
+    addressGuardRuntime.lookup = async () => ['203.0.113.10']
+  })
+  group.each.teardown(resetAddressGuardRuntime)
 
   test('uses the reloaded endpoint with the reloaded credentials', async ({ assert }) => {
     const mcp = await connection()

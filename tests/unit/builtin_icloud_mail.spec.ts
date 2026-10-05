@@ -1,12 +1,7 @@
 import { test } from '@japa/runner'
 import type { MessageStructureObject } from 'imapflow'
-import {
-  attachmentsOf,
-  bodyPart,
-  htmlToText,
-  replyTo,
-  tidyText,
-} from '#services/builtin/icloud_mail/message'
+import { htmlToText } from '#services/builtin/icloud_mail/html'
+import { attachmentsOf, bodyPart, replyTo, tidyText } from '#services/builtin/icloud_mail/message'
 import { builtinMcp } from '#services/builtin/registry'
 import { builtinWriteGranted, callBuiltinTool, listBuiltinTools } from '#services/builtin/runtime'
 import { sanitizeMcpDiagnostic } from '#services/security_redaction'
@@ -114,23 +109,23 @@ test.group('Built-in iCloud Mail MCP: messages', () => {
     )
   })
 
-  test('turns HTML into text without styles, images, or preview padding', ({ assert }) => {
-    const text = tidyText(
-      htmlToText(
-        [
-          '<html><head><style>p { color: red }</style></head><body>',
-          '<p>Hello‌ ‌ ‌ ‌ </p>',
-          '<img src="https://shop.example/pixel.gif" alt="tracking">',
-          '<p><a href="https://shop.example/deals">See the deals</a></p>',
-          '<p><a href="https://shop.example">https://shop.example</a></p>',
-          '<p>This paragraph is long enough that a wrapping converter would break it across several lines of output.</p>',
-          '</body></html>',
-        ].join('')
-      )
+  test('turns HTML into text without styles, images, or preview padding', async ({ assert }) => {
+    const converted = await htmlToText(
+      [
+        '<html><head><style>p { color: red }</style></head><body>',
+        '<p>Hello‌ ‌ ‌ ‌ </p>',
+        '<img src="https://shop.example/pixel.gif" alt="tracking">',
+        '<p><a href="https://shop.example/deals">See the deals</a></p>',
+        '<p><a href="https://shop.example">https://shop.example</a></p>',
+        '<p>This paragraph is long enough that a wrapping converter would break it across several lines of output.</p>',
+        '</body></html>',
+      ].join(''),
+      1000
     )
 
+    assert.isFalse(converted!.isTruncated)
     assert.equal(
-      text,
+      tidyText(converted!.text),
       [
         'Hello',
         'See the deals [https://shop.example/deals]',
@@ -139,7 +134,7 @@ test.group('Built-in iCloud Mail MCP: messages', () => {
       ].join('\n\n')
     )
     assert.equal(tidyText('One  \r\n\r\n\r\n\r\nTwo\r\n'), 'One\n\nTwo')
-  })
+  }).timeout(10_000)
 
   test('addresses a reply to the author, and to everyone else only when asked', ({ assert }) => {
     const original = {
@@ -509,7 +504,7 @@ test.group('Built-in iCloud Mail MCP: reading', (group) => {
     } finally {
       icloud.restore()
     }
-  })
+  }).timeout(10_000)
 
   test('explains an unknown message, mailbox, or argument', async ({ assert }) => {
     const icloud = mockIcloudMail()

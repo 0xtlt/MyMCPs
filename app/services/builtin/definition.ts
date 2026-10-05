@@ -79,7 +79,8 @@ export type BuiltinPasswordContext = {
 export type BuiltinFile = {
   filename: string
   contentType: string
-  content: Buffer
+  /** The bytes in the pieces they arrived in, so that a large file is held in memory once. */
+  content: Buffer[]
 }
 
 export type BuiltinTool<Context = BuiltinToolContext> = {

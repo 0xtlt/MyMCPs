@@ -36,3 +36,14 @@ export const oauthCallbackValidator = vine.create({
   state: vine.string().maxLength(512).optional(),
   error: vine.string().maxLength(1024).optional(),
 })
+
+/**
+ * Request headers on `/mcps/:id/oauth/start`. Browsers say where a request
+ * comes from: the flow may be started from this app or from the address bar,
+ * not from another site.
+ */
+export const oauthStartValidator = vine.create({
+  headers: vine.object({
+    'sec-fetch-site': vine.enum(['same-origin', 'none'] as const).optional(),
+  }),
+})

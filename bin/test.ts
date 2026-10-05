@@ -12,6 +12,13 @@
 
 process.env.NODE_ENV = 'test'
 
+/**
+ * The database stores timestamps as wall-clock text without a zone and reads
+ * them back in the process zone. Token and code expiries are written in UTC,
+ * so the process runs in UTC whatever TZ the host or a .env file sets.
+ */
+process.env.TZ = 'UTC'
+
 import 'reflect-metadata'
 import { Ignitor, prettyPrintError } from '@adonisjs/core'
 import { configure, processCLIArgs, run } from '@japa/runner'

@@ -16,7 +16,6 @@ export default class UserResetPassword extends BaseCommand {
   async run() {
     // Ace discovers commands before providers register the Lucid validation rules.
     const { default: User } = await import('#models/user')
-    const { default: db } = await import('@adonisjs/lucid/services/db')
     const { resetPasswordValidator } = await import('#validators/user')
 
     const user = await User.findBy('email', this.email.trim())
@@ -41,15 +40,10 @@ export default class UserResetPassword extends BaseCommand {
       return
     }
 
-    await db.transaction(async (trx) => {
-      user.useTransaction(trx)
-      user.password = payload.newPassword
-      await user.save()
+    await user.changePassword(payload.newPassword)
 
-      // The token provider uses its own client, so revoke through this transaction.
-      await trx.from('remember_me_tokens').where('tokenable_id', user.id).delete()
-    })
-
-    this.logger.success(`Password reset for ${user.email}. Remember-me tokens revoked.`)
+    this.logger.success(
+      `Password reset for ${user.email}. Sessions and remember-me tokens revoked.`
+    )
   }
 }

@@ -74,11 +74,11 @@ This repository includes a production Docker image, a Compose service, and a `co
 4. Add a domain to the `mymcps` service and set `APP_URL` to the same HTTPS origin, for example `https://mcp.example.com`.
 5. Deploy, open the domain, and complete onboarding.
 
-The deployment exposes port `3333`, checks `/health`, and runs database migrations before the app starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`.
+The deployment exposes port `3333`, checks `/health`, and runs database migrations before the app starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`. Files the container creates in the volume are readable only by its `node` user.
 
-`APP_KEY` is required, but you do not need to create it in Coolify. On the first start, the container generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable.
+`APP_KEY` is required, but you do not need to create it in Coolify. On the first start, the container generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable. In production the server refuses to start with either key published in this repository: the Docker build placeholder or the test key in `.env.test`.
 
-The Coolify profile sets `TRUST_PROXY=true` so logs use the forwarded client IP instead of the proxy's IP.
+The Coolify profile sets `TRUST_PROXY=loopback,uniquelocal`: the app accepts a forwarded client IP only from a proxy on the loopback interface or a private network, such as Coolify's proxy. Rate limits and logs then use the real client address, and a client cannot choose its own. `TRUST_PROXY` accepts `true`, `false`, or a comma-separated list of proxy IPs, CIDR ranges, and the names `loopback`, `linklocal`, and `uniquelocal`. If a CDN sits in front of the proxy, add the CDN's address ranges, or every client appears as a CDN edge address. A deployment created before this default changed keeps the `true` stored in its environment until you edit it.
 
 ## Useful commands
 
@@ -89,6 +89,8 @@ pnpm run lint       # Check code style
 pnpm run typecheck  # Check TypeScript
 pnpm run build      # Create a production build
 ```
+
+Pull requests and pushes to `main` run the same lint, typecheck, and test suites in the **Quality** workflow.
 
 ### Reset a user password
 
@@ -106,7 +108,7 @@ For Docker Compose (including Coolify), run:
 docker compose exec mymcps /app/docker-entrypoint.sh node ace user:reset-password user@example.com
 ```
 
-The entrypoint loads the persisted application key when needed. Successful resets revoke the account's remember-me tokens. Existing browser sessions can remain active until they expire; MCP access tokens and OAuth connections are unchanged.
+The entrypoint loads the persisted application key when needed. Successful resets end the account's browser sessions and revoke its remember-me tokens; MCP access tokens and OAuth connections are unchanged.
 
 ## Releases
 
@@ -115,7 +117,7 @@ GitHub Actions publishes releases without an AI or an external release service:
 - **Nightly release** runs at 02:42 UTC and publishes a GitHub prerelease only when `main` has moved since the previous nightly. Its semantic prerelease tag includes the UTC date and commit, for example `v0.1.1-nightly.20260808.gabc1234`. It does not change the stable version in `package.json`.
 - **Stable release** runs only when a repository maintainer starts it from **Actions → Stable release → Run workflow** and chooses a `patch`, `minor`, or `major` increment. It validates the application, updates `package.json` and `CHANGELOG.md`, commits the release, creates the stable tag, and publishes automatically generated GitHub release notes.
 
-Both workflows use the repository-provided `GITHUB_TOKEN`; no release secret or AI service is required. If a run fails after pushing a release commit or tag, rerun the same stable workflow to resume publication instead of incrementing the version again.
+Both workflows use the repository-provided `GITHUB_TOKEN`; no release secret or AI service is required. Each one installs dependencies and runs lint, typecheck, tests, the build, and the audit in a job whose token is read-only; a second job with write access then checks out that exact commit and tags and publishes it without installing anything. If a run fails after pushing a release commit or tag, rerun the same stable workflow to resume publication instead of incrementing the version again.
 
 ### Release container images
 
@@ -128,13 +130,16 @@ Pull a channel image and preserve `/app/tmp`, which contains SQLite data, encryp
 
 ```bash
 docker pull ghcr.io/0xtlt/mymcps:stable
-docker run --name mymcps -p 3333:3333 \
-  -e APP_URL=http://localhost:3333 \
+docker run --name mymcps -p 127.0.0.1:3333:3333 \
+  -e APP_URL=https://mcp.example.com \
+  -e TRUST_PROXY=loopback,uniquelocal \
   -e LOG_LEVEL=info \
   -e SESSION_DRIVER=cookie \
   -v mymcps-data:/app/tmp \
   ghcr.io/0xtlt/mymcps:stable
 ```
+
+The port is published on the loopback interface only. Put a TLS-terminating reverse proxy in front of it and set `APP_URL` to the HTTPS origin that proxy serves; the gateway OAuth endpoints stay disabled without an HTTPS `APP_URL`. Complete onboarding before the instance is reachable by anyone else, because the first account created becomes the administrator.
 
 Use `ghcr.io/0xtlt/mymcps:nightly` in the same commands to test the nightly channel. The existing Docker Compose deployment continues to build from source.
 

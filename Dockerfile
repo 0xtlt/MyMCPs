@@ -6,19 +6,21 @@
 # Build:  docker build -t mymcps .
 # Run:    docker run --rm -p 3333:3333 \
 #           -e APP_KEY=... -e APP_URL=http://localhost:3333 \
+#           -e LOG_LEVEL=info -e SESSION_DRIVER=cookie \
 #           -v mymcps-data:/app/tmp mymcps
 
-ARG NODE_VERSION=24
 ARG PNPM_VERSION=12.5.1
-ARG DENO_VERSION=2.9.7
+
+# Base images are pinned by tag and multi-arch index digest, both written out
+# in each FROM line (not behind an ARG) so Dependabot can update them.
 
 # Official Deno binary only (multi-arch).
-FROM denoland/deno:bin-${DENO_VERSION} AS deno
+FROM denoland/deno:bin-2.9.7@sha256:bc5aa4466e21b6d3021226a85ba2e1911f7c386254d97b9d797903ab74edace2 AS deno
 
 # ---------------------------------------------------------------------------
 # Dependencies + compile (TypeScript, Vite assets, better-sqlite3 native)
 # ---------------------------------------------------------------------------
-FROM node:${NODE_VERSION}-bookworm-slim AS build
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS build
 
 ARG PNPM_VERSION
 ENV PNPM_HOME=/pnpm
@@ -59,15 +61,16 @@ RUN --mount=type=cache,id=mymcps-pnpm-store,target=/pnpm/store,sharing=locked \
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS runtime
 
-ARG DENO_VERSION
+# DENO_VERSION must name the version in the denoland/deno tag above; Dependabot
+# only edits the FROM line (.github/scripts/container-image.test.mjs checks it).
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \
   PORT=3333 \
   DENO_PATH=/usr/local/bin/deno \
   DENO_DIR=/app/tmp/deno-cache \
-  DENO_VERSION=${DENO_VERSION}
+  DENO_VERSION=2.9.7
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates dumb-init \

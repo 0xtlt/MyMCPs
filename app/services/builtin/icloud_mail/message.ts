@@ -1,16 +1,35 @@
-import { convert } from 'html-to-text'
 import type { FetchMessageObject, MessageAddressObject, MessageStructureObject } from 'imapflow'
 
 const MAX_REFERENCES = 20
 
 /**
- * One bare address. Display names and the characters an address parser could
- * read as a second recipient are refused.
+ * How much of what a sender controls is repeated to the agent, so that one
+ * message cannot fill its context. A field that was cut is flagged with
+ * `<field>_truncated`.
  */
-const ADDRESS_PATTERN = /^[^\s@<>(),;:"\\[\]]+@[^\s@<>(),;:"\\[\]]+\.[^\s@<>(),;:"\\[\]]+$/
+const MAX_LISTED_ADDRESSES = 50
+const MAX_ADDRESS_CHARS = 320
+/** RFC 5322 allows 998 characters on a line. */
+const MAX_HEADER_CHARS = 998
+const MAX_NAME_CHARS = 255
+export const MAX_LISTED_ATTACHMENTS = 100
 
-/** Invisible characters newsletters repeat to pad the preview line of a mail client. */
-const PREVIEW_PADDING = /(?:[\u00ad\u034f\u200b-\u200d\u2007\ufeff][ \u00a0]*){3,}/g
+/**
+ * One bare address. Display names and the characters an address parser could
+ * read as a second recipient are refused. The domain is matched up to its
+ * first dot that is not its first character, so that there is one way to read
+ * it: a message can name thousands of addresses written to be slow to refuse.
+ */
+const ADDRESS_PATTERN =
+  /^[^\s@<>(),;:"\\[\]]+@[^\s@<>(),;:"\\[\]][^\s@<>(),;:"\\[\].]*\.[^\s@<>(),;:"\\[\]]+$/
+
+/**
+ * Invisible characters newsletters repeat to pad the preview line of a mail
+ * client: three or more, with spaces in between. What follows the third is
+ * matched by a single class, which keeps a run of any length off the regex stack.
+ */
+const PREVIEW_PADDING =
+  /(?:[\u00ad\u034f\u200b-\u200d\u2007\ufeff][ \u00a0]*){3}[\u00ad\u034f\u200b-\u200d\u2007\ufeff \u00a0]*/g
 
 export function isAddress(value: string) {
   return value.length <= 254 && ADDRESS_PATTERN.test(value)
@@ -30,8 +49,30 @@ function formatAddress({ name, address }: MessageAddressObject) {
   return name && name !== address ? `${name} <${address}>` : address
 }
 
-function formatAddresses(list: MessageAddressObject[] | undefined) {
-  return (list ?? []).map(formatAddress).filter(Boolean)
+/** Sender-controlled text, cut to `max` characters. */
+function clip(text: string, max: number) {
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/** `<field>_truncated` for each field that was cut. */
+function truncated(fields: Record<string, boolean>) {
+  return Object.fromEntries(
+    Object.entries(fields)
+      .filter(([, isCut]) => isCut)
+      .map(([field]) => [`${field}_truncated`, true])
+  )
+}
+
+/** The addresses of one header, and whether some were left out or shortened. */
+function listAddresses(list: MessageAddressObject[] | undefined) {
+  const all = (list ?? []).map(formatAddress).filter(Boolean)
+  const listed = all
+    .slice(0, MAX_LISTED_ADDRESSES)
+    .map((address) => clip(address, MAX_ADDRESS_CHARS))
+  return {
+    listed,
+    isCut: all.length > listed.length || listed.some((address, index) => address !== all[index]),
+  }
 }
 
 function isoDate(value: Date | string | undefined) {
@@ -74,8 +115,8 @@ function fileSize({ size = 0, encoding }: MessageStructureObject) {
 export function attachmentsOf(structure: MessageStructureObject | undefined) {
   return (structure ? contentParts(structure) : []).filter(isAttachment).map((part) => ({
     part: part.part ?? '1',
-    filename: filenameOf(part) ?? 'untitled',
-    content_type: part.type,
+    filename: clip(filenameOf(part) ?? 'untitled', MAX_NAME_CHARS),
+    content_type: clip(part.type, MAX_NAME_CHARS),
     size: fileSize(part),
   }))
 }
@@ -83,16 +124,24 @@ export function attachmentsOf(structure: MessageStructureObject | undefined) {
 /** What an agent needs to pick a message out of a list. */
 export function messageSummary(message: FetchMessageObject) {
   const { envelope = {}, flags = new Set<string>() } = message
+  const subject = envelope.subject ?? ''
+  const from = listAddresses(envelope.from)
+  const to = listAddresses(envelope.to)
   return {
     uid: message.uid,
-    subject: envelope.subject ?? '',
-    from: formatAddresses(envelope.from).join(', '),
-    to: formatAddresses(envelope.to),
+    subject: clip(subject, MAX_HEADER_CHARS),
+    from: from.listed.join(', '),
+    to: to.listed,
     date: isoDate(envelope.date) ?? isoDate(message.internalDate),
     unread: !flags.has('\\Seen'),
     flagged: flags.has('\\Flagged'),
     answered: flags.has('\\Answered'),
     attachments: attachmentsOf(message.bodyStructure).length,
+    ...truncated({
+      subject: subject.length > MAX_HEADER_CHARS,
+      from: from.isCut,
+      to: to.isCut,
+    }),
   }
 }
 
@@ -100,35 +149,39 @@ export function messageSummary(message: FetchMessageObject) {
 export function messageHeaders(message: FetchMessageObject) {
   const { envelope = {} } = message
   const { attachments, ...summary } = messageSummary(message)
-  const replyAddress = formatAddresses(envelope.replyTo).join(', ')
-  const cc = formatAddresses(envelope.cc)
-  const bcc = formatAddresses(envelope.bcc)
+  const replyAddresses = listAddresses(envelope.replyTo)
+  const replyAddress = replyAddresses.listed.join(', ')
+  const hasReplyAddress = replyAddress !== '' && replyAddress !== summary.from
+  const cc = listAddresses(envelope.cc)
+  const bcc = listAddresses(envelope.bcc)
+  const messageId = envelope.messageId ?? ''
 
   return {
     ...summary,
-    ...(replyAddress && replyAddress !== summary.from ? { reply_to: replyAddress } : {}),
-    ...(cc.length > 0 ? { cc } : {}),
-    ...(bcc.length > 0 ? { bcc } : {}),
-    ...(envelope.messageId ? { message_id: envelope.messageId } : {}),
+    ...(hasReplyAddress ? { reply_to: replyAddress } : {}),
+    ...(cc.listed.length > 0 ? { cc: cc.listed } : {}),
+    ...(bcc.listed.length > 0 ? { bcc: bcc.listed } : {}),
+    ...(messageId ? { message_id: clip(messageId, MAX_HEADER_CHARS) } : {}),
+    ...truncated({
+      reply_to: hasReplyAddress && replyAddresses.isCut,
+      cc: cc.isCut,
+      bcc: bcc.isCut,
+      message_id: messageId.length > MAX_HEADER_CHARS,
+    }),
   }
 }
 
-export function htmlToText(html: string) {
-  return convert(html, {
-    wordwrap: false,
-    selectors: [
-      { selector: 'a', options: { hideLinkHrefIfSameAsText: true } },
-      { selector: 'img', format: 'skip' },
-    ],
-  })
-}
-
-/** Normalize line endings and drop the padding and blank runs that only cost tokens. */
+/**
+ * Normalize line endings and drop the padding and blank runs that only cost
+ * tokens. The text is written by a stranger, so every pattern must stay
+ * linear: the lookbehind lets a run of spaces be tried once, from its start,
+ * instead of once from each of its characters.
+ */
 export function tidyText(text: string) {
   return text
     .replace(/\r\n?/g, '\n')
     .replace(PREVIEW_PADDING, '')
-    .replace(/[ \t]+\n/g, '\n')
+    .replace(/(?<![ \t])[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
@@ -151,10 +204,9 @@ export function replyTo(original: FetchMessageObject, ownAddresses: string[], re
   // Replying to a message you sent continues with the people it was sent to.
   const to = author.every(isOwn) ? addresses(envelope.to) : author
   const everyone = replyAll ? addresses([...(envelope.to ?? []), ...(envelope.cc ?? [])]) : []
-  const cc = everyone.filter(
-    (address) =>
-      !isOwn(address) && !to.some((other) => other.toLowerCase() === address.toLowerCase())
-  )
+  // A set, because the sender decides how long both lists are.
+  const addressed = new Set(to.map((address) => address.toLowerCase()))
+  const cc = everyone.filter((address) => !isOwn(address) && !addressed.has(address.toLowerCase()))
 
   const subject = envelope.subject ?? ''
   const references = original.headers?.toString('latin1').match(/<[^<>\s]+>/g) ?? []

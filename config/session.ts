@@ -21,7 +21,9 @@ const sessionConfig = defineConfig({
 
   /**
    * Define how long to keep the session data alive without
-   * any activity.
+   * any activity. The browser drops the cookie after that, and the
+   * server refuses a signed-in session that sat idle for longer or
+   * was established more than 24 hours ago (see the session stamp).
    */
   age: '2h',
 

@@ -60,6 +60,40 @@ type Props = {
   /** Built-in MCPs only: where the provider redirects, and whether its sign-in works. */
   publicApp?: PublicApp | null
   isConnected?: boolean
+  /** False once the form points the MCP at another server or package. */
+  keepsSavedCredentials?: boolean
+}
+
+function urlOrigin(value: string | null) {
+  try {
+    return new URL((value ?? '').trim()).origin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether saving these values keeps the saved token, header value and
+ * environment values. The server drops them when the MCP moves to another
+ * origin, transport or package, so the form must not offer to keep them.
+ */
+export function keepsSavedCredentials(
+  saved: { transport: McpTransport; httpUrl: string | null; npmPackage: string | null },
+  values: McpFormValues
+) {
+  if (saved.transport !== values.transport) {
+    return false
+  }
+  if (values.transport === 'npm') {
+    return (saved.npmPackage ?? '') === values.npmPackage.trim()
+  }
+  if (values.transport === 'http') {
+    const savedOrigin = urlOrigin(saved.httpUrl)
+    const nextOrigin = urlOrigin(values.httpUrl)
+    // A URL still being typed is not a decision yet.
+    return savedOrigin === null || nextOrigin === null || savedOrigin === nextOrigin
+  }
+  return true
 }
 
 let nextEnvironmentVariableId = 0
@@ -155,7 +189,10 @@ export function McpFormFields({
   cachedVersion,
   publicApp = null,
   isConnected = false,
+  keepsSavedCredentials: keepsSaved = true,
 }: Props) {
+  const keepsBearer = keepsSaved && Boolean(secrets.hasAuthBearer)
+  const keepsHeaderValue = keepsSaved && Boolean(secrets.hasAuthHeaderValue)
   const identityFields = (
     <>
       <TextInput
@@ -283,10 +320,11 @@ export function McpFormFields({
               </Text>
             </VStack>
             {values.npmEnv.map((entry, index) => {
-              const canKeepExistingValue =
+              const isSavedVariable =
                 entry.hasValue &&
                 entry.originalName !== undefined &&
                 entry.name === entry.originalName
+              const canKeepExistingValue = keepsSaved && isSavedVariable
 
               return (
                 <HStack
@@ -328,7 +366,11 @@ export function McpFormFields({
                       })
                     }
                     description={
-                      canKeepExistingValue ? 'Leave blank to keep the saved value' : undefined
+                      canKeepExistingValue
+                        ? 'Leave blank to keep the saved value'
+                        : isSavedVariable
+                          ? 'Enter the value again for the new package'
+                          : undefined
                     }
                     isOptional={canKeepExistingValue}
                     isRequired={!canKeepExistingValue}
@@ -393,13 +435,18 @@ export function McpFormFields({
 
       {values.authType === 'bearer' ? (
         <TextInput
-          label={secrets.hasAuthBearer ? 'Bearer token (leave blank to keep)' : 'Bearer token'}
+          label={keepsBearer ? 'Bearer token (leave blank to keep)' : 'Bearer token'}
           htmlName="authBearer"
           type="password"
           value={values.authBearer}
           onChange={(authBearer) => onChange({ authBearer })}
           width="100%"
-          isOptional={Boolean(secrets.hasAuthBearer)}
+          isOptional={keepsBearer}
+          description={
+            secrets.hasAuthBearer && !keepsSaved
+              ? 'The saved token is not sent to a different server. Enter the token for this one.'
+              : undefined
+          }
         />
       ) : null}
 
@@ -413,15 +460,18 @@ export function McpFormFields({
             width={240}
           />
           <TextInput
-            label={
-              secrets.hasAuthHeaderValue ? 'Header value (leave blank to keep)' : 'Header value'
-            }
+            label={keepsHeaderValue ? 'Header value (leave blank to keep)' : 'Header value'}
             htmlName="authHeaderValue"
             type="password"
             value={values.authHeaderValue}
             onChange={(authHeaderValue) => onChange({ authHeaderValue })}
             width={320}
-            isOptional={Boolean(secrets.hasAuthHeaderValue)}
+            isOptional={keepsHeaderValue}
+            description={
+              secrets.hasAuthHeaderValue && !keepsSaved
+                ? 'The saved value is not sent to a different server. Enter the value for this one.'
+                : undefined
+            }
           />
         </HStack>
       ) : null}

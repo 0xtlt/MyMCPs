@@ -1,6 +1,7 @@
 import env from '#start/env'
 import app from '@adonisjs/core/services/app'
 import { defineConfig } from '@adonisjs/core/http'
+import { resolveClientIp, resolveTrustProxy } from '#services/client_ip'
 
 /**
  * The app URL can be used in various places where you want to create absolute
@@ -8,14 +9,6 @@ import { defineConfig } from '@adonisjs/core/http'
  * use absolute URLs.
  */
 export const appUrl = env.get('APP_URL')
-
-function resolveTrustProxy(value: string | undefined): boolean | string {
-  const normalized = value?.trim()
-  if (!normalized || normalized.toLowerCase() === 'loopback') return 'loopback'
-  if (normalized.toLowerCase() === 'true') return true
-  if (normalized.toLowerCase() === 'false') return false
-  return normalized
-}
 
 /**
  * The configuration settings used by the HTTP server
@@ -26,6 +19,13 @@ export const http = defineConfig({
    * The default keeps Adonis's loopback-only behavior for local development.
    */
   trustProxy: resolveTrustProxy(env.get('TRUST_PROXY')),
+
+  /**
+   * A forwarded header can hold anything, so only hand out the resolved
+   * client address when it is an IP address.
+   */
+  getIp: (request, forwardedIp) =>
+    resolveClientIp(forwardedIp(), request.request.socket.remoteAddress),
 
   /**
    * Generate a unique request id for each incoming request.

@@ -15,3 +15,20 @@ updates:
       day: monday
       time: '03:17'
     open-pull-requests-limit: 10
+
+  # Base images in the Dockerfile: the Node runtime and the Deno binary that
+  # sandboxes npm MCP packages. A Deno bump also needs DENO_VERSION updated in
+  # the Dockerfile; `pnpm run test:release` fails until the two agree.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '03:17'
+    open-pull-requests-limit: 10
+    ignore:
+      # The Node major is chosen by hand (package.json engines and the
+      # workflows use 24); digest updates for the pinned tag still arrive.
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major

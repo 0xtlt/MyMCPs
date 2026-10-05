@@ -11,6 +11,13 @@
 |
 */
 
+/**
+ * The database stores timestamps as wall-clock text without a zone and reads
+ * them back in the process zone. Token and code expiries are written in UTC,
+ * so the process runs in UTC whatever TZ the host or a .env file sets.
+ */
+process.env.TZ = 'UTC'
+
 await import('reflect-metadata')
 const { Ignitor, prettyPrintError } = await import('@adonisjs/core')
 

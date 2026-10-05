@@ -7,7 +7,9 @@ import type { HttpContext } from '@adonisjs/core/http'
 import McpCallLogService from '#services/mcp_call_log_service'
 import { DEFAULT_MCP_AUTO_UPDATE_CRON } from '#services/mcp_auto_update_cron'
 import { resyncMcpAutoUpdateScheduler } from '#services/mcp_auto_update_scheduler'
-import User from '#models/user'
+import { stampSession } from '#services/session_stamp'
+import { currentPasswordRateLimiter } from '#start/limiter'
+import type User from '#models/user'
 
 export default class SettingsController {
   async index({ inertia, auth }: HttpContext) {
@@ -31,7 +33,7 @@ export default class SettingsController {
       meta: { userId: user.id },
     })
 
-    await user.validatePassword(payload.currentPassword)
+    await this.confirmCurrentPassword(user, payload.currentPassword)
     user.email = payload.email
     await user.save()
 
@@ -43,14 +45,11 @@ export default class SettingsController {
     const user = auth.user!
     const payload = await request.validateUsing(updatePasswordValidator)
 
-    await user.validatePassword(payload.currentPassword)
-    user.password = payload.newPassword
-    await user.save()
+    await this.confirmCurrentPassword(user, payload.currentPassword)
+    await user.changePassword(payload.newPassword)
 
-    const rememberTokens = await User.rememberMeTokens.all(user)
-    await Promise.all(
-      rememberTokens.map((token) => User.rememberMeTokens.delete(user, token.identifier))
-    )
+    // The change retired every session of the account: keep this browser signed in.
+    stampSession(session, user)
 
     session.flash('success', 'Password updated')
     return response.redirect().toRoute('settings.index')
@@ -73,5 +72,17 @@ export default class SettingsController {
 
     session.flash('success', 'Instance settings updated')
     return response.redirect().toRoute('settings.index')
+  }
+
+  /**
+   * A signed-in browser is no proof of knowing the password: without a
+   * budget, whoever holds a hijacked session could guess it here at will.
+   */
+  private async confirmCurrentPassword(user: User, currentPassword: string) {
+    const key = `current-password:${user.id}`
+
+    await currentPasswordRateLimiter.consume(key)
+    await user.validatePassword(currentPassword)
+    await currentPasswordRateLimiter.delete(key)
   }
 }

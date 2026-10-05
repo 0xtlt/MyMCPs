@@ -1,11 +1,13 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import { errors } from '@vinejs/vine'
 import Mcp from '#models/mcp'
 import McpEnvironmentStore from '#services/mcp_environment_store'
 import McpSecretStore from '#services/mcp_secret_store'
 import { createMcpValidator, updateMcpValidator } from '#validators/mcp'
-import { oauthCallbackValidator } from '#validators/oauth'
+import { oauthCallbackValidator, oauthStartValidator } from '#validators/oauth'
 import { testAndUpdateStatus } from '#services/upstream/manager'
+import { removeMcpSandbox } from '#services/upstream/deno_runner'
 import { McpNpmUpdateError, updateMcpToLatest } from '#services/mcp_npm_update_service'
 import {
   clearOauthSession,
@@ -52,7 +54,11 @@ function normalizedHttpUrl(value: string) {
   }
 }
 
-function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
+/**
+ * `keepsSavedValues` is false when the MCP now runs another package: the saved
+ * values were entered for the previous one and must be typed again.
+ */
+function assignNpmEnvironment(mcp: Mcp, payload: McpPayload, keepsSavedValues: boolean) {
   if (payload.transport !== 'npm') {
     mcp.npmEnv = null
     return
@@ -60,6 +66,7 @@ function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
 
   const entries = payload.npmEnv ?? []
   const seenNames = new Set<string>()
+  const savedEnv = keepsSavedValues ? mcp.npmEnv : null
 
   for (const [index, entry] of entries.entries()) {
     if (seenNames.has(entry.name)) {
@@ -67,15 +74,17 @@ function assignNpmEnvironment(mcp: Mcp, payload: McpPayload) {
     }
     seenNames.add(entry.name)
 
-    if (entry.value === null && !McpEnvironmentStore.hasName(mcp.npmEnv, entry.name)) {
+    if (entry.value === null && !McpEnvironmentStore.hasName(savedEnv, entry.name)) {
       npmEnvValidationError(
         `npmEnv.${index}.value`,
-        'A value is required for a new environment variable'
+        McpEnvironmentStore.hasName(mcp.npmEnv, entry.name)
+          ? 'Enter this value again: saved values are not passed on to a different package'
+          : 'A value is required for a new environment variable'
       )
     }
   }
 
-  const nextValue = McpEnvironmentStore.merge(mcp.npmEnv, entries)
+  const nextValue = McpEnvironmentStore.merge(savedEnv, entries)
   let environment: Record<string, string>
   try {
     environment = McpEnvironmentStore.decrypt(nextValue)
@@ -301,6 +310,17 @@ function clearOAuthConnection(mcp: Mcp) {
   mcp.oauthRequired = false
 }
 
+function httpOrigin(httpUrl: string | null | undefined) {
+  if (!httpUrl) {
+    return null
+  }
+  try {
+    return new URL(httpUrl).origin
+  } catch {
+    return null
+  }
+}
+
 export async function assignMcpFromPayload(
   mcp: Mcp,
   payload: McpPayload,
@@ -308,12 +328,25 @@ export async function assignMcpFromPayload(
 ) {
   const nextHttpUrl = payload.transport === 'http' ? normalizedHttpUrl(payload.httpUrl ?? '') : null
   const nextBuiltinKey = payload.transport === 'builtin' ? (payload.builtinKey ?? null) : null
+  const nextNpmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
   const oauthServerChanged =
     mcp.transport !== payload.transport ||
     mcp.httpUrl !== nextHttpUrl ||
     (mcp.builtinKey ?? null) !== nextBuiltinKey
   if (oauthServerChanged) {
     clearOAuthConnection(mcp)
+  }
+
+  // Saved secrets are write-only and were entered for one destination. They
+  // must not follow the MCP to another origin or package, where the probe
+  // after saving would hand them over. A new path or version keeps them.
+  const credentialTargetChanged =
+    mcp.transport !== payload.transport ||
+    httpOrigin(mcp.httpUrl) !== httpOrigin(nextHttpUrl) ||
+    (mcp.npmPackage ?? null) !== nextNpmPackage
+  if (credentialTargetChanged) {
+    mcp.authBearer = null
+    mcp.authHeaderValue = null
   }
 
   mcp.name = payload.name
@@ -324,10 +357,10 @@ export async function assignMcpFromPayload(
   mcp.builtinKey = nextBuiltinKey
   mcp.builtinWriteEnabled =
     payload.transport === 'builtin' ? (payload.builtinWriteEnabled ?? false) : false
-  mcp.npmPackage = payload.transport === 'npm' ? (payload.npmPackage ?? null) : null
+  mcp.npmPackage = nextNpmPackage
   mcp.npmVersion = payload.transport === 'npm' ? payload.npmVersion || null : null
   mcp.npmArgsList = payload.transport === 'npm' ? (payload.npmArgs ?? []) : []
-  assignNpmEnvironment(mcp, payload)
+  assignNpmEnvironment(mcp, payload, !credentialTargetChanged)
   // Built-in MCPs sign in the one way their provider supports.
   mcp.authType = payload.transport === 'builtin' ? 'auto' : payload.authType
   mcp.authHeaderName = mcp.authType === 'header' ? (payload.authHeaderName ?? null) : null
@@ -345,6 +378,21 @@ function needsAttention(mcp: Mcp) {
   return (
     mcp.oauthRequired || (mcp.status === 'error' && Boolean(builtinMcp(mcp.builtinKey)?.password))
   )
+}
+
+/**
+ * Files left in a sandbox are not worth failing a save or a delete over; a
+ * leftover directory is reported for the operator to remove.
+ */
+async function discardSandbox(mcpId: number) {
+  try {
+    await removeMcpSandbox(mcpId)
+  } catch (error) {
+    logger.warn(
+      { mcpId, error: sanitizeDiagnostic(error) },
+      'Could not delete the sandbox directory of an npm MCP'
+    )
+  }
 }
 
 async function uniqueSlug(name: string, excludeId?: number) {
@@ -417,8 +465,13 @@ export default class McpsController {
     }
 
     const payload = await request.validateUsing(updateMcpValidator)
+    const previousNpmPackage = mcp.transport === 'npm' ? mcp.npmPackage : null
     await assignMcpFromPayload(mcp, payload, { excludeId: mcp.id })
     await mcp.save()
+    // Another package must not start in what the previous one left behind.
+    if (previousNpmPackage && previousNpmPackage !== mcp.npmPackage) {
+      await discardSandbox(mcp.id)
+    }
 
     await testAndUpdateStatus(mcp)
     if (needsAttention(mcp)) {
@@ -435,6 +488,7 @@ export default class McpsController {
       return response.redirect().toRoute('mcps.index')
     }
     await mcp.delete()
+    await discardSandbox(mcp.id)
     session.flash('success', 'MCP deleted')
     return response.redirect().toRoute('mcps.index')
   }
@@ -482,7 +536,23 @@ export default class McpsController {
     return response.redirect().toRoute('mcps.index')
   }
 
-  async oauthStart({ params, response, session }: HttpContext) {
+  /**
+   * Starting a flow registers a client with the provider and replaces the
+   * saved OAuth configuration, on a route that has to stay a GET navigation.
+   */
+  async oauthStart({ params, request, response, session }: HttpContext) {
+    // The router also sends HEAD requests to GET routes.
+    if (request.method() !== 'GET') {
+      return response.header('Allow', 'GET').methodNotAllowed()
+    }
+    // Browsers say where a request comes from. Another site must not be able
+    // to start, and so reset, an authorization by linking to or embedding this URL.
+    const [fromAnotherSite] = await request.tryValidateUsing(oauthStartValidator)
+    if (fromAnotherSite) {
+      session.flash('error', 'Start the OAuth connection from the MCPs page')
+      return response.redirect().withQs(false).toRoute('mcps.index')
+    }
+
     const mcp = await Mcp.find(params.id)
     if (!mcp) {
       session.flash('error', 'MCP not found')
@@ -499,7 +569,12 @@ export default class McpsController {
     }
 
     try {
-      return response.redirect(await startOauthFlow(session, mcp))
+      // Redirects forward the query string by default, which would append
+      // whatever followed this URL to the provider's authorization request.
+      return response
+        .redirect()
+        .withQs(false)
+        .toPath(await startOauthFlow(session, mcp))
     } catch (error) {
       session.flash('error', sanitizeMcpDiagnostic(error, mcp) ?? 'Failed to start OAuth')
       session.flash('editingMcpId', mcp.id)

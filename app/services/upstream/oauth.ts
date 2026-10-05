@@ -10,6 +10,10 @@ import {
   registerClient,
   startAuthorization,
 } from '@modelcontextprotocol/sdk/client/auth.js'
+import {
+  checkResourceAllowed,
+  resourceUrlFromServerUrl,
+} from '@modelcontextprotocol/sdk/shared/auth-utils.js'
 import type {
   AuthorizationServerMetadata,
   OAuthClientInformationMixed,
@@ -26,6 +30,11 @@ import {
   upstreamIdentityHeaders,
 } from '#services/upstream/allowlisted_client'
 import { fetchWithSameOriginRedirects } from '#services/upstream/safe_fetch'
+import {
+  discoveredEndpointGuard,
+  RestrictedEndpointError,
+  type DiscoveredEndpointGuard,
+} from '#services/upstream/address_guard'
 import { parseHttpUrl } from '#services/http_url'
 import {
   builtinAuthorizationUrl,
@@ -54,12 +63,40 @@ type OAuthStartOptions = {
   state: string
 }
 
+/** How the requests of one MCP's OAuth flow reach its provider. */
+type OAuthEndpoints = {
+  fetch: typeof fetch
+  /** Refuses a discovered URL that leads into a network the MCP is not part of. */
+  assertAllowed: DiscoveredEndpointGuard
+}
+
+const OAUTH_SESSION_PREFIX = 'mcp_oauth:'
+/** Authorizations one browser session may have in flight. Older starts are dropped. */
+const MAX_PENDING_OAUTH_STARTS = 5
+/**
+ * Most the pending authorizations may weigh in the session. The cookie store
+ * keeps the whole session in one cookie, and a browser ignores a cookie over
+ * 4096 bytes: the write would be lost without an error. This leaves room for
+ * the sign-in, the CSRF secret and a flash message.
+ */
+export const MAX_PENDING_OAUTH_START_BYTES = 1536
+
+/** Metadata documents and token responses are a few KiB. */
+const MAX_OAUTH_RESPONSE_BYTES = 1024 * 1024
+
+/**
+ * Lifetime assumed for an access token issued without `expires_in`. With no
+ * expiry at all the token never counts as fresh, and every connection would
+ * refresh it first.
+ */
+const DEFAULT_ACCESS_TOKEN_LIFETIME_SECONDS = 60 * 60
+
 function base64Url(buffer: Buffer) {
   return buffer.toString('base64url')
 }
 
 function oauthSessionKey(state: string) {
-  return `mcp_oauth:${state}`
+  return `${OAUTH_SESSION_PREFIX}${state}`
 }
 
 function normalizedHttpUrl(value: string, label: string) {
@@ -82,30 +119,61 @@ function fetchTargetUrl(input: Parameters<typeof fetch>[0]) {
   return String(input)
 }
 
-const oauthFetch: typeof fetch = (input, init) => {
-  const identityHeaders = upstreamIdentityHeaders(fetchTargetUrl(input))
-  if (Object.keys(identityHeaders).length === 0) {
-    return fetchWithSameOriginRedirects(input, init, 'OAuth endpoint')
+/**
+ * Every request of an OAuth flow goes through this one fetch, so no call site
+ * can reach a discovered endpoint without the address check. Requests to the
+ * MCP's own host pass: the operator entered that one.
+ */
+function oauthEndpointsFor(mcp: Mcp): OAuthEndpoints {
+  if (mcp.transport !== 'http' || !mcp.httpUrl) {
+    throw new Error('OAuth is supported only for HTTP MCPs')
+  }
+  const assertAllowed = discoveredEndpointGuard(parseHttpUrl(mcp.httpUrl, 'MCP URL'))
+  const limits = { maxResponseBytes: MAX_OAUTH_RESPONSE_BYTES }
+
+  const oauthFetch: typeof fetch = async (input, init) => {
+    const target = fetchTargetUrl(input)
+    await assertAllowed(target, 'OAuth endpoint')
+
+    const identityHeaders = upstreamIdentityHeaders(target)
+    if (Object.keys(identityHeaders).length === 0) {
+      return fetchWithSameOriginRedirects(input, init, 'OAuth endpoint', limits)
+    }
+
+    const headers = new Headers(input instanceof Request ? input.headers : undefined)
+    if (init?.headers) {
+      new Headers(init.headers).forEach((value, name) => {
+        headers.set(name, value)
+      })
+    }
+    for (const [name, value] of Object.entries(identityHeaders)) {
+      if (!headers.has(name)) headers.set(name, value)
+    }
+
+    return fetchWithSameOriginRedirects(input, { ...init, headers }, 'OAuth endpoint', limits)
   }
 
-  const headers = new Headers(input instanceof Request ? input.headers : undefined)
-  if (init?.headers) {
-    new Headers(init.headers).forEach((value, name) => {
-      headers.set(name, value)
-    })
-  }
-  for (const [name, value] of Object.entries(identityHeaders)) {
-    if (!headers.has(name)) headers.set(name, value)
-  }
-
-  return fetchWithSameOriginRedirects(input, { ...init, headers }, 'OAuth endpoint')
+  return { fetch: oauthFetch, assertAllowed }
 }
 
-function validateOAuthMetadata(metadata: AuthorizationServerMetadata, expectedIssuer?: string) {
-  parseHttpUrl(String(metadata.authorization_endpoint), 'OAuth authorization endpoint')
-  parseHttpUrl(String(metadata.token_endpoint), 'OAuth token endpoint')
-  if (metadata.registration_endpoint) {
-    parseHttpUrl(metadata.registration_endpoint, 'OAuth registration endpoint')
+/**
+ * The endpoints come from a document the provider or the MCP serves. The
+ * authorization endpoint is checked too: the admin's browser is sent there.
+ */
+async function validateOAuthMetadata(
+  metadata: AuthorizationServerMetadata,
+  endpoints: OAuthEndpoints,
+  expectedIssuer?: string
+) {
+  const discovered: Array<[string | undefined, string]> = [
+    [String(metadata.authorization_endpoint), 'OAuth authorization endpoint'],
+    [String(metadata.token_endpoint), 'OAuth token endpoint'],
+    [metadata.registration_endpoint, 'OAuth registration endpoint'],
+  ]
+  for (const [value, label] of discovered) {
+    if (value) {
+      await endpoints.assertAllowed(parseHttpUrl(value, label), label)
+    }
   }
   if (metadata.issuer) {
     parseHttpUrl(metadata.issuer, 'OAuth issuer')
@@ -120,9 +188,30 @@ function validateOAuthMetadata(metadata: AuthorizationServerMetadata, expectedIs
   return metadata
 }
 
+/**
+ * RFC 8707 resource indicator for the tokens of an MCP: its URL or a parent of
+ * it. A resource server must not name another API as the audience, or the
+ * provider would issue tokens for that API and the gateway hand them to this MCP.
+ */
+function resourceForMcp(mcp: Mcp, resource: string | null | undefined) {
+  if (!resource) {
+    return undefined
+  }
+  const normalized = normalizedHttpUrl(resource, 'OAuth resource')
+  const matchesMcp = checkResourceAllowed({
+    requestedResource: resourceUrlFromServerUrl(parseHttpUrl(mcp.httpUrl ?? '', 'MCP URL')),
+    configuredResource: normalized,
+  })
+  if (!matchesMcp) {
+    throw new Error('OAuth protected resource does not match the MCP URL')
+  }
+  return normalized
+}
+
 async function metadataForSameOriginIssuer(
   metadata: AuthorizationServerMetadata,
-  authorizationServerUrl: string
+  authorizationServerUrl: string,
+  endpoints: OAuthEndpoints
 ) {
   if (!metadata.issuer) {
     return null
@@ -142,14 +231,14 @@ async function metadataForSameOriginIssuer(
 
   try {
     const issuerMetadata = await discoverAuthorizationServerMetadata(issuer, {
-      fetchFn: oauthFetch,
+      fetchFn: endpoints.fetch,
     })
     if (!issuerMetadata) {
       return null
     }
     return {
       authorizationServerUrl: issuer,
-      metadata: validateOAuthMetadata(issuerMetadata, issuer),
+      metadata: await validateOAuthMetadata(issuerMetadata, endpoints, issuer),
     }
   } catch {
     return null
@@ -226,18 +315,16 @@ function clientAuthMethod(client: OAuthClientInformationMixed) {
   return null
 }
 
-async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
-  if (mcp.transport !== 'http' || !mcp.httpUrl) {
-    throw new Error('OAuth is supported only for HTTP MCPs')
-  }
-
-  const serverUrl = parseHttpUrl(mcp.httpUrl, 'MCP URL')
+async function discoverOAuthContext(mcp: Mcp, endpoints: OAuthEndpoints): Promise<OAuthContext> {
+  const serverUrl = parseHttpUrl(mcp.httpUrl ?? '', 'MCP URL')
   let serverInfo: Awaited<ReturnType<typeof discoverOAuthServerInfo>> | undefined
   let discoveryError: unknown
 
   try {
-    serverInfo = await discoverOAuthServerInfo(serverUrl, { fetchFn: oauthFetch })
+    serverInfo = await discoverOAuthServerInfo(serverUrl, { fetchFn: endpoints.fetch })
   } catch (error) {
+    // A refused address is not a provider without discovery: no fallback.
+    if (error instanceof RestrictedEndpointError) throw error
     discoveryError = error
   }
 
@@ -259,9 +346,10 @@ async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
   if (!metadata) {
     try {
       metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl, {
-        fetchFn: oauthFetch,
+        fetchFn: endpoints.fetch,
       })
     } catch (error) {
+      if (error instanceof RestrictedEndpointError) throw error
       discoveryError = error
     }
   }
@@ -272,7 +360,11 @@ async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
   // path-based issuer on that same origin, use it only after independently
   // retrieving and validating metadata from the issuer's RFC 8414 location.
   if (metadata && !serverInfo?.resourceMetadata?.authorization_servers?.length) {
-    const issuerDiscovery = await metadataForSameOriginIssuer(metadata, authorizationServerUrl)
+    const issuerDiscovery = await metadataForSameOriginIssuer(
+      metadata,
+      authorizationServerUrl,
+      endpoints
+    )
     if (issuerDiscovery) {
       authorizationServerUrl = issuerDiscovery.authorizationServerUrl
       metadata = issuerDiscovery.metadata
@@ -286,13 +378,9 @@ async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
         : 'OAuth provider metadata could not be discovered'
     )
   }
-  validateOAuthMetadata(metadata, authorizationServerUrl)
+  await validateOAuthMetadata(metadata, endpoints, authorizationServerUrl)
 
-  const discoveredResource =
-    serverInfo?.resourceMetadata?.resource ?? mcp.oauthResource ?? undefined
-  const resource = discoveredResource
-    ? normalizedHttpUrl(discoveredResource, 'OAuth resource')
-    : undefined
+  const resource = resourceForMcp(mcp, serverInfo?.resourceMetadata?.resource ?? mcp.oauthResource)
   const scope =
     mcp.oauthScopes?.trim() ||
     serverInfo?.resourceMetadata?.scopes_supported?.join(' ') ||
@@ -309,7 +397,8 @@ async function discoverOAuthContext(mcp: Mcp): Promise<OAuthContext> {
 
 async function metadataForAuthorizationServer(
   mcp: Mcp,
-  authorizationServerUrl: string
+  authorizationServerUrl: string,
+  endpoints: OAuthEndpoints
 ): Promise<AuthorizationServerMetadata> {
   const normalizedAuthorizationServerUrl = normalizedHttpUrl(
     authorizationServerUrl,
@@ -318,16 +407,17 @@ async function metadataForAuthorizationServer(
   let metadata: AuthorizationServerMetadata | undefined
   try {
     metadata = await discoverAuthorizationServerMetadata(normalizedAuthorizationServerUrl, {
-      fetchFn: oauthFetch,
+      fetchFn: endpoints.fetch,
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof RestrictedEndpointError) throw error
     // Manual endpoint settings remain a fallback for OAuth providers without discovery.
   }
   metadata ??= fallbackMetadata(mcp, authorizationServerUrl)
   if (!metadata) {
     throw new Error('OAuth provider metadata could not be discovered')
   }
-  return validateOAuthMetadata(metadata, normalizedAuthorizationServerUrl)
+  return validateOAuthMetadata(metadata, endpoints, normalizedAuthorizationServerUrl)
 }
 
 function saveOAuthConfiguration(
@@ -357,6 +447,21 @@ function saveOAuthConfiguration(
   }
 }
 
+/**
+ * Tokens belong to the provider and client that issued them. Dropping them
+ * also leaves the MCP waiting for its account, so Connect stays available.
+ */
+function forgetOAuthTokens(mcp: Mcp) {
+  if (!mcp.oauthAccessToken && !mcp.oauthRefreshToken) {
+    return
+  }
+  mcp.oauthAccessToken = null
+  mcp.oauthRefreshToken = null
+  mcp.oauthTokenExpiresAt = null
+  mcp.oauthTokenType = null
+  mcp.oauthRequired = true
+}
+
 function saveOAuthTokens(mcp: Mcp, tokens: OAuthTokens) {
   mcp.oauthAccessToken = McpSecretStore.encrypt(tokens.access_token)
   mcp.oauthRefreshToken = tokens.refresh_token ? McpSecretStore.encrypt(tokens.refresh_token) : null
@@ -364,10 +469,12 @@ function saveOAuthTokens(mcp: Mcp, tokens: OAuthTokens) {
     !tokens.token_type || tokens.token_type.toLowerCase() === 'bearer'
       ? 'Bearer'
       : tokens.token_type
-  mcp.oauthTokenExpiresAt =
-    typeof tokens.expires_in === 'number'
-      ? DateTime.utc().plus({ seconds: tokens.expires_in })
-      : null
+  mcp.oauthTokenExpiresAt = DateTime.utc().plus({
+    seconds:
+      typeof tokens.expires_in === 'number'
+        ? tokens.expires_in
+        : DEFAULT_ACCESS_TOKEN_LIFETIME_SECONDS,
+  })
   if (tokens.scope) {
     mcp.oauthScopes = tokens.scope
   }
@@ -384,7 +491,30 @@ export function startOauthSession(
   options: OAuthStartOptions
 ) {
   const payload: OauthSession = { mcpId: mcp.id, ...options }
-  session.put(oauthSessionKey(payload.state), payload)
+
+  const key = oauthSessionKey(payload.state)
+  const weight = (entryKey: string, value: unknown) =>
+    Buffer.byteLength(entryKey) + Buffer.byteLength(JSON.stringify(value) ?? '')
+
+  // An abandoned authorization never reaches the callback that clears it.
+  // Session keys keep their insertion order, so the first ones are the oldest:
+  // they make room until the count and the size fit. The new one always stays.
+  const pending = Object.keys(session.all()).filter((entry) =>
+    entry.startsWith(OAUTH_SESSION_PREFIX)
+  )
+  let count = pending.length + 1
+  let bytes = pending.reduce(
+    (total, entry) => total + weight(entry, session.get(entry)),
+    weight(key, payload)
+  )
+  for (const entry of pending) {
+    if (count <= MAX_PENDING_OAUTH_STARTS && bytes <= MAX_PENDING_OAUTH_START_BYTES) break
+    count -= 1
+    bytes -= weight(entry, session.get(entry))
+    session.forget(entry)
+  }
+
+  session.put(key, payload)
   return payload
 }
 
@@ -445,8 +575,9 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
     return startBuiltinOauthFlow(session, mcp)
   }
 
+  const endpoints = oauthEndpointsFor(mcp)
   const redirectUri = oauthRedirectUri(mcp)
-  const context = await discoverOAuthContext(mcp)
+  const context = await discoverOAuthContext(mcp, endpoints)
   const existingClient = clientInformationFromMcp(mcp)
   const canReuseExisting =
     Boolean(existingClient) &&
@@ -476,7 +607,7 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
       metadata: context.metadata,
       clientMetadata,
       scope: context.scope,
-      fetchFn: oauthFetch,
+      fetchFn: endpoints.fetch,
     })
     registered = true
   }
@@ -497,6 +628,18 @@ export async function startOauthFlow(session: HttpContext['session'], mcp: Mcp) 
       resource: context.resource ? new URL(context.resource) : undefined,
     }
   )
+
+  // The provider is discovered again from metadata the MCP serves. A refresh
+  // token kept across a change of provider or client would later be posted to
+  // whichever token endpoint the MCP pointed this flow at.
+  const previousIssuer = mcp.oauthIssuer ?? inferIssuer(mcp)
+  const issuerChanged =
+    previousIssuer !== null &&
+    comparableOAuthIssuer(previousIssuer, 'OAuth issuer') !==
+      comparableOAuthIssuer(context.authorizationServerUrl, 'OAuth authorization server')
+  if (registered || issuerChanged) {
+    forgetOAuthTokens(mcp)
+  }
 
   saveOAuthConfiguration(mcp, context, client, redirectUri, registered)
   await mcp.save()
@@ -543,15 +686,21 @@ export async function exchangeAuthorizationCode(
     throw new Error('OAuth session is missing its PKCE code verifier')
   }
 
-  const metadata = await metadataForAuthorizationServer(mcp, oauth.authorizationServerUrl)
+  const endpoints = oauthEndpointsFor(mcp)
+  const metadata = await metadataForAuthorizationServer(
+    mcp,
+    oauth.authorizationServerUrl,
+    endpoints
+  )
+  const resource = resourceForMcp(mcp, oauth.resource)
   const tokens = await exchangeAuthorization(oauth.authorizationServerUrl, {
     metadata,
     clientInformation: client,
     authorizationCode: code,
     codeVerifier: oauth.codeVerifier,
     redirectUri: oauth.redirectUri,
-    resource: oauth.resource ? new URL(oauth.resource) : undefined,
-    fetchFn: oauthFetch,
+    resource: resource ? new URL(resource) : undefined,
+    fetchFn: endpoints.fetch,
   })
 
   saveOAuthTokens(mcp, tokens)
@@ -617,13 +766,17 @@ async function refreshCurrentOauthAccessToken(mcp: Mcp) {
     return
   }
 
-  const metadata = await metadataForAuthorizationServer(mcp, authorizationServerUrl)
+  // The token endpoint is discovered again for every refresh, so it is checked
+  // again as well, as is the saved resource indicator.
+  const endpoints = oauthEndpointsFor(mcp)
+  const metadata = await metadataForAuthorizationServer(mcp, authorizationServerUrl, endpoints)
+  const resource = resourceForMcp(mcp, mcp.oauthResource)
   const tokens = await refreshAuthorization(authorizationServerUrl, {
     metadata,
     clientInformation: client,
     refreshToken: refresh,
-    resource: mcp.oauthResource ? new URL(mcp.oauthResource) : undefined,
-    fetchFn: oauthFetch,
+    resource: resource ? new URL(resource) : undefined,
+    fetchFn: endpoints.fetch,
   })
 
   saveOAuthTokens(mcp, tokens)

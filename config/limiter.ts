@@ -10,6 +10,11 @@ const limiterConfig = defineConfig({
      */
     database: stores.database({
       tableName: 'rate_limits',
+      /**
+       * The SQLite store keeps expired counters unless asked to clear them,
+       * and some keys are chosen by callers (a client address, an account).
+       */
+      clearExpiredByTimeout: true,
     }),
 
     /**

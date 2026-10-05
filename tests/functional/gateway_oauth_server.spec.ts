@@ -6,7 +6,6 @@ import AccessToken from '#models/access_token'
 import AccessTokenService from '#services/access_token_service'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { createAdmin } from '#tests/helpers/factories'
-import { assertRedirectTo } from '#tests/helpers/http'
 
 const resource = 'http://localhost:3333/mcp'
 const registeredRedirectUri = 'http://127.0.0.1/callback'
@@ -192,7 +191,7 @@ test.group('gateway OAuth server', (group) => {
 
     const start = await client.get(authorizationPath(registered.client_id)).redirects(0)
     start.assertStatus(302)
-    assertRedirectTo(assert, start, '/login')
+    assert.equal(start.header('location'), '/login')
 
     const login = await client
       .post('/login')
@@ -230,10 +229,12 @@ test.group('gateway OAuth server', (group) => {
       .qs({ ...authorizationPayload(registered.client_id), state })
       .redirects(0)
 
+    // Only a loopback client is sent its error; see hardening_gateway_oauth.spec.ts.
     response.assertStatus(302)
     const callback = new URL(response.header('location')!)
     assert.equal(callback.origin, 'http://127.0.0.1:49152')
     assert.equal(callback.searchParams.get('error'), 'invalid_request')
+    assert.equal(callback.searchParams.get('state'), state)
     assert.notProperty(response.session(), 'oauthReturnTo')
   })
 

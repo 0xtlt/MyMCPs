@@ -23,6 +23,7 @@ import { Table, pixel, proportional, type TableColumn } from '@astryxdesign/core
 import { Heading, Text } from '@astryxdesign/core/Text'
 import {
   emptyMcpFormValues,
+  keepsSavedCredentials,
   mcpFormValuesFromRow,
   McpFormFields,
   type McpFormValues,
@@ -590,6 +591,7 @@ export default function McpsIndex({
                           cachedVersion={editingMcp.npmCachedVersion}
                           publicApp={publicApp}
                           isConnected={isConnected(editingMcp)}
+                          keepsSavedCredentials={keepsSavedCredentials(editingMcp, editValues)}
                         />
                       </VStack>
                     </LayoutContent>

@@ -1,8 +1,16 @@
 minimumReleaseAge: 360
 
 overrides:
-  hono: ^4.13.8
+  hono: ^4.13.11
   nanoid: ^3.3.19
+
+# braces <= 3.0.3 (stack exhaustion on deeply nested patterns) has no patched
+# release. It is only loaded by build and dev tooling (assembler > fast-glob)
+# with patterns from adonisrc.ts, never by the running server. Remove this
+# entry once a fixed braces is published.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm
 
 publicHoistPattern:
   - '*@inertiajs/core*'

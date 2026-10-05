@@ -10,9 +10,11 @@ tmp
 .env.*
 !.env.example
 
-# Git / IDE / CI
+# Git / IDE / CI / coding-agent state (local settings, worktrees, transcripts)
 .git
 .github
+.claude
+.codex
 .cursor
 .vscode
 .idea

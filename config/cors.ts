@@ -1,11 +1,7 @@
 import app from '@adonisjs/core/services/app'
 import { defineConfig } from '@adonisjs/cors'
 
-export function resolveCorsOrigin(
-  requestOrigin: string | undefined,
-  requestUrl: string,
-  isDevelopment: boolean
-) {
+export function resolveCorsOrigin(requestUrl: string, isDevelopment: boolean) {
   const pathname = requestUrl.split('?', 1)[0]
   if (
     [
@@ -18,7 +14,7 @@ export function resolveCorsOrigin(
       '/.well-known/oauth-protected-resource/mcp',
     ].includes(pathname)
   ) {
-    return requestOrigin || true
+    return '*'
   }
   return isDevelopment ? true : []
 }
@@ -37,10 +33,14 @@ const corsConfig = defineConfig({
 
   /**
    * Session UI stays locked down in production. The MCP and OAuth protocol endpoints may be
-   * called by installed clients, so those routes reflect the caller's origin.
+   * called by installed clients from any origin. They authenticate with a header the client
+   * sets itself, never with cookies, so they answer with a plain wildcard.
    */
-  origin: (requestOrigin, ctx) => {
-    return resolveCorsOrigin(requestOrigin, ctx.request.url(), app.inDev)
+  origin: (_requestOrigin, ctx) => {
+    const allowed = resolveCorsOrigin(ctx.request.url(), app.inDev)
+    // In development the caller's origin is echoed, so the response depends on it.
+    if (allowed === true) ctx.response.vary('Origin')
+    return allowed
   },
 
   /**
@@ -60,9 +60,10 @@ const corsConfig = defineConfig({
   exposeHeaders: ['WWW-Authenticate'],
 
   /**
-   * Allow cookies/authorization headers on cross-origin requests.
+   * Never let another origin send the browser's cookies along. Every origin
+   * allowed above is allowed without knowing who it is.
    */
-  credentials: true,
+  credentials: false,
 
   /**
    * Cache CORS preflight response for N seconds.

@@ -50,6 +50,16 @@ async function gatewayRpc(
   return parseRpcResponse(response)
 }
 
+/**
+ * Links name APP_URL, which need not be where the test server listens. The
+ * signature covers the path and the query, so the same link works on both.
+ */
+function fetchLink(url: string | URL) {
+  const served = new URL(url)
+  served.host = `${env.get('HOST')}:${env.get('PORT')}`
+  return fetch(served)
+}
+
 const icloudForm = {
   name: 'iCloud Mail',
   description: 'Personal mail',
@@ -425,7 +435,7 @@ test.group('Built-in iCloud Mail MCP: attachment links', (group) => {
       assert.notInclude(link.url, icloudMailSignIn.username)
 
       // No cookie, no access token: the signature is the credential.
-      const download = await fetch(link.url)
+      const download = await fetchLink(link.url)
       assert.equal(download.status, 200)
       assert.equal(Buffer.from(await download.arrayBuffer()).toString(), ICLOUD_MAIL_ATTACHMENT)
       assert.equal(download.headers.get('content-type'), 'application/pdf')
@@ -452,7 +462,7 @@ test.group('Built-in iCloud Mail MCP: attachment links', (group) => {
     try {
       const { mcp, link } = await requestLink(client)
       const status = async (url: string | URL) => {
-        const response = await fetch(url)
+        const response = await fetchLink(url)
         return [response.status, await response.text()]
       }
       const refused = [403, 'This link is invalid or has expired.']
@@ -481,7 +491,7 @@ test.group('Built-in iCloud Mail MCP: attachment links', (group) => {
 
       // Nothing above reached iCloud, and the untouched link still works.
       assert.lengthOf(icloud.signIns, sessions)
-      const untouched = await fetch(link.url)
+      const untouched = await fetchLink(link.url)
       assert.equal(untouched.status, 200)
     } finally {
       icloud.restore()
@@ -521,9 +531,9 @@ test.group('Built-in iCloud Mail MCP: attachment links', (group) => {
       ])
 
       // A signed link to a part that is not an attachment serves nothing either.
-      const body = await fetch(builtinFileUrl(mcp.id, { ...attachment, part: '1.1' }, 60_000))
+      const body = await fetchLink(builtinFileUrl(mcp.id, { ...attachment, part: '1.1' }, 60_000))
       assert.deepEqual([body.status, await body.text()], [404, 'This file is no longer available.'])
-      const garbage = await fetch(builtinFileUrl(mcp.id, 'INBOX', 60_000))
+      const garbage = await fetchLink(builtinFileUrl(mcp.id, 'INBOX', 60_000))
       assert.equal(garbage.status, 404)
     } finally {
       icloud.restore()
@@ -536,7 +546,7 @@ test.group('Built-in iCloud Mail MCP: attachment links', (group) => {
       const { mcp, link } = await requestLink(client)
       const unavailable = [404, 'This file is no longer available.']
       const status = async () => {
-        const response = await fetch(link.url)
+        const response = await fetchLink(link.url)
         return response.ok ? [response.status] : [response.status, await response.text()]
       }
       assert.deepEqual(await status(), [200])

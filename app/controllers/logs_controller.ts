@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { DateTime, IANAZone } from 'luxon'
+import Mcp from '#models/mcp'
 import McpCallLog from '#models/mcp_call_log'
 import McpCallLogService from '#services/mcp_call_log_service'
 import McpCallLogTransformer from '#transformers/mcp_call_log_transformer'
@@ -41,11 +42,9 @@ export default class LogsController {
     const logs = paginator.all()
 
     const selectedLog = filters.logId ? await McpCallLog.find(filters.logId) : null
-    const mcpOptions = await McpCallLog.query()
-      .select('mcp_slug', 'mcp_name')
-      .whereNotNull('mcp_slug')
-      .groupBy('mcp_slug', 'mcp_name')
-      .orderBy('mcp_name', 'asc')
+    // Slugs in the log are what callers asked for, including MCPs that never
+    // existed. The filter lists the MCPs that do.
+    const mcpOptions = await Mcp.query().select('slug', 'name').orderBy('name', 'asc')
     const tokenOptions = await McpCallLog.query()
       .select('access_token_prefix', 'access_token_name')
       .groupBy('access_token_prefix', 'access_token_name')
@@ -63,10 +62,7 @@ export default class LogsController {
       },
       filters: { range, outcome, mcp, token, timeZone },
       options: {
-        mcps: mcpOptions.map((item) => ({
-          value: item.mcpSlug!,
-          label: item.mcpName ?? item.mcpSlug!,
-        })),
+        mcps: mcpOptions.map((item) => ({ value: item.slug, label: item.name })),
         tokens: tokenOptions.map((item) => ({
           value: item.accessTokenPrefix,
           label: item.accessTokenName,

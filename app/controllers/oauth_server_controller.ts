@@ -7,6 +7,7 @@ import {
   createAuthorizationCode,
   exchangeAuthorizationCode,
   exchangeRefreshToken,
+  isLoopbackRedirectUri,
   oauthRedirect,
   oauthTokenResponse,
   parseAuthorizationRequest,
@@ -19,6 +20,7 @@ import {
   oauthTokenRateLimiter,
 } from '#start/limiter'
 import { requirePublicAppUrl } from '#services/public_url'
+import { sanitizeDiagnostic } from '#services/security_redaction'
 
 const MAX_SESSION_RETURN_PATH_BYTES = 1536
 
@@ -59,7 +61,9 @@ function redirectToOauthClient(ctx: HttpContext, location: string) {
     ctx.response.header('X-Inertia-Location', location)
     return ctx.response.status(409).send('')
   }
-  return ctx.response.redirect(location)
+  // The location is complete. Forwarding this request's query string would
+  // append it after the last parameter and corrupt `state`.
+  return ctx.response.redirect().withQs(false).toPath(location)
 }
 
 export default class OauthServerController {
@@ -113,6 +117,14 @@ export default class OauthServerController {
   }
 
   async authorize(ctx: HttpContext) {
+    // The GET route also answers HEAD, which carries no CSRF token and no
+    // body. Only GET shows the consent screen and only POST records a decision.
+    const method = ctx.request.method()
+    if (method !== 'GET' && method !== 'POST') {
+      ctx.response.header('Allow', 'GET, POST')
+      return this.error(ctx, new GatewayOauthError('invalid_request', 'Method not allowed', 405))
+    }
+
     if (!this.isConfigured(ctx)) return
 
     if (
@@ -127,7 +139,9 @@ export default class OauthServerController {
       )
     }
 
-    const input = ctx.request.method() === 'GET' ? ctx.request.qs() : ctx.request.all()
+    // A decision is read from the CSRF-protected form body alone, never from
+    // the query string.
+    const input = method === 'GET' ? ctx.request.qs() : ctx.request.body()
 
     try {
       const authorizationRequest = await parseAuthorizationRequest(input)
@@ -135,15 +149,15 @@ export default class OauthServerController {
 
       if (!ctx.auth.user) {
         ctx.session.put('oauthReturnTo', authorizationReturnPath(authorizationRequest))
-        return ctx.response.redirect().toRoute('session.create')
+        return ctx.response.redirect().withQs(false).toRoute('session.create')
       }
 
-      if (ctx.request.method() === 'GET') {
+      if (method === 'GET') {
         const redirectUrl = new URL(authorizationRequest.redirectUri)
         return ctx.inertia.render('oauth/authorize', {
           clientName: authorizationRequest.client.clientName,
           redirectHost: redirectUrl.host,
-          isLoopbackRedirect: ['localhost', '127.0.0.1', '[::1]'].includes(redirectUrl.hostname),
+          isLoopbackRedirect: isLoopbackRedirectUri(authorizationRequest.redirectUri),
           scope: authorizationRequest.scopes,
           userEmail: ctx.auth.user.email,
           authorization: {
@@ -176,7 +190,14 @@ export default class OauthServerController {
         })
       )
     } catch (error) {
-      if (error instanceof GatewayOauthError && error.redirectUri) {
+      // Anyone can register a client, so a rejected request is only sent back
+      // to a redirect URI on the user's own device. Any other target would
+      // make this endpoint an open redirect; the error is shown here instead.
+      if (
+        error instanceof GatewayOauthError &&
+        error.redirectUri &&
+        isLoopbackRedirectUri(error.redirectUri)
+      ) {
         return redirectToOauthClient(
           ctx,
           oauthRedirect(error.redirectUri, {
@@ -290,7 +311,7 @@ export default class OauthServerController {
       })
     }
 
-    ctx.logger.error({ err: error }, 'OAuth request failed')
+    ctx.logger.error({ error: sanitizeDiagnostic(error) }, 'OAuth request failed')
     return ctx.response.status(500).json({
       error: 'server_error',
       error_description: 'The OAuth request could not be completed',

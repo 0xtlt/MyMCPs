@@ -151,8 +151,10 @@ test.group('npm MCP environment variables', (group) => {
 
     assert.deepEqual(buildDenoEnvironment(mcp, '/safe/sandbox'), {
       API_KEY: 'secret',
+      PATH: process.env.PATH ?? '',
       HOME: '/safe/sandbox',
       TMPDIR: '/safe/sandbox',
+      DENO_DIR: resolveDenoDir(),
       NO_COLOR: '1',
     })
 

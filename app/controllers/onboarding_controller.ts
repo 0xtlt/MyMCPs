@@ -1,4 +1,5 @@
 import User from '#models/user'
+import { signIn } from '#services/session_stamp'
 import { onboardingValidator } from '#validators/user'
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
@@ -8,7 +9,8 @@ export default class OnboardingController {
     return inertia.render('onboarding/index', {})
   }
 
-  async store({ request, response, auth }: HttpContext) {
+  async store(ctx: HttpContext) {
+    const { request, response } = ctx
     const payload = await request.validateUsing(onboardingValidator)
 
     const user = await db.transaction(async (trx) => {
@@ -32,7 +34,7 @@ export default class OnboardingController {
       return response.redirect().toRoute('home')
     }
 
-    await auth.use('web').login(user, true)
+    await signIn(ctx, user)
     return response.redirect().toRoute('home')
   }
 }

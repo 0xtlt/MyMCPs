@@ -9,33 +9,35 @@ Project-specific guidance for AI coding agents.
 - Consolidate related commits into outcome-focused entries. Do not list commit hashes or merge commits, and omit tests and internal refactors unless they affect users or operators.
 
 <!-- ASTRYX:START -->
-Astryx v0.6.2 · 164 components
+Astryx v0.6.5 · 166 components
 CLI: run every command as `pnpm exec astryx <cmd>` (shown below as `astryx ...`).
 
 SETUP (once, in your app entry e.g. main.tsx) — without these, components render unstyled:
   import "@astryxdesign/core/reset.css";
   import "@astryxdesign/core/astryx.css";
 
-WORKFLOW — discover, don't guess. Before writing UI:
-1. `astryx build "<idea>"` — START HERE: returns a kit (closest [page] + [block]s + [component]s). No args = full playbook.
-2. `astryx template <name> [--skeleton]` — scaffold the [page]/[block]s it named, or study their layout. Templates are reference code.
-3. `astryx component <Name>` — props + examples for every component you use.
+WORKFLOW — start every page from a template. Never lay out a page from scratch:
+1. `astryx build "<idea>"` — START HERE: names the [page] template to start from (always one: the closest match, or the app shell), two other templates, and the [block]s + [component]s for parts it lacks. No args = full playbook.
+2. `astryx template <name> <path>` — scaffold that template into your project. Keep its frame, gap and padding; replace its data, copy and sections; delete sections you do not need.
+3. `astryx template <Block>` for a part the template lacks; `astryx component <Name>` for props + examples before you use or change a component.
+Changing a page you already have? Keep it: skip step 2 and add blocks and components inside its sections.
 
 RULES:
 - No <div> — components do all layout/spacing, page frame included.
-- Frame first: read `astryx docs layout` before writing any page or screen — page frame, region widths, breakpoint behavior.
+- Frame first: the template you scaffold sets the page frame. Read `astryx docs layout` before you change it — region widths, breakpoint behavior.
 - Dense data = rows (Table, List/Item), never Card-wrapped list items; Card is for standalone widgets. Status = StatusDot/Token; Badge = counts only.
 - Custom styling: component props first; else style/className with tokens — var(--color-*|--spacing-*|--radius-*). No raw hex/px. (No StyleX/Tailwind compiler here — don't use xstyle/utility classes.)
 - Tokens for every value (`astryx docs tokens`). Brand/accent belongs in the theme (`astryx theme list` / `theme add <slug>`, or `astryx theme template` for a custom one) — never override --color-* in :root.
-- SELF-CHECK before you finish: re-read the file and replace any raw <div>/<span> layout, imported .css/@apply, or hardcoded value (#hex, 16px) with the component or a token (var(--color-*|--spacing-*|…)). If unsure a component/prop exists, run `astryx component <Name>` / `astryx search "<thing>"`; don't hand-roll CSS.
+- SELF-CHECK before you finish: re-read the file and replace any raw <div>/<span> layout, imported .css/@apply, or hardcoded value (#hex, 16px) with the component or a token (var(--color-*|--spacing-*|…)). Confirm the page kept its template's frame, gap and padding. If unsure a component/prop exists, run `astryx component <Name>` / `astryx search "<thing>"`; don't hand-roll CSS.
 
 MORE CLI:
   search "<query>"   find any component / hook / doc / template / block
-  component --list   164 components by category
+  component --list   166 components by category
   template --list    page + block recipes
-  docs <topic>       browser-support, cli-integrations, color, elevation, getting-started, icons, illustrations, internationalization, layout, migration, motion, principles, shape, spacing, styling-libraries, styling, theme, tokens, typography, working-with-ai
+  docs <topic>       authoring, browser-support, color, elevation, getting-started, icons, illustrations, internationalization, layout, migration, motion, principles, shape, spacing, styling-libraries, styling, theme, tokens, typography, working-with-ai
+  docs cli           commands, API reference, integration authoring (one level at a time)
   swizzle <Name>     eject component source for deep customization
-  upgrade --apply    run after any Astryx or integration dependency bump
+  upgrade --from <old version> --apply   run after any Astryx or integration dependency bump
 <!-- ASTRYX:END -->
 
 ## Cursor Cloud specific instructions
@@ -53,5 +55,5 @@ Single AdonisJS 7 + Inertia/React app (MyMCPs). No Redis or external DB — SQLi
 - Fresh lockfile packages can trip pnpm’s `minimumReleaseAge` check; the update script passes `--config.minimumReleaseAge=0`. If a manual `pnpm install` fails the same way, use that flag.
 
 ### Lint / typecheck / test today
-- `pnpm test` boots Japa but has **no specs yet** (`NO TESTS EXECUTED`).
-- `pnpm run lint` and `pnpm run typecheck` currently report **pre-existing** Prettier/Inertia/Astryx typing issues; they are not environment setup failures. `pnpm run build` still succeeds.
+- `pnpm test` runs the Japa `unit`, `functional`, and `browser` suites (`node ace test unit functional browser`). Tests read `.env.test`; the browser suite needs `pnpm exec playwright install chromium` once. `pnpm run test:release` runs the Node tests for the release scripts, workflows, and Dockerfile.
+- `pnpm run lint`, `pnpm run typecheck`, and all suites are expected to pass; a failure is a regression, not an environment issue.

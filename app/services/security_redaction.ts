@@ -70,15 +70,24 @@ function redactExactCredentials(diagnostic: string, variants: string[]) {
   return redacted
 }
 
-const STRUCTURED_KEY_PATTERN = /(?<![A-Za-z0-9_])(["']?([A-Za-z0-9_.-]+)["']?\s*[:=]\s*)/g
+/**
+ * Upstreams choose the size of their error text, so pattern redaction only
+ * ever scans this many characters of it.
+ */
+const PATTERN_SCAN_CHARS = 8 * 1024
+
+// The lookbehind covers every key character so that a key is only tried from
+// its first character. Retrying from each "." or "-" made long runs quadratic.
+const STRUCTURED_KEY_PATTERN = /(?<![A-Za-z0-9_.-])(["']?([A-Za-z0-9_.-]+)["']?\s*[:=]\s*)/g
 const STRUCTURED_VALUE_PATTERN = /^(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;&#}]+)/
+const QUOTED_VALUE_PATTERN = /^(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/
 
 /**
  * Scan assignments without consuming values for noncredential wrapper labels.
  * This allows nested forms such as `Response: {"token":"..."}` and
  * `Cookie: session_token=...` to be inspected at their inner key.
  */
-function redactStructuredCredentialAssignments(diagnostic: string) {
+function redactStructuredCredentialAssignments(diagnostic: string, truncated: boolean) {
   let output = ''
   let cursor = 0
   STRUCTURED_KEY_PATTERN.lastIndex = 0
@@ -89,8 +98,12 @@ function redactStructuredCredentialAssignments(diagnostic: string) {
     if (!isCredentialKey(key)) continue
 
     const valueStart = match.index + match[0].length
-    const value = diagnostic.slice(valueStart).match(STRUCTURED_VALUE_PATTERN)?.[0]
+    const rest = diagnostic.slice(valueStart)
+    let value = rest.match(STRUCTURED_VALUE_PATTERN)?.[0]
     if (!value) continue
+
+    // A quoted value that lost its closing quote to the cut runs to the end.
+    if (truncated && /^["']/.test(value) && !QUOTED_VALUE_PATTERN.test(rest)) value = rest
 
     output += `${diagnostic.slice(cursor, valueStart)}[REDACTED]`
     cursor = valueStart + value.length
@@ -100,14 +113,21 @@ function redactStructuredCredentialAssignments(diagnostic: string) {
   return cursor === 0 ? diagnostic : output + diagnostic.slice(cursor)
 }
 
-function redactPatternCredentials(diagnostic: string) {
-  const redacted = diagnostic
+/**
+ * `truncated` says the text was cut short, so a credential may be missing the
+ * closing delimiter that would otherwise identify it.
+ */
+function redactPatternCredentials(diagnostic: string, truncated: boolean) {
+  let redacted = diagnostic
     .replace(
       /\b(?:Bearer|Basic)\s+(?!error\s*=)[^\s,;"']+/gi,
       (match) => `${match.split(/\s/, 1)[0]} [REDACTED]`
     )
     .replace(/:\/\/[^\s/:@]+:[^\s/@]+@/g, '://[REDACTED]@')
-  return redactStructuredCredentialAssignments(redacted)
+  if (truncated) {
+    redacted = redacted.replace(/:\/\/[^\s/:@]+:[^\s/@]*$/, '://[REDACTED]')
+  }
+  return redactStructuredCredentialAssignments(redacted, truncated)
 }
 
 /**
@@ -126,8 +146,14 @@ export function sanitizeDiagnostic(
 
   const raw = value instanceof Error ? value.message : value
   const secretVariants = exactSecretVariants(sensitiveValues)
+  // Known secrets are replaced over the whole text, in linear time, so that
+  // none is left half-cut at the edge of the part the patterns then scan.
   const sanitized = redactExactCredentials(raw, secretVariants)
-  return redactPatternCredentials(sanitized).slice(0, limit)
+  const scanLength = Math.max(limit, PATTERN_SCAN_CHARS)
+  return redactPatternCredentials(
+    sanitized.slice(0, scanLength),
+    sanitized.length > scanLength
+  ).slice(0, limit)
 }
 
 /**

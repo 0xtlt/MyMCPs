@@ -1,9 +1,20 @@
 import vine from '@vinejs/vine'
 import { BUILTIN_MCP_KEYS } from '#services/builtin/keys'
+import { reservedEnvironmentNameReason } from '#services/mcp_environment_policy'
 
 const transport = vine.enum(['http', 'npm', 'builtin'] as const)
 const authType = vine.enum(['auto', 'bearer', 'header'] as const)
-const reservedNpmEnvNames = ['HOME', 'TMPDIR', 'NO_COLOR']
+
+/** Refuse names that would configure the Deno sandbox instead of the package. */
+const npmEnvironmentName = vine.createRule((value, _options, field) => {
+  if (typeof value !== 'string') {
+    return
+  }
+  const reason = reservedEnvironmentNameReason(value)
+  if (reason) {
+    field.report(reason, 'npmEnvironmentName', field)
+  }
+})
 
 /** RFC 9110 token for custom header names. */
 const headerName = vine
@@ -20,7 +31,7 @@ const npmEnvironment = vine
         .trim()
         .maxLength(128)
         .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
-        .notIn(reservedNpmEnvNames),
+        .use(npmEnvironmentName()),
       // Do not trim secrets. Empty HTML inputs become null through the global Vine transform.
       value: vine.string().maxLength(8192).nullable(),
     })

@@ -45,33 +45,20 @@ const bodyParserConfig = defineConfig({
 
   /**
    * Config for the "multipart/form-data" content-type parser.
-   * File uploads are handled by the multipart parser.
+   * The app accepts no uploads, so multipart bodies are never parsed: left
+   * on, any anonymous request could have files streamed to the system tmp
+   * directory ahead of authentication, where nothing removes them.
    */
   multipart: {
     /**
-     * Automatically process uploaded files into the system tmp directory.
+     * Never write uploaded files to disk.
      */
-    autoProcess: true,
-
-    /**
-     * Normalize empty string values to null.
-     */
-    convertEmptyStringsToNull: true,
-
-    /**
-     * Routes where multipart processing is handled manually.
-     */
-    processManually: [],
-
-    /**
-     * Maximum accepted payload size for multipart requests.
-     */
-    limit: '20mb',
+    autoProcess: false,
 
     /**
      * Content types handled by the multipart parser.
      */
-    types: ['multipart/form-data'],
+    types: [],
   },
 })
 

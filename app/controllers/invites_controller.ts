@@ -7,6 +7,7 @@ import Mcp from '#models/mcp'
 import AccessToken from '#models/access_token'
 import { acceptInviteValidator, createInviteValidator } from '#validators/user'
 import { publicAppUrl } from '#services/public_url'
+import { signIn } from '#services/session_stamp'
 import InviteTransformer from '#transformers/invite_transformer'
 import MemberTransformer from '#transformers/member_transformer'
 
@@ -121,7 +122,8 @@ export default class InvitesController {
     })
   }
 
-  async accept({ params, request, response, auth, session }: HttpContext) {
+  async accept(ctx: HttpContext) {
+    const { params, request, response, session } = ctx
     const payload = await request.validateUsing(acceptInviteValidator)
 
     const result = await db.transaction(async (trx) => {
@@ -169,7 +171,7 @@ export default class InvitesController {
       return response.redirect().toRoute('session.create')
     }
 
-    await auth.use('web').login(result.user, true)
+    await signIn(ctx, result.user)
     session.flash('success', 'Welcome to MyMCPs')
     return response.redirect().toRoute('home')
   }

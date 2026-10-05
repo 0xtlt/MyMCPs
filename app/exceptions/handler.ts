@@ -1,6 +1,11 @@
 import app from '@adonisjs/core/services/app'
 import { type HttpContext, ExceptionHandler } from '@adonisjs/core/http'
-import type { StatusPageRange, StatusPageRenderer } from '@adonisjs/core/types/http'
+import type { HttpError, StatusPageRange, StatusPageRenderer } from '@adonisjs/core/types/http'
+
+/**
+ * What API clients are told about an unexpected error in production.
+ */
+const SERVER_ERROR_MESSAGE = 'Internal server error'
 
 export default class HttpExceptionHandler extends ExceptionHandler {
   /**
@@ -23,6 +28,29 @@ export default class HttpExceptionHandler extends ExceptionHandler {
   protected statusPages: Record<StatusPageRange, StatusPageRenderer> = {
     '404': (_, { inertia }) => inertia.render('errors/not_found', {}),
     '500..599': (_, { inertia }) => inertia.render('errors/server_error', {}),
+  }
+
+  /**
+   * The message of an unexpected error can expose internals, such as the SQL
+   * of a failed query. Outside debug mode, API clients only learn that the
+   * server failed; the error itself is still logged by "report".
+   */
+  async renderErrorAsJSON(error: HttpError, ctx: HttpContext) {
+    if (error.status >= 500 && !this.isDebuggingEnabled(ctx)) {
+      ctx.response.status(error.status).send({ message: SERVER_ERROR_MESSAGE })
+      return
+    }
+    return super.renderErrorAsJSON(error, ctx)
+  }
+
+  async renderErrorAsJSONAPI(error: HttpError, ctx: HttpContext) {
+    if (error.status >= 500 && !this.isDebuggingEnabled(ctx)) {
+      ctx.response
+        .status(error.status)
+        .send({ errors: [{ title: SERVER_ERROR_MESSAGE, status: error.status }] })
+      return
+    }
+    return super.renderErrorAsJSONAPI(error, ctx)
   }
 
   /**

@@ -76,7 +76,9 @@ How they behave:
 - **Searching** combines `from`, `to`, `subject`, `text`, `since`, `before`, `unread`, and `flagged`. Apple's server runs the search. Dates are compared by day of receipt.
 - **Reading does not mark a message as read.** Use `mark_messages` for that.
 - **Message text** is the plain text part when there is one, and the HTML converted to text otherwise, with links kept and images dropped. Only that part is downloaded. `max_chars` (20,000 by default, 100,000 at most) cuts long messages and sets `text_truncated`.
-- **Replying.** `reply_to_uid` on `send_message` or `create_draft` addresses the message to the sender of the original, or to its Reply-To address, prefixes the subject with `Re:`, and sets the headers that keep both in one conversation. `reply_all` also copies the other recipients. The original text is not quoted automatically. A sent reply marks the original as answered.
+- **HTML is converted outside the server.** A message can be written to keep a converter busy for a long time or to make it run out of memory, so each HTML-only message is converted by a short-lived process of its own, which gets the first megabyte of the HTML, 5 seconds, and a 128 MB heap. When that is not enough, `get_message` still returns the headers and attachments, with an empty `text` and a `warning`. Conversions run one at a time.
+- **Long headers are cut.** Anyone can write to your inbox, so `list_messages` and `get_message` return at most 50 addresses for each of the sender, recipient, copy, and Reply-To fields, 320 characters of each address, 998 characters of the subject and of the message ID, and 255 characters of an attachment's name and type. `get_message` names the first 100 attachments. Whatever was cut is flagged, for example with `to_truncated` or `attachments_truncated`.
+- **Replying.** `reply_to_uid` on `send_message` or `create_draft` addresses the message to the sender of the original, or to its Reply-To address, prefixes the subject with `Re:`, and sets the headers that keep both in one conversation. `reply_all` also copies the other recipients. The original text is not quoted automatically. A sent reply marks the original as answered. A reply that the original would send to more than 50 addresses, or copy to more than 50, is refused until the agent names the recipients itself.
 - **Deleting** is moving to the mailbox whose role is `trash`. MyMCPs never erases mail permanently.
 
 ## Attachment links
@@ -93,7 +95,7 @@ https://mcp.example.com/files/12/eyJtYWlsYm94Ijoi…?signature=…
 - **It only downloads.** The file is served as a download with its original name, never displayed in the browser on your instance's address. Files up to 30 MB are served, which covers what iCloud Mail accepts.
 - **It needs `APP_URL`**, the public address agents and people reach your instance at.
 
-Downloads are limited to 60 per 15 minutes for each client address.
+Downloads are limited to 60 per 15 minutes for each MCP and client address, and one MCP serves 3 downloads at a time. Past either limit the link answers `429 Too Many Requests` with a `Retry-After` header. Requests without a valid signature are refused without being counted, and a download whose client stops reading for a minute is dropped.
 
 ## Sender addresses
 
@@ -107,7 +109,7 @@ Messages are sent from your iCloud Mail address. If your account has other addre
 
 - **Plain text only.** Messages are sent without attachments or HTML.
 - **No sender name.** Messages are sent from a bare address, without a display name.
-- **Apple's sending limits apply**: 1,000 messages and 1,000 recipients a day, according to [Apple](https://support.apple.com/102198). MyMCPs accepts at most 50 addresses each in `to`, `cc`, and `bcc`.
+- **Apple's sending limits apply**: 1,000 messages and 1,000 recipients a day, according to [Apple](https://support.apple.com/102198). MyMCPs accepts at most 50 addresses each in `to`, `cc`, and `bcc`, whether the agent names them or a reply takes them from the message it answers.
 - **One sign-in per tool call.** Each call opens its own connection to iCloud and signs in again.
 - **Call logs can hold mail.** With the logging level set to **arguments** or **responses** in **Settings**, the text agents send and the messages they read are stored in the MyMCPs call logs for the retention period. At **responses**, so are the attachment links, which stay valid until they expire.
 
@@ -124,7 +126,10 @@ Messages are sent from your iCloud Mail address. If your account has other addre
 | "Message … was not found" or "None of these UIDs exist"                        | The UID belongs to another mailbox, or the message was moved. List the mailbox again.                                                                                                        |
 | "from must be one of the sender addresses allowed for this MCP"                | Add the address under **Other sender addresses** in the MCP's dialog, or send from one of the listed addresses.                                                                              |
 | "File links need the public address of this MyMCPs instance"                   | Set `APP_URL` to the public HTTPS origin and redeploy.                                                                                                                                       |
+| A reply is refused because "at most 50 are allowed"                            | The message being answered names more than 50 addresses. The agent must name the recipients itself with `to` and `cc`, and leave `reply_all` off.                                            |
+| "This message is written in HTML that could not be converted to text"          | Converting it took more than 5 seconds or 128 MB, which ordinary mail never does. Open it in Mail. If every HTML message is affected, the instance cannot start a `node` process.            |
 | A link shows "This link is invalid or has expired"                             | Links are temporary. Ask the agent for a new one.                                                                                                                                            |
+| A link shows "Too many downloads"                                              | This MCP served 60 downloads in 15 minutes to your address, or is serving 3 at once. Try again after the time given in `Retry-After`.                                                        |
 | A link shows "This file is no longer available"                                | The message was moved or deleted, or the MCP no longer allows **Read mail**.                                                                                                                 |
 | "iCloud Mail did not confirm the message, so it may or may not have been sent" | The connection dropped while sending. No copy was saved to Sent in that case, so check with the recipient before sending again.                                                              |
 | "The message was sent, but its copy could not be saved to the Sent mailbox"    | The message was delivered. Only the copy is missing.                                                                                                                                         |

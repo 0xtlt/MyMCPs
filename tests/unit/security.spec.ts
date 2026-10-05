@@ -68,18 +68,13 @@ test.group('security boundaries', (group) => {
   })
 
   test('allows production CORS only on exact MCP protocol paths', ({ assert }) => {
-    const origin = 'https://agent.example'
-
-    assert.equal(resolveCorsOrigin(origin, '/mcp', false), origin)
-    assert.equal(resolveCorsOrigin(origin, '/mcp?session=one', false), origin)
-    assert.equal(resolveCorsOrigin(origin, '/token', false), origin)
-    assert.equal(resolveCorsOrigin(origin, '/register', false), origin)
-    assert.equal(
-      resolveCorsOrigin(origin, '/.well-known/oauth-protected-resource/mcp', false),
-      origin
-    )
-    assert.deepEqual(resolveCorsOrigin(origin, '/mcps', false), [])
-    assert.deepEqual(resolveCorsOrigin(origin, '/mcps/oauth/callback', false), [])
+    assert.equal(resolveCorsOrigin('/mcp', false), '*')
+    assert.equal(resolveCorsOrigin('/mcp?session=one', false), '*')
+    assert.equal(resolveCorsOrigin('/token', false), '*')
+    assert.equal(resolveCorsOrigin('/register', false), '*')
+    assert.equal(resolveCorsOrigin('/.well-known/oauth-protected-resource/mcp', false), '*')
+    assert.deepEqual(resolveCorsOrigin('/mcps', false), [])
+    assert.deepEqual(resolveCorsOrigin('/mcps/oauth/callback', false), [])
   })
 
   test('follows same-origin redirects but blocks cross-origin credential forwarding', async ({

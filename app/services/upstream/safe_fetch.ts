@@ -1,6 +1,24 @@
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
 const MAX_REDIRECTS = 5
 
+/**
+ * Most one upstream response may deliver, counted after decompression.
+ * Generous for real tool results (base64 screenshots and file contents run to
+ * a few MiB) while keeping one upstream from filling the memory of the single
+ * gateway process.
+ */
+export const MAX_UPSTREAM_RESPONSE_BYTES = 32 * 1024 * 1024
+
+/** Error responses only become diagnostics, so far less of them is read. */
+export const MAX_UPSTREAM_ERROR_RESPONSE_BYTES = 64 * 1024
+
+export type UpstreamResponseLimits = {
+  /** Limit for a 2xx body. Reading past it fails. */
+  maxResponseBytes?: number
+  /** Limit for any other body. It is cut there, since callers only quote it. */
+  maxErrorResponseBytes?: number
+}
+
 function decodedUrlCredential(value: string) {
   try {
     return decodeURIComponent(value)
@@ -43,26 +61,93 @@ function switchesToGet(status: number, method: string) {
 }
 
 /**
+ * Hand the response back with a body that stops at its limit. The SDK and our
+ * own callers read bodies whole (`json()`, `text()`, the SSE parser), so the
+ * limit has to sit in the stream they read from.
+ */
+function withLimitedBody(
+  response: Response,
+  endpointLabel: string,
+  limits: UpstreamResponseLimits
+) {
+  if (!response.body) {
+    return response
+  }
+
+  const truncates = !response.ok
+  const maxBytes = truncates
+    ? (limits.maxErrorResponseBytes ?? MAX_UPSTREAM_ERROR_RESPONSE_BYTES)
+    : (limits.maxResponseBytes ?? MAX_UPSTREAM_RESPONSE_BYTES)
+  const reader = response.body.getReader()
+  let received = 0
+
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read()
+      if (done) {
+        controller.close()
+        return
+      }
+
+      received += value.byteLength
+      if (received <= maxBytes) {
+        controller.enqueue(value)
+        return
+      }
+
+      await reader.cancel().catch(() => undefined)
+      if (!truncates) {
+        controller.error(new Error(`${endpointLabel} response exceeded ${maxBytes} bytes`))
+        return
+      }
+      const kept = value.byteLength - (received - maxBytes)
+      if (kept > 0) {
+        controller.enqueue(value.subarray(0, kept))
+      }
+      controller.close()
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    },
+  })
+
+  const limited = new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+  // A constructed Response has no URL; the SDK reads it to describe redirects.
+  Object.defineProperty(limited, 'url', { value: response.url })
+  return limited
+}
+
+/**
  * Follow ordinary endpoint redirects without forwarding credentials to another
  * origin. A small redirect cap avoids loops while supporting canonical paths.
+ * Response bodies are size-limited, see `UpstreamResponseLimits`.
  */
 export async function fetchWithSameOriginRedirects(
   input: Parameters<typeof fetch>[0],
   init: Parameters<typeof fetch>[1],
-  endpointLabel: string
+  endpointLabel: string,
+  limits: UpstreamResponseLimits = {}
 ) {
   let request = initialRequest(input, init)
+  // Every hop, and the body of the final response, stays cancellable by the
+  // caller. It has to be the caller's own signal: the one a Request derives
+  // stops following it once that Request object is garbage-collected.
+  const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
 
   for (let redirects = 0; ; redirects++) {
     const replay = request.clone()
-    const response = await fetch(request, { redirect: 'manual' })
+    const response = await fetch(request, { redirect: 'manual', signal })
     if (!REDIRECT_STATUSES.has(response.status)) {
-      return response
+      return withLimitedBody(response, endpointLabel, limits)
     }
 
     const location = response.headers.get('location')
     if (!location) {
-      return response
+      return withLimitedBody(response, endpointLabel, limits)
     }
 
     const nextUrl = new URL(location, request.url)

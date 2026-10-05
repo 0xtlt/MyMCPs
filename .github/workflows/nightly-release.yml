@@ -5,26 +5,34 @@ on:
     - cron: '42 2 * * *'
   workflow_dispatch:
 
+# Read-only by default; only the release job may write.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Validate and publish nightly
+  # Installs and runs dependency code, so it only gets a read-only token and
+  # leaves no credentials in the checkout.
+  validate:
+    name: Validate nightly
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     outputs:
-      published: ${{ steps.publish.outputs.published }}
-      release_tag: ${{ steps.plan.outputs.tag }}
+      publish: ${{ steps.plan.outputs.publish }}
+      sha: ${{ steps.plan.outputs.sha }}
+      tag: ${{ steps.plan.outputs.tag }}
+      previous_tag: ${{ steps.plan.outputs.previous_tag }}
     steps:
       - name: Check out main with tags
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
           ref: main
 
       - name: Set up Node.js
@@ -72,6 +80,7 @@ jobs:
 
           {
             echo "publish=true"
+            echo "sha=$(git rev-parse HEAD)"
             echo "tag=$tag"
             echo "previous_tag=$previous_tag"
           } >> "$GITHUB_OUTPUT"
@@ -110,13 +119,61 @@ jobs:
           pnpm run build
           pnpm audit --audit-level=high
 
+  # Holds the write token, so it installs nothing and runs no dependency code.
+  release:
+    name: Publish nightly release
+    needs: validate
+    if: needs.validate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+      release_tag: ${{ steps.publish.outputs.tag }}
+    steps:
+      # Credentials stay in the checkout: the publish step pushes the tag.
+      - name: Check out the validated commit with tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          ref: ${{ needs.validate.outputs.sha }}
+
+      # The validation job ran dependency code, so its outputs are checked
+      # before anything is tagged.
+      - name: Verify the validated commit and tag
+        env:
+          TAG: ${{ needs.validate.outputs.tag }}
+          VALIDATED_SHA: ${{ needs.validate.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$VALIDATED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The validation job did not report a commit SHA." >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$VALIDATED_SHA" ]]; then
+            echo "Checked-out revision does not match the validated commit $VALIDATED_SHA." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$VALIDATED_SHA" refs/remotes/origin/main; then
+            echo "Validated commit $VALIDATED_SHA is not on main." >&2
+            exit 1
+          fi
+          tag_pattern='^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}\.g([0-9a-f]{7,40})$'
+          if [[ ! "$TAG" =~ $tag_pattern ]] || [[ "$VALIDATED_SHA" != "${BASH_REMATCH[1]}"* ]]; then
+            echo "Nightly tag $TAG does not name the validated commit $VALIDATED_SHA." >&2
+            exit 1
+          fi
+
       - name: Generate release notes
-        if: steps.plan.outputs.publish == 'true'
         id: notes
         env:
           GH_TOKEN: ${{ github.token }}
-          PREVIOUS_TAG: ${{ steps.plan.outputs.previous_tag }}
-          TAG: ${{ steps.plan.outputs.tag }}
+          PREVIOUS_TAG: ${{ needs.validate.outputs.previous_tag }}
+          TAG: ${{ needs.validate.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -135,12 +192,11 @@ jobs:
           echo "notes_file=$notes_file" >> "$GITHUB_OUTPUT"
 
       - name: Publish nightly prerelease
-        if: steps.plan.outputs.publish == 'true'
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
-          TAG: ${{ steps.plan.outputs.tag }}
+          TAG: ${{ needs.validate.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -159,7 +215,10 @@ jobs:
             --prerelease \
             --verify-tag
 
-          echo "published=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "published=true"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
           echo "Published nightly prerelease [$TAG](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG)." >> "$GITHUB_STEP_SUMMARY"
 
   publish-container:

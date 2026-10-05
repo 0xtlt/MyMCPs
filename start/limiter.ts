@@ -10,7 +10,20 @@
 
 import limiter from '@adonisjs/limiter/services/main'
 
+/** Sign-in attempts on one account from one client address. */
 export const loginRateLimiter = limiter.use({
+  requests: 5,
+  duration: '15 minutes',
+})
+
+/** Failed sign-in attempts from one client address, whichever accounts they target. */
+export const loginAddressRateLimiter = limiter.use({
+  requests: 30,
+  duration: '15 minutes',
+})
+
+/** Current-password confirmations by one signed-in user. */
+export const currentPasswordRateLimiter = limiter.use({
   requests: 5,
   duration: '15 minutes',
 })

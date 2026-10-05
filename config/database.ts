@@ -26,6 +26,13 @@ const dbConfig = defineConfig({
        */
       useNullAsDefault: true,
 
+      /**
+       * Keep bound values, which include secrets and personal data, out of
+       * the message of a failed query. Knex otherwise inlines them. Lucid
+       * hands this option to Knex without typing it, hence the spread.
+       */
+      ...{ compileSqlOnError: false },
+
       migrations: {
         /**
          * Sort migration files naturally by filename.

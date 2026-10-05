@@ -48,8 +48,6 @@ export default class GatewayController {
       bySlug.set(mcp.slug, mcp)
     }
 
-    const tools = toolMode === 'eager' ? await listNamespacedTools(mcps) : []
-
     const server = new Server(
       { name: 'mymcps', version: applicationVersion },
       {
@@ -58,16 +56,22 @@ export default class GatewayController {
       }
     )
 
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools:
-        toolMode === 'lazy'
-          ? LAZY_GATEWAY_TOOLS
-          : tools.map((tool) => ({
-              name: tool.namespacedName,
-              description: tool.description ?? `Tool ${tool.name} from ${tool.mcpSlug}`,
-              inputSchema: tool.inputSchema,
-            })),
-    }))
+    // Listing connects to every allowed upstream, so it is left to the one
+    // request that asks for the list. A call finds its upstream by slug.
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      if (toolMode === 'lazy') {
+        return { tools: LAZY_GATEWAY_TOOLS }
+      }
+
+      const tools = await listNamespacedTools(mcps)
+      return {
+        tools: tools.map((tool) => ({
+          name: tool.namespacedName,
+          description: tool.description ?? `Tool ${tool.name} from ${tool.mcpSlug}`,
+          inputSchema: tool.inputSchema,
+        })),
+      }
+    })
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const startedAt = performance.now()

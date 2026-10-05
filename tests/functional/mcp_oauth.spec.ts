@@ -1,6 +1,7 @@
 import { test } from '@japa/runner'
 import Mcp from '#models/mcp'
 import McpSecretStore from '#services/mcp_secret_store'
+import { addressGuardRuntime, resetAddressGuardRuntime } from '#services/upstream/address_guard'
 import { beginTestTransaction, rollbackTestTransaction } from '#tests/helpers/database'
 import { createAdmin, createMcp } from '#tests/helpers/factories'
 
@@ -165,6 +166,12 @@ function mockNotionOAuthServer(
 test.group('MCP OAuth routes', (group) => {
   group.each.setup(beginTestTransaction)
   group.each.teardown(rollbackTestTransaction)
+  // Discovered OAuth hosts are resolved before they are fetched. The mocked
+  // provider has no DNS record, and no test may depend on the network.
+  group.each.setup(() => {
+    addressGuardRuntime.lookup = async () => ['203.0.113.10']
+  })
+  group.each.teardown(resetAddressGuardRuntime)
 
   test('uses a full-page redirect and completes the browser callback', async ({
     client,

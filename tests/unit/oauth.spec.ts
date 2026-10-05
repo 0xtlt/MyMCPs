@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { DateTime } from 'luxon'
 import { test } from '@japa/runner'
 import McpSecretStore from '#services/mcp_secret_store'
+import { addressGuardRuntime, resetAddressGuardRuntime } from '#services/upstream/address_guard'
 import { testAndUpdateStatus } from '#services/upstream/manager'
 import {
   clearOauthSession,
@@ -17,6 +18,9 @@ import { createAdmin, createMcp } from '#tests/helpers/factories'
 function fakeSession() {
   const values = new Map<string, unknown>()
   const session = {
+    all() {
+      return Object.fromEntries(values)
+    },
     get(key: string) {
       return values.get(key)
     },
@@ -114,6 +118,12 @@ function mockNotionOAuthServer() {
 test.group('MCP OAuth', (group) => {
   group.each.setup(beginTestTransaction)
   group.each.teardown(rollbackTestTransaction)
+  // Discovered OAuth hosts are resolved before they are fetched. The mocked
+  // providers have no DNS records, and no test may depend on the network.
+  group.each.setup(() => {
+    addressGuardRuntime.lookup = async () => ['203.0.113.10']
+  })
+  group.each.teardown(resetAddressGuardRuntime)
 
   test('discovers, registers, redirects, exchanges, and refreshes a Notion-style MCP', async ({
     assert,
