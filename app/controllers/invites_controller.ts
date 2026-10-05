@@ -5,6 +5,7 @@ import Invite from '#models/invite'
 import User from '#models/user'
 import Mcp from '#models/mcp'
 import AccessToken from '#models/access_token'
+import { inviteTokenParamsValidator, recordIdParamsValidator } from '#validators/route_params'
 import { acceptInviteValidator, createInviteValidator } from '#validators/user'
 import { publicAppUrl } from '#services/public_url'
 import { signIn } from '#services/session_stamp'
@@ -55,7 +56,8 @@ export default class InvitesController {
   }
 
   async destroy({ params, response, session }: HttpContext) {
-    const invite = await Invite.find(params.id)
+    const [, route] = await recordIdParamsValidator.tryValidate(params)
+    const invite = route ? await Invite.find(route.id) : null
     if (!invite) {
       session.flash('error', 'Invite not found')
       return response.redirect().toRoute('invites.index')
@@ -67,7 +69,8 @@ export default class InvitesController {
   }
 
   async destroyMember({ params, auth, response, session }: HttpContext) {
-    const member = await User.find(params.id)
+    const [, route] = await recordIdParamsValidator.tryValidate(params)
+    const member = route ? await User.find(route.id) : null
     if (!member) {
       session.flash('error', 'Member not found')
       return response.redirect().toRoute('invites.index')
@@ -109,7 +112,8 @@ export default class InvitesController {
   }
 
   async show({ params, inertia, response, session }: HttpContext) {
-    const invite = await Invite.findBy('token', params.token)
+    const [, route] = await inviteTokenParamsValidator.tryValidate(params)
+    const invite = route ? await Invite.findBy('token', route.token) : null
 
     if (!invite || !invite.isUsable) {
       session.flash('error', 'This invite is invalid or has expired')
@@ -125,12 +129,12 @@ export default class InvitesController {
   async accept(ctx: HttpContext) {
     const { params, request, response, session } = ctx
     const payload = await request.validateUsing(acceptInviteValidator)
+    const [, route] = await inviteTokenParamsValidator.tryValidate(params)
 
     const result = await db.transaction(async (trx) => {
-      const invite = await Invite.query({ client: trx })
-        .where('token', params.token)
-        .forUpdate()
-        .first()
+      const invite = route
+        ? await Invite.query({ client: trx }).where('token', route.token).forUpdate().first()
+        : null
 
       if (!invite || !invite.isUsable) {
         return { status: 'invalid' as const }

@@ -5,6 +5,7 @@ import {
 } from '#services/builtin/definition'
 import McpSecretStore from '#services/mcp_secret_store'
 import { fetchWithSameOriginRedirects } from '#services/upstream/safe_fetch'
+import { builtinTokenFailureValidator } from '#validators/builtin_oauth'
 import { oauthTokenResponseValidator } from '#validators/oauth'
 
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000
@@ -63,21 +64,16 @@ export function builtinAuthorizationUrl(
  * Explain a rejected token request from an RFC 6749 error body or from the
  * `{ message, errors: [{ resource, field, code }] }` shape Strava returns.
  */
-function describeTokenFailure(body: unknown) {
-  if (typeof body !== 'object' || body === null) return ''
+async function describeTokenFailure(body: unknown) {
+  const [unexpected, failure] = await builtinTokenFailureValidator.tryValidate(body)
+  if (unexpected) return ''
 
-  const { error, error_description: description, message, errors } = body as Record<string, unknown>
-  const faults = Array.isArray(errors)
-    ? errors
-        .map((fault: Record<string, unknown> | null) =>
-          [fault?.resource, fault?.field, fault?.code]
-            .filter((part) => typeof part === 'string' && part)
-            .join(' ')
-        )
-        .filter(Boolean)
-        .join('; ')
-    : ''
-  const summary = [description, error, message].find((part) => typeof part === 'string' && part)
+  const { error, error_description: description, message, errors = [] } = failure
+  const faults = errors
+    .map((fault) => [fault.resource, fault.field, fault.code].filter(Boolean).join(' '))
+    .filter(Boolean)
+    .join('; ')
+  const summary = [description, error, message].find(Boolean)
   return [summary, faults ? `(${faults})` : null].filter(Boolean).join(' ').slice(0, 200)
 }
 
@@ -112,7 +108,7 @@ async function requestTokens(
   const body: unknown = await response.json().catch(() => null)
 
   if (!response.ok) {
-    const reason = describeTokenFailure(body)
+    const reason = await describeTokenFailure(body)
     const rejected = response.status === 400 || response.status === 401
     if (grant.grant_type === 'refresh_token' && rejected) {
       throw new BuiltinAuthorizationError(

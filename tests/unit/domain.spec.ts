@@ -125,11 +125,11 @@ test.group('domain services and models', (group) => {
     assert.equal(Mcp.slugify('  Hello, World!  '), 'hello-world')
     assert.equal(Mcp.slugify('---'), 'mcp')
     assert.equal(namespaceTool('weather', 'get_forecast'), 'weather__get_forecast')
-    assert.deepEqual(parseNamespacedTool('weather__get_forecast'), {
+    assert.deepEqual(await parseNamespacedTool('weather__get_forecast'), {
       slug: 'weather',
       toolName: 'get_forecast',
     })
-    assert.isNull(parseNamespacedTool('__missing-slug'))
-    assert.isNull(parseNamespacedTool('missing-separator'))
+    assert.isNull(await parseNamespacedTool('__missing-slug'))
+    assert.isNull(await parseNamespacedTool('missing-separator'))
   })
 })

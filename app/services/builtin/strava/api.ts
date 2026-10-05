@@ -1,32 +1,29 @@
+import type { Infer } from '@vinejs/vine/types'
 import { BuiltinAuthorizationError, BuiltinToolError } from '#services/builtin/definition'
 import { fetchWithSameOriginRedirects } from '#services/upstream/safe_fetch'
+import { stravaFailureValidator } from '#validators/builtin_strava'
 
 const STRAVA_API_URL = 'https://www.strava.com/api/v3'
 const REQUEST_TIMEOUT_MS = 30_000
 
 type QueryValue = string | number | boolean | undefined
 
-type StravaFault = { resource?: unknown; field?: unknown; code?: unknown }
+type StravaFailure = Infer<typeof stravaFailureValidator>
 
-function faults(body: unknown): StravaFault[] {
-  const errors = (body as { errors?: unknown } | null)?.errors
-  return Array.isArray(errors) ? (errors as StravaFault[]) : []
+/** What Strava says went wrong. Nothing, when the body is not the one it documents. */
+async function failureOf(response: Response): Promise<StravaFailure> {
+  const body: unknown = await response.json().catch(() => null)
+  const [, failure] = await stravaFailureValidator.tryValidate(body)
+  return failure ?? {}
 }
 
 /** Strava's own explanation, such as `Record Not Found (Activity not found)`. */
-function faultSummary(body: unknown) {
-  const message = (body as { message?: unknown } | null)?.message
-  const details = faults(body)
-    .map((fault) =>
-      [fault.resource, fault.field, fault.code]
-        .filter((part) => typeof part === 'string' && part)
-        .join(' ')
-    )
+function faultSummary({ message, errors = [] }: StravaFailure) {
+  const details = errors
+    .map((fault) => [fault.resource, fault.field, fault.code].filter(Boolean).join(' '))
     .filter(Boolean)
     .join('; ')
-  const summary = [typeof message === 'string' ? message : null, details ? `(${details})` : null]
-    .filter(Boolean)
-    .join(' ')
+  const summary = [message, details ? `(${details})` : null].filter(Boolean).join(' ')
   return summary ? `: ${summary.slice(0, 200)}` : ''
 }
 
@@ -34,14 +31,11 @@ function faultSummary(body: unknown) {
  * A missing scope is reported as HTTP 401 with a fault such as
  * `{"resource":"AccessToken","field":"activity:read_permission","code":"missing"}`.
  */
-function missingPermission(body: unknown) {
-  const fault = faults(body).find(
-    (candidate) =>
-      candidate.code === 'missing' &&
-      typeof candidate.field === 'string' &&
-      candidate.field.endsWith('_permission')
+function missingPermission({ errors = [] }: StravaFailure) {
+  const fault = errors.find(
+    (candidate) => candidate.code === 'missing' && candidate.field?.endsWith('_permission')
   )
-  return fault ? String(fault.field).slice(0, -'_permission'.length) : null
+  return fault?.field ? fault.field.slice(0, -'_permission'.length) : null
 }
 
 /** Reads have their own, lower limit. Writes only count against the overall one. */
@@ -61,10 +55,10 @@ function rateLimitMessage(response: Response, isRead: boolean) {
 }
 
 async function stravaFailure(response: Response, isRead: boolean) {
-  const body: unknown = await response.json().catch(() => null)
+  const failure = await failureOf(response)
 
   if (response.status === 401) {
-    const permission = missingPermission(body)
+    const permission = missingPermission(failure)
     return permission
       ? new BuiltinToolError(
           `Strava permission "${permission}" was not granted. Re-authorize this MCP in MyMCPs and keep that permission checked.`
@@ -77,15 +71,15 @@ async function stravaFailure(response: Response, isRead: boolean) {
     return new BuiltinToolError('Strava only returns this data to athletes with a subscription.')
   }
   if (response.status === 403) {
-    return new BuiltinToolError(`Strava denied access to this resource${faultSummary(body)}`)
+    return new BuiltinToolError(`Strava denied access to this resource${faultSummary(failure)}`)
   }
   if (response.status === 404) {
-    return new BuiltinToolError(`Strava could not find this resource${faultSummary(body)}`)
+    return new BuiltinToolError(`Strava could not find this resource${faultSummary(failure)}`)
   }
   if (response.status === 429) {
     return new BuiltinToolError(rateLimitMessage(response, isRead))
   }
-  return new BuiltinToolError(`Strava API returned HTTP ${response.status}${faultSummary(body)}`)
+  return new BuiltinToolError(`Strava API returned HTTP ${response.status}${faultSummary(failure)}`)
 }
 
 type StravaRequest = {

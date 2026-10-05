@@ -1,4 +1,6 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
+import type { VineValidator } from '@vinejs/vine'
+import type { SchemaTypes } from '@vinejs/vine/types'
 import type { BuiltinMcpKey } from '#services/builtin/keys'
 
 /**
@@ -86,7 +88,10 @@ export type BuiltinFile = {
 export type BuiltinTool<Context = BuiltinToolContext> = {
   name: string
   description: string
+  /** The arguments as the agent reads them. */
   inputSchema: Tool['inputSchema']
+  /** The arguments as `run` checks them. Both must describe the same ones. */
+  input: VineValidator<SchemaTypes, any>
   /**
    * The tool needs at least one of these provider scopes, or of these
    * permissions for a password sign-in. Omit when any authorization works.

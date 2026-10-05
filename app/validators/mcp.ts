@@ -1,5 +1,6 @@
 import vine from '@vinejs/vine'
 import { BUILTIN_MCP_KEYS } from '#services/builtin/keys'
+import { parseHttpUrl } from '#services/http_url'
 import { reservedEnvironmentNameReason } from '#services/mcp_environment_policy'
 
 const transport = vine.enum(['http', 'npm', 'builtin'] as const)
@@ -13,6 +14,26 @@ const npmEnvironmentName = vine.createRule((value, _options, field) => {
   const reason = reservedEnvironmentNameReason(value)
   if (reason) {
     field.report(reason, 'npmEnvironmentName', field)
+  }
+})
+
+/**
+ * An MCP endpoint must be an HTTP(S) URL without a fragment. Checked for the
+ * HTTP transport only: other transports ignore the field.
+ */
+const mcpEndpointUrl = vine.createRule((value, _options, field) => {
+  if (typeof value !== 'string' || field.parent?.transport !== 'http') {
+    return
+  }
+  try {
+    parseHttpUrl(value, 'MCP URL')
+  } catch (error) {
+    // Its own rule name: under `url`, Vine would replace the reason with its generic message.
+    field.report(
+      error instanceof Error ? error.message : 'MCP URL is invalid',
+      'mcpEndpointUrl',
+      field
+    )
   }
 })
 
@@ -48,6 +69,7 @@ const mcpPayload = {
     .trim()
     .url()
     .maxLength(2048)
+    .use(mcpEndpointUrl())
     .optional()
     .requiredWhen('transport', '=', 'http'),
   npmPackage: vine.string().trim().maxLength(254).optional().requiredWhen('transport', '=', 'npm'),

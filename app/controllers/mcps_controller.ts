@@ -6,6 +6,8 @@ import McpEnvironmentStore from '#services/mcp_environment_store'
 import McpSecretStore from '#services/mcp_secret_store'
 import { createMcpValidator, updateMcpValidator } from '#validators/mcp'
 import { oauthCallbackValidator, oauthStartValidator } from '#validators/oauth'
+import { recordIdParamsValidator } from '#validators/route_params'
+import { flashedRecordIdValidator } from '#validators/session'
 import { testAndUpdateStatus } from '#services/upstream/manager'
 import { removeMcpSandbox } from '#services/upstream/deno_runner'
 import { McpNpmUpdateError, updateMcpToLatest } from '#services/mcp_npm_update_service'
@@ -40,18 +42,9 @@ function npmEnvValidationError(field: string, message: string): never {
   ])
 }
 
+/** The validator has checked the URL; this gives it its canonical form. */
 function normalizedHttpUrl(value: string) {
-  try {
-    return parseHttpUrl(value, 'MCP URL').toString()
-  } catch (error) {
-    throw new errors.E_VALIDATION_ERROR([
-      {
-        field: 'httpUrl',
-        message: error instanceof Error ? error.message : 'MCP URL is invalid',
-        rule: 'url',
-      },
-    ])
-  }
+  return parseHttpUrl(value, 'MCP URL').toString()
 }
 
 /**
@@ -413,14 +406,20 @@ async function uniqueSlug(name: string, excludeId?: number) {
   }
 }
 
+/**
+ * The MCP a route names, or null when its `:id` is not an id or matches none.
+ */
+async function findMcp(params: HttpContext['params']) {
+  const [, route] = await recordIdParamsValidator.tryValidate(params)
+  return route ? Mcp.find(route.id) : null
+}
+
 export default class McpsController {
   async index({ inertia, session }: HttpContext) {
     const mcps = await Mcp.query().orderBy('name', 'asc')
-    const editingMcpIdRaw = session.flashMessages.get('editingMcpId')
-    const editingMcpId =
-      typeof editingMcpIdRaw === 'number' && Number.isFinite(editingMcpIdRaw)
-        ? editingMcpIdRaw
-        : null
+    const [, editingMcpId] = await flashedRecordIdValidator.tryValidate(
+      session.flashMessages.get('editingMcpId')
+    )
     const appUrl = publicOauthAppUrl()
     return inertia.render('mcps/index', {
       mcps: McpTransformer.transform(mcps),
@@ -448,7 +447,7 @@ export default class McpsController {
   }
 
   async show({ params, response, session }: HttpContext) {
-    const mcp = await Mcp.find(params.id)
+    const mcp = await findMcp(params)
     if (!mcp) {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')
@@ -458,7 +457,7 @@ export default class McpsController {
   }
 
   async update({ params, request, response, session }: HttpContext) {
-    const mcp = await Mcp.find(params.id)
+    const mcp = await findMcp(params)
     if (!mcp) {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')
@@ -482,7 +481,7 @@ export default class McpsController {
   }
 
   async destroy({ params, response, session }: HttpContext) {
-    const mcp = await Mcp.find(params.id)
+    const mcp = await findMcp(params)
     if (!mcp) {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')
@@ -494,7 +493,7 @@ export default class McpsController {
   }
 
   async probe({ params, response, session }: HttpContext) {
-    const mcp = await Mcp.find(params.id)
+    const mcp = await findMcp(params)
     if (!mcp) {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')
@@ -510,7 +509,7 @@ export default class McpsController {
   }
 
   async updateNpm({ params, response, session }: HttpContext) {
-    const mcp = await Mcp.find(params.id)
+    const mcp = await findMcp(params)
     if (!mcp) {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')
@@ -553,7 +552,7 @@ export default class McpsController {
       return response.redirect().withQs(false).toRoute('mcps.index')
     }
 
-    const mcp = await Mcp.find(params.id)
+    const mcp = await findMcp(params)
     if (!mcp) {
       session.flash('error', 'MCP not found')
       return response.redirect().toRoute('mcps.index')

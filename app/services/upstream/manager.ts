@@ -19,6 +19,7 @@ import { sanitizeMcpDiagnostic } from '#services/security_redaction'
 import { BuiltinAuthorizationError } from '#services/builtin/definition'
 import { builtinMcp } from '#services/builtin/registry'
 import { callBuiltinTool, listBuiltinTools, verifyBuiltin } from '#services/builtin/runtime'
+import { namespacedToolValidator } from '#validators/gateway'
 
 export type ConnectedUpstream = ConnectedHttpUpstream | ConnectedDenoUpstream
 
@@ -26,15 +27,9 @@ export function namespaceTool(slug: string, toolName: string) {
   return `${slug}__${toolName}`
 }
 
-export function parseNamespacedTool(namespaced: string) {
-  const idx = namespaced.indexOf('__')
-  if (idx <= 0) {
-    return null
-  }
-  return {
-    slug: namespaced.slice(0, idx),
-    toolName: namespaced.slice(idx + 2),
-  }
+export async function parseNamespacedTool(namespaced: string) {
+  const [malformed, tool] = await namespacedToolValidator.tryValidate(namespaced)
+  return malformed ? null : tool
 }
 
 export async function connectUpstream(mcp: Mcp): Promise<ConnectedUpstream> {

@@ -21,15 +21,31 @@ import {
 } from '#start/limiter'
 import { requirePublicAppUrl } from '#services/public_url'
 import { sanitizeDiagnostic } from '#services/security_redaction'
+import {
+  authorizationCodeGrantValidator,
+  consentApprovalValidator,
+  refreshTokenGrantValidator,
+  revocationRequestValidator,
+  tokenRequestValidator,
+} from '#validators/gateway_oauth'
+import type { ValidationError } from '@vinejs/vine'
 
 const MAX_SESSION_RETURN_PATH_BYTES = 1536
 
-function requiredString(input: Record<string, unknown>, key: string) {
-  const value = input[key]
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new GatewayOauthError('invalid_request', `${key} is required`)
+/**
+ * Read the parameters a token or revocation request must carry. The schemas
+ * given here ask for nothing more than their presence, so the first field
+ * that fails is a missing parameter, which the error names.
+ */
+async function requiredParameters<Values>(
+  validator: { tryValidate(data: unknown): Promise<[ValidationError, null] | [null, Values]> },
+  input: Record<string, unknown>
+) {
+  const [error, parameters] = await validator.tryValidate(input)
+  if (error) {
+    throw new GatewayOauthError('invalid_request', `${error.messages[0].field} is required`)
   }
-  return value
+  return parameters
 }
 
 function authorizationReturnPath(request: Awaited<ReturnType<typeof parseAuthorizationRequest>>) {
@@ -170,7 +186,8 @@ export default class OauthServerController {
         })
       }
 
-      if (input.decision !== 'approve') {
+      const [denied] = await consentApprovalValidator.tryValidate(input.decision)
+      if (denied) {
         return redirectToOauthClient(
           ctx,
           oauthRedirect(authorizationRequest.redirectUri, {
@@ -224,25 +241,27 @@ export default class OauthServerController {
     const input = ctx.request.all()
     try {
       const client = await authenticateOauthClient(ctx.request.header('authorization'), input)
-      const grantType = requiredString(input, 'grant_type')
+      const { grant_type: grantType } = await requiredParameters(tokenRequestValidator, input)
 
       if (grantType === 'authorization_code') {
+        const grant = await requiredParameters(authorizationCodeGrantValidator, input)
         const created = await exchangeAuthorizationCode({
           client,
-          code: requiredString(input, 'code'),
-          codeVerifier: requiredString(input, 'code_verifier'),
-          redirectUri: requiredString(input, 'redirect_uri'),
-          resource: requiredString(input, 'resource'),
+          code: grant.code,
+          codeVerifier: grant.code_verifier,
+          redirectUri: grant.redirect_uri,
+          resource: grant.resource,
         })
         return this.tokens(ctx, created)
       }
 
       if (grantType === 'refresh_token') {
+        const grant = await requiredParameters(refreshTokenGrantValidator, input)
         const created = await exchangeRefreshToken({
           client,
-          refreshToken: requiredString(input, 'refresh_token'),
-          scope: typeof input.scope === 'string' ? input.scope : null,
-          resource: requiredString(input, 'resource'),
+          refreshToken: grant.refresh_token,
+          scope: grant.scope ?? null,
+          resource: grant.resource,
         })
         return this.tokens(ctx, created)
       }
@@ -269,7 +288,8 @@ export default class OauthServerController {
     const input = ctx.request.all()
     try {
       const client = await authenticateOauthClient(ctx.request.header('authorization'), input)
-      await AccessTokenService.revokeOauthToken(client.id, requiredString(input, 'token'))
+      const { token } = await requiredParameters(revocationRequestValidator, input)
+      await AccessTokenService.revokeOauthToken(client.id, token)
       ctx.response.header('Cache-Control', 'no-store')
       return ctx.response.ok({})
     } catch (error) {

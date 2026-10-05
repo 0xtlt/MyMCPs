@@ -30,7 +30,7 @@ import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_re
 export default class GatewayController {
   async handle(ctx: HttpContext) {
     const settings = await InstanceSetting.current()
-    const toolMode = parseGatewayToolMode(
+    const toolMode = await parseGatewayToolMode(
       ctx.request.header('x-mymcps-tool-mode'),
       settings.gatewayToolMode
     )
@@ -89,7 +89,7 @@ export default class GatewayController {
         }
 
         if (requestedToolName === 'tool_search') {
-          const input = parseToolSearchInput(args)
+          const input = await parseToolSearchInput(args)
           if (typeof input === 'string') {
             return {
               content: [{ type: 'text' as const, text: input }],
@@ -140,7 +140,7 @@ export default class GatewayController {
         }
 
         if (requestedToolName === 'call_tool') {
-          const input = parseCallToolInput(args)
+          const input = await parseCallToolInput(args)
           if (typeof input === 'string') {
             McpCallLogService.record({
               accessToken,
@@ -197,7 +197,7 @@ export default class GatewayController {
         }
       }
 
-      const parsed = parseNamespacedTool(request.params.name)
+      const parsed = await parseNamespacedTool(request.params.name)
       if (!parsed) {
         McpCallLogService.record({
           accessToken,

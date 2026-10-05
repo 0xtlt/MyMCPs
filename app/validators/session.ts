@@ -21,3 +21,16 @@ export const sessionStampValidator = vine.create({
 export const oauthReturnToValidator = vine.create(
   vine.string().startsWith('/authorize?').maxLength(1536)
 )
+
+/**
+ * The id of a record flashed for the next page, such as the MCP whose dialog
+ * should reopen.
+ */
+export const flashedRecordIdValidator = vine.create(
+  vine.number({ strict: true }).withoutDecimals().positive()
+)
+
+/**
+ * A text flashed for the next page, such as an access token shown once.
+ */
+export const flashedTextValidator = vine.create(vine.string())

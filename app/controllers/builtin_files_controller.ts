@@ -2,9 +2,10 @@ import { Readable } from 'node:stream'
 import type { HttpContext } from '@adonisjs/core/http'
 import Mcp from '#models/mcp'
 import { BuiltinToolError, type BuiltinFile } from '#services/builtin/definition'
-import { BUILTIN_FILE_PURPOSE, decodeFileReference } from '#services/builtin/file_link'
+import { BUILTIN_FILE_PURPOSE } from '#services/builtin/file_link'
 import { downloadBuiltinFile } from '#services/builtin/runtime'
 import { builtinFileRateLimiter } from '#start/limiter'
+import { builtinFileValidator } from '#validators/builtin_files'
 
 const MEDIA_TYPE = /^[\w.+-]+\/[\w.+-]+$/
 const UNAVAILABLE = 'This file is no longer available.'
@@ -51,20 +52,26 @@ export default class BuiltinFilesController {
    * There is no session and no access token: the signature is the credential,
    * so the MCP is checked again in case it changed since the link was made.
    */
-  async show({ request, response, params }: HttpContext) {
+  async show({ request, response }: HttpContext) {
     // Checked before anything is counted: only the holder of a link can use up downloads.
     if (!request.hasValidSignature(BUILTIN_FILE_PURPOSE)) {
       return response.status(403).send('This link is invalid or has expired.')
     }
 
+    const [malformed, link] = await request.tryValidateUsing(builtinFileValidator)
+    if (malformed) {
+      return response.status(404).send(UNAVAILABLE)
+    }
+    const { id, reference } = link.params
+
     // Counted for each MCP and address, so one client cannot use up the downloads of another.
-    const client = `builtin-file:${params.id}:${request.ip()}`
+    const client = `builtin-file:${id}:${request.ip()}`
     if (!(await builtinFileRateLimiter.attempt(client, () => true))) {
       response.header('Retry-After', await builtinFileRateLimiter.availableIn(client))
       return response.status(429).send('Too many downloads. Try again later.')
     }
 
-    const mcp = await Mcp.find(params.id)
+    const mcp = await Mcp.find(id)
     if (!mcp || !mcp.enabled || mcp.transport !== 'builtin') {
       return response.status(404).send(UNAVAILABLE)
     }
@@ -77,7 +84,7 @@ export default class BuiltinFilesController {
 
     let file: BuiltinFile
     try {
-      file = await downloadBuiltinFile(mcp, decodeFileReference(params.reference))
+      file = await downloadBuiltinFile(mcp, reference)
     } catch (error) {
       finishDownload()
       if (!(error instanceof BuiltinToolError)) throw error

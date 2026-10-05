@@ -4,19 +4,34 @@ import { OAuthClientMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth
 import OauthAuthorizationCode from '#models/oauth_authorization_code'
 import OauthClient from '#models/oauth_client'
 import AccessTokenService from '#services/access_token_service'
+import { GATEWAY_OAUTH_SCOPE, LOOPBACK_HOSTS } from '#services/gateway_oauth_constants'
 import { requirePublicAppUrl } from '#services/public_url'
 import { sanitizeDiagnostic } from '#services/security_redaction'
+import {
+  authorizationClientIdValidator,
+  authorizationRedirectUriValidator,
+  authorizationResponseTypeValidator,
+  authorizationStateLengthValidator,
+  authorizationStateValidator,
+  clientAuthMethodValidator,
+  clientGrantTypesValidator,
+  clientNameValidator,
+  clientRedirectUrisValidator,
+  clientResponseTypesValidator,
+  gatewayResourceValidator,
+  pkceChallengeValidator,
+  pkceVerifierValidator,
+  postedClientCredentialsValidator,
+  refreshScopeValidator,
+  requestedScopeValidator,
+} from '#validators/gateway_oauth'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 
-export const GATEWAY_OAUTH_SCOPE = 'mcp:tools'
+export { GATEWAY_OAUTH_SCOPE }
 export const OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 const AUTHORIZATION_CODE_TTL_MINUTES = 5
 const CLIENT_SECRET_TTL_DAYS = 365
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-const NATIVE_APP_REDIRECT_URIS = new Set(['cursor://anysphere.cursor-mcp/oauth/callback'])
-const CLIENT_AUTH_METHODS = new Set(['none', 'client_secret_post', 'client_secret_basic'])
-const CLIENT_GRANT_TYPES = ['authorization_code', 'refresh_token']
 
 /**
  * Registration is open to anyone, so the number of stored clients is bounded
@@ -81,59 +96,10 @@ export function authorizationServerMetadata() {
   }
 }
 
-function stringValue(input: unknown) {
-  return typeof input === 'string' ? input : null
-}
-
-function parseStringList(value: string | undefined, fallback: string[]) {
-  return value === undefined ? fallback : value.split(' ').filter(Boolean)
-}
-
-function isAllowedRedirectUri(value: string) {
-  if (value.length > 2048) return false
-
-  // Cursor historically uses this private-use callback when its localhost
-  // listener is unavailable. Keep the exception exact so arbitrary custom
-  // schemes cannot be registered as OAuth redirect targets.
-  if (NATIVE_APP_REDIRECT_URIS.has(value)) return true
-
-  try {
-    const url = new URL(value)
-    if (url.hash || url.username || url.password) return false
-    if (url.protocol === 'https:') return true
-    return url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname)
-  } catch {
-    return false
-  }
-}
-
 /** True when the redirect URI points at the user's own device. */
 export function isLoopbackRedirectUri(value: string) {
   try {
     return LOOPBACK_HOSTS.has(new URL(value).hostname)
-  } catch {
-    return false
-  }
-}
-
-/** RFC 8252 allows native loopback clients to choose their callback port at runtime. */
-export function redirectUriMatches(requested: string, registered: string) {
-  if (requested === registered) return true
-
-  try {
-    const requestUrl = new URL(requested)
-    const registeredUrl = new URL(registered)
-    if (!LOOPBACK_HOSTS.has(requestUrl.hostname) || !LOOPBACK_HOSTS.has(registeredUrl.hostname)) {
-      return false
-    }
-
-    return (
-      requestUrl.protocol === registeredUrl.protocol &&
-      requestUrl.hostname === registeredUrl.hostname &&
-      requestUrl.pathname === registeredUrl.pathname &&
-      requestUrl.search === registeredUrl.search &&
-      requestUrl.hash === registeredUrl.hash
-    )
   } catch {
     return false
   }
@@ -229,53 +195,53 @@ export async function registerOauthClient(input: unknown) {
     throw new GatewayOauthError('invalid_client_metadata', 'Invalid OAuth client metadata')
   }
 
+  // The first check that fails decides the error the client is given.
   const metadata = parsed.data
-  if (
-    metadata.redirect_uris.length === 0 ||
-    metadata.redirect_uris.length > 10 ||
-    metadata.redirect_uris.some((uri) => !isAllowedRedirectUri(uri))
-  ) {
+  const [unsafeRedirectUri] = await clientRedirectUrisValidator.tryValidate(metadata.redirect_uris)
+  if (unsafeRedirectUri) {
     throw new GatewayOauthError(
       'invalid_redirect_uri',
       'Redirect URIs must use HTTPS, HTTP on an exact loopback host, or an approved native-app callback'
     )
   }
 
-  const authMethod = metadata.token_endpoint_auth_method ?? 'client_secret_basic'
-  if (!CLIENT_AUTH_METHODS.has(authMethod)) {
+  const [unsupportedAuthMethod, authMethod] = await clientAuthMethodValidator.tryValidate(
+    metadata.token_endpoint_auth_method
+  )
+  if (unsupportedAuthMethod) {
     throw new GatewayOauthError(
       'invalid_client_metadata',
       'Unsupported token endpoint authentication method'
     )
   }
 
-  // Both lists are stored and parsed again on every /authorize and /token
-  // request, so they are reduced to their distinct values, all of them allowed.
-  const grantTypes = [...new Set(metadata.grant_types ?? CLIENT_GRANT_TYPES)]
-  if (
-    !grantTypes.includes('authorization_code') ||
-    grantTypes.some((grant) => !CLIENT_GRANT_TYPES.includes(grant))
-  ) {
+  const [unsupportedGrantType, grantTypes] = await clientGrantTypesValidator.tryValidate(
+    metadata.grant_types
+  )
+  if (unsupportedGrantType) {
     throw new GatewayOauthError('invalid_client_metadata', 'Unsupported OAuth grant type')
   }
 
-  const responseTypes = [...new Set(metadata.response_types ?? ['code'])]
-  if (responseTypes.length !== 1 || responseTypes[0] !== 'code') {
+  const [unsupportedResponseType, responseTypes] = await clientResponseTypesValidator.tryValidate(
+    metadata.response_types
+  )
+  if (unsupportedResponseType) {
     throw new GatewayOauthError(
       'invalid_client_metadata',
       'Only the code response type is supported'
     )
   }
 
-  const scopes = parseStringList(metadata.scope, [GATEWAY_OAUTH_SCOPE])
-  if (scopes.length !== 1 || scopes[0] !== GATEWAY_OAUTH_SCOPE) {
+  const [unsupportedScope] = await requestedScopeValidator.tryValidate(metadata.scope)
+  if (unsupportedScope) {
     throw new GatewayOauthError('invalid_client_metadata', 'Unsupported OAuth scope')
   }
 
-  const clientName = metadata.client_name?.trim() || 'MCP client'
-  if (clientName.length > 120) {
+  const [nameTooLong, name] = await clientNameValidator.tryValidate(metadata.client_name)
+  if (nameTooLong) {
     throw new GatewayOauthError('invalid_client_metadata', 'Client name is too long')
   }
+  const clientName = name || 'MCP client'
 
   await pruneUnusedOauthClients()
   await makeRoomForOauthClient()
@@ -330,8 +296,8 @@ export type GatewayAuthorizationRequest = {
 export async function parseAuthorizationRequest(
   input: Record<string, unknown>
 ): Promise<GatewayAuthorizationRequest> {
-  const clientId = stringValue(input.client_id)
-  if (!clientId) {
+  const [noClientId, clientId] = await authorizationClientIdValidator.tryValidate(input.client_id)
+  if (noClientId) {
     throw new GatewayOauthError('invalid_request', 'client_id is required')
   }
 
@@ -340,41 +306,46 @@ export async function parseAuthorizationRequest(
     throw new GatewayOauthError('invalid_client', 'Unknown OAuth client')
   }
 
-  const redirectUri = stringValue(input.redirect_uri)
-  if (!redirectUri || !client.redirectUriList.some((uri) => redirectUriMatches(redirectUri, uri))) {
+  const [unregistered, redirectUri] = await authorizationRedirectUriValidator.tryValidate(
+    input.redirect_uri,
+    { meta: { registeredRedirectUris: client.redirectUriList } }
+  )
+  if (unregistered) {
     throw new GatewayOauthError('invalid_request', 'Unregistered redirect_uri')
   }
 
-  const state = stringValue(input.state)
+  // From here on an error can be returned to the client, and carries its
+  // state. The state is therefore read now, and its length is checked last.
+  const [, state = null] = await authorizationStateValidator.tryValidate(input.state)
   const redirectError = (code: string, message: string) =>
     new GatewayOauthError(code, message, 400, redirectUri, state)
 
-  if (stringValue(input.response_type) !== 'code') {
+  const [unsupportedResponseType] = await authorizationResponseTypeValidator.tryValidate(
+    input.response_type
+  )
+  if (unsupportedResponseType) {
     throw redirectError('unsupported_response_type', 'Only the code response type is supported')
   }
 
-  const codeChallenge = stringValue(input.code_challenge)
-  if (
-    !codeChallenge ||
-    !/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge) ||
-    stringValue(input.code_challenge_method) !== 'S256'
-  ) {
+  const [withoutPkce, pkce] = await pkceChallengeValidator.tryValidate(input)
+  if (withoutPkce) {
     throw redirectError('invalid_request', 'PKCE with the S256 method is required')
   }
 
-  const requestedScopes = parseStringList(stringValue(input.scope) ?? undefined, [
-    GATEWAY_OAUTH_SCOPE,
-  ])
-  if (requestedScopes.length !== 1 || requestedScopes[0] !== GATEWAY_OAUTH_SCOPE) {
+  const [unsupportedScope] = await requestedScopeValidator.tryValidate(input.scope)
+  if (unsupportedScope) {
     throw redirectError('invalid_scope', 'Unsupported OAuth scope')
   }
 
-  const resource = stringValue(input.resource)
-  if (!resource || !sameUrl(resource, gatewayResourceUrl())) {
+  const [foreignResource] = await gatewayResourceValidator.tryValidate(input.resource, {
+    meta: { gatewayResource: gatewayResourceUrl() },
+  })
+  if (foreignResource) {
     throw redirectError('invalid_target', 'The OAuth resource must be the MyMCPs gateway')
   }
 
-  if (state && state.length > 2048) {
+  const [stateTooLong] = await authorizationStateLengthValidator.tryValidate(state)
+  if (stateTooLong) {
     throw redirectError('invalid_request', 'OAuth state is too long')
   }
 
@@ -382,7 +353,7 @@ export async function parseAuthorizationRequest(
     client,
     redirectUri,
     state,
-    codeChallenge,
+    codeChallenge: pkce.code_challenge,
     scopes: GATEWAY_OAUTH_SCOPE,
     resource: gatewayResourceUrl(),
   }
@@ -428,8 +399,8 @@ function sameUrl(first: string, second: string) {
   }
 }
 
+/** Whether a well-formed code verifier is the one behind the stored challenge. */
 export function verifyCodeChallenge(codeVerifier: string, expectedChallenge: string) {
-  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier)) return false
   const actual = createHash('sha256').update(codeVerifier).digest('base64url')
   const actualBuffer = Buffer.from(actual)
   const expectedBuffer = Buffer.from(expectedChallenge)
@@ -469,14 +440,14 @@ export async function authenticateOauthClient(
   input: Record<string, unknown>
 ) {
   const basic = basicClientCredentials(authorizationHeader)
-  const bodyClientId = stringValue(input.client_id)
+  const [, posted] = await postedClientCredentialsValidator.tryValidate(input)
   const credentials: ClientCredentials | null =
     basic ??
-    (bodyClientId
+    (posted
       ? {
-          clientId: bodyClientId,
-          clientSecret: stringValue(input.client_secret),
-          method: stringValue(input.client_secret) ? 'client_secret_post' : 'none',
+          clientId: posted.client_id,
+          clientSecret: posted.client_secret ?? null,
+          method: posted.client_secret ? 'client_secret_post' : 'none',
         }
       : null)
 
@@ -512,14 +483,21 @@ export async function exchangeAuthorizationCode(params: {
   const authorizationCode = await OauthAuthorizationCode.query()
     .where('code_hash', AccessTokenService.hash(params.code))
     .first()
+  // A malformed verifier or a resource other than the gateway is answered
+  // like a code that does not match.
+  const [malformedVerifier] = await pkceVerifierValidator.tryValidate(params.codeVerifier)
+  const [foreignResource] = await gatewayResourceValidator.tryValidate(params.resource, {
+    meta: { gatewayResource: gatewayResourceUrl() },
+  })
 
   if (
+    malformedVerifier ||
+    foreignResource ||
     !authorizationCode ||
     authorizationCode.oauthClientId !== params.client.id ||
     authorizationCode.expiresAt <= DateTime.utc() ||
     authorizationCode.redirectUri !== params.redirectUri ||
     !sameUrl(authorizationCode.resource, params.resource) ||
-    !sameUrl(params.resource, gatewayResourceUrl()) ||
     !verifyCodeChallenge(params.codeVerifier, authorizationCode.codeChallenge)
   ) {
     throw new GatewayOauthError('invalid_grant', 'Invalid or expired authorization code')
@@ -557,11 +535,15 @@ export async function exchangeRefreshToken(params: {
     throw new GatewayOauthError('unauthorized_client', 'This OAuth client cannot refresh tokens')
   }
 
-  if (params.scope !== null && params.scope !== GATEWAY_OAUTH_SCOPE) {
+  const [unsupportedScope] = await refreshScopeValidator.tryValidate(params.scope)
+  if (unsupportedScope) {
     throw new GatewayOauthError('invalid_scope', 'Unsupported OAuth scope')
   }
 
-  if (!sameUrl(params.resource, gatewayResourceUrl())) {
+  const [foreignResource] = await gatewayResourceValidator.tryValidate(params.resource, {
+    meta: { gatewayResource: gatewayResourceUrl() },
+  })
+  if (foreignResource) {
     throw new GatewayOauthError('invalid_target', 'The OAuth resource must be the MyMCPs gateway')
   }
 

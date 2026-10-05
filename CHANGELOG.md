@@ -2,6 +2,16 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-05
+
+### Changed
+
+- Built-in MCP tools now check all their arguments before anything else: `list_routes` refuses wrong page arguments without calling Strava, and `update_activity` reports a missing `activity_id` before asking for a field to change.
+
+### Fixed
+
+- Report a Strava error response with an unexpected shape as a plain HTTP error instead of failing the tool call.
+
 ## 2026-10-04
 
 ### Added

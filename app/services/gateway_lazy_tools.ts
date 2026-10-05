@@ -1,6 +1,11 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type Mcp from '#models/mcp'
 import type { UpstreamTool } from '#services/upstream/http_client'
+import {
+  callToolValidator,
+  gatewayToolModeValidator,
+  toolSearchValidator,
+} from '#validators/gateway'
 
 export type GatewayToolMode = 'eager' | 'lazy'
 
@@ -76,16 +81,13 @@ export const LAZY_GATEWAY_TOOLS: Tool[] = [
   },
 ]
 
-export function parseGatewayToolMode(
+/** The tool mode a request asks for, or null when its header names no mode the gateway has. */
+export async function parseGatewayToolMode(
   value: string | undefined,
   defaultMode: GatewayToolMode = 'eager'
-): GatewayToolMode | null {
-  if (value === undefined || value.trim() === '') {
-    return defaultMode
-  }
-
-  const normalized = value.trim().toLowerCase()
-  return normalized === 'eager' || normalized === 'lazy' ? normalized : null
+): Promise<GatewayToolMode | null> {
+  const [unsupported, mode] = await gatewayToolModeValidator.tryValidate(value)
+  return unsupported ? null : (mode ?? defaultMode)
 }
 
 export function mcpCatalog(mcps: Mcp[]): McpCatalogEntry[] {
@@ -125,24 +127,15 @@ export type ToolSearchInput = {
   limit: number
 }
 
-export function parseToolSearchInput(
+/**
+ * The arguments of `tool_search`, or the sentence that tells the agent which
+ * argument to correct: the first one that is wrong.
+ */
+export async function parseToolSearchInput(
   args: Record<string, unknown> | undefined
-): ToolSearchInput | string {
-  const mcp = typeof args?.mcp === 'string' ? args.mcp.trim() : ''
-  const query = typeof args?.query === 'string' ? args.query.trim() : ''
-  const limit = args?.limit === undefined ? 10 : args.limit
-
-  if (!mcp || mcp.length > 120) {
-    return 'mcp must be a non-empty MCP slug of at most 120 characters'
-  }
-  if (!query || query.length > 200) {
-    return 'query must be non-empty and at most 200 characters'
-  }
-  if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 20) {
-    return 'limit must be an integer between 1 and 20'
-  }
-
-  return { mcp, query, limit }
+): Promise<ToolSearchInput | string> {
+  const [error, input] = await toolSearchValidator.tryValidate(args ?? {})
+  return error ? error.messages[0].message : input
 }
 
 export type CallToolInput = {
@@ -151,30 +144,23 @@ export type CallToolInput = {
   arguments: Record<string, unknown> | undefined
 }
 
-export function parseCallToolInput(
+/**
+ * The arguments of `call_tool`, or the sentence that tells the agent which
+ * argument to correct: the first one that is wrong.
+ */
+export async function parseCallToolInput(
   args: Record<string, unknown> | undefined
-): CallToolInput | string {
-  const mcp = typeof args?.mcp === 'string' ? args.mcp.trim() : ''
-  const tool = typeof args?.tool === 'string' ? args.tool.trim() : ''
-  const toolArguments = args?.arguments
-
-  if (!mcp || mcp.length > 120) {
-    return 'mcp must be a non-empty MCP slug of at most 120 characters'
-  }
-  if (!tool || tool.length > 128) {
-    return 'tool must be a non-empty upstream tool name of at most 128 characters'
-  }
-  if (
-    toolArguments !== undefined &&
-    (toolArguments === null || Array.isArray(toolArguments) || typeof toolArguments !== 'object')
-  ) {
-    return 'arguments must be an object when provided'
+): Promise<CallToolInput | string> {
+  const [error, input] = await callToolValidator.tryValidate(args ?? {})
+  if (error) {
+    return error.messages[0].message
   }
 
   return {
-    mcp,
-    tool,
-    arguments: toolArguments as Record<string, unknown> | undefined,
+    mcp: input.mcp,
+    tool: input.tool,
+    // The upstream tool receives the object the agent sent, not a copy of it.
+    arguments: args?.arguments as CallToolInput['arguments'],
   }
 }
 

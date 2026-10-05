@@ -10,6 +10,7 @@ import {
   deleteAccessTokensValidator,
   updateAccessTokenValidator,
 } from '#validators/mcp'
+import { flashedTextValidator } from '#validators/session'
 import { publicOauthAppUrl } from '#services/public_url'
 import AccessTokenTransformer from '#transformers/access_token_transformer'
 import McpTransformer from '#transformers/mcp_transformer'
@@ -28,8 +29,9 @@ export default class AccessTokensController {
       .orderBy('created_at', 'desc')
     const mcps = await Mcp.query().orderBy('name', 'asc')
 
-    const createdPlaintextRaw = session.flashMessages.get('createdPlaintext')
-    const createdPlaintext = typeof createdPlaintextRaw === 'string' ? createdPlaintextRaw : null
+    const [, createdPlaintext] = await flashedTextValidator.tryValidate(
+      session.flashMessages.get('createdPlaintext')
+    )
     const appUrl = publicOauthAppUrl()
 
     return inertia.render('tokens/index', {
@@ -104,7 +106,8 @@ export default class AccessTokensController {
   }
 
   async revoke({ params, response, session }: HttpContext) {
-    const token = await AccessToken.find(params.id)
+    const [, route] = await accessTokenParamsValidator.tryValidate(params)
+    const token = route ? await AccessToken.find(route.id) : null
     if (!token) {
       session.flash('error', 'Token not found')
       return response.redirect().toRoute('tokens.index')
