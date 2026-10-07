@@ -1,12 +1,14 @@
 import type Mcp from '#models/mcp'
 import type { BuiltinMcpDefinition, BuiltinOauthMcpDefinition } from '#services/builtin/definition'
 import { BUILTIN_MCP_KEYS, type BuiltinMcpKey } from '#services/builtin/keys'
+import { googleAdsMcp } from '#services/builtin/google_ads/index'
 import { icloudMailMcp } from '#services/builtin/icloud_mail/index'
 import { stravaMcp } from '#services/builtin/strava/index'
 
 const BUILTIN_MCPS: Record<BuiltinMcpKey, BuiltinMcpDefinition> = {
   'strava': stravaMcp,
   'icloud-mail': icloudMailMcp,
+  'google-ads': googleAdsMcp,
 }
 
 export function builtinMcp(key: string | null | undefined): BuiltinMcpDefinition | null {

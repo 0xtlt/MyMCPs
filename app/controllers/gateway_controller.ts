@@ -6,6 +6,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import type Mcp from '#models/mcp'
 import InstanceSetting from '#models/instance_setting'
 import { applicationVersion } from '#services/application_version'
+import ApprovalService from '#services/approvals/approval_service'
+import { withApprovalNotes } from '#services/approvals/policy'
 import McpCallLogService from '#services/mcp_call_log_service'
 import {
   LAZY_GATEWAY_TOOLS,
@@ -111,7 +113,7 @@ export default class GatewayController {
           }
 
           try {
-            const upstreamTools = await probeUpstream(mcp)
+            const upstreamTools = await withApprovalNotes(mcp, await probeUpstream(mcp))
             const matches = searchUpstreamTools(upstreamTools, input.query, input.limit)
             const result = {
               mcp: mcpCatalog([mcp])[0],
@@ -258,6 +260,7 @@ export default class GatewayController {
     const body = ctx.request.all()
 
     void McpCallLogService.pruneExpired()
+    void ApprovalService.pruneExpired()
 
     nodeRes.on('finish', () => {
       void server.close().catch((error) => {
@@ -278,6 +281,30 @@ export default class GatewayController {
     startedAt: number
   }) {
     try {
+      // A tool set to ask is held here until a person approved this very call.
+      const gate = await ApprovalService.gate({
+        accessToken: params.accessToken,
+        mcp: params.mcp,
+        toolName: params.toolName,
+        args: params.args,
+      })
+      if (gate.held) {
+        McpCallLogService.record({
+          accessToken: params.accessToken,
+          callerIp: params.callerIp,
+          mcp: params.mcp,
+          requestedToolName: params.requestedToolName,
+          toolName: params.toolName,
+          args: params.args,
+          response: gate.result,
+          outcome: 'error',
+          errorCategory: gate.category,
+          errorSummary: gate.reason,
+          durationMs: performance.now() - params.startedAt,
+        })
+        return gate.result
+      }
+
       const result = await callUpstreamTool(params.mcp, params.toolName, params.args)
       const isError = result.isError === true
       McpCallLogService.record({

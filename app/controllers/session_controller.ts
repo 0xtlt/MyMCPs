@@ -3,7 +3,7 @@ import User from '#models/user'
 import { rateLimitClientKey } from '#services/client_ip'
 import { SESSION_STAMP_KEY, signIn } from '#services/session_stamp'
 import { loginAddressRateLimiter, loginRateLimiter } from '#start/limiter'
-import { oauthReturnToValidator } from '#validators/session'
+import { approvalReturnToValidator, oauthReturnToValidator } from '#validators/session'
 import { loginValidator } from '#validators/user'
 import type { HttpContext } from '@adonisjs/core/http'
 
@@ -53,6 +53,12 @@ export default class SessionController {
       // The path is complete. Forwarding this request's query string would
       // append it after the last authorization parameter.
       return response.redirect().withQs(false).toPath(oauthReturnTo)
+    }
+    const [, approvalReturnTo] = await approvalReturnToValidator.tryValidate(
+      session.pull('approvalReturnTo')
+    )
+    if (approvalReturnTo) {
+      return response.redirect().withQs(false).toPath(approvalReturnTo)
     }
     response.redirect().toRoute('home')
   }

@@ -100,6 +100,12 @@ router
       })
       .use(middleware.guest())
 
+    /**
+     * The page behind an approval link. It sends guests to sign in and brings
+     * them back, so it checks the session itself instead of the auth middleware.
+     */
+    router.get('approvals/:id', [controllers.Approvals, 'show']).as('approvals.show')
+
     router
       .group(() => {
         router.on('/').renderInertia('home', {}).as('home')
@@ -140,6 +146,11 @@ router
         router.post('mcps/:id/probe', [controllers.Mcps, 'probe']).as('mcps.probe')
         router.post('mcps/:id/update', [controllers.Mcps, 'updateNpm']).as('mcps.updateNpm')
         router.get('mcps/:id/oauth/start', [controllers.Mcps, 'oauthStart']).as('mcps.oauthStart')
+        router.get('mcps/:id/tools', [controllers.McpTools, 'index']).as('mcps.tools')
+        router.put('mcps/:id/tools', [controllers.McpTools, 'update']).as('mcps.updateTools')
+
+        router.get('approvals', [controllers.Approvals, 'index']).as('approvals.index')
+        router.post('approvals/:id', [controllers.Approvals, 'decide']).as('approvals.decide')
 
         router.get('tokens', [controllers.AccessTokens, 'index']).as('tokens.index')
         router.post('tokens', [controllers.AccessTokens, 'store']).as('tokens.store')

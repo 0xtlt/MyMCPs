@@ -58,8 +58,8 @@ test.group('Built-in tools: advertised and enforced arguments', () => {
   }
 
   test('compares every tool of every built-in MCP', ({ assert }) => {
-    assert.lengthOf(tools, 30)
-    assert.lengthOf(new Set(tools.map(({ id }) => id)), 30)
+    assert.lengthOf(tools, 58)
+    assert.lengthOf(new Set(tools.map(({ id }) => id)), 58)
     for (const id of Object.keys(UNADVERTISED)) {
       assert.include(
         tools.map((tool) => tool.id),

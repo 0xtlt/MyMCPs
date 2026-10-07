@@ -5,7 +5,8 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 ## What it does
 
 - Connects HTTP and npm-based MCP servers.
-- Includes built-in MCPs for services with no MCP a self-hosted gateway can use: Strava and iCloud Mail.
+- Includes built-in MCPs for services with no MCP a self-hosted gateway can use: Strava, iCloud Mail, and Google Ads.
+- Holds the tool calls you choose until a person approves them, for any MCP.
 - Supports bearer tokens, custom headers, and OAuth.
 - Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
 - Exposes every allowed upstream through `GET` and `POST /mcp`.
@@ -63,6 +64,14 @@ Some services have no MCP that a self-hosted gateway is allowed to use. MyMCPs i
 **Strava** signs in through an API application that you register. Choose **Strava** in the **Add MCP** gallery and follow the steps in the dialog: create an application at [strava.com/settings/api](https://www.strava.com/settings/api) with your instance's hostname as its **Authorization Callback Domain**, paste the Client ID and Client Secret, then select **Connect** to approve access. It is read-only unless you check **Allow write access**, which adds tools to create and edit activities. It does not depend on Strava's client allowlist. See [docs/strava.md](docs/strava.md) for the full walkthrough, the list of tools, and troubleshooting.
 
 **iCloud Mail** signs in over IMAP and SMTP with an app-specific password, because Apple has no mail API. Choose **iCloud Mail** in the **Add MCP** gallery, create the password at [account.apple.com](https://account.apple.com/account/manage) under **Sign-In and Security → App-Specific Passwords**, and paste it with your iCloud Mail address. Apple cannot limit what that password reaches, so you choose the permissions in the same dialog and MyMCPs enforces them: **Read mail**, **Save drafts**, **Send mail**, and **Organize mail**. Only **Read mail** is allowed to begin with. Attachments are downloaded, and files to attach are uploaded, through temporary signed links, and you can list the aliases and custom domain addresses agents may send from. See [docs/icloud-mail.md](docs/icloud-mail.md) for the full walkthrough, the permissions, the list of tools, and troubleshooting.
+
+**Google Ads** signs in through an OAuth client from your own Google Cloud project. Choose **Google Ads** in the **Add MCP** gallery and follow the steps in the dialog: enable the Google Ads API in a project, create a **Web application** OAuth client with `APP_URL/mcps/oauth/callback` as its redirect URI, paste the Client ID and Client Secret, then select **Connect**. Google retired developer tokens in September 2026, so there is none to enter: what the API reaches is the access level of the Cloud project. The MCP monitors accounts, campaigns, ads, keywords, and search terms, and with **Allow write access** builds and runs Search and Display campaigns, including image assets uploaded through temporary signed links. You can limit it to the accounts you list. The tools that set a budget, change bidding, or enable a campaign ask for your approval first. See [docs/google-ads.md](docs/google-ads.md) for the full walkthrough, the list of tools, access levels, and troubleshooting.
+
+### Tool approvals
+
+An agent that can call a tool can call it wrongly. For any MCP, built-in or connected, open **Edit → Tool approvals** and set the tools that matter to **Asks**. A call to such a tool is not run: the agent gets a link to give you, and the call runs once you have signed in and approved it, when the agent makes it again with the same arguments. Administrators decide any request, and members the ones made with their own access tokens.
+
+The page you approve on is written by MyMCPs from the call itself, never by the agent. For a built-in tool it says what would change, with the current value beside the new one: "Change the daily budget of the campaign "Spring sale" from €2.50 to €250.00". For a tool of a connected MCP it lists the exact arguments beside the description the MCP gives of its tool. An approval covers one call with those exact arguments, is used once, and expires after 24 hours. Open requests are listed under **Approvals**. See [docs/tool-approvals.md](docs/tool-approvals.md).
 
 ## How to deploy to my Coolify
 

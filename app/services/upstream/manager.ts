@@ -16,6 +16,7 @@ import {
   type ConnectedDenoUpstream,
 } from '#services/upstream/deno_runner'
 import { sanitizeMcpDiagnostic } from '#services/security_redaction'
+import { withApprovalNotes } from '#services/approvals/policy'
 import { BuiltinAuthorizationError } from '#services/builtin/definition'
 import { builtinMcp } from '#services/builtin/registry'
 import { callBuiltinTool, listBuiltinTools, verifyBuiltin } from '#services/builtin/runtime'
@@ -60,7 +61,7 @@ export async function listNamespacedTools(mcps: Mcp[]) {
 
   for (const mcp of mcps) {
     try {
-      const listed = await probeUpstream(mcp)
+      const listed = await withApprovalNotes(mcp, await probeUpstream(mcp))
       for (const tool of listed) {
         tools.push({
           ...tool,

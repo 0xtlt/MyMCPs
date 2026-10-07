@@ -671,7 +671,12 @@ export async function exchangeAuthorizationCode(
   }
 
   if (mcp.transport === 'builtin') {
-    const tokens = await exchangeBuiltinAuthorizationCode(requireBuiltinOauthMcp(mcp), mcp, code)
+    const tokens = await exchangeBuiltinAuthorizationCode(
+      requireBuiltinOauthMcp(mcp),
+      mcp,
+      code,
+      oauth.redirectUri
+    )
     const scopes = parseOauthScopes(tokens.scope ?? grantedScope)
     saveOAuthTokens(mcp, { ...tokens, scope: undefined })
     // Never keep the scopes of an earlier authorization for these tokens.

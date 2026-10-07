@@ -20,17 +20,37 @@ type SetupGuide = {
   requirement: string
 }
 
+/** Something the provider needs beyond the sign-in, such as the account to act through. */
+type SettingField = {
+  key: string
+  label: string
+  placeholder?: string
+  description: string
+  isOptional?: boolean
+}
+
 /** The admin registers an API application, then approves access on the provider's site. */
 type OauthSetupGuide = SetupGuide & {
   signIn: 'oauth'
+  /** Names the first step when the provider does not call it an API application. */
+  createApplicationLabel?: string
   /** What the admin does on the provider's site before coming back here. */
   createApplication: (publicApp: PublicApp) => ReactNode
+  /** Names the second step when it asks for more than the two credentials. */
+  credentialsLabel?: string
   clientIdPlaceholder: string
   credentialsHint: string
+  /** Asked for with the credentials, in this order. */
+  settings?: readonly SettingField[]
   /** What every authorization can read. */
   readAccess: string
   /** What agents can change once write access is allowed. */
   writeAccess: string
+  /**
+   * The provider has one permission for reading and writing, so allowing
+   * write access needs no new authorization.
+   */
+  writeAppliesOnSave?: boolean
 }
 
 /** The admin creates a password for apps on the provider's site and pastes it here. */
@@ -90,6 +110,67 @@ const builtinSetupGuides: Record<string, OauthSetupGuide | PasswordSetupGuide> =
       'MyMCPs reads your profile, activities, routes, and segments, including private ones. Permissions you uncheck on Strava hide the matching tools.',
     writeAccess:
       'Lets agents create manual activities, edit activity details, star segments, and update your weight.',
+  },
+  'google-ads': {
+    signIn: 'oauth',
+    provider: 'Google Ads',
+    endpoint: 'Google Ads API',
+    requirement: 'Runs inside MyMCPs with an OAuth client from your own Google Cloud project',
+    createApplicationLabel: 'Create a Google Cloud OAuth client',
+    createApplication: (publicApp) => (
+      <>
+        <Text type="body" color="secondary">
+          In a{' '}
+          <Link
+            href="https://console.cloud.google.com/apis/library/googleads.googleapis.com"
+            isExternalLink
+          >
+            Google Cloud project
+          </Link>
+          , enable the Google Ads API and apply for Explorer access on its Google Ads API Overview
+          page: until then the project only reaches test accounts. Set up the OAuth consent screen,
+          then create an OAuth client of the type Web application with this redirect URI:
+        </Text>
+        <CodeBlock
+          title="Authorized redirect URI"
+          code={`${publicApp.url}/mcps/oauth/callback`}
+          width="100%"
+          size="sm"
+        />
+        <Text type="supporting" color="secondary">
+          Publish the consent screen to production: while it is in testing, Google ends every
+          authorization after 7 days. Google has retired developer tokens, so there is none to
+          enter.
+        </Text>
+      </>
+    ),
+    credentialsLabel: 'Paste its Client ID and Client Secret, and choose the accounts',
+    clientIdPlaceholder: '1234567890-abc123.apps.googleusercontent.com',
+    credentialsHint:
+      'Google shows both when the OAuth client is created. The Client Secret can only be copied then.',
+    settings: [
+      {
+        key: 'loginCustomerId',
+        label: 'Manager account ID',
+        placeholder: '123-456-7890',
+        isOptional: true,
+        description:
+          'Only when your sign-in reaches the advertiser accounts through a manager account: the ID of that manager.',
+      },
+      {
+        key: 'customerIds',
+        label: 'Accounts agents may use',
+        placeholder: '123-456-7890, 234-567-8901',
+        isOptional: true,
+        description:
+          'Limits every tool to these Google Ads accounts. Left blank, agents reach every account your sign-in does.',
+      },
+    ],
+    readAccess:
+      'MyMCPs reads the accounts, campaigns, ads, keywords, and statistics that your Google sign-in can open.',
+    writeAccess:
+      'Lets agents create and change campaigns, budgets, ad groups, keywords, ads, and image assets. The tools that commit money or put a campaign live ask for your approval first, which you can change under Tool approvals.',
+    writeAppliesOnSave: true,
   },
   'icloud-mail': {
     signIn: 'password',
@@ -170,6 +251,7 @@ type Props = {
   password: string
   aliases: string
   permissions: string[]
+  settings: Record<string, string>
   writeEnabled: boolean
   onChange: (patch: {
     oauthClientId?: string
@@ -178,6 +260,7 @@ type Props = {
     builtinPassword?: string
     builtinAliases?: string
     builtinPermissions?: string[]
+    builtinSettings?: Record<string, string>
     builtinWriteEnabled?: boolean
   }) => void
   errors: Partial<Record<string, string>>
@@ -204,6 +287,7 @@ export function BuiltinMcpFields({
   password,
   aliases,
   permissions,
+  settings,
   writeEnabled,
   onChange,
   errors,
@@ -238,7 +322,10 @@ export function BuiltinMcpFields({
 
       {guide.signIn === 'oauth' ? (
         <Stepper activeStep={activeStep} orientation="vertical" label={`${guide.provider} setup`}>
-          <Step step={0} label={`Create a ${guide.provider} API application`}>
+          <Step
+            step={0}
+            label={guide.createApplicationLabel ?? `Create a ${guide.provider} API application`}
+          >
             <VStack gap={3} hAlign="stretch">
               {publicApp ? (
                 guide.createApplication(publicApp)
@@ -252,7 +339,7 @@ export function BuiltinMcpFields({
               )}
             </VStack>
           </Step>
-          <Step step={1} label="Paste its Client ID and Client Secret">
+          <Step step={1} label={guide.credentialsLabel ?? 'Paste its Client ID and Client Secret'}>
             <VStack gap={3} hAlign="stretch">
               <Text type="supporting" color="secondary">
                 {guide.credentialsHint}
@@ -281,6 +368,23 @@ export function BuiltinMcpFields({
                 isOptional={hasSavedClientSecret}
                 status={fieldStatus(errors.oauthClientSecret)}
               />
+              {guide.settings?.map((field) => (
+                <TextInput
+                  key={field.key}
+                  label={field.label}
+                  htmlName={`builtinSettings[${field.key}]`}
+                  value={settings[field.key] ?? ''}
+                  onChange={(value) =>
+                    onChange({ builtinSettings: { ...settings, [field.key]: value } })
+                  }
+                  placeholder={field.placeholder}
+                  description={field.description}
+                  autoComplete="off"
+                  width="100%"
+                  isOptional={field.isOptional}
+                  status={fieldStatus(errors[`builtinSettings.${field.key}`])}
+                />
+              ))}
             </VStack>
           </Step>
           <Step step={2} label={`Connect your ${guide.provider} account`}>
@@ -295,7 +399,11 @@ export function BuiltinMcpFields({
                 htmlName="builtinWriteEnabled"
                 value={writeEnabled}
                 onChange={(builtinWriteEnabled) => onChange({ builtinWriteEnabled })}
-                description={`${guide.writeAccess} Turning it on applies the next time you connect or re-authorize.`}
+                description={`${guide.writeAccess} ${
+                  guide.writeAppliesOnSave
+                    ? 'It applies as soon as you save.'
+                    : 'Turning it on applies the next time you connect or re-authorize.'
+                }`}
               />
             </VStack>
           </Step>

@@ -23,6 +23,14 @@ export const oauthReturnToValidator = vine.create(
 )
 
 /**
+ * Where sign-in returns to when it interrupted someone opening an approval
+ * link. The app only ever stores the path of one request.
+ */
+export const approvalReturnToValidator = vine.create(
+  vine.string().regex(/^\/approvals\/[A-Za-z0-9_-]{32}$/)
+)
+
+/**
  * The id of a record flashed for the next page, such as the MCP whose dialog
  * should reopen.
  */

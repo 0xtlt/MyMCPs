@@ -16,9 +16,11 @@ import {
   isoDate,
   line,
   listLength,
+  mediaType,
   pattern,
   text,
   toolVine,
+  uploadedFileName,
   VineArgument,
 } from '#validators/builtin_tools'
 
@@ -69,21 +71,8 @@ const part = () =>
 
 const searchText = () => line(MAX_SEARCH_LENGTH).optional()
 
-const fileNameRule = toolVine.createRule((value, _options, field) => {
-  if (/[\\/]/.test(value as string)) {
-    field.report(
-      '{{ field }} must be the name of the file, such as report.pdf, without its folder',
-      'fileName',
-      field
-    )
-  }
-})
-
 /** What the recipient sees the file as. It never names a file on the instance. */
-const fileName = () => line(ICLOUD_MAIL_LIMITS.filenameLength).use(fileNameRule())
-
-const mediaType = () =>
-  pattern(/^[\w.+-]{1,100}\/[\w.+-]{1,100}$/, 'a media type, such as application/pdf')
+const fileName = () => uploadedFileName(ICLOUD_MAIL_LIMITS.filenameLength)
 
 const ATTACHMENTS = `{{ field }} must be a list of at most ${ICLOUD_MAIL_LIMITS.attachments} upload IDs, as returned by create_upload_link`
 

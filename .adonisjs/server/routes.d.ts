@@ -23,6 +23,7 @@ export type ScannedRoutes = {
     'session.store': { paramsTuple?: []; params?: {} }
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'invites.accept': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
+    'approvals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'home': { paramsTuple?: []; params?: {} }
     'session.destroy': { paramsTuple?: []; params?: {} }
     'settings.index': { paramsTuple?: []; params?: {} }
@@ -44,6 +45,10 @@ export type ScannedRoutes = {
     'mcps.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.updateNpm': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.oauthStart': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'mcps.tools': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'mcps.updateTools': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'approvals.index': { paramsTuple?: []; params?: {} }
+    'approvals.decide': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.index': { paramsTuple?: []; params?: {} }
     'tokens.store': { paramsTuple?: []; params?: {} }
     'tokens.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -61,6 +66,7 @@ export type ScannedRoutes = {
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
+    'approvals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'home': { paramsTuple?: []; params?: {} }
     'settings.index': { paramsTuple?: []; params?: {} }
     'logs.index': { paramsTuple?: []; params?: {} }
@@ -70,6 +76,8 @@ export type ScannedRoutes = {
     'mcps.oauthCallback': { paramsTuple?: []; params?: {} }
     'mcps.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.oauthStart': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'mcps.tools': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'approvals.index': { paramsTuple?: []; params?: {} }
     'tokens.index': { paramsTuple?: []; params?: {} }
   }
   HEAD: {
@@ -83,6 +91,7 @@ export type ScannedRoutes = {
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
+    'approvals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'home': { paramsTuple?: []; params?: {} }
     'settings.index': { paramsTuple?: []; params?: {} }
     'logs.index': { paramsTuple?: []; params?: {} }
@@ -92,11 +101,14 @@ export type ScannedRoutes = {
     'mcps.oauthCallback': { paramsTuple?: []; params?: {} }
     'mcps.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.oauthStart': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'mcps.tools': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'approvals.index': { paramsTuple?: []; params?: {} }
     'tokens.index': { paramsTuple?: []; params?: {} }
   }
   PUT: {
     'builtin.upload': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'reference': ParamValue} }
     'mcps.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'mcps.updateTools': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   POST: {
@@ -113,6 +125,7 @@ export type ScannedRoutes = {
     'mcps.store': { paramsTuple?: []; params?: {} }
     'mcps.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.updateNpm': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'approvals.decide': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.store': { paramsTuple?: []; params?: {} }
     'tokens.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }

@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
 import type { InferSharedProps } from '@adonisjs/inertia/types'
 import User from '#models/user'
+import ApprovalService from '#services/approvals/approval_service'
 import UserTransformer from '#transformers/user_transformer'
 import { publicOauthAppUrl } from '#services/public_url'
 import BaseInertiaMiddleware from '@adonisjs/inertia/inertia_middleware'
@@ -27,6 +28,10 @@ export default class InertiaMiddleware extends BaseInertiaMiddleware {
       user: ctx.inertia.always(auth?.user ? UserTransformer.transform(auth.user) : undefined),
       setupComplete: ctx.inertia.always(await User.setupComplete()),
       appUrlConfigured: ctx.inertia.always(Boolean(publicOauthAppUrl())),
+      // Shown beside Approvals in the navigation, on every page.
+      pendingApprovals: ctx.inertia.always(
+        auth?.user ? await ApprovalService.pendingCount(auth.user) : 0
+      ),
     }
   }
 

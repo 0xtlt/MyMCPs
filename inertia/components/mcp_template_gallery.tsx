@@ -12,7 +12,8 @@ import { Heading, Text } from '@astryxdesign/core/Text'
 import { TextInput } from '@astryxdesign/core/TextInput'
 import { emptyMcpFormValues, type McpFormValues } from '~/components/mcp_form_fields'
 
-type TemplateCategory = 'productivity' | 'development' | 'commerce' | 'infrastructure' | 'health'
+type TemplateCategory =
+  'productivity' | 'development' | 'commerce' | 'marketing' | 'infrastructure' | 'health'
 type TemplateFilter = 'popular' | 'all' | TemplateCategory
 type TemplateLogo =
   | 'notion'
@@ -33,6 +34,7 @@ type TemplateLogo =
   | 'context7'
   | 'strava'
   | 'icloud'
+  | 'googleads'
 
 export type McpTemplate = {
   id: string
@@ -53,6 +55,7 @@ const categoryLabels: Record<TemplateCategory, string> = {
   productivity: 'Productivity',
   development: 'Development',
   commerce: 'Commerce',
+  marketing: 'Marketing',
   infrastructure: 'Infrastructure',
   health: 'Health & fitness',
 }
@@ -63,6 +66,7 @@ const filters: Array<{ value: TemplateFilter; label: string }> = [
   { value: 'productivity', label: 'Productivity' },
   { value: 'development', label: 'Development' },
   { value: 'commerce', label: 'Commerce' },
+  { value: 'marketing', label: 'Marketing' },
   { value: 'infrastructure', label: 'Infrastructure' },
   { value: 'health', label: 'Health & fitness' },
 ]
@@ -169,6 +173,10 @@ const ICloudLogo = createBrandLogo(
   'M13.762 4.29a6.51 6.51 0 0 0-5.669 3.332 3.571 3.571 0 0 0-1.558-.36 3.571 3.571 0 0 0-3.516 3A4.918 4.918 0 0 0 0 14.796a4.918 4.918 0 0 0 4.92 4.914 4.93 4.93 0 0 0 .617-.045h14.42c2.305-.272 4.041-2.258 4.043-4.589v-.009a4.594 4.594 0 0 0-3.727-4.508 6.51 6.51 0 0 0-6.511-6.27z'
 )
 
+const GoogleAdsLogo = createBrandLogo(
+  'M3.9998 22.9291C1.7908 22.9291 0 21.1383 0 18.9293s1.7908-3.9998 3.9998-3.9998 3.9998 1.7908 3.9998 3.9998-1.7908 3.9998-3.9998 3.9998zm19.4643-6.0004L15.4632 3.072C14.3586 1.1587 11.9121.5028 9.9988 1.6074S7.4295 5.1585 8.5341 7.0718l8.0009 13.8567c1.1046 1.9133 3.5511 2.5679 5.4644 1.4646 1.9134-1.1046 2.568-3.5511 1.4647-5.4644zM7.5137 4.8438L1.5645 15.1484A4.5 4.5 0 0 1 4 14.4297c2.5597-.0075 4.6248 2.1585 4.4941 4.7148l3.2168-5.5723-3.6094-6.25c-.4499-.7793-.6322-1.6394-.5878-2.4784z'
+)
+
 const logoIcons: Record<TemplateLogo, ComponentType<SVGProps<SVGSVGElement>>> = {
   notion: NotionLogo,
   shopify: ShopifyLogo,
@@ -188,6 +196,7 @@ const logoIcons: Record<TemplateLogo, ComponentType<SVGProps<SVGSVGElement>>> = 
   context7: Context7Logo,
   strava: StravaLogo,
   icloud: ICloudLogo,
+  googleads: GoogleAdsLogo,
 }
 
 export const mcpTemplates: McpTemplate[] = [
@@ -497,6 +506,24 @@ export const mcpTemplates: McpTemplate[] = [
       builtinKey: 'icloud-mail',
       // Read-only until the admin allows more in the setup dialog.
       builtinPermissions: ['read'],
+      authType: 'auto',
+    },
+  },
+  {
+    id: 'google-ads',
+    name: 'Google Ads',
+    description:
+      'Monitor accounts, campaigns, ads, keywords, and search terms, and let agents build and run Search and Display campaigns with images. Budget and go-live changes wait for your approval. Runs inside MyMCPs with your own Google Cloud OAuth client.',
+    category: 'marketing',
+    popular: true,
+    logo: 'googleads',
+    keywords: ['ads', 'adwords', 'sea', 'ppc', 'campaigns', 'keywords', 'advertising', 'built-in'],
+    values: {
+      name: 'Google Ads',
+      description:
+        'Monitor and manage Google Ads campaigns, ad groups, keywords, ads, and image assets.',
+      transport: 'builtin',
+      builtinKey: 'google-ads',
       authType: 'auto',
     },
   },

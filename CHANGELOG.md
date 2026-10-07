@@ -6,7 +6,17 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Added
 
+- Added tool approvals for every MCP, built-in or connected. Under **Edit → Tool approvals**, each tool of an MCP either **Runs** or **Asks**. A call to a tool that asks is not run: the agent gets a link to an approval page, and the call runs once an administrator, or the member who created the access token, approved it and the agent makes it again with the same arguments. The page is written by MyMCPs from the call itself, never by the agent: a built-in tool says what would change beside the current value, and a tool of a connected MCP has its exact arguments listed beside the description its MCP gives. An approval covers one call, is used once, and expires after 24 hours. Open requests are listed on the new **Approvals** page, with a count in the navigation, and agents see which tools ask in their descriptions. Approval links require `APP_URL`; [docs/tool-approvals.md](docs/tool-approvals.md) has the details.
+- Added a built-in Google Ads MCP on version 25 of the Google Ads API, signed in through an OAuth client from your own Google Cloud project. It has 13 read tools for accounts, campaigns, ad groups, ads, keywords, search terms, performance by day, device, or network, assets, the change history, locations, keyword ideas, and read-only GAQL queries. **Allow write access** adds 15 tools to create and change Search and Display campaigns, budgets, bidding, targeting, ad groups, keywords, responsive search ads, responsive display ads, and image assets. `create_campaign`, `update_campaign`, `update_campaign_budget`, and `set_campaign_status` ask for approval by default, and their approval page shows the campaign, the current and new amounts, and a warning when a budget is multiplied. Campaigns are created paused, and the MCP can be limited to the accounts you list. Google retired developer tokens in September 2026, so the setup asks for none; [docs/google-ads.md](docs/google-ads.md) has the full guide.
+- Added image uploads to the Google Ads MCP. `create_image_upload_link` returns a temporary signed link that takes one JPEG, PNG, or GIF file of up to 5 MB as the body of a `PUT` request, and `create_image_asset` adds the uploaded file to an account after checking its shape and size. A reverse proxy in front of the instance must accept 5 MB request bodies.
 - Added file attachments to the iCloud Mail MCP. `create_upload_link` returns a temporary signed link that takes one file of up to 20 MB as the body of a `PUT` request, for example with `curl -T`, and `send_message` and `create_draft` attach up to 10 uploaded files and 20 MB of them with `attachments`. The tool comes with **Save drafts** or **Send mail**. An uploaded file waits in `tmp/builtin-uploads` and can be attached for an hour, then it is deleted, as it is with its MCP. Upload links require `APP_URL`, and a reverse proxy in front of the instance must accept 20 MB request bodies; [docs/icloud-mail.md](docs/icloud-mail.md#sending-files) has the details.
+
+### Changed
+
+- Built-in MCPs can ask for settings beyond their sign-in, such as the manager account Google Ads acts through. They are encrypted like other MCP credentials.
+- The dialog of a built-in MCP reports every wrong field at once instead of one group at a time.
+- Signing in from an approval link returns to that approval request.
+- The call log files a held call under the new categories `approval required` and `approval denied`.
 
 ### Fixed
 
@@ -16,6 +26,9 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - An authorization code exchanged by two requests at the same moment now yields a single OAuth connection: the second request is refused with `invalid_grant`, where both used to receive tokens.
 - Upload links check their signature before anything is counted or read, cannot be used to download, take one file each, and stop working when the MCP is disabled or allows neither **Save drafts** nor **Send mail**. Each MCP holds at most 50 uploaded files and 100 MB, takes 60 uploads per 15 minutes from each client address and 3 at a time, and writes 2 messages with attachments at a time. An attachment is always bytes sent to an upload link: no tool can name a path on the instance or a URL to attach.
+- An approval is bound to the access token, MCP, tool, and exact arguments of the call it was asked for: other arguments ask again, and another access token cannot use it. Of two identical calls made at once, one gets the approval. The arguments and the summary of a request are encrypted at rest. A request is read and decided by an administrator or by the member who created its access token, through a CSRF-protected form, and the link alone grants nothing. An access token can have 20 requests waiting, also when its calls arrive at once, and the same call made twice at the same moment asks once. If the saved choices of an MCP cannot be read, every tool of that MCP asks.
+- A built-in tool that asks checks its arguments, the write access of its MCP, and its sign-in before anyone is asked to approve it, and the Google Ads tools have Google validate the change without making it.
+- An upload link of a built-in MCP that signs in with OAuth stops taking files when write access is turned off.
 
 ## 2026-10-05
 

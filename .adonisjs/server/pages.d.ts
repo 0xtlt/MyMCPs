@@ -13,6 +13,8 @@ type ExtractProps<T> =
 declare module '@adonisjs/inertia/types' {
   export interface InertiaPages {
     'analytics/index': ExtractProps<(typeof import('../../inertia/pages/analytics/index.tsx'))['default']>
+    'approvals/index': ExtractProps<(typeof import('../../inertia/pages/approvals/index.tsx'))['default']>
+    'approvals/show': ExtractProps<(typeof import('../../inertia/pages/approvals/show.tsx'))['default']>
     'auth/login': ExtractProps<(typeof import('../../inertia/pages/auth/login.tsx'))['default']>
     'errors/not_found': ExtractProps<(typeof import('../../inertia/pages/errors/not_found.tsx'))['default']>
     'errors/server_error': ExtractProps<(typeof import('../../inertia/pages/errors/server_error.tsx'))['default']>
@@ -21,6 +23,7 @@ declare module '@adonisjs/inertia/types' {
     'invites/index': ExtractProps<(typeof import('../../inertia/pages/invites/index.tsx'))['default']>
     'logs/index': ExtractProps<(typeof import('../../inertia/pages/logs/index.tsx'))['default']>
     'mcps/index': ExtractProps<(typeof import('../../inertia/pages/mcps/index.tsx'))['default']>
+    'mcps/tools': ExtractProps<(typeof import('../../inertia/pages/mcps/tools.tsx'))['default']>
     'oauth/authorize': ExtractProps<(typeof import('../../inertia/pages/oauth/authorize.tsx'))['default']>
     'onboarding/index': ExtractProps<(typeof import('../../inertia/pages/onboarding/index.tsx'))['default']>
     'settings/index': ExtractProps<(typeof import('../../inertia/pages/settings/index.tsx'))['default']>

@@ -3,15 +3,18 @@ import type Mcp from '#models/mcp'
 import {
   BuiltinAuthorizationError,
   BuiltinToolError,
+  type ApprovalSummary,
   type BuiltinFile,
   type BuiltinMcpDefinition,
   type BuiltinMcpProvider,
   type BuiltinPasswordContext,
+  type BuiltinTool,
   type BuiltinToolContext,
   type BuiltinUploadTarget,
 } from '#services/builtin/definition'
 import { parseOauthScopes } from '#services/builtin/oauth'
 import { requireBuiltinMcp } from '#services/builtin/registry'
+import McpEnvironmentStore from '#services/mcp_environment_store'
 import McpSecretStore from '#services/mcp_secret_store'
 import type { UpstreamTool } from '#services/upstream/http_client'
 import { refreshOauthAccessToken } from '#services/upstream/oauth'
@@ -46,14 +49,34 @@ function isGranted(tool: { requiresAnyScope?: readonly string[] }, scopes: strin
 /**
  * Whether the provider granted any write scope. Unknown scopes count as
  * granted so the UI does not ask to re-authorize on a guess. A password
- * sign-in has nothing to re-authorize.
+ * sign-in has nothing to re-authorize, and neither has a provider whose one
+ * scope both reads and writes.
  */
 export function builtinWriteGranted(mcp: Mcp) {
   const definition = requireBuiltinMcp(mcp)
-  if (!definition.oauth) return true
+  if (!definition.oauth || definition.oauth.writeScopes.length === 0) return true
 
   const scopes = grantedScopes(definition, mcp)
   return scopes === null || definition.oauth.writeScopes.some((scope) => scopes.includes(scope))
+}
+
+/**
+ * What the admin entered for the provider's settings. Values saved under a
+ * key the provider no longer has, or that can no longer be decrypted, are
+ * left out: the tool that needs one says so.
+ */
+export function builtinSettings(definition: BuiltinMcpDefinition, mcp: Mcp) {
+  let saved: Record<string, string>
+  try {
+    saved = McpEnvironmentStore.decrypt(mcp.builtinSettings)
+  } catch {
+    saved = {}
+  }
+  return Object.fromEntries(
+    (definition.settings ?? [])
+      .filter(({ key }) => Object.hasOwn(saved, key))
+      .map(({ key }) => [key, saved[key]])
+  )
 }
 
 function toolError(message: string): CallToolResult {
@@ -81,7 +104,12 @@ async function authorizedContext(
   if (!accessToken) {
     throw notConnected(definition)
   }
-  return { accessToken, grantedScopes: grantedScopes(definition, mcp) }
+  return {
+    mcpId: mcp.id,
+    accessToken,
+    grantedScopes: grantedScopes(definition, mcp),
+    settings: builtinSettings(definition, mcp),
+  }
 }
 
 async function passwordContext(
@@ -98,6 +126,7 @@ async function passwordContext(
     password,
     permissions: grantedScopes(definition, mcp) ?? [],
     aliases: mcp.builtinAliases?.split(' ') ?? [],
+    settings: builtinSettings(definition, mcp),
   }
 }
 
@@ -140,37 +169,63 @@ export function listBuiltinTools(mcp: Mcp): UpstreamTool[] {
     .map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))
 }
 
+/**
+ * Run `use` with a tool and its sign-in, once the call is known to be one
+ * this MCP allows. Throws `BuiltinToolError` when it is not.
+ */
+function withTool<Result>(
+  mcp: Mcp,
+  toolName: string,
+  use: <Context>(tool: BuiltinTool<Context>, context: Context) => Promise<Result>
+): Promise<Result> {
+  const definition = requireBuiltinMcp(mcp)
+  return withProvider(definition, mcp, async (provider, signIn) => {
+    const tool = provider.tools.find((candidate) => candidate.name === toolName)
+    if (!tool) {
+      throw new BuiltinToolError(`Unknown ${provider.name} tool: ${toolName}`)
+    }
+    if (tool.write && !mcp.builtinWriteEnabled) {
+      throw new BuiltinToolError(
+        `${toolName} changes ${provider.name} data, and write access is turned off for this MCP. An administrator can allow it from the MCPs page in MyMCPs.`
+      )
+    }
+
+    const context = await signIn()
+    if (!isGranted(tool, grantedScopes(definition, mcp))) {
+      throw new BuiltinToolError(notGranted(definition, toolName, tool.requiresAnyScope!))
+    }
+    return use(tool, context)
+  })
+}
+
 export async function callBuiltinTool(
   mcp: Mcp,
   toolName: string,
   args: Record<string, unknown> | undefined
 ): Promise<CallToolResult> {
-  const definition = requireBuiltinMcp(mcp)
-  return withProvider(definition, mcp, async (provider, signIn) => {
-    const tool = provider.tools.find((candidate) => candidate.name === toolName)
-    if (!tool) {
-      return toolError(`Unknown ${provider.name} tool: ${toolName}`)
+  try {
+    const data = await withTool(mcp, toolName, (tool, context) => tool.run(args ?? {}, context))
+    return { content: [{ type: 'text', text: JSON.stringify(data) }] }
+  } catch (error) {
+    if (error instanceof BuiltinToolError) {
+      return toolError(error.message)
     }
-    if (tool.write && !mcp.builtinWriteEnabled) {
-      return toolError(
-        `${toolName} changes ${provider.name} data, and write access is turned off for this MCP. An administrator can allow it from the MCPs page in MyMCPs.`
-      )
-    }
+    throw error
+  }
+}
 
-    try {
-      const context = await signIn()
-      if (!isGranted(tool, grantedScopes(definition, mcp))) {
-        return toolError(notGranted(definition, toolName, tool.requiresAnyScope!))
-      }
-      const data = await tool.run(args ?? {}, context)
-      return { content: [{ type: 'text', text: JSON.stringify(data) }] }
-    } catch (error) {
-      if (error instanceof BuiltinToolError) {
-        return toolError(error.message)
-      }
-      throw error
-    }
-  })
+/**
+ * What a call would do, for the person asked to approve it, or `null` when
+ * the tool only has its arguments to show. Nothing is changed at the
+ * provider. Throws `BuiltinToolError` for a call that would be refused, so
+ * that nobody is asked to approve one.
+ */
+export function describeBuiltinCall(
+  mcp: Mcp,
+  toolName: string,
+  args: Record<string, unknown> | undefined
+): Promise<ApprovalSummary | null> {
+  return withTool(mcp, toolName, (tool, context) => tool.describe(args ?? {}, context))
 }
 
 /**
@@ -194,9 +249,15 @@ export async function builtinUploadTarget(
   mcp: Mcp,
   reference: unknown
 ): Promise<BuiltinUploadTarget> {
-  return withProvider(requireBuiltinMcp(mcp), mcp, async (provider, signIn) => {
+  const definition = requireBuiltinMcp(mcp)
+  return withProvider(definition, mcp, async (provider, signIn) => {
     if (!provider.upload) {
       throw new BuiltinToolError(`${provider.name} takes no files`)
+    }
+    // The link outlives the call that made it. Where write access is one
+    // switch, a file is only taken while it is on.
+    if (definition.oauth && !mcp.builtinWriteEnabled) {
+      throw new BuiltinToolError(`Write access is turned off for this ${provider.name} MCP`)
     }
     return provider.upload(reference, await signIn())
   })

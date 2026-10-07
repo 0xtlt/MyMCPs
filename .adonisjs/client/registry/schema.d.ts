@@ -235,6 +235,18 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/invites_controller').default['accept']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
+  'approvals.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/approvals/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/approvals_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/approvals_controller').default['show']>>>
+    }
+  }
   'home': {
     methods: ["GET","HEAD"]
     pattern: '/'
@@ -485,6 +497,54 @@ export interface Registry {
       query: {}
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthStart']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcps_controller').default['oauthStart']>>>
+    }
+  }
+  'mcps.tools': {
+    methods: ["GET","HEAD"]
+    pattern: '/mcps/:id/tools'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcp_tools_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcp_tools_controller').default['index']>>>
+    }
+  }
+  'mcps.updateTools': {
+    methods: ["PUT"]
+    pattern: '/mcps/:id/tools'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/approvals').updateToolApprovalsValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/approvals').updateToolApprovalsValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/mcp_tools_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/mcp_tools_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'approvals.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/approvals'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/approvals_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/approvals_controller').default['index']>>>
+    }
+  }
+  'approvals.decide': {
+    methods: ["POST"]
+    pattern: '/approvals/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/approvals').approvalDecisionValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/approvals').approvalDecisionValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/approvals_controller').default['decide']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/approvals_controller').default['decide']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'tokens.index': {
