@@ -135,12 +135,14 @@ const builtinSetupGuides: Record<string, OauthSetupGuide | PasswordSetupGuide> =
       {
         key: 'draft',
         label: 'Save drafts',
-        description: 'Write messages to your Drafts mailbox for you to review and send yourself.',
+        description:
+          'Write messages, with the files agents attach, to your Drafts mailbox for you to review and send yourself.',
       },
       {
         key: 'send',
         label: 'Send mail',
-        description: 'Send messages from your address. A sent message cannot be recalled.',
+        description:
+          'Send messages from your address, with the files agents attach. A sent message cannot be recalled.',
       },
       {
         key: 'organize',

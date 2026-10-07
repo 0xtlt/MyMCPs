@@ -24,6 +24,14 @@ router.get('health', ({ response }) => response.ok({ status: 'ok' })).as('health
 router.get('files/:id/:reference', [controllers.BuiltinFiles, 'show']).as('builtin.file')
 
 /**
+ * Files sent to built-in MCP tools through temporary links, such as the
+ * attachments of a mail to send. Here too the signature is the only
+ * credential. The pattern is also named in the request body middleware and
+ * in the CSRF exceptions.
+ */
+router.put('uploads/:id/:reference', [controllers.BuiltinFiles, 'store']).as('builtin.upload')
+
+/**
  * MCP OAuth 2.1 discovery and authorization server endpoints.
  */
 router

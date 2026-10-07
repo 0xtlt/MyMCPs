@@ -6,6 +6,7 @@ export type ScannedRoutes = {
   ALL: {
     'health': { paramsTuple?: []; params?: {} }
     'builtin.file': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'reference': ParamValue} }
+    'builtin.upload': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'reference': ParamValue} }
     'oauth.metadata': { paramsTuple?: []; params?: {} }
     'oauth.resourceMetadata': { paramsTuple?: []; params?: {} }
     'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }
@@ -93,6 +94,11 @@ export type ScannedRoutes = {
     'mcps.oauthStart': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.index': { paramsTuple?: []; params?: {} }
   }
+  PUT: {
+    'builtin.upload': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'reference': ParamValue} }
+    'mcps.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'tokens.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+  }
   POST: {
     'oauth.register': { paramsTuple?: []; params?: {} }
     'oauth_server.authorize': { paramsTuple?: []; params?: {} }
@@ -120,10 +126,6 @@ export type ScannedRoutes = {
     'members.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'mcps.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'tokens.destroy': { paramsTuple?: []; params?: {} }
-  }
-  PUT: {
-    'mcps.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'tokens.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
 }
 declare module '@adonisjs/core/types/http' {

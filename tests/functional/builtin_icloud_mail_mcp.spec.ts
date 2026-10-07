@@ -328,6 +328,7 @@ test.group('Built-in iCloud Mail MCP: gateway', (group) => {
           'icloud-mail__list_messages',
           'icloud-mail__get_message',
           'icloud-mail__get_attachment_link',
+          'icloud-mail__create_upload_link',
           'icloud-mail__create_draft',
         ]
       )

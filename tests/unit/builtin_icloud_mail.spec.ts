@@ -246,10 +246,11 @@ test.group('Built-in iCloud Mail MCP: permissions', (group) => {
         'get_message',
         'get_attachment_link',
       ])
-      assert.deepEqual(await names(['draft']), ['create_draft'])
-      assert.deepEqual(await names(['send']), ['send_message'])
+      // Either permission that writes a message can attach a file to it.
+      assert.deepEqual(await names(['draft']), ['create_upload_link', 'create_draft'])
+      assert.deepEqual(await names(['send']), ['create_upload_link', 'send_message'])
       assert.deepEqual(await names(['organize']), ['mark_messages', 'move_messages'])
-      assert.lengthOf(await names(ICLOUD_MAIL_PERMISSIONS), 8)
+      assert.lengthOf(await names(ICLOUD_MAIL_PERMISSIONS), 9)
       assert.deepEqual(await names([]), [])
       assert.lengthOf(icloud.signIns, 0)
     } finally {
@@ -584,6 +585,7 @@ test.group('Built-in iCloud Mail MCP: sending', (group) => {
           bcc: [{ name: '', address: 'boss@example.com' }],
           subject: 'Quote for October',
           text: 'Hello Dave,\n\nHere is the quote.',
+          attachments: [],
           inReplyTo: undefined,
           references: undefined,
           messageId: result.message_id,

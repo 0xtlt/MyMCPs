@@ -1,12 +1,13 @@
 /**
  * Vine schemas for the built-in iCloud Mail MCP: the arguments of its tools,
- * and what its attachment links refer to. A schema lists the arguments in the
+ * and what its attachment and upload links refer to. A schema lists the arguments in the
  * order they are checked: of several wrong ones, the agent is told about the
  * first.
  */
 import type { BaseLiteralType } from '@vinejs/vine'
 import type { BuiltinPasswordContext } from '#services/builtin/definition'
 import { isAddress } from '#services/builtin/icloud_mail/message'
+import { isBuiltinUploadId } from '#services/builtin/upload_store'
 import {
   blankAsMissing,
   boolean,
@@ -29,6 +30,13 @@ export const ICLOUD_MAIL_LIMITS = {
   recipients: 50,
   subjectLength: 255,
   linkMinutes: 60,
+  attachments: 10,
+  /**
+   * Apple carries 20 MB of files in a message. Encoded for mail they take a
+   * third more, which fits in the 27 MB its server accepts.
+   */
+  attachmentBytes: 20_000_000,
+  filenameLength: 255,
 } as const
 
 const MAX_UID = 4_294_967_295
@@ -60,6 +68,51 @@ const part = () =>
   )
 
 const searchText = () => line(MAX_SEARCH_LENGTH).optional()
+
+const fileNameRule = toolVine.createRule((value, _options, field) => {
+  if (/[\\/]/.test(value as string)) {
+    field.report(
+      '{{ field }} must be the name of the file, such as report.pdf, without its folder',
+      'fileName',
+      field
+    )
+  }
+})
+
+/** What the recipient sees the file as. It never names a file on the instance. */
+const fileName = () => line(ICLOUD_MAIL_LIMITS.filenameLength).use(fileNameRule())
+
+const mediaType = () =>
+  pattern(/^[\w.+-]{1,100}\/[\w.+-]{1,100}$/, 'a media type, such as application/pdf')
+
+const ATTACHMENTS = `{{ field }} must be a list of at most ${ICLOUD_MAIL_LIMITS.attachments} upload IDs, as returned by create_upload_link`
+
+const uploadIdRule = toolVine.createRule(
+  (value, _options, field) => {
+    if (!isBuiltinUploadId(value as string)) {
+      field.report(ATTACHMENTS, 'uploadId', field)
+    }
+  },
+  {
+    toJSONSchema: (schema) => {
+      schema.type = 'string'
+    },
+  }
+)
+
+/** One uploaded file. What is not text is refused like a wrong ID. */
+const uploadId = () =>
+  new VineArgument<string>(uploadIdRule()).parse((value) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : ''
+  )
+
+/** A single ID is a list of one. */
+const attachments = () =>
+  toolVine
+    .array(uploadId())
+    .parse((value) => (isBlank(value) ? undefined : Array.isArray(value) ? value : [value]))
+    .use(listLength({ max: ICLOUD_MAIL_LIMITS.attachments, sentence: ATTACHMENTS }))
+    .optional()
 
 const ADDRESSES = `{{ field }} must be a list of at most ${ICLOUD_MAIL_LIMITS.recipients} email addresses such as name@example.com, without display names`
 
@@ -168,6 +221,19 @@ export const attachmentReferenceValidator = toolVine.create({
   part: part(),
 })
 
+export const createUploadLinkValidator = toolVine.create({
+  filename: fileName(),
+  content_type: mediaType().optional(),
+  expires_in_minutes: integer({ min: 1, max: ICLOUD_MAIL_LIMITS.linkMinutes }).optional(),
+})
+
+/** What create_upload_link puts in a link, and gets back when a file is sent to it. */
+export const uploadReferenceValidator = toolVine.create({
+  upload: uploadId(),
+  filename: fileName(),
+  content_type: mediaType().optional(),
+})
+
 /** A message to draft or to send. The sign-in says which addresses it may come from. */
 export const compositionValidator = toolVine.withMetaData<Senders>().create({
   reply_to_uid: uid().optional(),
@@ -179,6 +245,7 @@ export const compositionValidator = toolVine.withMetaData<Senders>().create({
   cc: addresses(),
   bcc: addresses(),
   text: text(ICLOUD_MAIL_LIMITS.textChars).parse(blankAsMissing),
+  attachments: attachments(),
   reply_to_mailbox: onlyWith('reply_to_uid', line(MAX_MAILBOX_LENGTH)).optional(),
   reply_all: onlyWith('reply_to_uid', boolean()).optional(),
 })

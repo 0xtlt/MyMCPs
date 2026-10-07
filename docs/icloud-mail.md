@@ -8,7 +8,7 @@ Setup takes about three minutes: create the password on Apple's site, paste it i
 
 - **An iCloud Mail address**, ending in `@icloud.com`, `@me.com`, or `@mac.com`. If you sign in to Apple with another address, such as a Gmail one, you still need the iCloud Mail address for this.
 - **Two-factor authentication** on your Apple Account. Apple only offers app-specific passwords with it.
-- **Outbound access** from your instance to `imap.mail.me.com` on port 993 and `smtp.mail.me.com` on port 587. `APP_URL` is only needed for [attachment links](#attachment-links): nothing redirects back to MyMCPs during setup.
+- **Outbound access** from your instance to `imap.mail.me.com` on port 993 and `smtp.mail.me.com` on port 587. `APP_URL` is only needed for [attachment links](#attachment-links) and [upload links](#sending-files): nothing redirects back to MyMCPs during setup.
 
 ## 1. Create an app-specific password
 
@@ -38,12 +38,12 @@ The password is encrypted with the instance's `APP_KEY` and is never sent back t
 
 Strava and other OAuth services let you pick permissions on their own consent screen. Apple offers nothing of the kind for an app-specific password, so the permissions are chosen in MyMCPs when you add the MCP, and MyMCPs enforces them for every agent that uses it.
 
-| Permission        | Tools                                                                   | What it allows                                                                    |
-| ----------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| **Read mail**     | `list_mailboxes`, `list_messages`, `get_message`, `get_attachment_link` | List mailboxes, search, read messages, and download their attachments             |
-| **Save drafts**   | `create_draft`                                                          | Write messages to your Drafts mailbox, for you to review and send yourself        |
-| **Send mail**     | `send_message`                                                          | Send messages from your addresses                                                 |
-| **Organize mail** | `mark_messages`, `move_messages`                                        | Mark messages as read or flagged, and move them between mailboxes, Trash included |
+| Permission        | Tools                                                                   | What it allows                                                                         |
+| ----------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Read mail**     | `list_mailboxes`, `list_messages`, `get_message`, `get_attachment_link` | List mailboxes, search, read messages, and download their attachments                  |
+| **Save drafts**   | `create_draft`, `create_upload_link`                                    | Write messages to your Drafts mailbox, with files attached, for you to review and send |
+| **Send mail**     | `send_message`, `create_upload_link`                                    | Send messages from your addresses, with files attached                                 |
+| **Organize mail** | `mark_messages`, `move_messages`                                        | Mark messages as read or flagged, and move them between mailboxes, Trash included      |
 
 - A tool outside the allowed permissions is not listed to agents, and is refused if an agent calls it anyway.
 - At least one permission is required. Any combination works, including sending without reading.
@@ -58,16 +58,17 @@ Strava and other OAuth services let you pick permissions on their own consent sc
 
 Through the gateway, tool names are prefixed with the MCP's slug, such as `icloud-mail__list_messages`.
 
-| Tool                  | Permission    | Does                                                                                                            |
-| --------------------- | ------------- | --------------------------------------------------------------------------------------------------------------- |
-| `list_mailboxes`      | Read mail     | Lists mailboxes with their message and unread counts, and their role: inbox, sent, drafts, trash, junk, archive |
-| `list_messages`       | Read mail     | Lists or searches a mailbox, newest first: sender, recipients, subject, date, flags, attachment count           |
-| `get_message`         | Read mail     | Returns one message: headers, text, and the name, type, size, and part of each attachment                       |
-| `get_attachment_link` | Read mail     | Returns a temporary link to download one attachment                                                             |
-| `create_draft`        | Save drafts   | Saves a plain text message to Drafts without sending it                                                         |
-| `send_message`        | Send mail     | Sends a plain text message and keeps a copy in Sent                                                             |
-| `mark_messages`       | Organize mail | Marks up to 100 messages as read or unread, flagged or not                                                      |
-| `move_messages`       | Organize mail | Moves up to 100 messages to another mailbox                                                                     |
+| Tool                  | Permission               | Does                                                                                                            |
+| --------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `list_mailboxes`      | Read mail                | Lists mailboxes with their message and unread counts, and their role: inbox, sent, drafts, trash, junk, archive |
+| `list_messages`       | Read mail                | Lists or searches a mailbox, newest first: sender, recipients, subject, date, flags, attachment count           |
+| `get_message`         | Read mail                | Returns one message: headers, text, and the name, type, size, and part of each attachment                       |
+| `get_attachment_link` | Read mail                | Returns a temporary link to download one attachment                                                             |
+| `create_upload_link`  | Save drafts or Send mail | Returns a temporary link that takes one file to attach to a message                                             |
+| `create_draft`        | Save drafts              | Saves a plain text message, with its attachments, to Drafts without sending it                                  |
+| `send_message`        | Send mail                | Sends a plain text message, with its attachments, and keeps a copy in Sent                                      |
+| `mark_messages`       | Organize mail            | Marks up to 100 messages as read or unread, flagged or not                                                      |
+| `move_messages`       | Organize mail            | Moves up to 100 messages to another mailbox                                                                     |
 
 How they behave:
 
@@ -97,6 +98,31 @@ https://mcp.example.com/files/12/eyJtYWlsYm94Ijoi…?signature=…
 
 Downloads are limited to 60 per 15 minutes for each MCP and client address, and one MCP serves 3 downloads at a time. Past either limit the link answers `429 Too Many Requests` with a `Retry-After` header. Requests without a valid signature are refused without being counted, and a download whose client stops reading for a minute is dropped.
 
+## Sending files
+
+A file is too large to pass through a tool call, so an agent attaches one in three steps:
+
+1. `create_upload_link`, with the `filename` the recipient should see, returns an `upload_id` and a link to this instance.
+2. The agent, or you, sends the file to the link as the body of a `PUT` request:
+
+   ```bash
+   curl -T report.pdf "https://mcp.example.com/uploads/12/eyJ1cGxvYWQiOi…?signature=…"
+   ```
+
+3. `send_message` or `create_draft` takes the `upload_id` in `attachments`. A message carries up to 10 files and 20 MB of them, which is what iCloud Mail accepts.
+
+How the links behave:
+
+- **The link is the credential**, like an attachment link. It needs no sign-in and no access token, so anyone who has it can send one file until it expires: after 15 minutes unless the agent asks for another duration, up to 60 minutes. It is signed with the instance's `APP_KEY`, cannot be changed to name another file or MCP, and cannot be used to download anything.
+- **It takes one file.** A second request to the same link is refused. Nothing is kept of an upload that fails or breaks off, and its link can be tried again.
+- **The body is the file**, whatever its `Content-Type`. A form, as `curl -F` sends, is refused.
+- **The file waits on the instance for an hour**, under `tmp/builtin-uploads` (`/app/tmp/builtin-uploads` in the container), readable only by the server's user. During that hour it can be attached to several messages, for example to a draft and then to the message sent after it. It is then deleted, as it is when its MCP is deleted. Nothing reaches Apple before a message is written.
+- **It follows the MCP.** A link stops working as soon as you remove both **Save drafts** and **Send mail**, or disable or delete the MCP. An uploaded file can only be attached through the MCP it was uploaded for.
+- **MyMCPs never fetches a file for an agent.** An attachment is always bytes that were sent to an upload link: no tool can name a path on the instance or a URL to attach.
+- **It needs `APP_URL`**, and a reverse proxy in front of the instance must let a 20 MB request body through. nginx stops at 1 MB unless `client_max_body_size` says otherwise.
+
+Each MCP holds at most 50 uploaded files and 100 MB at a time, takes 60 uploads per 15 minutes from each client address and 3 at a time, and writes 2 messages with attachments at a time. Past a limit, the link answers `429 Too Many Requests` or the tool asks to try again. Requests without a valid signature are refused without being counted or read, and an upload whose client stops sending for a minute is dropped.
+
 ## Sender addresses
 
 Messages are sent from your iCloud Mail address. If your account has other addresses, such as aliases, a custom domain, or Hide My Email addresses, list them under **Other sender addresses** in the MCP's dialog to let agents use them:
@@ -107,11 +133,11 @@ Messages are sent from your iCloud Mail address. If your account has other addre
 
 ## Limits
 
-- **Plain text only.** Messages are sent without attachments or HTML.
+- **Plain text only.** The body of a message is sent as text, without HTML. Files go as attachments, through [upload links](#sending-files).
 - **No sender name.** Messages are sent from a bare address, without a display name.
 - **Apple's sending limits apply**: 1,000 messages and 1,000 recipients a day, according to [Apple](https://support.apple.com/102198). MyMCPs accepts at most 50 addresses each in `to`, `cc`, and `bcc`, whether the agent names them or a reply takes them from the message it answers.
 - **One sign-in per tool call.** Each call opens its own connection to iCloud and signs in again.
-- **Call logs can hold mail.** With the logging level set to **arguments** or **responses** in **Settings**, the text agents send and the messages they read are stored in the MyMCPs call logs for the retention period. At **responses**, so are the attachment links, which stay valid until they expire.
+- **Call logs can hold mail.** With the logging level set to **arguments** or **responses** in **Settings**, the text agents send and the messages they read are stored in the MyMCPs call logs for the retention period. At **responses**, so are the attachment and upload links, which stay valid until they expire.
 
 ## Troubleshooting
 
@@ -131,6 +157,13 @@ Messages are sent from your iCloud Mail address. If your account has other addre
 | A link shows "This link is invalid or has expired"                             | Links are temporary. Ask the agent for a new one.                                                                                                                                            |
 | A link shows "Too many downloads"                                              | This MCP served 60 downloads in 15 minutes to your address, or is serving 3 at once. Try again after the time given in `Retry-After`.                                                        |
 | A link shows "This file is no longer available"                                | The message was moved or deleted, or the MCP no longer allows **Read mail**.                                                                                                                 |
+| "No file is uploaded as …"                                                     | The file was not sent to its upload link, the upload failed, or more than an hour has passed. Ask for a new link, send the file to it, and try again.                                        |
+| An upload answers "This upload link can no longer be used"                     | The MCP was disabled or deleted, or allows neither **Save drafts** nor **Send mail** any more.                                                                                               |
+| An upload answers "A file was already sent to this link"                       | A link takes one file. Ask the agent for a new link.                                                                                                                                         |
+| An upload answers "A form cannot be stored as a file"                          | Send the file itself as the body of the request, with `curl -T report.pdf "<link>"` rather than `curl -F`.                                                                                   |
+| An upload answers `413`                                                        | The file is over 20 MB. If the answer does not come from MyMCPs, the reverse proxy in front of it limits request bodies: raise that limit to 20 MB.                                          |
+| "Too many uploaded files are waiting for this MCP"                             | 50 files or 100 MB are waiting to be attached. They are deleted an hour after their upload.                                                                                                  |
+| "These attachments take … MB together"                                         | A message carries 20 MB of files. Attach fewer, or send them in several messages.                                                                                                            |
 | "iCloud Mail did not confirm the message, so it may or may not have been sent" | The connection dropped while sending. No copy was saved to Sent in that case, so check with the recipient before sending again.                                                              |
 | "The message was sent, but its copy could not be saved to the Sent mailbox"    | The message was delivered. Only the copy is missing.                                                                                                                                         |
 

@@ -68,6 +68,10 @@ export default defineConfig({
       file: () => import('#providers/mcp_auto_update_provider'),
       environment: ['web'],
     },
+    {
+      file: () => import('#providers/builtin_upload_provider'),
+      environment: ['web'],
+    },
     () => import('@adonisjs/limiter/limiter_provider'),
   ],
 

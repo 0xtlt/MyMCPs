@@ -31,6 +31,18 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/builtin_files_controller').default['show']>>>
     }
   }
+  'builtin.upload': {
+    methods: ["PUT"]
+    pattern: '/uploads/:id/:reference'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/builtin_files').builtinFileValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; reference: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/builtin_files').builtinFileValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/builtin_files_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/builtin_files_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
   'oauth.metadata': {
     methods: ["GET","HEAD"]
     pattern: '/.well-known/oauth-authorization-server'

@@ -5,6 +5,7 @@ export interface ApiDefinition {
   health: typeof routes['health']
   builtin: {
     file: typeof routes['builtin.file']
+    upload: typeof routes['builtin.upload']
   }
   oauth: {
     metadata: typeof routes['oauth.metadata']

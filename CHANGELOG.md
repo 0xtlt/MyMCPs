@@ -2,6 +2,16 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-07
+
+### Added
+
+- Added file attachments to the iCloud Mail MCP. `create_upload_link` returns a temporary signed link that takes one file of up to 20 MB as the body of a `PUT` request, for example with `curl -T`, and `send_message` and `create_draft` attach up to 10 uploaded files and 20 MB of them with `attachments`. The tool comes with **Save drafts** or **Send mail**. An uploaded file waits in `tmp/builtin-uploads` and can be attached for an hour, then it is deleted, as it is with its MCP. Upload links require `APP_URL`, and a reverse proxy in front of the instance must accept 20 MB request bodies; [docs/icloud-mail.md](docs/icloud-mail.md#sending-files) has the details.
+
+### Security
+
+- Upload links check their signature before anything is counted or read, cannot be used to download, take one file each, and stop working when the MCP is disabled or allows neither **Save drafts** nor **Send mail**. Each MCP holds at most 50 uploaded files and 100 MB, takes 60 uploads per 15 minutes from each client address and 3 at a time, and writes 2 messages with attachments at a time. An attachment is always bytes sent to an upload link: no tool can name a path on the instance or a URL to attach.
+
 ## 2026-10-05
 
 ### Changed

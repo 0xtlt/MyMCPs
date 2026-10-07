@@ -1,36 +1,60 @@
 import { Readable } from 'node:stream'
 import type { HttpContext } from '@adonisjs/core/http'
 import Mcp from '#models/mcp'
-import { BuiltinToolError, type BuiltinFile } from '#services/builtin/definition'
-import { BUILTIN_FILE_PURPOSE } from '#services/builtin/file_link'
-import { downloadBuiltinFile } from '#services/builtin/runtime'
-import { builtinFileRateLimiter } from '#start/limiter'
+import {
+  BuiltinToolError,
+  type BuiltinFile,
+  type BuiltinUploadTarget,
+} from '#services/builtin/definition'
+import { BUILTIN_FILE_PURPOSE, BUILTIN_UPLOAD_PURPOSE } from '#services/builtin/file_link'
+import { limitedPlaces } from '#services/builtin/places'
+import { builtinUploadTarget, downloadBuiltinFile } from '#services/builtin/runtime'
+import { BuiltinUploadError, saveBuiltinUpload } from '#services/builtin/upload_store'
+import { builtinFileRateLimiter, builtinUploadRateLimiter } from '#start/limiter'
 import { builtinFileValidator } from '#validators/builtin_files'
 
 const MEDIA_TYPE = /^[\w.+-]+\/[\w.+-]+$/
+const INVALID_LINK = 'This link is invalid or has expired.'
 const UNAVAILABLE = 'This file is no longer available.'
+const UPLOAD_UNAVAILABLE = 'This upload link can no longer be used.'
+const HOW_TO_UPLOAD =
+  'Send the file itself as the body of the PUT request, for example with: curl -T <file> "<link>"'
 
 /**
  * A download signs in to the provider and keeps the whole file in memory
  * until the client has received it, so an MCP serves only a few at once.
  */
 const MAX_CONCURRENT_DOWNLOADS = 3
+/** An upload is written to disk as it arrives, and keeps a connection open meanwhile. */
+const MAX_CONCURRENT_UPLOADS = 3
 const BUSY_RETRY_SECONDS = 5
-/** A client that stops reading must not keep its place for good. */
+/** A client that stops reading, or sending, must not keep its place for good. */
 const STALLED_CLIENT_MS = 60_000
 
-const downloads = new Map<number, number>()
+const startDownload = limitedPlaces(MAX_CONCURRENT_DOWNLOADS)
+const startUpload = limitedPlaces(MAX_CONCURRENT_UPLOADS)
 
-/** Take one of the MCP's places. Returns how to give it back, or `null` when all are taken. */
-function startDownload(mcpId: number) {
-  const running = downloads.get(mcpId) ?? 0
-  if (running >= MAX_CONCURRENT_DOWNLOADS) return null
-
-  downloads.set(mcpId, running + 1)
-  return () => {
-    const left = (downloads.get(mcpId) ?? 1) - 1
-    if (left > 0) downloads.set(mcpId, left)
-    else downloads.delete(mcpId)
+/** What the sender of a file is told when it was not kept. */
+function uploadRefusal(error: BuiltinUploadError, target: BuiltinUploadTarget) {
+  switch (error.reason) {
+    case 'taken':
+      return {
+        status: 409,
+        message: 'A file was already sent to this link. Ask for a new link to send another one.',
+      }
+    case 'empty':
+      return { status: 400, message: `The request has no body. ${HOW_TO_UPLOAD}` }
+    case 'too_large':
+      return {
+        status: 413,
+        message: `The file is larger than the ${target.maxBytes / 1_000_000} MB this link takes.`,
+      }
+    case 'full':
+      return {
+        status: 429,
+        message:
+          'Too many uploaded files are waiting for this MCP. They are deleted an hour after their upload: try again later.',
+      }
   }
 }
 
@@ -55,7 +79,7 @@ export default class BuiltinFilesController {
   async show({ request, response }: HttpContext) {
     // Checked before anything is counted: only the holder of a link can use up downloads.
     if (!request.hasValidSignature(BUILTIN_FILE_PURPOSE)) {
-      return response.status(403).send('This link is invalid or has expired.')
+      return response.status(403).send(INVALID_LINK)
     }
 
     const [malformed, link] = await request.tryValidateUsing(builtinFileValidator)
@@ -110,5 +134,89 @@ export default class BuiltinFilesController {
     )
     response.response.setTimeout(STALLED_CLIENT_MS)
     return response.stream(Readable.from(file.content, { objectMode: false }))
+  }
+
+  /**
+   * Keep the file sent to a temporary link that a built-in tool handed out,
+   * for the tool to use afterwards. As for a download, the signature is the
+   * credential and the MCP is checked again. The body is the file whatever
+   * its content type: it is not parsed, and goes to disk as it arrives.
+   */
+  async store({ request, response }: HttpContext) {
+    // Checked before anything is counted or read: only the holder of a link can send a file.
+    if (!request.hasValidSignature(BUILTIN_UPLOAD_PURPOSE)) {
+      return response.status(403).send(INVALID_LINK)
+    }
+
+    const [malformed, link] = await request.tryValidateUsing(builtinFileValidator)
+    if (malformed) {
+      return response.status(404).send(UPLOAD_UNAVAILABLE)
+    }
+    const { id, reference } = link.params
+
+    const client = `builtin-upload:${id}:${request.ip()}`
+    if (!(await builtinUploadRateLimiter.attempt(client, () => true))) {
+      response.header('Retry-After', await builtinUploadRateLimiter.availableIn(client))
+      return response.status(429).send('Too many uploads. Try again later.')
+    }
+
+    const mcp = await Mcp.find(id)
+    if (!mcp || !mcp.enabled || mcp.transport !== 'builtin') {
+      return response.status(404).send(UPLOAD_UNAVAILABLE)
+    }
+
+    let target: BuiltinUploadTarget
+    try {
+      target = await builtinUploadTarget(mcp, reference)
+    } catch (error) {
+      if (!(error instanceof BuiltinToolError)) throw error
+      return response.status(404).send(UPLOAD_UNAVAILABLE)
+    }
+
+    // A form would be stored with its boundaries and field headers around the file.
+    if (/^multipart\//i.test(request.header('content-type') ?? '')) {
+      return response.status(415).send(`A form cannot be stored as a file. ${HOW_TO_UPLOAD}`)
+    }
+    // Most clients say how much they are about to send.
+    if (Number(request.header('content-length')) > target.maxBytes) {
+      const tooLarge = uploadRefusal(new BuiltinUploadError('too_large'), target)
+      return response.status(tooLarge.status).send(tooLarge.message)
+    }
+
+    const finishUpload = startUpload(mcp.id)
+    if (!finishUpload) {
+      response.header('Retry-After', BUSY_RETRY_SECONDS)
+      return response.status(429).send('Too many uploads at once. Try again in a few seconds.')
+    }
+
+    const body = request.request
+    body.setTimeout(STALLED_CLIENT_MS)
+    try {
+      // Reading stops at the first byte too many, which must not close the
+      // connection the answer is sent on.
+      const upload = await saveBuiltinUpload(
+        mcp.id,
+        target,
+        body.iterator({ destroyOnReturn: false })
+      )
+      return response.status(201).json({
+        upload_id: upload.id,
+        filename: upload.filename,
+        size: upload.size,
+        expires_at: new Date(upload.expiresAt).toISOString(),
+      })
+    } catch (error) {
+      if (error instanceof BuiltinUploadError) {
+        // What the client is still sending is read and dropped, like any body nobody asked for.
+        body.resume()
+        const refusal = uploadRefusal(error, target)
+        return response.status(refusal.status).send(refusal.message)
+      }
+      // The client hung up halfway: nothing was kept, and nobody is left to answer.
+      if (body.destroyed) return
+      throw error
+    } finally {
+      finishUpload()
+    }
   }
 }

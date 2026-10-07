@@ -8,6 +8,7 @@ import {
   type BuiltinMcpProvider,
   type BuiltinPasswordContext,
   type BuiltinToolContext,
+  type BuiltinUploadTarget,
 } from '#services/builtin/definition'
 import { parseOauthScopes } from '#services/builtin/oauth'
 import { requireBuiltinMcp } from '#services/builtin/registry'
@@ -182,6 +183,22 @@ export async function downloadBuiltinFile(mcp: Mcp, reference: unknown): Promise
       throw new BuiltinToolError(`${provider.name} has no files to download`)
     }
     return provider.download(reference, await signIn())
+  })
+}
+
+/**
+ * Where to keep the file sent to an upload link one of the MCP's tools handed
+ * out. Throws `BuiltinToolError` when the link can no longer be used.
+ */
+export async function builtinUploadTarget(
+  mcp: Mcp,
+  reference: unknown
+): Promise<BuiltinUploadTarget> {
+  return withProvider(requireBuiltinMcp(mcp), mcp, async (provider, signIn) => {
+    if (!provider.upload) {
+      throw new BuiltinToolError(`${provider.name} takes no files`)
+    }
+    return provider.upload(reference, await signIn())
   })
 }
 

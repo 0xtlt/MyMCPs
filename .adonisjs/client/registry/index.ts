@@ -18,6 +18,12 @@ const routes = {
     tokens: [{"old":"/files/:id/:reference","type":0,"val":"files","end":""},{"old":"/files/:id/:reference","type":1,"val":"id","end":""},{"old":"/files/:id/:reference","type":1,"val":"reference","end":""}],
     types: placeholder as Registry['builtin.file']['types'],
   },
+  'builtin.upload': {
+    methods: ["PUT"],
+    pattern: '/uploads/:id/:reference',
+    tokens: [{"old":"/uploads/:id/:reference","type":0,"val":"uploads","end":""},{"old":"/uploads/:id/:reference","type":1,"val":"id","end":""},{"old":"/uploads/:id/:reference","type":1,"val":"reference","end":""}],
+    types: placeholder as Registry['builtin.upload']['types'],
+  },
   'oauth.metadata': {
     methods: ["GET","HEAD"],
     pattern: '/.well-known/oauth-authorization-server',

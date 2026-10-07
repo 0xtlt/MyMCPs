@@ -85,6 +85,16 @@ export type BuiltinFile = {
   content: Buffer[]
 }
 
+/** Where to keep a file sent to an upload link, as the tool that made the link described it. */
+export type BuiltinUploadTarget = {
+  /** Names the stored file, and is how tools refer to it afterwards. A UUID. */
+  id: string
+  filename: string
+  /** Left out, it follows from the filename. */
+  contentType?: string
+  maxBytes: number
+}
+
 export type BuiltinTool<Context = BuiltinToolContext> = {
   name: string
   description: string
@@ -115,6 +125,12 @@ export type BuiltinMcpProvider<Context> = {
    * `reference` is what the tool put in the link, unchanged.
    */
   download?: (reference: unknown, context: Context) => Promise<BuiltinFile>
+  /**
+   * Says where to keep the file sent to a temporary signed link one of the
+   * tools handed out. `reference` is what the tool put in the link, unchanged.
+   * Throws `BuiltinToolError` when the link may no longer be used.
+   */
+  upload?: (reference: unknown, context: Context) => Promise<BuiltinUploadTarget>
 }
 
 export type BuiltinOauthMcpDefinition = BuiltinMcpProvider<BuiltinToolContext> & {

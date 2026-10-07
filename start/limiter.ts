@@ -48,3 +48,9 @@ export const builtinFileRateLimiter = limiter.use({
   requests: 60,
   duration: '15 minutes',
 })
+
+/** Each upload to a built-in MCP writes a file to the instance's disk. */
+export const builtinUploadRateLimiter = limiter.use({
+  requests: 60,
+  duration: '15 minutes',
+})

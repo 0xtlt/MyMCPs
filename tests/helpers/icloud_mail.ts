@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
+import app from '@adonisjs/core/services/app'
 import type {
   FetchQueryObject,
   MessageEnvelopeObject,
@@ -8,6 +11,7 @@ import type {
 import type { SendMailOptions } from 'nodemailer'
 import Mcp from '#models/mcp'
 import { icloudMailServers, type ImapClient } from '#services/builtin/icloud_mail/connection'
+import { saveBuiltinUpload } from '#services/builtin/upload_store'
 import McpSecretStore from '#services/mcp_secret_store'
 import { createMcp } from '#tests/helpers/factories'
 
@@ -355,6 +359,32 @@ export function mockIcloudMail(options: MockOptions = {}) {
       Object.assign(icloudMailServers, original)
     },
   }
+}
+
+/** Where the files uploaded for an MCP are kept. Tests look at it to see what is left. */
+export function uploadsDirectory(mcpId?: number) {
+  return app.tmpPath('builtin-uploads', ...(mcpId === undefined ? [] : [String(mcpId)]))
+}
+
+/** Rolled-back tests reuse MCP ids, so what one uploaded must not be found by the next. */
+export function clearUploads() {
+  return rm(uploadsDirectory(), { recursive: true, force: true })
+}
+
+/** Keep a file the way its upload link would, for the tests that are not about the link. */
+export async function uploadFile(
+  mcpId: number,
+  filename: string,
+  content: string | Buffer,
+  contentType?: string
+) {
+  const id = randomUUID()
+  await saveBuiltinUpload(
+    mcpId,
+    { id, filename, contentType, maxBytes: 20_000_000 },
+    Readable.from([Buffer.from(content)])
+  )
+  return id
 }
 
 /** A built-in iCloud Mail MCP as the setup form leaves it. */

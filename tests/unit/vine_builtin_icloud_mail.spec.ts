@@ -10,11 +10,13 @@ import { createIcloudMailMcp, mockIcloudMail } from '#tests/helpers/icloud_mail'
 import {
   attachmentReferenceValidator,
   compositionValidator,
+  createUploadLinkValidator,
   getAttachmentLinkValidator,
   getMessageValidator,
   listMessagesValidator,
   markMessagesValidator,
   moveMessagesValidator,
+  uploadReferenceValidator,
 } from '#validators/builtin_icloud_mail'
 
 type Validator = VineValidator<any, any>
@@ -26,6 +28,9 @@ const mail = { subject: 'Hi', text: 'Hello' }
 
 const ADDRESSES =
   'must be a list of at most 50 email addresses such as name@example.com, without display names'
+const ATTACHMENTS =
+  'attachments must be a list of at most 10 upload IDs, as returned by create_upload_link'
+const UPLOAD_ID = '3f2b8c1e-7a4d-4e9b-9c55-0a1b2c3d4e5f'
 
 /** The sentence the agent reads when a tool refuses its arguments. */
 async function refusal(validator: Validator, args: unknown) {
@@ -178,8 +183,111 @@ test.group('Built-in iCloud Mail MCP: validators', () => {
   })
 })
 
+test.group('Built-in iCloud Mail MCP: validators of an upload', () => {
+  test('names the file the way the recipient sees it', async ({ assert }) => {
+    assert.deepEqual(
+      await toolInput(createUploadLinkValidator, {
+        filename: ' Devis été 2026.pdf ',
+        content_type: ' application/pdf ',
+        expires_in_minutes: '30',
+        path: '/etc/passwd',
+      }),
+      { filename: 'Devis été 2026.pdf', content_type: 'application/pdf', expires_in_minutes: 30 }
+    )
+    assert.deepEqual(
+      await toolInput(createUploadLinkValidator, { filename: 'notes', content_type: '' }),
+      { filename: 'notes' }
+    )
+
+    const folder = 'filename must be the name of the file, such as report.pdf, without its folder'
+    const mediaType = 'content_type must be a media type, such as application/pdf'
+    const cases: Array<[Args, string]> = [
+      [{}, 'filename is required'],
+      [{ filename: '   ' }, 'filename is required'],
+      [{ filename: '/tmp/report.pdf' }, folder],
+      [{ filename: '..\\report.pdf' }, folder],
+      [{ filename: 'a\r\nContent-Type: text/html' }, 'filename must be a single line of text'],
+      [{ filename: `${'n'.repeat(252)}.pdf` }, 'filename must be text of at most 255 characters'],
+      [{ filename: 42 }, 'filename must be text of at most 255 characters'],
+      [{ filename: 'a.pdf', content_type: 'pdf' }, mediaType],
+      [{ filename: 'a.pdf', content_type: 'text/html; charset=utf-8' }, mediaType],
+      [{ filename: 'a.pdf', content_type: 'text/plain\r\nBcc: eve@example.com' }, mediaType],
+      [{ filename: 'a.pdf', content_type: `application/${'x'.repeat(101)}` }, mediaType],
+      [
+        { filename: 'a.pdf', expires_in_minutes: 61 },
+        'expires_in_minutes must be an integer between 1 and 60',
+      ],
+    ]
+    for (const [args, sentence] of cases) {
+      assert.equal(await refusal(createUploadLinkValidator, args), sentence, JSON.stringify(args))
+    }
+  })
+
+  test('reads back what a link was made for, and nothing else', async ({ assert }) => {
+    assert.deepEqual(
+      await toolInput(uploadReferenceValidator, {
+        upload: UPLOAD_ID,
+        filename: 'report.pdf',
+        content_type: 'application/pdf',
+        mailbox: 'INBOX',
+      }),
+      { upload: UPLOAD_ID, filename: 'report.pdf', content_type: 'application/pdf' }
+    )
+
+    const references: unknown[] = [
+      null,
+      UPLOAD_ID,
+      { upload: UPLOAD_ID },
+      { filename: 'report.pdf' },
+      { upload: '../../db.sqlite3', filename: 'report.pdf' },
+      { upload: `${UPLOAD_ID}/..`, filename: 'report.pdf' },
+      { upload: UPLOAD_ID.replaceAll('-', ''), filename: 'report.pdf' },
+      { upload: UPLOAD_ID, filename: '../report.pdf' },
+      { upload: UPLOAD_ID, filename: 'report.pdf', content_type: 'pdf' },
+      // What get_attachment_link puts in a download link.
+      { mailbox: 'INBOX', uid: 11, part: '2' },
+    ]
+    for (const reference of references) {
+      assert.isString(await refusal(uploadReferenceValidator, reference), JSON.stringify(reference))
+    }
+  })
+})
+
 test.group('Built-in iCloud Mail MCP: validators of a message to write', () => {
   const compose = (args: Args) => toolInput(compositionValidator, args, account)
+
+  test('takes one upload ID or a list of at most ten', async ({ assert }) => {
+    const ids = Array.from({ length: 10 }, (_, index) => UPLOAD_ID.replace(/.$/, String(index)))
+
+    assert.deepEqual(await compose({ ...mail, attachments: ` ${UPLOAD_ID.toUpperCase()} ` }), {
+      ...mail,
+      attachments: [UPLOAD_ID],
+    })
+    assert.deepEqual(await compose({ ...mail, attachments: ids }), { ...mail, attachments: ids })
+    assert.deepEqual(await compose({ ...mail, attachments: [] }), { ...mail, attachments: [] })
+    for (const none of [undefined, null, '']) {
+      assert.deepEqual(await compose({ ...mail, attachments: none }), mail)
+    }
+
+    const refused: unknown[] = [
+      'report.pdf',
+      '/tmp/report.pdf',
+      'https://example.com/report.pdf',
+      [UPLOAD_ID, '../../db.sqlite3'],
+      [UPLOAD_ID, null],
+      [{ path: '/etc/passwd' }],
+      [{ filename: 'a.txt', content: 'aGk=' }],
+      42,
+      [...ids, UPLOAD_ID],
+    ]
+    for (const attachments of refused) {
+      assert.equal(
+        await refusal(compositionValidator, { ...mail, attachments }),
+        ATTACHMENTS,
+        JSON.stringify(attachments)
+      )
+    }
+  })
 
   test('takes one address or a list, trimmed, and nothing but bare addresses', async ({
     assert,

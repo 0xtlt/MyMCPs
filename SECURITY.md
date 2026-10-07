@@ -91,6 +91,12 @@ permissions.
 - Mail written by strangers is converted to text in a separate short-lived
   process, and attachment links check their signature before a download is
   counted against the per-MCP limits.
+- The only route that takes a file is the temporary signed upload link a
+  built-in MCP hands to an agent. The signature is checked before the body is
+  read, a link takes one file, and the file is deleted an hour after its
+  upload. Each MCP is limited in how many files and bytes wait for it. A mail
+  attachment is always bytes sent to such a link: no tool can name a path on
+  the instance or a URL to attach.
 
 ## Build and release safeguards
 

@@ -1,6 +1,7 @@
 import type { BuiltinPasswordMcpDefinition } from '#services/builtin/definition'
 import { withImap } from '#services/builtin/icloud_mail/connection'
 import {
+  attachmentUpload,
   downloadAttachment,
   ICLOUD_MAIL_PERMISSIONS,
   icloudMailTools,
@@ -31,4 +32,5 @@ export const icloudMailMcp: BuiltinPasswordMcpDefinition = {
   tools: icloudMailTools,
   verify: (signIn) => withImap(signIn, async () => {}),
   download: downloadAttachment,
+  upload: attachmentUpload,
 }

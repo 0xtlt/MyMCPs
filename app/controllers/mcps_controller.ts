@@ -10,6 +10,7 @@ import { recordIdParamsValidator } from '#validators/route_params'
 import { flashedRecordIdValidator } from '#validators/session'
 import { testAndUpdateStatus } from '#services/upstream/manager'
 import { removeMcpSandbox } from '#services/upstream/deno_runner'
+import { removeBuiltinUploads } from '#services/builtin/upload_store'
 import { McpNpmUpdateError, updateMcpToLatest } from '#services/mcp_npm_update_service'
 import {
   clearOauthSession,
@@ -388,6 +389,18 @@ async function discardSandbox(mcpId: number) {
   }
 }
 
+/** Files agents uploaded for a built-in MCP expire by themselves, so neither are these. */
+async function discardUploads(mcpId: number) {
+  try {
+    await removeBuiltinUploads(mcpId)
+  } catch (error) {
+    logger.warn(
+      { mcpId, error: sanitizeDiagnostic(error) },
+      'Could not delete the uploaded files of a built-in MCP'
+    )
+  }
+}
+
 async function uniqueSlug(name: string, excludeId?: number) {
   const base = Mcp.slugify(name)
   let candidate = base
@@ -488,6 +501,7 @@ export default class McpsController {
     }
     await mcp.delete()
     await discardSandbox(mcp.id)
+    await discardUploads(mcp.id)
     session.flash('success', 'MCP deleted')
     return response.redirect().toRoute('mcps.index')
   }
