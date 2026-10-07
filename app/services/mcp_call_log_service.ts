@@ -4,6 +4,7 @@ import type AccessToken from '#models/access_token'
 import InstanceSetting from '#models/instance_setting'
 import McpCallLog, { type McpCallErrorCategory, type McpCallOutcome } from '#models/mcp_call_log'
 import type Mcp from '#models/mcp'
+import { changedRows } from '#services/changed_rows'
 import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
 import { loggedMcpSlugValidator } from '#validators/mcp_call_log'
 
@@ -151,7 +152,7 @@ export default class McpCallLogService {
       const settings = await this.settings()
       const cutoff = DateTime.utc().minus({ days: settings.mcpLogRetentionDays })
       const deleted = await McpCallLog.query().where('created_at', '<', cutoff.toSQL()!).delete()
-      return Array.isArray(deleted) ? deleted.length : Number(deleted)
+      return changedRows(deleted)
     } catch (error) {
       logger.warn(persistenceDiagnostic(error), 'Expired MCP call logs could not be pruned')
       return 0

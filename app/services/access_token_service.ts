@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { DateTime } from 'luxon'
 import AccessToken from '#models/access_token'
 import Mcp from '#models/mcp'
+import { changedRows } from '#services/changed_rows'
 import db from '@adonisjs/lucid/services/db'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
@@ -135,9 +136,8 @@ export default class AccessTokenService {
           oauthRefreshTokenPrefix: this.prefix(nextRefreshToken),
           lastUsedAt: null,
         })
-        .returning('id')
 
-      if (updated.length !== 1) {
+      if (changedRows(updated) !== 1) {
         return null
       }
 

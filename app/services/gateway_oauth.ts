@@ -4,6 +4,7 @@ import { OAuthClientMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth
 import OauthAuthorizationCode from '#models/oauth_authorization_code'
 import OauthClient from '#models/oauth_client'
 import AccessTokenService from '#services/access_token_service'
+import { changedRows } from '#services/changed_rows'
 import { GATEWAY_OAUTH_SCOPE, LOOPBACK_HOSTS } from '#services/gateway_oauth_constants'
 import { requirePublicAppUrl } from '#services/public_url'
 import { sanitizeDiagnostic } from '#services/security_redaction'
@@ -508,8 +509,7 @@ export async function exchangeAuthorizationCode(params: {
     const deleted = await OauthAuthorizationCode.query({ client: trx })
       .where('id', authorizationCode.id)
       .delete()
-      .returning('id')
-    if (deleted.length !== 1) {
+    if (changedRows(deleted) !== 1) {
       throw new GatewayOauthError('invalid_grant', 'Authorization code was already used')
     }
 

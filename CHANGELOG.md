@@ -18,8 +18,13 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Signing in from an approval link returns to that approval request.
 - The call log files a held call under the new categories `approval required` and `approval denied`.
 
+### Fixed
+
+- Refreshing an OAuth connection twice at the same moment no longer answers the second request with a server error. That request is now refused with `invalid_grant` and the connection is revoked, as it is whenever a refresh token that was already rotated comes back. A refresh that arrives while its connection is being revoked is refused too, where it used to receive tokens that did not work.
+
 ### Security
 
+- An authorization code exchanged by two requests at the same moment now yields a single OAuth connection: the second request is refused with `invalid_grant`, where both used to receive tokens.
 - Upload links check their signature before anything is counted or read, cannot be used to download, take one file each, and stop working when the MCP is disabled or allows neither **Save drafts** nor **Send mail**. Each MCP holds at most 50 uploaded files and 100 MB, takes 60 uploads per 15 minutes from each client address and 3 at a time, and writes 2 messages with attachments at a time. An attachment is always bytes sent to an upload link: no tool can name a path on the instance or a URL to attach.
 - An approval is bound to the access token, MCP, tool, and exact arguments of the call it was asked for: other arguments ask again, and another access token cannot use it. Of two identical calls made at once, one gets the approval. The arguments and the summary of a request are encrypted at rest. A request is read and decided by an administrator or by the member who created its access token, through a CSRF-protected form, and the link alone grants nothing. An access token can have 20 requests waiting, also when its calls arrive at once, and the same call made twice at the same moment asks once. If the saved choices of an MCP cannot be read, every tool of that MCP asks.
 - A built-in tool that asks checks its arguments, the write access of its MCP, and its sign-in before anyone is asked to approve it, and the Google Ads tools have Google validate the change without making it.
