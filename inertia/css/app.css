@@ -19,6 +19,12 @@
   word-break: break-word;
 }
 
+/* What an agent sent is shown as it is: long words wrap and line breaks stay. */
+.approval-value {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 /* Let Layout fill + LayoutContent scroll inside Dialog (Form is otherwise block-sized). */
 .dialog-form-fill {
   display: flex;

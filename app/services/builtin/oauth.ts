@@ -11,7 +11,7 @@ import { oauthTokenResponseValidator } from '#validators/oauth'
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000
 
 type TokenGrant =
-  | { grant_type: 'authorization_code'; code: string }
+  | { grant_type: 'authorization_code'; code: string; redirect_uri?: string }
   | { grant_type: 'refresh_token'; refresh_token: string }
 
 export type BuiltinOauthTokens = {
@@ -25,13 +25,14 @@ export type BuiltinOauthTokens = {
 /**
  * Providers disagree on the separator, so store and compare scopes as a list.
  * The callback's `scope` parameter passes through the browser, so anything that
- * is not shaped like a scope name is dropped.
+ * is not shaped like a scope name is dropped. Some providers name their scopes
+ * with URLs, such as `https://www.googleapis.com/auth/adwords`.
  */
 export function parseOauthScopes(value: string | null | undefined) {
   return value
     ? value
         .split(/[\s,]+/)
-        .filter((scope) => /^[\w:.-]{1,64}$/.test(scope))
+        .filter((scope) => /^[\w:./-]{1,64}$/.test(scope))
         .slice(0, 32)
     : []
 }
@@ -128,12 +129,18 @@ async function requestTokens(
   }
 }
 
+/** `redirectUri` is the one the authorization request was sent with. */
 export function exchangeBuiltinAuthorizationCode(
   definition: BuiltinOauthMcpDefinition,
   mcp: Mcp,
-  code: string
+  code: string,
+  redirectUri: string
 ) {
-  return requestTokens(definition, mcp, { grant_type: 'authorization_code', code })
+  return requestTokens(definition, mcp, {
+    grant_type: 'authorization_code',
+    code,
+    ...(definition.oauth.sendsRedirectUriWithCode ? { redirect_uri: redirectUri } : {}),
+  })
 }
 
 export function refreshBuiltinTokens(

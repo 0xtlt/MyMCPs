@@ -60,6 +60,7 @@ type McpRow = {
   hasBuiltinPassword: boolean
   builtinAliases: string[]
   builtinPermissions: string[]
+  builtinSettings: Record<string, string>
   builtinWriteEnabled: boolean
   builtinWriteGranted: boolean
   oauthRequired: boolean
@@ -558,6 +559,13 @@ export default function McpsIndex({
                               }
                             />
                           ) : null}
+                          <Button
+                            label="Tool approvals"
+                            variant="secondary"
+                            size="sm"
+                            tooltip="Choose which tools run on their own and which wait for a person"
+                            href={`/mcps/${editingMcp.id}/tools`}
+                          />
                           {editingMcp.authType === 'auto' &&
                           editingMcp.hasOauthAccessToken &&
                           !editingMcp.oauthRequired ? (

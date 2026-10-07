@@ -23,6 +23,7 @@ import type { Infer } from '@vinejs/vine/types'
 import { sanitizeDiagnostic, sanitizeMcpDiagnostic } from '#services/security_redaction'
 import { parseHttpUrl } from '#services/http_url'
 import type {
+  BuiltinMcpDefinition,
   BuiltinOauthMcpDefinition,
   BuiltinPasswordMcpDefinition,
 } from '#services/builtin/definition'
@@ -145,12 +146,13 @@ const MAX_BUILTIN_ALIASES = 20
 /**
  * Save the API application credentials of a built-in MCP. Tokens belong to
  * the application that issued them, so new credentials disconnect the account.
+ * Returns what is wrong with them, and then saves nothing.
  */
 function assignOauthApplication(
   mcp: Mcp,
   payload: McpPayload,
   definition: BuiltinOauthMcpDefinition
-) {
+): FieldFailure[] {
   const clientId = payload.oauthClientId ?? ''
   const savedSecret = McpSecretStore.decrypt(mcp.oauthClientSecret)
   const clientSecret = payload.oauthClientSecret || savedSecret
@@ -178,7 +180,7 @@ function assignOauthApplication(
     })
   }
   if (failures.length > 0 || !clientSecret) {
-    throw new errors.E_VALIDATION_ERROR(failures)
+    return failures
   }
 
   if (mcp.oauthClientId !== clientId || savedSecret !== clientSecret) {
@@ -186,18 +188,20 @@ function assignOauthApplication(
   }
   mcp.oauthClientId = clientId
   mcp.oauthClientSecret = McpSecretStore.encrypt(clientSecret)
+  return []
 }
 
 /**
  * Save the account name and app password of a built-in MCP, what agents may
  * do with them, and which other addresses of the account they may act as. A
  * blank password keeps the saved one, which is never sent back to the browser.
+ * Returns what is wrong with them, and then saves nothing.
  */
 function assignPasswordSignIn(
   mcp: Mcp,
   payload: McpPayload,
   definition: BuiltinPasswordMcpDefinition
-) {
+): FieldFailure[] {
   const username = payload.builtinUsername ?? ''
   const password = payload.builtinPassword || McpSecretStore.decrypt(mcp.builtinPassword)
 
@@ -244,7 +248,7 @@ function assignPasswordSignIn(
     })
   }
   if (failures.length > 0 || !password) {
-    throw new errors.E_VALIDATION_ERROR(failures)
+    return failures
   }
 
   mcp.builtinUsername = username
@@ -253,6 +257,44 @@ function assignPasswordSignIn(
     .filter((name) => requested.includes(name))
     .join(' ')
   mcp.builtinAliases = aliases.length > 0 ? aliases.join(' ') : null
+  return []
+}
+
+/**
+ * Save what a built-in MCP needs beyond its sign-in, such as the account it
+ * acts through. Returns what is wrong, and then saves nothing.
+ */
+function assignBuiltinSettings(
+  mcp: Mcp,
+  payload: McpPayload,
+  definition: BuiltinMcpDefinition
+): FieldFailure[] {
+  const failures: FieldFailure[] = []
+  const entries: Array<{ name: string; value: string }> = []
+  for (const field of definition.settings ?? []) {
+    const entered = payload.builtinSettings?.[field.key]?.trim() ?? ''
+    const value = entered ? (field.normalize?.(entered) ?? entered) : ''
+    if (!value) {
+      if (field.required) {
+        failures.push({
+          field: `builtinSettings.${field.key}`,
+          message: field.hint,
+          rule: 'required',
+        })
+      }
+    } else if (!field.pattern.test(value)) {
+      failures.push({ field: `builtinSettings.${field.key}`, message: field.hint, rule: 'regex' })
+    } else {
+      entries.push({ name: field.key, value })
+    }
+  }
+  if (failures.length > 0) {
+    return failures
+  }
+
+  // Encrypted like the rest of what is entered in this dialog.
+  mcp.builtinSettings = McpEnvironmentStore.merge(null, entries)
+  return []
 }
 
 function assignBuiltinCredentials(mcp: Mcp, payload: McpPayload) {
@@ -264,13 +306,19 @@ function assignBuiltinCredentials(mcp: Mcp, payload: McpPayload) {
     mcp.builtinAliases = null
   }
   if (!definition) {
+    mcp.builtinSettings = null
     return
   }
 
-  if (definition.oauth) {
-    assignOauthApplication(mcp, payload, definition)
-  } else {
-    assignPasswordSignIn(mcp, payload, definition)
+  // Everything wrong is reported at once: it all comes from the same setup.
+  const failures = [
+    ...(definition.oauth
+      ? assignOauthApplication(mcp, payload, definition)
+      : assignPasswordSignIn(mcp, payload, definition)),
+    ...assignBuiltinSettings(mcp, payload, definition),
+  ]
+  if (failures.length > 0) {
+    throw new errors.E_VALIDATION_ERROR(failures)
   }
 }
 

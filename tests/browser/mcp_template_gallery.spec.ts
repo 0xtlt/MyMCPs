@@ -89,7 +89,7 @@ test.group('MCP template gallery', (group) => {
     await page.getByRole('button', { name: 'Add MCP' }).click()
     let gallery = page.getByRole('dialog', { name: 'Add an MCP' })
     await gallery.getByRole('button', { name: 'All' }).click()
-    assert.include(await gallery.innerText(), '18 templates')
+    assert.include(await gallery.innerText(), '19 templates')
 
     await gallery.getByRole('textbox', { name: 'Search templates' }).fill('Atlassian')
     await gallery.getByRole('button', { name: 'Set up Atlassian Rovo' }).click()

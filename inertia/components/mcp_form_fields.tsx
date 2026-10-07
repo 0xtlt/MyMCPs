@@ -41,6 +41,8 @@ export type McpFormValues = {
   builtinPassword: string
   builtinAliases: string
   builtinPermissions: string[]
+  /** What a built-in MCP needs beyond its sign-in. */
+  builtinSettings: Record<string, string>
   builtinWriteEnabled: boolean
   authType: McpAuthType
   authBearer: string
@@ -125,6 +127,7 @@ export function emptyMcpFormValues(): McpFormValues {
     builtinPassword: '',
     builtinAliases: '',
     builtinPermissions: [],
+    builtinSettings: {},
     builtinWriteEnabled: false,
     authType: 'auto',
     authBearer: '',
@@ -148,6 +151,7 @@ export function mcpFormValuesFromRow(mcp: {
   builtinUsername: string | null
   builtinAliases: string[]
   builtinPermissions: string[]
+  builtinSettings: Record<string, string>
   builtinWriteEnabled: boolean
   authType: McpAuthType
   authHeaderName: string | null
@@ -174,6 +178,7 @@ export function mcpFormValuesFromRow(mcp: {
     builtinUsername: mcp.builtinUsername ?? '',
     builtinAliases: mcp.builtinAliases.join(', '),
     builtinPermissions: mcp.builtinPermissions,
+    builtinSettings: mcp.builtinSettings,
     builtinWriteEnabled: mcp.builtinWriteEnabled,
     authType: mcp.authType,
     authHeaderName: mcp.authHeaderName ?? '',
@@ -235,6 +240,7 @@ export function McpFormFields({
           password={values.builtinPassword}
           aliases={values.builtinAliases}
           permissions={values.builtinPermissions}
+          settings={values.builtinSettings}
           writeEnabled={values.builtinWriteEnabled}
           onChange={onChange}
           errors={errors}

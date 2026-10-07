@@ -7,6 +7,7 @@
 import type { InferData, InferVariants } from '@adonisjs/core/types/transformers'
 import type { InferSharedProps, InferFlashData } from '@adonisjs/inertia/types'
 import type AccessTokenTransformer from '#transformers/access_token_transformer'
+import type ApprovalRequestTransformer from '#transformers/approval_request_transformer'
 import type InviteTransformer from '#transformers/invite_transformer'
 import type McpCallLogTransformer from '#transformers/mcp_call_log_transformer'
 import type McpTransformer from '#transformers/mcp_transformer'
@@ -18,6 +19,10 @@ export namespace Data {
   export type AccessToken = InferData<AccessTokenTransformer>
   export namespace AccessToken {
     export type Variants = InferVariants<AccessTokenTransformer>
+  }
+  export type ApprovalRequest = InferData<ApprovalRequestTransformer>
+  export namespace ApprovalRequest {
+    export type Variants = InferVariants<ApprovalRequestTransformer>
   }
   export type Invite = InferData<InviteTransformer>
   export namespace Invite {

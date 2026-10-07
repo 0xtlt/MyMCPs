@@ -82,6 +82,57 @@ export class AccessTokenSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
+export class ApprovalRequestSchema extends BaseModel {
+  static $columns = [
+    'accessTokenId',
+    'arguments',
+    'argumentsHash',
+    'consumedAt',
+    'createdAt',
+    'decidedAt',
+    'decidedBy',
+    'expiresAt',
+    'id',
+    'mcpId',
+    'publicId',
+    'status',
+    'summary',
+    'toolName',
+    'updatedAt',
+  ] as const
+  $columns = ApprovalRequestSchema.$columns
+  @column()
+  declare accessTokenId: number
+  @column()
+  declare arguments: string
+  @column()
+  declare argumentsHash: string
+  @column.dateTime()
+  declare consumedAt: DateTime | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare decidedAt: DateTime | null
+  @column()
+  declare decidedBy: number | null
+  @column.dateTime()
+  declare expiresAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mcpId: number
+  @column()
+  declare publicId: string
+  @column()
+  declare status: string
+  @column()
+  declare summary: string
+  @column()
+  declare toolName: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class InstanceSettingSchema extends BaseModel {
   static $columns = [
     'createdAt',
@@ -221,6 +272,7 @@ export class McpSchema extends BaseModel {
     'builtinKey',
     'builtinPassword',
     'builtinPermissions',
+    'builtinSettings',
     'builtinUsername',
     'builtinWriteEnabled',
     'createdAt',
@@ -251,6 +303,7 @@ export class McpSchema extends BaseModel {
     'oauthTokenUrl',
     'slug',
     'status',
+    'toolApprovals',
     'transport',
     'updatedAt',
   ] as const
@@ -271,6 +324,8 @@ export class McpSchema extends BaseModel {
   declare builtinPassword: string | null
   @column()
   declare builtinPermissions: string | null
+  @column()
+  declare builtinSettings: string | null
   @column()
   declare builtinUsername: string | null
   @column()
@@ -331,6 +386,8 @@ export class McpSchema extends BaseModel {
   declare slug: string
   @column()
   declare status: string
+  @column()
+  declare toolApprovals: string | null
   @column()
   declare transport: string
   @column.dateTime({ autoCreate: true, autoUpdate: true })

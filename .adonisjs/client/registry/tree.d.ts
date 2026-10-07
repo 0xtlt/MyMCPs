@@ -39,6 +39,11 @@ export interface ApiDefinition {
     store: typeof routes['invites.store']
     destroy: typeof routes['invites.destroy']
   }
+  approvals: {
+    show: typeof routes['approvals.show']
+    index: typeof routes['approvals.index']
+    decide: typeof routes['approvals.decide']
+  }
   home: typeof routes['home']
   settings: {
     index: typeof routes['settings.index']
@@ -65,6 +70,8 @@ export interface ApiDefinition {
     probe: typeof routes['mcps.probe']
     updateNpm: typeof routes['mcps.updateNpm']
     oauthStart: typeof routes['mcps.oauthStart']
+    tools: typeof routes['mcps.tools']
+    updateTools: typeof routes['mcps.updateTools']
   }
   tokens: {
     index: typeof routes['tokens.index']

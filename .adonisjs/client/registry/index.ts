@@ -120,6 +120,12 @@ const routes = {
     tokens: [{"old":"/invite/:token","type":0,"val":"invite","end":""},{"old":"/invite/:token","type":1,"val":"token","end":""}],
     types: placeholder as Registry['invites.accept']['types'],
   },
+  'approvals.show': {
+    methods: ["GET","HEAD"],
+    pattern: '/approvals/:id',
+    tokens: [{"old":"/approvals/:id","type":0,"val":"approvals","end":""},{"old":"/approvals/:id","type":1,"val":"id","end":""}],
+    types: placeholder as Registry['approvals.show']['types'],
+  },
   'home': {
     methods: ["GET","HEAD"],
     pattern: '/',
@@ -245,6 +251,30 @@ const routes = {
     pattern: '/mcps/:id/oauth/start',
     tokens: [{"old":"/mcps/:id/oauth/start","type":0,"val":"mcps","end":""},{"old":"/mcps/:id/oauth/start","type":1,"val":"id","end":""},{"old":"/mcps/:id/oauth/start","type":0,"val":"oauth","end":""},{"old":"/mcps/:id/oauth/start","type":0,"val":"start","end":""}],
     types: placeholder as Registry['mcps.oauthStart']['types'],
+  },
+  'mcps.tools': {
+    methods: ["GET","HEAD"],
+    pattern: '/mcps/:id/tools',
+    tokens: [{"old":"/mcps/:id/tools","type":0,"val":"mcps","end":""},{"old":"/mcps/:id/tools","type":1,"val":"id","end":""},{"old":"/mcps/:id/tools","type":0,"val":"tools","end":""}],
+    types: placeholder as Registry['mcps.tools']['types'],
+  },
+  'mcps.updateTools': {
+    methods: ["PUT"],
+    pattern: '/mcps/:id/tools',
+    tokens: [{"old":"/mcps/:id/tools","type":0,"val":"mcps","end":""},{"old":"/mcps/:id/tools","type":1,"val":"id","end":""},{"old":"/mcps/:id/tools","type":0,"val":"tools","end":""}],
+    types: placeholder as Registry['mcps.updateTools']['types'],
+  },
+  'approvals.index': {
+    methods: ["GET","HEAD"],
+    pattern: '/approvals',
+    tokens: [{"old":"/approvals","type":0,"val":"approvals","end":""}],
+    types: placeholder as Registry['approvals.index']['types'],
+  },
+  'approvals.decide': {
+    methods: ["POST"],
+    pattern: '/approvals/:id',
+    tokens: [{"old":"/approvals/:id","type":0,"val":"approvals","end":""},{"old":"/approvals/:id","type":1,"val":"id","end":""}],
+    types: placeholder as Registry['approvals.decide']['types'],
   },
   'tokens.index': {
     methods: ["GET","HEAD"],

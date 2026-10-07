@@ -210,6 +210,25 @@ export function pattern(expression: RegExp, hint: string) {
   return new VineArgument<string>(patternRule({ expression, hint })).parse(blankAsMissing)
 }
 
+const fileNameRule = toolVine.createRule((value, _options, field) => {
+  if (/[\\/]/.test(value as string)) {
+    field.report(
+      '{{ field }} must be the name of the file, such as report.pdf, without its folder',
+      'fileName',
+      field
+    )
+  }
+})
+
+/** The name of a file sent to an upload link. It never names a file on the instance. */
+export function uploadedFileName(max: number) {
+  return line(max).use(fileNameRule())
+}
+
+export function mediaType() {
+  return pattern(/^[\w.+-]{1,100}\/[\w.+-]{1,100}$/, 'a media type, such as application/pdf')
+}
+
 const isoDateRule = toolVine.createRule((value, _options, field) => {
   const parsed = typeof value === 'string' ? DateTime.fromISO(value.trim(), { zone: 'utc' }) : null
   if (!parsed?.isValid) {

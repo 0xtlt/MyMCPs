@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Form } from '@adonisjs/inertia/react'
 import { AppShell, useAppShellMobile } from '@astryxdesign/core/AppShell'
 import { Avatar } from '@astryxdesign/core/Avatar'
+import { Badge } from '@astryxdesign/core/Badge'
 import { Banner } from '@astryxdesign/core/Banner'
 import { Button } from '@astryxdesign/core/Button'
 import { Center } from '@astryxdesign/core/Center'
@@ -108,6 +109,7 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
   const { url } = page
   const user = children.props.user
   const setupComplete = children.props.setupComplete ?? true
+  const pendingApprovals = children.props.pendingApprovals ?? 0
   const isOnboarding = url.startsWith('/onboarding')
   const isAuthScreen = isOnboarding || url.startsWith('/login') || url.startsWith('/invite/')
 
@@ -137,6 +139,20 @@ export default function Layout({ children }: { children: ReactElement<Data.Share
                     href="/tokens"
                     isSelected={url.startsWith('/tokens')}
                   />
+                  <TopNavItem
+                    label={
+                      pendingApprovals > 0 ? `Approvals, ${pendingApprovals} waiting` : 'Approvals'
+                    }
+                    href="/approvals"
+                    isSelected={url.startsWith('/approvals')}
+                  >
+                    <HStack gap={1} vAlign="center">
+                      Approvals
+                      {pendingApprovals > 0 ? (
+                        <Badge label={String(pendingApprovals)} variant="warning" />
+                      ) : null}
+                    </HStack>
+                  </TopNavItem>
                   {user.isAdmin ? (
                     <>
                       <TopNavItem label="Logs" href="/logs" isSelected={url.startsWith('/logs')} />

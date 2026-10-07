@@ -36,6 +36,12 @@ export type BuiltinOauthConfig = {
   /** RFC 6749 separates scopes with spaces. Some providers expect commas. */
   scopeSeparator: string
   authorizeParams?: Readonly<Record<string, string>>
+  /**
+   * The provider wants the redirect URI again when the code is exchanged, as
+   * RFC 6749 asks. Opt-in, since a provider may also refuse a parameter it
+   * does not document.
+   */
+  sendsRedirectUriWithCode?: true
   /** Catches a secret pasted into the client ID field before the provider does. */
   clientIdPattern?: RegExp
   clientIdHint?: string
@@ -61,10 +67,28 @@ export type BuiltinPasswordConfig = {
   aliasHint: string
 }
 
+/**
+ * Something a provider needs beyond its sign-in, which the admin enters when
+ * adding the MCP: the account to act through, or the ones agents may use. Not
+ * for credentials: the values are shown again in the setup dialog.
+ */
+export type BuiltinSettingField = {
+  key: string
+  required?: true
+  pattern: RegExp
+  /** What the admin reads when the value is missing or does not match. */
+  hint: string
+  /** The form the value is stored in, such as an account number without its dashes. */
+  normalize?: (value: string) => string
+}
+
 export type BuiltinToolContext = {
+  mcpId: number
   accessToken: string
   /** `null` when the provider did not report which scopes were granted. */
   grantedScopes: string[] | null
+  /** What the admin entered for the provider's `settings`. A blank one is left out. */
+  settings: Readonly<Record<string, string>>
 }
 
 export type BuiltinPasswordContext = {
@@ -75,6 +99,8 @@ export type BuiltinPasswordContext = {
   permissions: string[]
   /** Other addresses of the same account that the admin lets agents act as. */
   aliases: string[]
+  /** What the admin entered for the provider's `settings`. A blank one is left out. */
+  settings: Readonly<Record<string, string>>
 }
 
 /** A file a tool linked to, such as a mail attachment. */
@@ -95,6 +121,27 @@ export type BuiltinUploadTarget = {
   maxBytes: number
 }
 
+/**
+ * What a call would do, in MyMCPs' own words, for the person asked to approve
+ * it. Nothing in it is written by the agent: names and current values are read
+ * from the provider, and the agent's arguments only appear as the values they are.
+ */
+export type ApprovalSummary = {
+  /** One sentence, such as `Change the daily budget of campaign "Spring sale"`. */
+  title: string
+  /** What the call sets, and for a change, the value it replaces. */
+  details: ApprovalDetail[]
+  /** What the person should weigh before deciding, such as a budget multiplied by 100. */
+  warnings?: string[]
+}
+
+export type ApprovalDetail = {
+  label: string
+  value: string
+  /** The current value this one replaces. */
+  before?: string
+}
+
 export type BuiltinTool<Context = BuiltinToolContext> = {
   name: string
   description: string
@@ -109,8 +156,18 @@ export type BuiltinTool<Context = BuiltinToolContext> = {
   requiresAnyScope?: readonly string[]
   /** Changes data at the provider. Unavailable until the admin allows write access. */
   write?: true
+  /**
+   * A person approves each call before it runs, until the admin decides
+   * otherwise for this MCP. For the tools that commit money or go live.
+   */
+  approval?: 'ask'
   /** Returns JSON-serializable data. Throw `BuiltinToolError` for expected failures. */
   run: (args: Record<string, unknown>, context: Context) => Promise<unknown>
+  /**
+   * Checks the arguments like `run` and says what the call would do, without
+   * doing it. `null` when the tool has nothing to add to its arguments.
+   */
+  describe: (args: Record<string, unknown>, context: Context) => Promise<ApprovalSummary | null>
 }
 
 export type BuiltinMcpProvider<Context> = {
@@ -118,6 +175,8 @@ export type BuiltinMcpProvider<Context> = {
   /** Provider name used in messages, such as "Strava". */
   name: string
   tools: readonly BuiltinTool<Context>[]
+  /** What the admin enters besides the sign-in. Tools read it from their context. */
+  settings?: readonly BuiltinSettingField[]
   /** One cheap authenticated request proving the saved sign-in still works. */
   verify: (context: Context) => Promise<void>
   /**

@@ -3,7 +3,7 @@ import McpSecretStore from '#services/mcp_secret_store'
 import { readCachedNpmPackageVersion } from '#services/upstream/deno_runner'
 import { usesPastedOauthCallback } from '#services/upstream/oauth'
 import { builtinMcp } from '#services/builtin/registry'
-import { builtinWriteGranted } from '#services/builtin/runtime'
+import { builtinSettings, builtinWriteGranted } from '#services/builtin/runtime'
 import { BaseTransformer } from '@adonisjs/core/transformers'
 
 export default class McpTransformer extends BaseTransformer<Mcp> {
@@ -11,6 +11,8 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
    * Full MCP payload for the admin registry UI (never includes decrypted secrets).
    */
   toObject() {
+    const definition = builtinMcp(this.resource.builtinKey)
+
     return {
       ...this.pick(this.resource, [
         'id',
@@ -44,10 +46,10 @@ export default class McpTransformer extends BaseTransformer<Mcp> {
       hasBuiltinPassword: McpSecretStore.hasSecret(this.resource.builtinPassword),
       builtinPermissions: this.resource.builtinPermissions?.split(' ') ?? [],
       builtinAliases: this.resource.builtinAliases?.split(' ') ?? [],
+      builtinSettings: definition ? builtinSettings(definition, this.resource) : {},
       builtinWriteEnabled: Boolean(this.resource.builtinWriteEnabled),
       // False when write access is on but the saved authorization predates it.
-      builtinWriteGranted:
-        Boolean(builtinMcp(this.resource.builtinKey)) && builtinWriteGranted(this.resource),
+      builtinWriteGranted: Boolean(definition) && builtinWriteGranted(this.resource),
       oauthRequired: Boolean(this.resource.oauthRequired),
       oauthPastedCallback: usesPastedOauthCallback(this.resource),
       npmCachedVersion:

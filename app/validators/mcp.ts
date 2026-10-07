@@ -114,6 +114,11 @@ const mcpPayload = {
     .nullable()
     .optional()
     .transform((value): string[] => (value ? value.split(/[\s,;]+/).filter(Boolean) : [])),
+  /**
+   * What a built-in MCP needs beyond its sign-in, by the keys its provider
+   * declares. Each provider checks its own values.
+   */
+  builtinSettings: vine.record(vine.string().maxLength(4000).nullable()).optional(),
   /** Lets a built-in MCP request write scopes and expose its write tools. */
   builtinWriteEnabled: vine.boolean().optional(),
   authType,
