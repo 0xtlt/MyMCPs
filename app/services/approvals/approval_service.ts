@@ -11,6 +11,7 @@ import { argumentsSummary, type SavedApprovalSummary } from '#services/approvals
 import { BuiltinToolError } from '#services/builtin/definition'
 import { requireBuiltinMcp } from '#services/builtin/registry'
 import { describeBuiltinCall } from '#services/builtin/runtime'
+import { changedRows } from '#services/changed_rows'
 import McpSecretStore from '#services/mcp_secret_store'
 import { publicOauthAppUrl } from '#services/public_url'
 import { sanitizeDiagnostic } from '#services/security_redaction'
@@ -53,14 +54,6 @@ class ApprovalRefusal extends Error {}
 
 function sqlTime(time: DateTime) {
   return time.toSQL({ includeOffset: false })!
-}
-
-/**
- * How many rows an update changed. SQLite answers with that number in an
- * array, whether or not the query asks for the rows back.
- */
-function changedRows(result: unknown) {
-  return Number(Array.isArray(result) ? result[0] : result)
 }
 
 function sorted(value: unknown): unknown {
