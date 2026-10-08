@@ -17,6 +17,8 @@ export type ScannedRoutes = {
     'oauth.revoke': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
     'onboarding.store': { paramsTuple?: []; params?: {} }
+    'onboarding.showImport': { paramsTuple?: []; params?: {} }
+    'onboarding.storeImport': { paramsTuple?: []; params?: {} }
     'gateway.handle': { paramsTuple?: []; params?: {} }
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
@@ -30,6 +32,7 @@ export type ScannedRoutes = {
     'settings.updateEmail': { paramsTuple?: []; params?: {} }
     'settings.updatePassword': { paramsTuple?: []; params?: {} }
     'settings.updateMcpLogging': { paramsTuple?: []; params?: {} }
+    'settings.exportBackup': { paramsTuple?: []; params?: {} }
     'logs.index': { paramsTuple?: []; params?: {} }
     'analytics.index': { paramsTuple?: []; params?: {} }
     'invites.index': { paramsTuple?: []; params?: {} }
@@ -63,6 +66,7 @@ export type ScannedRoutes = {
     'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }
     'oauth.authorize': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
+    'onboarding.showImport': { paramsTuple?: []; params?: {} }
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
@@ -88,6 +92,7 @@ export type ScannedRoutes = {
     'oauth_server.protected_resource_metadata': { paramsTuple?: []; params?: {} }
     'oauth.authorize': { paramsTuple?: []; params?: {} }
     'onboarding.show': { paramsTuple?: []; params?: {} }
+    'onboarding.showImport': { paramsTuple?: []; params?: {} }
     'gateway.handleGet': { paramsTuple?: []; params?: {} }
     'session.create': { paramsTuple?: []; params?: {} }
     'invites.show': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
@@ -117,10 +122,12 @@ export type ScannedRoutes = {
     'oauth.token': { paramsTuple?: []; params?: {} }
     'oauth.revoke': { paramsTuple?: []; params?: {} }
     'onboarding.store': { paramsTuple?: []; params?: {} }
+    'onboarding.storeImport': { paramsTuple?: []; params?: {} }
     'gateway.handle': { paramsTuple?: []; params?: {} }
     'session.store': { paramsTuple?: []; params?: {} }
     'invites.accept': { paramsTuple: [ParamValue]; params: {'token': ParamValue} }
     'session.destroy': { paramsTuple?: []; params?: {} }
+    'settings.exportBackup': { paramsTuple?: []; params?: {} }
     'invites.store': { paramsTuple?: []; params?: {} }
     'mcps.store': { paramsTuple?: []; params?: {} }
     'mcps.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }

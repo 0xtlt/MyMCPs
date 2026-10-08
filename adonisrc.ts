@@ -72,6 +72,10 @@ export default defineConfig({
       file: () => import('#providers/builtin_upload_provider'),
       environment: ['web'],
     },
+    {
+      file: () => import('#providers/backup_provider'),
+      environment: ['web'],
+    },
     () => import('@adonisjs/limiter/limiter_provider'),
   ],
 

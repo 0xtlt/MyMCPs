@@ -16,6 +16,7 @@ import { Heading, Text } from '@astryxdesign/core/Text'
 
 export default function SettingsIndex({
   mcpLogging,
+  backup,
 }: {
   mcpLogging: {
     gatewayToolMode: 'eager' | 'lazy'
@@ -24,9 +25,14 @@ export default function SettingsIndex({
     autoUpdateEnabled: boolean
     autoUpdateCron: string
   } | null
+  /** `exportRefused`: this page follows an export that was refused, and `errors` says why. */
+  backup: { csrfToken: string; exportRefused: boolean } | null
 }) {
   const { props } = usePage<Data.SharedProps>()
   const user = props.user!
+  const refusedExport: Record<string, string | undefined> = backup?.exportRefused
+    ? props.errors
+    : {}
   const [isEmailOpen, setIsEmailOpen] = useState(false)
   const [isPasswordOpen, setIsPasswordOpen] = useState(false)
   const [email, setEmail] = useState(user.email)
@@ -39,6 +45,11 @@ export default function SettingsIndex({
   const [mcpLogRetentionDays, setMcpLogRetentionDays] = useState(mcpLogging?.retentionDays ?? 14)
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(mcpLogging?.autoUpdateEnabled ?? false)
   const [autoUpdateCron, setAutoUpdateCron] = useState(mcpLogging?.autoUpdateCron ?? '0 2 * * *')
+  const [isBackupOpen, setIsBackupOpen] = useState(backup?.exportRefused ?? false)
+  const [backupErrors, setBackupErrors] = useState(refusedExport)
+  const [backupPassword, setBackupPassword] = useState('')
+  const [backupPasswordConfirmation, setBackupPasswordConfirmation] = useState('')
+  const [backupCurrentPassword, setBackupCurrentPassword] = useState('')
 
   function openEmailDialog() {
     setEmail(user.email)
@@ -64,6 +75,30 @@ export default function SettingsIndex({
     setPasswordCurrentPassword('')
     setNewPassword('')
     setPasswordConfirmation('')
+  }
+
+  function emptyBackupDialog() {
+    setBackupErrors({})
+    setBackupPassword('')
+    setBackupPasswordConfirmation('')
+    setBackupCurrentPassword('')
+  }
+
+  function openBackupDialog() {
+    emptyBackupDialog()
+    setIsBackupOpen(true)
+  }
+
+  /**
+   * The browser sends this form itself, to save the file it gets back, and
+   * stays on the page. It reads the fields when this handler returns, so
+   * they are emptied just after.
+   */
+  function closeBackupDialogAfterSubmit() {
+    setTimeout(() => {
+      setIsBackupOpen(false)
+      emptyBackupDialog()
+    }, 0)
   }
 
   return (
@@ -130,7 +165,7 @@ export default function SettingsIndex({
         </Section>
 
         {user.isAdmin ? (
-          <Section padding={0} width="100%">
+          <Section padding={0} width="100%" dividers={backup ? ['bottom'] : undefined}>
             <Form route="settings.updateMcpLogging">
               {({ errors, processing }) => (
                 <VStack className="settings-section-content" gap={5} padding={6} hAlign="stretch">
@@ -254,6 +289,36 @@ export default function SettingsIndex({
                 </VStack>
               )}
             </Form>
+          </Section>
+        ) : null}
+
+        {user.isAdmin && backup ? (
+          <Section padding={0} width="100%">
+            <VStack className="settings-section-content" gap={5} padding={6}>
+              <VStack gap={1}>
+                <Heading level={2}>Backup</Heading>
+                <Text type="body" color="secondary">
+                  Export everything this instance stores to one encrypted file. Import it on the
+                  setup screen of a new instance.
+                </Text>
+              </VStack>
+
+              <HStack
+                className="settings-account-action-row"
+                gap={4}
+                hAlign="between"
+                vAlign="center"
+                wrap="wrap"
+              >
+                <VStack gap={1}>
+                  <Text type="label">Export backup</Text>
+                  <Text type="body" color="secondary">
+                    Users, MCPs with their credentials, access tokens, call logs and settings.
+                  </Text>
+                </VStack>
+                <Button label="Export backup" variant="secondary" onClick={openBackupDialog} />
+              </HStack>
+            </VStack>
           </Section>
         ) : null}
       </VStack>
@@ -414,6 +479,104 @@ export default function SettingsIndex({
           )}
         </Form>
       </Dialog>
+
+      {backup ? (
+        <Dialog isOpen={isBackupOpen} onOpenChange={setIsBackupOpen} purpose="form" width={480}>
+          {/* Not an Inertia form: only a form the browser posts itself can save the file. */}
+          <form
+            method="post"
+            action="/settings/backup"
+            className="dialog-form-fill"
+            onSubmit={closeBackupDialogAfterSubmit}
+          >
+            <input type="hidden" name="_csrf" value={backup.csrfToken} />
+            <Layout
+              header={
+                <DialogHeader
+                  title="Export backup"
+                  subtitle="The file is encrypted with the password you choose. It cannot be opened without it."
+                  onOpenChange={setIsBackupOpen}
+                />
+              }
+              content={
+                <LayoutContent isScrollable>
+                  {/*
+                    The backup password is not the one of an account: a password
+                    manager that took it for one would offer to replace the saved
+                    sign-in with it. `autoComplete="off"` alone does not stop them.
+                  */}
+                  <VStack gap={4}>
+                    <TextInput
+                      label="Backup password"
+                      type="password"
+                      htmlName="password"
+                      value={backupPassword}
+                      onChange={setBackupPassword}
+                      autoComplete="off"
+                      data-1p-ignore
+                      data-bwignore
+                      data-lpignore="true"
+                      width="100%"
+                      isRequired
+                      status={
+                        backupErrors.password
+                          ? { type: 'error', message: backupErrors.password }
+                          : undefined
+                      }
+                    />
+                    <TextInput
+                      label="Confirm backup password"
+                      type="password"
+                      htmlName="passwordConfirmation"
+                      value={backupPasswordConfirmation}
+                      onChange={setBackupPasswordConfirmation}
+                      autoComplete="off"
+                      data-1p-ignore
+                      data-bwignore
+                      data-lpignore="true"
+                      width="100%"
+                      isRequired
+                      status={
+                        backupErrors.passwordConfirmation
+                          ? { type: 'error', message: backupErrors.passwordConfirmation }
+                          : undefined
+                      }
+                    />
+                    <TextInput
+                      label="Current password"
+                      type="password"
+                      htmlName="currentPassword"
+                      value={backupCurrentPassword}
+                      onChange={setBackupCurrentPassword}
+                      autoComplete="current-password"
+                      description="Your account password, to confirm it is you."
+                      width="100%"
+                      isRequired
+                      status={
+                        backupErrors.currentPassword
+                          ? { type: 'error', message: backupErrors.currentPassword }
+                          : undefined
+                      }
+                    />
+                  </VStack>
+                </LayoutContent>
+              }
+              footer={
+                <LayoutFooter>
+                  <HStack gap={2} hAlign="end">
+                    <Button
+                      label="Cancel"
+                      variant="secondary"
+                      onClick={() => setIsBackupOpen(false)}
+                    />
+                    <Button type="submit" label="Export backup" variant="primary" />
+                  </HStack>
+                </LayoutFooter>
+              }
+            />
+          </form>
+        </Dialog>
+      ) : null}
     </>
   )
 }

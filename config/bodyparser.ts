@@ -45,11 +45,13 @@ const bodyParserConfig = defineConfig({
 
   /**
    * Config for the "multipart/form-data" content-type parser.
-   * No form of the app takes a file, so multipart bodies are never parsed:
-   * left on, any anonymous request could have files streamed to the system
-   * tmp directory ahead of authentication, where nothing removes them. The
-   * one route that takes a file checks a signature first and reads the body
-   * itself (see the request body middleware).
+   * Multipart bodies are never parsed here: left on, any anonymous request
+   * could have files streamed to the system tmp directory ahead of
+   * authentication, where nothing removes them. The two routes that take a
+   * file read the body themselves, once the request has passed their checks:
+   * an upload link checks its signature first (see the request body
+   * middleware), and the import of a backup, the one form with a file, has
+   * a parser of its own (see app/services/backup/upload.ts).
    */
   multipart: {
     /**

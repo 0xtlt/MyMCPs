@@ -67,6 +67,15 @@ router
   .group(() => {
     router.get('onboarding', [controllers.Onboarding, 'show']).as('onboarding.show')
     router.post('onboarding', [controllers.Onboarding, 'store']).as('onboarding.store')
+    // A new instance can take the data of another one instead of a first
+    // account. The controller reads the file of this form itself, once the
+    // request has passed every check: see the comment in config/bodyparser.ts.
+    router
+      .get('onboarding/import', [controllers.Onboarding, 'showImport'])
+      .as('onboarding.showImport')
+    router
+      .post('onboarding/import', [controllers.Onboarding, 'storeImport'])
+      .as('onboarding.storeImport')
   })
   .use(middleware.setupComplete())
 
@@ -124,6 +133,9 @@ router
             router
               .patch('settings/mcp-logging', [controllers.Settings, 'updateMcpLogging'])
               .as('settings.updateMcpLogging')
+            router
+              .post('settings/backup', [controllers.Settings, 'exportBackup'])
+              .as('settings.exportBackup')
             router.get('logs', [controllers.Logs, 'index']).as('logs.index')
             router.get('analytics', [controllers.Analytics, 'index']).as('analytics.index')
             router.get('invites', [controllers.Invites, 'index']).as('invites.index')

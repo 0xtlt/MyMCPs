@@ -11,6 +11,7 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 - Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
 - Exposes every allowed upstream through `GET` and `POST /mcp`.
 - Records gateway activity and usage analytics.
+- Exports the whole instance to one password-protected file, to import on a new instance.
 
 MyMCPs is self-hosted and invite-only. The first user becomes the administrator during onboarding.
 
@@ -86,6 +87,8 @@ This repository includes a production Docker image, a Compose service, and a `co
 The deployment exposes port `3333`, checks `/health`, and runs database migrations before the app starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`. Files the container creates in the volume are readable only by its `node` user.
 
 `APP_KEY` is required, but you do not need to create it in Coolify. On the first start, the container generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable. In production the server refuses to start with either key published in this repository: the Docker build placeholder or the test key in `.env.test`.
+
+To move an instance, or to keep a copy outside the volume, an administrator can export an encrypted backup under **Settings → Backup** and import it on the setup screen of a new instance, whatever its `APP_KEY`. See [docs/backup.md](docs/backup.md).
 
 The Coolify profile sets `TRUST_PROXY=loopback,uniquelocal`: the app accepts a forwarded client IP only from a proxy on the loopback interface or a private network, such as Coolify's proxy. Rate limits and logs then use the real client address, and a client cannot choose its own. `TRUST_PROXY` accepts `true`, `false`, or a comma-separated list of proxy IPs, CIDR ranges, and the names `loopback`, `linklocal`, and `uniquelocal`. If a CDN sits in front of the proxy, add the CDN's address ranges, or every client appears as a CDN edge address. A deployment created before this default changed keeps the `true` stored in its environment until you edit it.
 

@@ -2,6 +2,20 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-08
+
+### Added
+
+- Added encrypted backups. Under **Settings → Backup**, an administrator chooses a password, confirms with the password of their account, and downloads one `.mymcps` file, named after the date and time of the export, that holds everything the instance stores: users, MCPs with their credentials, access tokens, call logs and settings. The setup screen of a new instance offers **Import a backup** beside creating the admin account: choose the file, enter its password, then sign in with an account of the imported instance. The file carries the `APP_KEY` its credentials were encrypted with, so it imports into an instance that has another key, and a backup made by an older version is brought to the current schema on the way in. Files on disk are not part of it: npm sandboxes and the Deno cache are downloaded again, and uploads waiting for a built-in MCP are short-lived. A backup takes up to 4 GB, and a reverse proxy in front of the instance must accept a request body of the size of the file to import; [docs/backup.md](docs/backup.md) has the details.
+
+### Security
+
+- A backup is encrypted with AES-256-GCM, in chunks of 64 KiB, under a key derived from its password with scrypt. A file that was changed, cut short, reordered or continued does not open, and neither does one whose header asks for more than 256 MiB of memory to derive its key.
+- Exporting a backup asks for the current password of the account again. It shares the allowance of the email and password changes, 5 attempts per 15 minutes, and each export is recorded in the server log.
+- The import form only exists while the instance has no account. Its file is read once the CSRF token, the absence of any account and the rate limit, 10 imports per 15 minutes for each client address, have been checked. It is written to a private directory under `tmp/backup-tmp`, never held in memory, and refused past 4 GB; one import runs at a time, and the directory is deleted whatever the outcome, and when the server starts.
+- An imported database is checked before it is trusted. It is opened read-only with an untrusted schema and must pass SQLite's integrity check, be made of plain tables and indexes (no trigger, no view, no virtual table), come from a version this one knows, and have an administrator. It must then have the tables and columns of the instance and no other, and its rows are copied table by table and column by column, in one transaction that fails on any row that refers to a missing one. A refused backup leaves the instance as it was. The counters of the rate limiter are never imported.
+- A form posted without a valid CSRF token no longer has its fields copied into the session. The export form is the one form the browser posts itself, and it is made of passwords; a refused export likewise sends back its errors without what was typed.
+
 ## 2026-10-07
 
 ### Added

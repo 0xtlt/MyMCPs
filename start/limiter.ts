@@ -54,3 +54,12 @@ export const builtinUploadRateLimiter = limiter.use({
   requests: 60,
   duration: '15 minutes',
 })
+
+/**
+ * Each import of a backup writes a file of up to 4 GiB to the instance's
+ * disk and derives a key from a password, for a visitor without an account.
+ */
+export const backupImportRateLimiter = limiter.use({
+  requests: 10,
+  duration: '15 minutes',
+})
