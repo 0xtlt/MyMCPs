@@ -436,3 +436,47 @@ async fn returns_the_mcp_response_before_a_queued_log_write_completes() {
     assert_eq!(logs.len(), 1);
     assert_eq!(logs[0].outcome, CallOutcome::Success);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn writes_the_records_of_a_burst_together_and_in_order() {
+    const CALLS: usize = 150;
+
+    let gateway = TestGateway::new(tool_server).await;
+    let (_, plaintext) = logging_setup(&gateway, |_| {}).await;
+    let db = gateway.db();
+    // The first call of a token writes when the token was last used.
+    gateway
+        .post_message(&plaintext, tool_call("logging__echo", None), &[])
+        .await;
+    gateway.flush().await;
+
+    // While this transaction is open nothing else can write to the
+    // database: every call is answered, and its record waits.
+    let blocking_write = db.begin().await.unwrap();
+    for call in 0..CALLS {
+        // Every other call names a tool the MCP does not have.
+        let tool = if call % 2 == 0 {
+            "logging__echo"
+        } else {
+            "logging__missing"
+        };
+        let response = gateway
+            .post_message(&plaintext, tool_call(tool, None), &[])
+            .await;
+        assert_eq!(response.status, StatusCode::OK, "call {call}");
+    }
+    blocking_write.commit().await.unwrap();
+    gateway.flush().await;
+
+    // Nothing was dropped, and the records are in the order of the calls.
+    let logs = gateway.call_logs().await;
+    assert_eq!(logs.len(), 1 + CALLS);
+    for (call, log) in logs[1..].iter().enumerate() {
+        let expected = if call % 2 == 0 {
+            "logging__echo"
+        } else {
+            "logging__missing"
+        };
+        assert_eq!(log.requested_tool_name, expected, "record {call}");
+    }
+}

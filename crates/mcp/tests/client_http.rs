@@ -960,3 +960,109 @@ async fn hands_background_failures_to_the_error_listener() {
         vec!["Streamable HTTP error: Failed to open SSE stream: Service Unavailable".to_owned()]
     );
 }
+
+/// How long [`counting_server`] takes to end what a client does not wait for.
+const SERVER_LAG: Duration = Duration::from_millis(15);
+
+/// A server on real sockets that counts the connections it accepts. It
+/// answers the handshake and `tools/list`, as JSON or as an event stream
+/// that ends a moment after its answer, and takes a moment to refuse the
+/// stream of server-initiated messages, with a body to read: a client that
+/// closes as soon as it has its answer closes before either has ended.
+async fn counting_server(event_streams: bool) -> (Url, Arc<AtomicUsize>) {
+    use axum::serve::ListenerExt;
+
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let counter = accepted.clone();
+    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+        .await
+        .unwrap();
+    let url = Url::parse(&format!("http://{}/mcp", listener.local_addr().unwrap())).unwrap();
+    let app = axum::Router::new().fallback(move |request: Request| async move {
+        let refused = || {
+            Response::builder()
+                .status(StatusCode::METHOD_NOT_ALLOWED)
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"error":"This server offers no stream"}"#))
+                .unwrap()
+        };
+        if request.method() != http::Method::POST {
+            tokio::time::sleep(SERVER_LAG).await;
+            return refused();
+        }
+        let body = axum::body::to_bytes(request.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let message: Value = serde_json::from_slice(&body).unwrap();
+        let result = match message["method"].as_str() {
+            Some("initialize") => json!({
+                "protocolVersion": "2025-06-18",
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": "srv", "version": "1" },
+            }),
+            Some("tools/list") => json!({ "tools": [] }),
+            // A notification.
+            _ => {
+                return Response::builder()
+                    .status(StatusCode::ACCEPTED)
+                    .body(Body::empty())
+                    .unwrap();
+            }
+        };
+        let answer = json!({ "jsonrpc": "2.0", "id": message["id"], "result": result }).to_string();
+        if event_streams {
+            let event = format!("event: message\ndata: {answer}\n\n");
+            let end = stream::once(async {
+                tokio::time::sleep(SERVER_LAG).await;
+                Ok::<_, std::convert::Infallible>(String::new())
+            });
+            Response::builder()
+                .header("content-type", "text/event-stream")
+                .body(Body::from_stream(stream::iter([Ok(event)]).chain(end)))
+                .unwrap()
+        } else {
+            Response::builder()
+                .header("content-type", "application/json")
+                .body(Body::from(answer))
+                .unwrap()
+        }
+    });
+    tokio::spawn(async move {
+        let listener = listener.tap_io(move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        });
+        axum::serve(listener, app).await.unwrap();
+    });
+    (url, accepted)
+}
+
+/// The gateway opens a session for each call it relays and closes it as soon
+/// as the call is answered. Closing must not cost a connection: what it
+/// leaves unread is what the next session would have reused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sessions_opened_and_closed_in_a_row_share_their_connections() {
+    const SESSIONS: usize = 30;
+
+    for event_streams in [false, true] {
+        let (url, accepted) = counting_server(event_streams).await;
+        let http = ReqwestSend::new();
+        for _ in 0..SESSIONS {
+            let transport = StreamableHttpClientTransport::new(url.clone(), http.clone());
+            let client = Client::new(Implementation::new("test-client", "1.0.0"));
+            client.connect(transport).await.unwrap();
+            client.list_tools().await.unwrap();
+            client.close().await;
+            // The next session starts once what this one left has ended, so
+            // that it finds every connection free.
+            tokio::time::sleep(SERVER_LAG * 3).await;
+        }
+
+        // One connection for the requests and one for the stream that is
+        // asked for meanwhile, with room for a session that found one busy.
+        let connections = accepted.load(Ordering::SeqCst);
+        assert!(
+            connections <= 5,
+            "{connections} connections for {SESSIONS} sessions (event streams: {event_streams})"
+        );
+    }
+}

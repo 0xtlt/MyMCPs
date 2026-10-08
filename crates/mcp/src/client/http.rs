@@ -9,6 +9,14 @@
 //! The transport opens no socket: the caller hands in the function that
 //! performs a request, and that function decides about addresses, redirects,
 //! timeouts and how much of a body it lets through.
+//!
+//! That function most often keeps connections open between requests, and a
+//! connection is only kept when its answer was read to the end. The gateway
+//! opens a session for each call and closes it a few milliseconds later, so
+//! what closing leaves unread decides whether the next session finds a
+//! connection or opens one. Closing therefore abandons what it must (a
+//! request that waits for its answer, a stream that is still listening) and
+//! lets the rest end by itself: see [`finish_quietly`].
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,6 +43,27 @@ const SESSION_ID: HeaderName = HeaderName::from_static("mcp-session-id");
 const PROTOCOL_VERSION: HeaderName = HeaderName::from_static("mcp-protocol-version");
 const LAST_EVENT_ID: HeaderName = HeaderName::from_static("last-event-id");
 
+/// How long an answer nobody waits for any more may take to end, and how
+/// much of it is read, for the sake of its connection.
+const QUIET_END: Duration = Duration::from_secs(5);
+const QUIET_END_BYTES: usize = 64 * 1024;
+
+/// Read to its end, within limits, a body whose content is not needed. The
+/// HTTP function keeps a connection whose answer was read whole, and closes
+/// one whose answer was dropped halfway.
+async fn finish_quietly(mut body: HttpBody) {
+    let _ = tokio::time::timeout(QUIET_END, async {
+        let mut read = 0;
+        while let Some(Ok(chunk)) = body.next().await {
+            read += chunk.len();
+            if read > QUIET_END_BYTES {
+                break;
+            }
+        }
+    })
+    .await;
+}
+
 pub struct HttpRequest {
     pub method: Method,
     pub url: Url,
@@ -56,8 +85,8 @@ pub struct HttpResponse {
 ///
 /// It returns once the headers of the answer are known. Redirects are its
 /// business: an answer with a 3xx status is reported as a failed request. The
-/// future and the body it returns are dropped when the transport is closed,
-/// and dropping them has to abandon the request.
+/// future and the body it returns may be dropped when the transport is
+/// closed, and dropping them has to abandon the request.
 #[async_trait]
 pub trait HttpSend: Send + Sync + 'static {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse, BoxError>;
@@ -290,6 +319,44 @@ impl Inner {
         }
     }
 
+    /// The GET that asks for the stream of server-initiated messages.
+    ///
+    /// Nothing waits for its answer, and it is sent while the first request
+    /// of the session is: a session that is closed as soon as that request
+    /// is answered would cut this one short every time, and with it a
+    /// connection. When the transport closes while the request is under
+    /// way, the request is therefore left to end by itself, within
+    /// [`QUIET_END`]: a refusal is read to its end, and a stream that does
+    /// open is dropped. A transport that is already closed sends nothing.
+    async fn fetch_stream(&self, headers: HeaderMap) -> Result<HttpResponse, TransportError> {
+        if self.aborted.is_cancelled() {
+            return Err(TransportError::Aborted);
+        }
+        let request = HttpRequest {
+            method: Method::GET,
+            url: self.url.clone(),
+            headers,
+            body: None,
+        };
+        let http = self.http.clone();
+        let mut pending: BoxFuture<'static, Result<HttpResponse, BoxError>> =
+            Box::pin(async move { http.send(request).await });
+        tokio::select! {
+            biased;
+            response = &mut pending => response.map_err(TransportError::Http),
+            () = self.aborted.cancelled() => {
+                tokio::spawn(async move {
+                    if let Ok(Ok(response)) = tokio::time::timeout(QUIET_END, pending).await
+                        && !response.status.is_success()
+                    {
+                        finish_quietly(response.body).await;
+                    }
+                });
+                Err(TransportError::Aborted)
+            }
+        }
+    }
+
     async fn read_body(&self, mut body: HttpBody) -> Result<Vec<u8>, TransportError> {
         let mut bytes = Vec::new();
         loop {
@@ -335,7 +402,7 @@ impl Inner {
         }
 
         if response.status == StatusCode::ACCEPTED {
-            drop(response.body);
+            tokio::spawn(finish_quietly(response.body));
             // The handshake is over: listen for what the server sends on its
             // own, if it offers that.
             if message.is_initialized_notification() {
@@ -349,6 +416,7 @@ impl Inner {
         }
 
         if !message.is_request() {
+            tokio::spawn(finish_quietly(response.body));
             return Ok(());
         }
         let content_type = header_value(&response.headers, CONTENT_TYPE.as_str());
@@ -400,14 +468,16 @@ impl Inner {
                 {
                     headers.insert(LAST_EVENT_ID, token);
                 }
-                let response = self.fetch(Method::GET, headers, None).await?;
+                let response = self.fetch_stream(headers).await?;
                 if !response.status.is_success() {
-                    if response.status == StatusCode::METHOD_NOT_ALLOWED {
+                    let status = response.status;
+                    tokio::spawn(finish_quietly(response.body));
+                    if status == StatusCode::METHOD_NOT_ALLOWED {
                         return Ok(());
                     }
                     return Err(TransportError::StreamableHttp {
-                        code: i32::from(response.status.as_u16()),
-                        message: format!("Failed to open SSE stream: {}", reason(response.status)),
+                        code: i32::from(status.as_u16()),
+                        message: format!("Failed to open SSE stream: {}", reason(status)),
                     });
                 }
                 self.clone().read_stream(response.body, true);
@@ -434,7 +504,14 @@ impl Inner {
             loop {
                 let chunk = tokio::select! {
                     biased;
-                    () = self.aborted.cancelled() => return,
+                    () = self.aborted.cancelled() => {
+                        // The answer this stream carried was handed over:
+                        // what is left of it is its end.
+                        if received_response {
+                            finish_quietly(body).await;
+                        }
+                        return;
+                    }
                     chunk = body.next() => chunk,
                 };
                 let chunk = match chunk {

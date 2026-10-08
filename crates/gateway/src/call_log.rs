@@ -27,6 +27,11 @@ const PRUNE_INTERVAL: Duration = Duration::from_secs(60 * 60);
 /// faster than the database stores them, and new records are dropped.
 pub const MAX_PENDING_WRITES: usize = 1_000;
 
+/// Records written in one transaction. One by one, each record paid for a
+/// transaction of its own, and a burst of calls filled the queue faster than
+/// it was written down.
+const WRITE_BATCH: usize = 100;
+
 /// The size of the arguments or of the response a record keeps in full.
 pub const MAX_CAPTURE_BYTES: usize = 64 * 1024;
 
@@ -168,7 +173,7 @@ impl McpCallLogService {
     }
 
     /// Queue the record of a call and return at once. Records are written in
-    /// the order they were queued, one at a time.
+    /// the order they were queued, those that wait together in one transaction.
     pub fn record(&self, input: McpCallLogInput) {
         let Ok(runtime) = Handle::try_current() else {
             tracing::warn!("MCP call log has no runtime to write with; record was dropped");
@@ -245,55 +250,102 @@ impl McpCallLogService {
 /// Write the queue down until it is empty.
 async fn write_queue(inner: Arc<Inner>) {
     loop {
-        let input = {
+        let batch: Vec<McpCallLogInput> = {
             let mut queue = inner.queue();
-            match queue.waiting.pop_front() {
-                Some(input) => input,
-                None => {
-                    queue.writing = false;
-                    return;
-                }
+            let count = queue.waiting.len().min(WRITE_BATCH);
+            if count == 0 {
+                queue.writing = false;
+                return;
             }
+            queue.waiting.drain(..count).collect()
         };
+        let count = batch.len();
 
-        // Each record is written by a task of its own: one that panics takes
+        // Each batch is written by a task of its own: one that panics takes
         // that task down, and the queue goes on.
         let core = inner.core.clone();
-        let write = tokio::spawn(async move {
-            if let Err(error) = persist(&core, &input).await {
-                warn_persistence_failure(
-                    &core,
-                    &error,
-                    input.mcp.as_ref(),
-                    "MCP call log could not be persisted",
-                );
-            }
-        });
+        let write = tokio::spawn(async move { persist_batch(&core, &batch).await });
         if write.await.is_err() {
             tracing::warn!("MCP call log could not be persisted");
         }
 
         {
             let mut queue = inner.queue();
-            queue.pending = queue.pending.saturating_sub(1);
+            queue.pending = queue.pending.saturating_sub(count);
         }
-        inner.written.send_modify(|written| *written += 1);
+        inner
+            .written
+            .send_modify(|written| *written += count as u64);
     }
 }
 
-async fn persist(core: &Core, input: &McpCallLogInput) -> Result<(), sqlx::Error> {
-    let settings = InstanceSetting::current(&*core.db).await?;
+fn warn_record_lost(core: &Core, error: &sqlx::Error, input: &McpCallLogInput) {
+    warn_persistence_failure(
+        core,
+        error,
+        input.mcp.as_ref(),
+        "MCP call log could not be persisted",
+    );
+}
+
+/// Write the records that waited together, in one transaction. A record
+/// that cannot be written is reported and does not stop the others.
+async fn persist_batch(core: &Core, batch: &[McpCallLogInput]) {
+    let settings = match InstanceSetting::current(&*core.db).await {
+        Ok(settings) => settings,
+        Err(error) => {
+            for input in batch {
+                warn_record_lost(core, &error, input);
+            }
+            return;
+        }
+    };
     if settings.mcp_log_level == McpLogLevel::Off {
-        return Ok(());
+        return;
+    }
+    let mut logs: Vec<McpCallLog> = batch
+        .iter()
+        .map(|input| record_of(core, &settings, input))
+        .collect();
+
+    // A record alone needs no transaction around its own.
+    if let ([log], [input]) = (logs.as_mut_slice(), batch) {
+        if let Err(error) = log.insert(&*core.db).await {
+            warn_record_lost(core, &error, input);
+        }
+        return;
     }
 
+    let mut transaction = match core.db.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            for input in batch {
+                warn_record_lost(core, &error, input);
+            }
+            return;
+        }
+    };
+    for (log, input) in logs.iter_mut().zip(batch) {
+        if let Err(error) = log.insert(&mut *transaction).await {
+            warn_record_lost(core, &error, input);
+        }
+    }
+    if let Err(error) = transaction.commit().await {
+        for input in batch {
+            warn_record_lost(core, &error, input);
+        }
+    }
+}
+
+/// The row of a call, as the logging level of the instance allows it.
+fn record_of(core: &Core, settings: &InstanceSetting, input: &McpCallLogInput) -> McpCallLog {
     let arguments_captured = matches!(
         settings.mcp_log_level,
         McpLogLevel::Arguments | McpLogLevel::Responses
     );
     let response_captured = settings.mcp_log_level == McpLogLevel::Responses;
     let mcp = input.mcp.as_ref();
-    let mut log = McpCallLog {
+    McpCallLog {
         access_token_id: Some(input.access_token.id),
         access_token_name: input.access_token.name.clone(),
         access_token_prefix: input.access_token.token_prefix.clone(),
@@ -329,6 +381,5 @@ async fn persist(core: &Core, input: &McpCallLogInput) -> Result<(), sqlx::Error
         response_captured,
         duration_ms: (input.duration.as_secs_f64() * 1000.0).round() as i64,
         ..Default::default()
-    };
-    log.insert(&*core.db).await
+    }
 }

@@ -23,6 +23,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Building from source needs Rust and a C compiler instead of Node.js and pnpm: `cargo run --bin mymcps`, `cargo test --workspace`, `cargo build --release --bin mymcps`. The release workflows build, test, and audit with Cargo.
 - The iCloud Mail MCP converts to text the HTML messages it used to give up on, such as deeply nested or unclosed tags. The limits on time and memory of a conversion are unchanged.
 - The schedule of the npm auto-update is read by MyMCPs itself, with the same five fields. A date written out in place of a schedule is refused, and a schedule naming a day that February lacks, such as `0 3 1,31 * *`, also runs on 1 March.
+- The call log writes the records that wait together in one transaction, so a burst of tool calls no longer fills its queue of 1,000 records and loses the rest.
 
 ### Security
 
