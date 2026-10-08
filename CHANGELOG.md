@@ -30,6 +30,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 - The Content-Security-Policy no longer allows inline styles (`style-src 'self'`).
 - A backup is encrypted with AES-256-GCM under a key derived from its password with scrypt, and cannot be opened or altered without the password. Exporting one asks for the account password again, within the limit of five wrong guesses shared with the email and password changes, and is written to the server log.
 - The import of a backup is open to whoever reaches the setup screen, and only until the instance has a user. It takes 10 attempts per 15 minutes from each client address, one import at a time, and files of up to 4 GB, kept in a private directory that is deleted when the import ends and when the server starts. A file that asks for more memory than 256 MiB to derive its key is refused before any is spent. The database in a backup is checked before anything is run on it: it must pass an integrity check, hold nothing but tables and indexes (no trigger, view, or virtual table), name only migrations this version knows, and have an administrator. Its rows are then copied through the schema of the instance, in one transaction that stops on a row violating a foreign key, and a refused import leaves the instance as it was.
+- A form posted without a valid CSRF token no longer has its fields copied into the session. The export form of a backup is posted by the browser itself and is made of passwords.
 
 ### Removed
 
