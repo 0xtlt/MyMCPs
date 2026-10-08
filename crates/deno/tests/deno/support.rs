@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use mymcps_core::TestCore;
@@ -61,8 +60,18 @@ const SHELL_VARIABLES: [&str; 4] = ["PWD", "OLDPWD", "SHLVL", "_"];
 pub fn executable(directory: &Path, name: &str, content: &str) -> PathBuf {
     std::fs::create_dir_all(directory).unwrap();
     let path = directory.join(name);
-    std::fs::write(&path, content).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Written by a child process, never by this one: a test on another thread
+    // that starts a command while a script is open for writing here would
+    // hand that descriptor to its child for a moment, and Linux refuses to
+    // run a file anyone has open for writing (ETXTBSY).
+    let mut writer = std::process::Command::new("/bin/sh")
+        .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+        .arg(&path)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut writer.stdin.take().unwrap(), content.as_bytes()).unwrap();
+    assert!(writer.wait().unwrap().success());
     path
 }
 

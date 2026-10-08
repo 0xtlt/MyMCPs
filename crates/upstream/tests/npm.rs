@@ -5,7 +5,6 @@
 
 mod support;
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -61,8 +60,18 @@ impl Server {
         let bin = root.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let fake = bin.join("deno");
-        std::fs::write(&fake, FAKE_DENO).unwrap();
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Written by a child process, never by this one: a test on another
+        // thread that starts a command while a script is open for writing
+        // here would hand that descriptor to its child for a moment, and
+        // Linux refuses to run a file anyone has open for writing (ETXTBSY).
+        let mut writer = std::process::Command::new("/bin/sh")
+            .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+            .arg(&fake)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::io::Write::write_all(&mut writer.stdin.take().unwrap(), FAKE_DENO.as_bytes()).unwrap();
+        assert!(writer.wait().unwrap().success());
         std::fs::create_dir_all(root.join("app")).unwrap();
 
         let core = TestCore::with_config(|config| {
