@@ -676,7 +676,7 @@ mod requests_of_an_npm_mcp {
 
         let unstarted = sandbox.npm_mcp(&[
             ("FAKE_BEHAVIOUR", "refuse-key"),
-            ("API_KEY", "key-0123456789"),
+            ("API_KEY", "refused-secret"),
         ]);
         let failure = runner
             .call_tool(&unstarted, "snapshot", serde_json::Map::new())
