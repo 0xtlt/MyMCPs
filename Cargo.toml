@@ -1,0 +1,72 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.4.1"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/0xtlt/MyMCPs"
+publish = false
+
+[workspace.dependencies]
+# Workspace crates
+mymcps-core = { path = "crates/core" }
+mymcps-vine = { path = "crates/vine" }
+mymcps-net = { path = "crates/net" }
+mymcps-mcp = { path = "crates/mcp" }
+mymcps-mcp-auth = { path = "crates/mcp-auth" }
+mymcps-builtin = { path = "crates/builtin" }
+mymcps-strava = { path = "crates/strava" }
+mymcps-icloud-mail = { path = "crates/icloud-mail" }
+mymcps-google-ads = { path = "crates/google-ads" }
+mymcps-deno = { path = "crates/deno" }
+mymcps-upstream = { path = "crates/upstream" }
+mymcps-gateway = { path = "crates/gateway" }
+mymcps-web = { path = "crates/web" }
+
+# Async runtime and HTTP
+tokio = { version = "1.53", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "codec"] }
+futures = "0.3"
+async-trait = "0.1"
+bytes = "1"
+http = "1"
+url = "2.5"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "gzip", "brotli", "deflate"] }
+
+# Data
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+
+# Errors and logs
+thiserror = "2"
+tracing = "0.1"
+
+# Crypto
+sha2 = "0.11"
+hmac = "0.13"
+base64 = "0.23"
+rand = "0.10"
+subtle = "2.6"
+
+# Tests
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 1

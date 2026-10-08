@@ -1,0 +1,49 @@
+[package]
+name = "mymcps-icloud-mail"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# In-process IMAP and SMTP servers holding a small account, for the tests of
+# this crate and of the crates that run its tools.
+test-util = []
+
+[dependencies]
+mymcps-builtin.workspace = true
+mymcps-vine.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+base64.workspace = true
+regex.workspace = true
+uuid.workspace = true
+rand.workspace = true
+# IMAP on port 993 and STARTTLS on port 587, with the certificate checks reqwest makes.
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs", "tls12"] }
+rustls-platform-verifier = "0.7"
+# The charsets of message parts and of encoded words in headers.
+encoding_rs = "0.8"
+# Mailboxes are listed in the order `localeCompare` gives them.
+icu_collator = "2.3"
+# The domain of an address is written as Node's `url.domainToASCII` writes it.
+icu_normalizer = { version = "2.2", default-features = false, features = ["compiled_data"] }
+# Names of special mailboxes are compared in NFKC, as imapflow compares them.
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+mymcps-core = { workspace = true, features = ["test-util"] }
+mymcps-icloud-mail = { path = ".", features = ["test-util"] }
+futures.workspace = true
+# The digests of the messages nodemailer built, which the fixtures hold instead of the messages.
+sha2.workspace = true

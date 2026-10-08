@@ -1,0 +1,33 @@
+[package]
+name = "mymcps-builtin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mymcps-core.workspace = true
+mymcps-net.workspace = true
+mymcps-vine.workspace = true
+tokio.workspace = true
+futures.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+base64.workspace = true
+regex.workspace = true
+url.workspace = true
+sqlx = { version = "0.9", default-features = false }
+
+[dev-dependencies]
+http.workspace = true
+mymcps-core = { workspace = true, features = ["test-util"] }
+tempfile.workspace = true
+uuid.workspace = true

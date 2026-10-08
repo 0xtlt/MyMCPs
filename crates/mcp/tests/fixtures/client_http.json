@@ -1,0 +1,3014 @@
+{
+ "source": "@modelcontextprotocol/sdk 1.32.0",
+ "scenarios": [
+  {
+   "name": "handshake, a JSON answer, an event-stream answer, then close",
+   "client": {
+    "name": "mymcps-gateway",
+    "version": "0.4.1"
+   },
+   "headers": {
+    "Authorization": "Bearer token",
+    "User-Agent": "codex-mcp-client/0.0.0",
+    "X-Custom": "yes"
+   },
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "http": "DELETE"
+     },
+     "status": 200
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json",
+      "Mcp-Session-Id": "session-1"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"description\":\"Echo\",\"inputSchema\":{\"required\":[\"a\"],\"type\":\"object\",\"properties\":{\"a\":{}},\"$schema\":\"s\"},\"name\":\"echo\",\"vendor\":1,\"annotations\":{\"readOnlyHint\":true,\"x\":1}}],\"nextCursor\":\"next\",\"other\":{\"kept\":true}}}"
+    },
+    {
+     "when": {
+      "rpc": "tools/call"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream; charset=utf-8"
+     },
+     "chunks": [
+      "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"isError\":false,\"content\":[{\"text\":\"hi\",\"type\":\"text\",\"dropped\":1}],\"other\":true,\"score\":1.5}}\n\n"
+     ]
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "callTool:echo:{\"b\":1,\"a\":[true,null,\"x\"]}",
+    "callTool:bare:-",
+    "wait:40",
+    "close",
+    "listTools"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "authorization": "Bearer token",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream",
+       "x-custom": "yes",
+       "user-agent": "codex-mcp-client/0.0.0"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"mymcps-gateway\",\"version\":\"0.4.1\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-session-id": "session-1",
+       "mcp-protocol-version": "2025-06-18",
+       "authorization": "Bearer token",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream",
+       "x-custom": "yes",
+       "user-agent": "codex-mcp-client/0.0.0"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-session-id": "session-1",
+       "mcp-protocol-version": "2025-06-18",
+       "authorization": "Bearer token",
+       "accept": "text/event-stream",
+       "x-custom": "yes",
+       "user-agent": "codex-mcp-client/0.0.0"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-session-id": "session-1",
+       "mcp-protocol-version": "2025-06-18",
+       "authorization": "Bearer token",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream",
+       "x-custom": "yes",
+       "user-agent": "codex-mcp-client/0.0.0"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-session-id": "session-1",
+       "mcp-protocol-version": "2025-06-18",
+       "authorization": "Bearer token",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream",
+       "x-custom": "yes",
+       "user-agent": "codex-mcp-client/0.0.0"
+      },
+      "body": "{\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{\"b\":1,\"a\":[true,null,\"x\"]}},\"jsonrpc\":\"2.0\",\"id\":2}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-session-id": "session-1",
+       "mcp-protocol-version": "2025-06-18",
+       "authorization": "Bearer token",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream",
+       "x-custom": "yes",
+       "user-agent": "codex-mcp-client/0.0.0"
+      },
+      "body": "{\"method\":\"tools/call\",\"params\":{\"name\":\"bare\"},\"jsonrpc\":\"2.0\",\"id\":3}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"nextCursor\":\"next\",\"tools\":[{\"name\":\"echo\",\"description\":\"Echo\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"a\":{}},\"required\":[\"a\"],\"$schema\":\"s\"},\"annotations\":{\"readOnlyHint\":true}}],\"other\":{\"kept\":true}}"
+     },
+     {
+      "step": "callTool:echo:{\"b\":1,\"a\":[true,null,\"x\"]}",
+      "ok": "{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"isError\":false,\"other\":true,\"score\":1.5}"
+     },
+     {
+      "step": "callTool:bare:-",
+      "ok": "{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],\"isError\":false,\"other\":true,\"score\":1.5}"
+     },
+     {
+      "step": "wait:40",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "error": {
+       "kind": "error",
+       "message": "Not connected"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "a client with a title",
+   "client": {
+    "name": "claude-code",
+    "version": "2.1.89",
+    "title": "Claude Code"
+   },
+   "headers": {
+    "User-Agent": "claude-code/2.1.89 (cli)"
+   },
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream",
+       "user-agent": "claude-code/2.1.89 (cli)"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"claude-code\",\"version\":\"2.1.89\",\"title\":\"Claude Code\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream",
+       "user-agent": "claude-code/2.1.89 (cli)"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an event-stream answer cut in the middle of an event",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      ": hello\n\nevent: mess",
+      "age\nid: ev-1\ndata: {\"jsonrpc\":\"2.0\",\"id",
+      "\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}\n",
+      "\n"
+     ],
+     "chunkDelayMs": 15
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "wait:60",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "wait:60",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "malformed frames before the answer",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      "data: not json\n\n",
+      "data: {\"hello\":1}\n\n",
+      "event: other\ndata: {\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"wrong\",\"inputSchema\":{\"type\":\"object\"}}]}}\n\n",
+      "data\n\n",
+      "unknown: field\nretry: soon\n\n",
+      "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"x\"}}\n\n",
+      "data: {\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}\r\n\r\n"
+     ]
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an answer split over the lines of one event",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      "data: {\"jsonrpc\":\"2.0\",\ndata: \"id\":$id,\ndata:\"result\":{\"tools\":[]}}\n\n"
+     ]
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[]}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a JSON answer that is a batch",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "[{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"x\"}},{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}]"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an answer whose id is a string",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":\"$id\",\"result\":{\"tools\":[]}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[]}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a session id that arrives with the accepted notification",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202,
+     "headers": {
+      "Mcp-Session-Id": "late-session"
+     }
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-session-id": "late-session",
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-session-id": "late-session",
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a notification answered 200 opens no stream",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 200
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "wait:40",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "wait:40",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "unauthorized",
+   "rules": [
+    {
+     "when": {},
+     "status": 401,
+     "headers": {
+      "WWW-Authenticate": "Bearer realm=\"mcp\"",
+      "Content-Type": "application/json"
+     },
+     "body": "{\"error\":\"invalid_token\"}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "http",
+       "message": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"invalid_token\"}",
+       "code": 401
+      }
+     },
+     {
+      "step": "listTools",
+      "error": {
+       "kind": "error",
+       "message": "Not connected"
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "unauthorized after the handshake",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/call"
+     },
+     "status": 401,
+     "body": "token expired"
+    }
+   ],
+   "steps": [
+    "connect",
+    "callTool:echo:{}",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{}},\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "callTool:echo:{}",
+      "error": {
+       "kind": "http",
+       "message": "Streamable HTTP error: Error POSTing to endpoint: token expired",
+       "code": 401
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a server error with an HTML page",
+   "rules": [
+    {
+     "when": {},
+     "status": 500,
+     "headers": {
+      "Content-Type": "text/html"
+     },
+     "body": "<h1>Bad gateway</h1>"
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "http",
+       "message": "Streamable HTTP error: Error POSTing to endpoint: <h1>Bad gateway</h1>",
+       "code": 500
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "not found with an empty body",
+   "rules": [
+    {
+     "when": {},
+     "status": 404
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "http",
+       "message": "Streamable HTTP error: Error POSTing to endpoint: ",
+       "code": 404
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "the initialized notification is refused",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 400,
+     "body": "no"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "http",
+       "message": "Streamable HTTP error: Error POSTing to endpoint: no",
+       "code": 400
+      }
+     },
+     {
+      "step": "listTools",
+      "error": {
+       "kind": "error",
+       "message": "Not connected"
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an answer of an unexpected content type",
+   "rules": [
+    {
+     "when": {},
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/html; charset=utf-8"
+     },
+     "body": "<h1>hello</h1>"
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "http",
+       "message": "Streamable HTTP error: Unexpected content type: text/html; charset=utf-8",
+       "code": -1
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an answer without a content type",
+   "rules": [
+    {
+     "when": {},
+     "status": 200,
+     "body": "{}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "http",
+       "message": "Streamable HTTP error: Unexpected content type: null",
+       "code": -1
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an answer that is not JSON",
+   "rules": [
+    {
+     "when": {},
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{nope"
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "json",
+       "message": "Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "JSON that is not JSON-RPC",
+   "rules": [
+    {
+     "when": {},
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"hello\":1}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "validation",
+       "message": "[\n  {\n    \"code\": \"invalid_union\",\n    \"errors\": [\n      [\n        {\n          \"code\": \"invalid_value\",\n          \"values\": [\n            \"2.0\"\n          ],\n          \"path\": [\n            \"jsonrpc\"\n          ],\n          \"message\": \"Invalid input: expected \\\"2.0\\\"\"\n        },\n        {\n          \"code\": \"invalid_union\",\n          \"errors\": [\n            [\n              {\n                \"expected\": \"string\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected string, received undefined\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"number\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected number, received undefined\"\n              }\n            ]\n          ],\n          \"path\": [\n            \"id\"\n          ],\n          \"message\": \"Invalid input\"\n        },\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"method\"\n          ],\n          \"message\": \"Invalid input: expected string, received undefined\"\n        },\n        {\n          \"code\": \"unrecognized_keys\",\n          \"keys\": [\n            \"hello\"\n          ],\n          \"path\": [],\n          \"message\": \"Unrecognized key: \\\"hello\\\"\"\n        }\n      ],\n      [\n        {\n          \"code\": \"invalid_value\",\n          \"values\": [\n            \"2.0\"\n          ],\n          \"path\": [\n            \"jsonrpc\"\n          ],\n          \"message\": \"Invalid input: expected \\\"2.0\\\"\"\n        },\n        {\n          \"expected\": \"string\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"method\"\n          ],\n          \"message\": \"Invalid input: expected string, received undefined\"\n        },\n        {\n          \"code\": \"unrecognized_keys\",\n          \"keys\": [\n            \"hello\"\n          ],\n          \"path\": [],\n          \"message\": \"Unrecognized key: \\\"hello\\\"\"\n        }\n      ],\n      [\n        {\n          \"code\": \"invalid_value\",\n          \"values\": [\n            \"2.0\"\n          ],\n          \"path\": [\n            \"jsonrpc\"\n          ],\n          \"message\": \"Invalid input: expected \\\"2.0\\\"\"\n        },\n        {\n          \"code\": \"invalid_union\",\n          \"errors\": [\n            [\n              {\n                \"expected\": \"string\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected string, received undefined\"\n              }\n            ],\n            [\n              {\n                \"expected\": \"number\",\n                \"code\": \"invalid_type\",\n                \"path\": [],\n                \"message\": \"Invalid input: expected number, received undefined\"\n              }\n            ]\n          ],\n          \"path\": [\n            \"id\"\n          ],\n          \"message\": \"Invalid input\"\n        },\n        {\n          \"expected\": \"object\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"result\"\n          ],\n          \"message\": \"Invalid input: expected object, received undefined\"\n        },\n        {\n          \"code\": \"unrecognized_keys\",\n          \"keys\": [\n            \"hello\"\n          ],\n          \"path\": [],\n          \"message\": \"Unrecognized key: \\\"hello\\\"\"\n        }\n      ],\n      [\n        {\n          \"code\": \"invalid_value\",\n          \"values\": [\n            \"2.0\"\n          ],\n          \"path\": [\n            \"jsonrpc\"\n          ],\n          \"message\": \"Invalid input: expected \\\"2.0\\\"\"\n        },\n        {\n          \"expected\": \"object\",\n          \"code\": \"invalid_type\",\n          \"path\": [\n            \"error\"\n          ],\n          \"message\": \"Invalid input: expected object, received undefined\"\n        },\n        {\n          \"code\": \"unrecognized_keys\",\n          \"keys\": [\n            \"hello\"\n          ],\n          \"path\": [],\n          \"message\": \"Unrecognized key: \\\"hello\\\"\"\n        }\n      ]\n    ],\n    \"path\": [],\n    \"message\": \"Invalid input\"\n  }\n]"
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "initialize answered with an error",
+   "rules": [
+    {
+     "when": {},
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"error\":{\"code\":-32602,\"message\":\"Bad params\",\"data\":{\"field\":\"x\"}}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "mcp",
+       "message": "MCP error -32602: Bad params",
+       "code": -32602,
+       "data": {
+        "field": "x"
+       }
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a tool call answered with an error",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/call"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"error\":{\"code\":-32000,\"message\":\"Tool exploded\"}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "callTool:echo:{}",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{}},\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "callTool:echo:{}",
+      "error": {
+       "kind": "mcp",
+       "message": "MCP error -32000: Tool exploded",
+       "code": -32000
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a protocol version the client does not speak",
+   "rules": [
+    {
+     "when": {},
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"1999-01-01\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "error",
+       "message": "Server's protocol version is not supported: 1999-01-01"
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "the oldest protocol version",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2024-10-07\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2024-10-07",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2024-10-07",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2024-10-07",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an initialize result without server info",
+   "rules": [
+    {
+     "when": {},
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\"}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "error": {
+       "kind": "validation",
+       "message": "[\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"capabilities\"\n    ],\n    \"message\": \"Invalid input: expected object, received undefined\"\n  },\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"serverInfo\"\n    ],\n    \"message\": \"Invalid input: expected object, received undefined\"\n  }\n]"
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a tool whose input schema is not an object schema",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"ok\",\"inputSchema\":{\"type\":\"object\"}},{\"name\":\"bad\",\"inputSchema\":{\"type\":\"string\"}}]}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "error": {
+       "kind": "validation",
+       "message": "[\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"object\"\n    ],\n    \"path\": [\n      \"tools\",\n      1,\n      \"inputSchema\",\n      \"type\"\n    ],\n    \"message\": \"Invalid input: expected \\\"object\\\"\"\n  }\n]"
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a tool result the protocol does not allow",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/call"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"content\":[{\"type\":\"image\",\"data\":\"!!!\",\"mimeType\":\"image/png\"}]}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "callTool:echo:{}",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{}},\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "callTool:echo:{}",
+      "error": {
+       "kind": "validation",
+       "message": "[\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"content\",\n      0,\n      \"data\"\n    ],\n    \"message\": \"Invalid Base64 string\"\n  }\n]"
+      }
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a tool result without content",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/call"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"structuredContent\":{\"2\":\"x\",\"b\":1,\"a\":1},\"_meta\":{\"z\":1}}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "callTool:echo:{}",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{}},\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "callTool:echo:{}",
+      "ok": "{\"_meta\":{\"z\":1},\"content\":[],\"structuredContent\":{\"2\":\"x\",\"b\":1,\"a\":1}}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a request that is never answered",
+   "timeoutMs": 150,
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "never": true
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "wait:120",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":1,\"reason\":\"McpError: MCP error -32001: Request timed out\"}}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "error": {
+       "kind": "mcp",
+       "message": "MCP error -32001: Request timed out",
+       "code": -32001,
+       "data": {
+        "timeout": 150
+       }
+      }
+     },
+     {
+      "step": "wait:120",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an event stream that ends without the answer",
+   "timeoutMs": 200,
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}\n"
+     ]
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "wait:120",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":1,\"reason\":\"McpError: MCP error -32001: Request timed out\"}}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "error": {
+       "kind": "mcp",
+       "message": "MCP error -32001: Request timed out",
+       "code": -32001,
+       "data": {
+        "timeout": 200
+       }
+      }
+     },
+     {
+      "step": "wait:120",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "requests from the server on the standalone stream",
+   "unordered": true,
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      ": connected\n\n",
+      "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"srv-1\",\"method\":\"ping\"}\n\n",
+      "data: {\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"roots/list\"}\n\n",
+      "event: other\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"srv-3\",\"method\":\"ping\"}\n\n",
+      "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n",
+      "data: {\"jsonrpc\":\"2.0\",\"id\":99,\"result\":{}}\n\n"
+     ],
+     "hold": true
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "response": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "wait:120",
+    "listTools",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"result\":{},\"jsonrpc\":\"2.0\",\"id\":\"srv-1\"}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "wait:120",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a standalone stream that ends is reopened where it stopped",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "times": 1,
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      "retry: 30\n\n",
+      "id: ev-7\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n"
+     ]
+    },
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    }
+   ],
+   "steps": [
+    "connect",
+    "wait:200",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream",
+       "last-event-id": "ev-7"
+      },
+      "body": ""
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "wait:200",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a standalone stream that cannot be reopened is given up after two tries",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "times": 1,
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      "retry: 20\n\n"
+     ]
+    },
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 503
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    }
+   ],
+   "steps": [
+    "connect",
+    "wait:250",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "wait:250",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a standalone stream that is refused is not retried",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 500,
+     "body": "no stream"
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "wait:60",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "wait:60",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "an answer on a stream with event ids is not resumed",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      "id: p-1\ndata: \n\n",
+      "id: p-2\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}}\n\n"
+     ]
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "wait:80",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[{\"name\":\"echo\",\"inputSchema\":{\"type\":\"object\"}}]}"
+     },
+     {
+      "step": "wait:80",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "a stream with event ids that ends before its answer is resumed with a GET",
+   "timeoutMs": 400,
+   "rules": [
+    {
+     "when": {
+      "http": "GET",
+      "header": "last-event-id"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      "id: p-9\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n"
+     ]
+    },
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "tools/list"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "text/event-stream"
+     },
+     "chunks": [
+      "retry: 20\n\n",
+      "id: p-1\ndata: \n\n"
+     ]
+    }
+   ],
+   "steps": [
+    "connect",
+    "listTools",
+    "wait:100",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"tools/list\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream",
+       "last-event-id": "p-1"
+      },
+      "body": ""
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "listTools",
+      "ok": "{\"tools\":[]}"
+     },
+     {
+      "step": "wait:100",
+      "ok": null
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "ping",
+   "rules": [
+    {
+     "when": {
+      "http": "GET"
+     },
+     "status": 405
+    },
+    {
+     "when": {
+      "rpc": "initialize"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"srv\",\"version\":\"1\"}}}"
+    },
+    {
+     "when": {
+      "notification": true
+     },
+     "status": 202
+    },
+    {
+     "when": {
+      "rpc": "ping"
+     },
+     "status": 200,
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
+    }
+   ],
+   "steps": [
+    "connect",
+    "ping",
+    "close"
+   ],
+   "expect": {
+    "requests": [
+     {
+      "method": "POST",
+      "headers": {
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"}},\"jsonrpc\":\"2.0\",\"id\":0}"
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}"
+     },
+     {
+      "method": "GET",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "accept": "text/event-stream"
+      },
+      "body": ""
+     },
+     {
+      "method": "POST",
+      "headers": {
+       "mcp-protocol-version": "2025-06-18",
+       "content-type": "application/json",
+       "accept": "application/json, text/event-stream"
+      },
+      "body": "{\"method\":\"ping\",\"jsonrpc\":\"2.0\",\"id\":1}"
+     }
+    ],
+    "outcomes": [
+     {
+      "step": "connect",
+      "ok": null
+     },
+     {
+      "step": "ping",
+      "ok": "{}"
+     },
+     {
+      "step": "close",
+      "ok": null
+     }
+    ]
+   }
+  }
+ ]
+}

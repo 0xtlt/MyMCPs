@@ -54,7 +54,7 @@ MyMCPs always asks for these read permissions:
 | `profile:read_all`  | Full profile, including heart rate and power zones   |
 | `activity:read_all` | Your activities, including those visible to Only You |
 
-You can uncheck permissions on Strava's screen. MyMCPs records what you granted and hides the tools that need a permission you removed. Select **Re-authorize** in the edit dialog to change your choice later.
+You can uncheck permissions on Strava's screen. MyMCPs records what you granted and hides the tools that need a permission you removed. Select **Re-authorize** in the **⋯** menu of the MCP to change your choice later.
 
 Access tokens last six hours. MyMCPs renews them automatically and stores the rotated refresh token each time.
 

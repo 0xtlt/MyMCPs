@@ -63,7 +63,7 @@ With write access on, four tools **ask for approval** before they run, because t
 
 When an agent calls one of them, it gets a link to give you instead of a result. The page behind the link is written by MyMCPs from the call and from what Google Ads says, not by the agent: it names the account and the campaign, shows the current value under the new one, and warns when a budget is multiplied. Google also checks the change without making it before you are asked. Once you approve, the agent makes the same call again and it runs.
 
-You can change which tools ask, for this MCP as for any other, under **Edit → Tool approvals**. [docs/tool-approvals.md](tool-approvals.md) has the details.
+You can change which tools ask, for this MCP as for any other, under **Tool approvals** in the **⋯** menu of the MCP. [docs/tool-approvals.md](tool-approvals.md) has the details.
 
 Two more safeguards are built in:
 

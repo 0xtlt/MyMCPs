@@ -1,0 +1,17 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Release tooling for MyMCPs, run as `cargo xtask <command>`"
+
+[lints]
+workspace = true
+
+# No dependencies, and none for tests or the build either. The stable release
+# workflow compiles and runs this crate in the job that holds the write token,
+# and that job must not build third-party code. tests/release_workflows.rs
+# checks it stays that way.
+[dependencies]
