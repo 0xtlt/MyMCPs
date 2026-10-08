@@ -1,6 +1,7 @@
 import app from '@adonisjs/core/services/app'
 import { type HttpContext, ExceptionHandler } from '@adonisjs/core/http'
 import type { HttpError, StatusPageRange, StatusPageRenderer } from '@adonisjs/core/types/http'
+import { errors as shieldErrors } from '@adonisjs/shield'
 
 /**
  * What API clients are told about an unexpected error in production.
@@ -58,6 +59,21 @@ export default class HttpExceptionHandler extends ExceptionHandler {
    * response to the client
    */
   async handle(error: unknown, ctx: HttpContext) {
+    /**
+     * Shield sends a form posted without a valid CSRF token back where it
+     * came from, with its fields copied into the session for a template to
+     * fill the form again. No page reads them here, and the one form the
+     * browser posts itself, the export of a backup, is made of passwords:
+     * the refusal is flashed, and nothing of the form.
+     */
+    if (error instanceof shieldErrors.E_BAD_CSRF_TOKEN && 'session' in ctx) {
+      const message = error.getResponseMessage(error, ctx)
+      ctx.session.flash('error', message)
+      ctx.session.flashErrors({ [error.code]: message })
+      ctx.response.redirect().back()
+      return
+    }
+
     return super.handle(error, ctx)
   }
 

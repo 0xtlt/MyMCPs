@@ -84,6 +84,18 @@ const routes = {
     tokens: [{"old":"/onboarding","type":0,"val":"onboarding","end":""}],
     types: placeholder as Registry['onboarding.store']['types'],
   },
+  'onboarding.showImport': {
+    methods: ["GET","HEAD"],
+    pattern: '/onboarding/import',
+    tokens: [{"old":"/onboarding/import","type":0,"val":"onboarding","end":""},{"old":"/onboarding/import","type":0,"val":"import","end":""}],
+    types: placeholder as Registry['onboarding.showImport']['types'],
+  },
+  'onboarding.storeImport': {
+    methods: ["POST"],
+    pattern: '/onboarding/import',
+    tokens: [{"old":"/onboarding/import","type":0,"val":"onboarding","end":""},{"old":"/onboarding/import","type":0,"val":"import","end":""}],
+    types: placeholder as Registry['onboarding.storeImport']['types'],
+  },
   'gateway.handle': {
     methods: ["POST"],
     pattern: '/mcp',
@@ -161,6 +173,12 @@ const routes = {
     pattern: '/settings/mcp-logging',
     tokens: [{"old":"/settings/mcp-logging","type":0,"val":"settings","end":""},{"old":"/settings/mcp-logging","type":0,"val":"mcp-logging","end":""}],
     types: placeholder as Registry['settings.updateMcpLogging']['types'],
+  },
+  'settings.exportBackup': {
+    methods: ["POST"],
+    pattern: '/settings/backup',
+    tokens: [{"old":"/settings/backup","type":0,"val":"settings","end":""},{"old":"/settings/backup","type":0,"val":"backup","end":""}],
+    types: placeholder as Registry['settings.exportBackup']['types'],
   },
   'logs.index': {
     methods: ["GET","HEAD"],

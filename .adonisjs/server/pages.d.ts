@@ -25,6 +25,7 @@ declare module '@adonisjs/inertia/types' {
     'mcps/index': ExtractProps<(typeof import('../../inertia/pages/mcps/index.tsx'))['default']>
     'mcps/tools': ExtractProps<(typeof import('../../inertia/pages/mcps/tools.tsx'))['default']>
     'oauth/authorize': ExtractProps<(typeof import('../../inertia/pages/oauth/authorize.tsx'))['default']>
+    'onboarding/import': ExtractProps<(typeof import('../../inertia/pages/onboarding/import.tsx'))['default']>
     'onboarding/index': ExtractProps<(typeof import('../../inertia/pages/onboarding/index.tsx'))['default']>
     'settings/index': ExtractProps<(typeof import('../../inertia/pages/settings/index.tsx'))['default']>
     'tokens/index': ExtractProps<(typeof import('../../inertia/pages/tokens/index.tsx'))['default']>

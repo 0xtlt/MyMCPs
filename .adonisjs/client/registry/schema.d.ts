@@ -163,6 +163,30 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/onboarding_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
+  'onboarding.showImport': {
+    methods: ["GET","HEAD"]
+    pattern: '/onboarding/import'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/onboarding_controller').default['showImport']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/onboarding_controller').default['showImport']>>>
+    }
+  }
+  'onboarding.storeImport': {
+    methods: ["POST"]
+    pattern: '/onboarding/import'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/onboarding_controller').default['storeImport']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/onboarding_controller').default['storeImport']>>>
+    }
+  }
   'gateway.handle': {
     methods: ["POST"]
     pattern: '/mcp'
@@ -317,6 +341,18 @@ export interface Registry {
       query: ExtractQuery<InferInput<(typeof import('#validators/user').updateMcpLoggingValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/settings_controller').default['updateMcpLogging']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/settings_controller').default['updateMcpLogging']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'settings.exportBackup': {
+    methods: ["POST"]
+    pattern: '/settings/backup'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/backup').exportBackupValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/backup').exportBackupValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/settings_controller').default['exportBackup']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/settings_controller').default['exportBackup']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'logs.index': {

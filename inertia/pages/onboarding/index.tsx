@@ -97,6 +97,14 @@ export default function Onboarding() {
                 width="100%"
                 isLoading={processing}
               />
+
+              <Button
+                label="Import a backup"
+                variant="secondary"
+                size="lg"
+                width="100%"
+                href="/onboarding/import"
+              />
             </VStack>
           )}
         </Form>

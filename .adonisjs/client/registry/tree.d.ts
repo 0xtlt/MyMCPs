@@ -22,6 +22,8 @@ export interface ApiDefinition {
   onboarding: {
     show: typeof routes['onboarding.show']
     store: typeof routes['onboarding.store']
+    showImport: typeof routes['onboarding.showImport']
+    storeImport: typeof routes['onboarding.storeImport']
   }
   gateway: {
     handle: typeof routes['gateway.handle']
@@ -50,6 +52,7 @@ export interface ApiDefinition {
     updateEmail: typeof routes['settings.updateEmail']
     updatePassword: typeof routes['settings.updatePassword']
     updateMcpLogging: typeof routes['settings.updateMcpLogging']
+    exportBackup: typeof routes['settings.exportBackup']
   }
   logs: {
     index: typeof routes['logs.index']
