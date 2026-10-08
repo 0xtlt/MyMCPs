@@ -4,7 +4,6 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
-use rand::RngExt;
 use scrypt::Params;
 
 use super::tokens::constant_time_eq;
@@ -34,8 +33,7 @@ fn derive(password: &str, salt: &[u8], n: u32, r: u32, p: u32, length: usize) ->
 /// Hash a password. CPU-bound for tens of milliseconds: call it from
 /// `tokio::task::spawn_blocking` in request handlers.
 pub fn hash_password(password: &str) -> String {
-    let mut salt = [0u8; SALT_BYTES];
-    rand::rng().fill(&mut salt);
+    let salt: [u8; SALT_BYTES] = rand::random();
     let hash = derive(
         password,
         &salt,

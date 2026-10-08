@@ -377,6 +377,7 @@ async fn play(scenario: &Scenario) -> Vec<String> {
                 Ok(None)
             }
             "close" => {
+                stream_requests_arrive(scenario, &script).await;
                 client.close().await;
                 transport.close().await;
                 Ok(None)
@@ -441,6 +442,26 @@ async fn play(scenario: &Scenario) -> Vec<String> {
         }
     }
     differences
+}
+
+/// The standalone stream is opened in the background, so when its request
+/// leaves is a matter of scheduling, not of what the client does. Where the
+/// SDK had it out before closing, this client is given the time to send it
+/// too: on a busy machine it may still be waiting for its turn.
+async fn stream_requests_arrive(scenario: &Scenario, script: &Script) {
+    let streams = |requests: &[Seen]| {
+        requests
+            .iter()
+            .filter(|request| request.method == "GET")
+            .count()
+    };
+    let expected = streams(&scenario.expect.requests);
+    let started = std::time::Instant::now();
+    while streams(&script.seen.lock().unwrap()) < expected
+        && started.elapsed() < Duration::from_secs(5)
+    {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
 }
 
 /// A client that connects and closes at once races with itself: its

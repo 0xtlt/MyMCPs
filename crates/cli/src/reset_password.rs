@@ -10,7 +10,7 @@ use serde_json::json;
 /// new password twice through `prompt`. Passwords are never passed as
 /// command-line arguments. `Ok` is what to print on success, `Err` what to
 /// print before exiting with a failure.
-pub async fn reset_password(
+pub async fn reset(
     core: &Core,
     email: &str,
     mut prompt: impl FnMut(&str) -> std::io::Result<String>,
@@ -106,7 +106,7 @@ mod tests {
             remember(&core, &other).await;
 
             let mut asked = Vec::new();
-            let message = reset_password(
+            let message = reset(
                 &core,
                 " lost@example.com ",
                 answers("new-password-123", "new-password-123", &mut asked),
@@ -140,7 +140,7 @@ mod tests {
     async fn rejects_an_unknown_account_without_asking_or_creating_a_user() {
         let core = TestCore::new().await;
         let mut asked = Vec::new();
-        let error = reset_password(
+        let error = reset(
             &core,
             "missing@example.com",
             answers("new-password-123", "new-password-123", &mut asked),
@@ -171,7 +171,7 @@ mod tests {
             remember(&core, &user).await;
 
             let mut asked = Vec::new();
-            let error = reset_password(
+            let error = reset(
                 &core,
                 "user@example.com",
                 answers(password, confirmation, &mut asked),
@@ -201,7 +201,7 @@ mod tests {
             .unwrap();
 
         let mut asked = Vec::new();
-        let error = reset_password(
+        let error = reset(
             &core,
             "user@example.com",
             answers("new-password-123", "new-password-123", &mut asked),

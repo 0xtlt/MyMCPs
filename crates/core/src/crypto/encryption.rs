@@ -13,7 +13,6 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, SecondsFormat, Utc};
 use hkdf::Hkdf;
-use rand::RngExt;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -38,7 +37,7 @@ impl std::fmt::Debug for Encryption {
 }
 
 fn derive(crypto_key: &[u8; 32], info: &str) -> [u8; 32] {
-    let mut derived = [0u8; 32];
+    let mut derived = <[u8; 32]>::default();
     // 32 bytes is always a valid HKDF-SHA256 output length.
     Hkdf::<Sha256>::new(None, crypto_key)
         .expand(info.as_bytes(), &mut derived)
@@ -99,8 +98,7 @@ impl Encryption {
         }
         let plaintext = Value::Object(message).to_string();
 
-        let mut iv = [0u8; IV_LENGTH];
-        rand::rng().fill(&mut iv);
+        let iv: [u8; IV_LENGTH] = rand::random();
         let cipher = Aes256Gcm::new(&self.key.into());
         let sealed = cipher
             .encrypt(

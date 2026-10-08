@@ -209,7 +209,7 @@ async fn migrate() -> CommandResult {
 async fn user_reset_password(email: &str) -> CommandResult {
     let config = Config::from_env()?;
     let core = Core::boot(config).await?;
-    let outcome = reset_password::reset_password(&core, email, |label| {
+    let outcome = reset_password::reset(&core, email, |label| {
         rpassword::prompt_password(format!("{label}: "))
     })
     .await;
