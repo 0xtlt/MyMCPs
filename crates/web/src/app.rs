@@ -63,6 +63,12 @@ pub fn router(state: AppState) -> axum::routing::RouterIntoService<axum::body::B
         .first_run
         .layer(from_fn_with_state(core.clone(), guards::setup_complete));
     let browser = browser_layers(pages.merge(first_run), &core);
+    // The layers of a browser route, less the two that read the body.
+    let first_run_raw = features
+        .first_run_raw
+        .layer(from_fn_with_state(core.clone(), guards::setup_complete))
+        .layer(from_fn_with_state(core.clone(), silent_auth_layer))
+        .layer(from_fn_with_state(core.clone(), session_layer));
 
     let protocol = features
         .protocol
@@ -77,6 +83,7 @@ pub fn router(state: AppState) -> axum::routing::RouterIntoService<axum::body::B
         .merge(features.machine)
         .merge(protocol)
         .merge(browser)
+        .merge(first_run_raw)
         .fallback(errors::not_found)
         // A path that exists under another method is not found either, as
         // in the Node app, whose router matched the method with the path.

@@ -8,6 +8,7 @@ use mymcps_core::limiter::Limiter;
 use mymcps_gateway::{Gateway, McpGateway};
 use mymcps_upstream::Upstream;
 
+use crate::routes::backup::BackupWork;
 use crate::routes::builtin_files::FileTraffic;
 
 /// Allowances for repeated credential failures and for costly public
@@ -27,6 +28,9 @@ pub struct Limiters {
     pub builtin_file: Limiter,
     /// Each upload to a built-in MCP writes a file to the instance's disk.
     pub builtin_upload: Limiter,
+    /// Each import of a backup, by anyone who reaches the setup screen,
+    /// writes a file to the instance's disk and derives a costly key.
+    pub backup_import: Limiter,
 }
 
 impl Limiters {
@@ -50,6 +54,7 @@ impl Limiters {
             oauth_registration: limiter(20, 60 * MINUTES),
             builtin_file: limiter(60, 15 * MINUTES),
             builtin_upload: limiter(60, 15 * MINUTES),
+            backup_import: limiter(10, 15 * MINUTES),
         }
     }
 }
@@ -77,6 +82,8 @@ pub struct AppState {
     pub mcp_gateway: Arc<McpGateway>,
     /// The downloads and uploads of built-in MCP files that are under way.
     pub file_traffic: FileTraffic,
+    /// The import of a backup that is under way, and the limits of one.
+    pub backups: BackupWork,
 }
 
 impl AppState {
@@ -101,6 +108,7 @@ impl AppState {
             upstream,
             mcp_gateway,
             file_traffic: FileTraffic::new(),
+            backups: BackupWork::new(),
         }
     }
 }
@@ -125,6 +133,16 @@ impl AppState {
     /// schedule npm MCPs are refreshed on may have changed.
     pub async fn instance_settings_changed(&self) -> Result<(), sqlx::Error> {
         self.mcp_gateway.auto_update.resync().await
+    }
+
+    /// Tell the background work that every row of the database was
+    /// replaced: a backup was imported. The schedule npm MCPs are refreshed
+    /// on is the one thing the server keeps of the database in memory.
+    /// Tool counts, token allowances and queued call logs are keyed by rows
+    /// that did not exist before the import, which only an instance without
+    /// a user takes.
+    pub async fn database_replaced(&self) -> Result<(), sqlx::Error> {
+        self.instance_settings_changed().await
     }
 }
 

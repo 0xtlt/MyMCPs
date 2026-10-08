@@ -140,6 +140,10 @@ async fn serve() -> CommandResult {
     create_data_directories(&core.config)
         .await
         .map_err(|error| format!("Cannot create the data directories: {error}"))?;
+    // No export or import can be under way: what a crash, or a stop in the
+    // middle of one, left behind is a copy of the database.
+    mymcps_core::backup::clear_temporary_files(&core.config)
+        .map_err(|error| format!("Cannot delete the temporary files of backups: {error}"))?;
     let state = AppState::new(core.clone());
     // Deletes the expired uploads, including the ones a previous run left.
     let upload_sweeper =

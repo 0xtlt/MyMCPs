@@ -212,7 +212,10 @@ fn parse_pairs(query: &str, allow_dots: bool, limit: usize) -> Map<String, Value
 pub fn normalize_body(value: &mut Value) {
     match value {
         Value::String(text) => {
-            let trimmed = text.trim();
+            // What JavaScript trims, as the Node app did: the two differ on
+            // U+FEFF and U+0085, and a value both servers read, such as the
+            // password of a backup, must come out the same on each.
+            let trimmed = mymcps_vine::js::trim(text);
             if trimmed.is_empty() {
                 *value = Value::Null;
             } else if trimmed.len() != text.len() {
@@ -514,6 +517,16 @@ mod tests {
         assert_eq!(
             value,
             json!({"a": null, "b": [null, "x", {"c": null}], "d": "kept inside", "n": 1})
+        );
+
+        // The spaces of JavaScript: a byte order mark is one, a next-line
+        // character is not.
+        let mut value =
+            json!({"mark": "\u{FEFF}x\u{FEFF}", "next": "\u{0085}x\u{0085}", "only": "\u{FEFF}"});
+        normalize_body(&mut value);
+        assert_eq!(
+            value,
+            json!({"mark": "x", "next": "\u{0085}x\u{0085}", "only": null})
         );
     }
 

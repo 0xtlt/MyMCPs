@@ -31,6 +31,8 @@
  *   data-async-history              GET form: the requested URL becomes the address
  *   data-autosubmit                 form submitted when one of its named controls changes
  *   data-busy-message="Testing…"    plain form or submitter: toast shown while its answer is awaited
+ *   data-busy-label="Importing…"    submit button of a plain form: its text while the answer is awaited
+ *   data-download                   plain form answered with a file: it resets and closes its dialog
  *   data-confirm="Message"          form or submitter: asks before submitting ({count} allowed)
  *   data-confirm-title              title of that prompt
  *   data-confirm-label              label of its accept button
@@ -543,6 +545,46 @@
     if (method === 'GET' && form.hasAttribute('data-async-history')) replaceUrl(url)
     if (form.isConnected && form.hasAttribute('data-dirty')) syncDirty(form, true)
     emit(target, 'app:async-success', { form, status })
+  }
+
+  // ---------------------------------------------------------------------------- plain forms
+  const held = new WeakMap() // plain form -> what lets it go, while its answer is awaited
+  const DOWNLOAD_SETTLE = 1000 // ms a download form stays busy: about when the file starts
+
+  // A plain post that takes a while says so on its submit button ([data-busy-label]) until its
+  // answer replaces the page. The answer to a [data-download] form is a file, which leaves the
+  // page where it is: that form lets go by itself, resets, and closes its dialog. The browser
+  // reads the fields after the submit event, so nothing is disabled or emptied before a timer.
+  function holdPlain(form, submitter) {
+    const button = submitter || [...form.elements].find((control) => control.type === 'submit')
+    const label = button?.dataset.busyLabel
+    const download = form.hasAttribute('data-download')
+    if (held.has(form) || (!label && !download)) return
+    const busy = [form, button].filter(Boolean)
+    const content = button && [...button.childNodes]
+    const timers = [
+      setTimeout(() => {
+        busy.forEach((node) => node.setAttribute('aria-busy', 'true'))
+        if (label) button.replaceChildren(label)
+        if (button) button.disabled = true
+      }),
+    ]
+    const release = () => {
+      timers.forEach(clearTimeout)
+      held.delete(form)
+      busy.forEach((node) => node.removeAttribute('aria-busy'))
+      if (label) button.replaceChildren(...content)
+      if (button) button.disabled = false
+    }
+    held.set(form, release)
+    if (!download) return
+    timers.push(
+      setTimeout(() => {
+        release()
+        form.reset()
+        form.closest('dialog[open]')?.close()
+      }, DOWNLOAD_SETTLE)
+    )
   }
 
   // A change replaces the request in flight, so the last choice always wins.
@@ -1105,6 +1147,7 @@
       // A plain post that takes seconds (testing a connection) says so until its answer arrives.
       const waiting = submitter?.dataset.busyMessage || form.dataset.busyMessage
       if (waiting) toast(waiting, { sticky: true })
+      holdPlain(form, submitter)
       return
     }
     event.preventDefault()
@@ -1136,7 +1179,13 @@
 
   addEventListener('hashchange', () => $$('[data-tabs="hash"]').forEach(restoreHashTab))
   // A page restored from the back/forward cache must not come back with a pending form.
-  addEventListener('pageshow', (event) => event.persisted && $$('form').forEach(cancelPending))
+  addEventListener('pageshow', (event) => {
+    if (!event.persisted) return
+    for (const form of $$('form')) {
+      cancelPending(form)
+      held.get(form)?.()
+    }
+  })
   setInterval(() => $$('time[data-format="relative"]').forEach(renderTime), 60000)
 
   if (document.readyState === 'loading')

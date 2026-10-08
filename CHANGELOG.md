@@ -12,6 +12,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Added a dialog that shows the link of an invite right after it is created, on the page now named **Team**.
 - Added the `mymcps` command. `mymcps` alone serves the instance, and `mymcps user:reset-password`, `mymcps mcp:update`, `mymcps migration:run`, `mymcps generate:key`, and `mymcps healthcheck` replace the `node ace` commands.
 - Added `DATA_DIR` to choose where the database, the generated key, MCP sandboxes, and uploads are kept (`tmp` by default, `/app/tmp` in the image), and `APP_ENV` as the name of the environment. `NODE_ENV` is still read.
+- Added encrypted backups. Under **Settings**, an administrator exports everything the instance stores (users, MCPs with their credentials, access tokens, call logs, and settings) to one file protected by a password of their choice and named after the date and time of the export. The setup screen of a new instance offers **Import a backup** beside creating the admin account: the instance becomes the one in the file, and its people sign in with the accounts they had. The file carries the `APP_KEY` of the instance it comes from, so it also imports into an instance with another key, and a backup of an older version is migrated as it is imported. A reverse proxy in front of the instance must accept a request body the size of the file; [docs/backup.md](docs/backup.md) has the details.
 
 ### Changed
 
@@ -27,6 +28,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Pages are sent with `Cache-Control: no-store`, so a page with the data of an account, or a new access token, is not shown again from the cache of the browser after sign-out.
 - The Content-Security-Policy no longer allows inline styles (`style-src 'self'`).
+- A backup is encrypted with AES-256-GCM under a key derived from its password with scrypt, and cannot be opened or altered without the password. Exporting one asks for the account password again, within the limit of five wrong guesses shared with the email and password changes, and is written to the server log.
+- The import of a backup is open to whoever reaches the setup screen, and only until the instance has a user. It takes 10 attempts per 15 minutes from each client address, one import at a time, and files of up to 4 GB, kept in a private directory that is deleted when the import ends and when the server starts. A file that asks for more memory than 256 MiB to derive its key is refused before any is spent. The database in a backup is checked before anything is run on it: it must pass an integrity check, hold nothing but tables and indexes (no trigger, view, or virtual table), name only migrations this version knows, and have an administrator. Its rows are then copied through the schema of the instance, in one transaction that stops on a row violating a foreign key, and a refused import leaves the instance as it was.
 
 ### Removed
 

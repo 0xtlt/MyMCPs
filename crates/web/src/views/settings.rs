@@ -18,6 +18,8 @@ pub struct SettingsPage<'a> {
     pub email_form: &'a FormState,
     pub password_form: &'a FormState,
     pub instance_form: &'a FormState,
+    /// The export of a backup. Administrators only.
+    pub backup_form: &'a FormState,
 }
 
 /// The message of a field and the attributes that tie it to its control.
@@ -64,17 +66,37 @@ fn password_field(
     autocomplete: &str,
     autofocus: bool,
 ) -> Markup {
+    password_field_with_help(form, id, name, label, autocomplete, autofocus, None)
+}
+
+/// [`password_field`], with a line under it that says what to type.
+fn password_field_with_help(
+    form: &FormState,
+    id: &str,
+    name: &str,
+    label: &str,
+    autocomplete: &str,
+    autofocus: bool,
+    help: Option<&str>,
+) -> Markup {
     let error = FieldError::of(form, name, id);
+    let help_id = help.map(|_| format!("{id}-help"));
+    // A password that is not the one of an account: a password manager that
+    // took it for one would offer to replace the saved sign-in with it.
+    // `autocomplete="off"` is not enough for them, hence their own attributes.
+    let not_an_account = autocomplete == "off";
     html! {
         div class="field" {
             label class="field__label" for=(id) { (label) }
             div class="input-group" {
                 input class="input-group__control" id=(id) name=(name) type="password" autocomplete=(autocomplete) required
-                    autofocus[autofocus] aria-invalid=[error.invalid()] aria-describedby=[error.described_by(None)];
+                    data-1p-ignore[not_an_account] data-bwignore[not_an_account] data-lpignore=[not_an_account.then_some("true")]
+                    autofocus[autofocus] aria-invalid=[error.invalid()] aria-describedby=[error.described_by(help_id.as_deref())];
                 button type="button" class="input-group__action" data-password-toggle=(format!("#{id}")) aria-pressed="false"
                     aria-label="Show password" data-label-pressed="Hide password" { (icon("eye")) (icon("eye-off")) }
             }
             (error.line())
+            @if let (Some(help), Some(help_id)) = (help, &help_id) { p class="field__help" id=(help_id) { (help) } }
         }
     }
 }
@@ -147,6 +169,40 @@ pub fn password_form(context: &PageContext, form: &FormState) -> Markup {
     }
 }
 
+/// The form of the "Export backup" dialog. A plain post, not one the
+/// script sends: its answer is the file, which the browser saves while the
+/// page stays where it is. A refusal comes back as the page, with this
+/// dialog open on what was refused.
+pub fn backup_form(context: &PageContext, form: &FormState) -> Markup {
+    // A fresh form starts on the first field; in a refused one, the first
+    // invalid field takes the focus by itself.
+    let fresh = !form.has_errors();
+    html! {
+        form method="post" action="/settings/backup" data-download {
+            (context.csrf_field())
+            (dialog_header(
+                "export-backup-title",
+                "Export backup",
+                "The file is encrypted with the password you choose. It cannot be opened without it.",
+            ))
+            div class="dialog__body" {
+                (password_field(form, "backup-password", "password", "Backup password", "off", fresh))
+                (password_field(form, "backup-password-confirmation", "passwordConfirmation", "Confirm backup password", "off", false))
+                (password_field_with_help(
+                    form,
+                    "backup-current-password",
+                    "currentPassword",
+                    "Current password",
+                    "current-password",
+                    false,
+                    Some("Your account password, to confirm it is you."),
+                ))
+            }
+            (dialog_footer("Export backup"))
+        }
+    }
+}
+
 /// A dialog whose form the script sends and swaps in place.
 fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) -> Markup {
     html! {
@@ -189,6 +245,25 @@ fn account_section(user: &User) -> Markup {
                     "Password",
                     "Change your password whenever you need to secure your account.",
                     Some(("Change password", "#change-password")),
+                ))
+            }
+        }
+    }
+}
+
+/// Administrators only: a member does not get this section.
+fn backup_section() -> Markup {
+    html! {
+        section class="section" aria-labelledby="backup-title" {
+            div class="section__intro" {
+                h2 class="section__title" id="backup-title" { "Backup " span class="badge badge--info badge--no-dot" { "Admin only" } }
+                p class="section__description" { "Export everything this instance stores to one encrypted file. Import it on the setup screen of a new instance." }
+            }
+            div class="card" {
+                (detail_row(
+                    "Export backup",
+                    "Users, MCPs with their credentials, access tokens, call logs and settings.",
+                    Some(("Export backup", "#export-backup")),
                 ))
             }
         }
@@ -381,9 +456,13 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
 
 pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
     // What an open dialog already says under its field is not said again in a toast.
-    let reopened = [settings.email_form, settings.password_form]
-        .into_iter()
-        .find(|form| form.has_errors());
+    let reopened = [
+        settings.email_form,
+        settings.password_form,
+        settings.backup_form,
+    ]
+    .into_iter()
+    .find(|form| form.has_errors());
     let mut context = context.clone();
     if reopened.is_some_and(|form| context.flash_error.as_deref() == form.first_error()) {
         context.flash_error = None;
@@ -401,6 +480,7 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
         @if let Some(instance) = settings.instance {
             (instance_section(context, instance, settings.instance_form))
         }
+        @if settings.user.is_admin() { (backup_section()) }
     };
     let overlays = html! {
         (form_dialog(
@@ -415,6 +495,14 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
             settings.password_form.has_errors(),
             password_form(context, settings.password_form),
         ))
+        @if settings.user.is_admin() {
+            (form_dialog(
+                "export-backup",
+                "export-backup-title",
+                settings.backup_form.has_errors(),
+                backup_form(context, settings.backup_form),
+            ))
+        }
     };
     app_page(context, "Settings", content, overlays)
 }

@@ -144,7 +144,11 @@ The selected entry is `aria-current="page"`. The count chip is optional (pending
 On desktop the panel scrolls and the frame stays put; on mobile the document scrolls under a
 sticky top bar.
 
-Auth screens (sign in, authorize, onboarding, invite, errors without a session):
+Auth screens (sign in, authorize, onboarding, import of a backup, invite, errors without a
+session). A second action goes under the primary button, 12px apart, as a secondary or a
+tertiary button: `<div class="stack gap-300"><button class="button button--primary
+button--block">Create admin</button><a class="button button--secondary button--block"
+href="/onboarding/import">Import a backup</a></div>`.
 
 ```html
 <body class="auth">
@@ -296,6 +300,9 @@ one info toast, one error toast and the confirm dialog, for app.js to clone.
 <!-- textarea -->
 <textarea class="input" id="description" name="description" rows="3"></textarea>
 
+<!-- file: the browser's own button, drawn as a quiet button inside the field -->
+<input class="input" id="backup" name="backup" type="file" accept=".mymcps">
+
 <!-- leading icon, trailing action -->
 <div class="input-group">
   <input class="input-group__control" id="password" name="password" type="password">
@@ -310,7 +317,9 @@ one info toast, one error toast and the confirm dialog, for app.js to clone.
 ```
 
 `.input--mono` for identifiers. `.search--on-frame` on the dark frame. Two fields side by side:
-`<div class="grid grid--2">`. A form is `<form class="form">` (blocks 16px apart).
+`<div class="grid grid--2">`. A form is `<form class="form">` (blocks 16px apart). A form that
+carries a file is `enctype="multipart/form-data"`, a plain post, with its `_csrf` field first:
+the server reads the form in order and takes no file before a valid token.
 
 ```html
 <!-- a number and its unit -->
@@ -723,6 +732,8 @@ Browser floor: Chrome 126, Firefox 126, Safari 18.
 | `form[data-async]` inside `[data-fragment]` | Sent with `fetch`; see the protocol below. `data-async-target="#id"`, `data-async-history` (GET). |
 | `form[data-autosubmit]` | Submits when a named control changes, and 300 ms after typing in a text field. |
 | `data-busy-message="Testing…"` on a plain form or its submit button | A toast shown from the submit until the answer replaces the page: for the posts that take seconds (testing a connection, updating an npm MCP). |
+| `data-busy-label="Importing…"` on the submit button of a plain form | The text of the button, with its spinner, from the submit until the answer replaces the page; the button is disabled meanwhile. For a post that takes long on a page with one action (importing a backup). |
+| `form[data-download]` | A plain form answered with a file, which leaves the page where it is: its submit button is busy for one second, then the form is reset and its dialog closes. A refusal is answered with a redirect, which replaces the page as for any plain form. |
 | `data-confirm="Message"` on a form or a submit button | Styled confirm dialog. `data-confirm-title`, `data-confirm-label`, `data-confirm-tone="critical"`; `{count}` = checked `[data-select-item]`. |
 | `data-show-when="name=value"`, `data-hide-when`, `data-optional-when` | Conditional blocks: `name=a\|b`, `name!=a`, `name=on` / `off` for a checkbox, `name=` for empty, `&` to combine, `name:origin=https://host`. Hidden controls are disabled. |
 | `data-repeat`, `-list`, `-row`, `-template`, `-add`, `-remove`, `-min`, `-max` | Repeatable rows; `__i__` in the template is the row index. |

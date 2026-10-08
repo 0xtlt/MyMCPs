@@ -2,6 +2,7 @@
 //! `mymcps-vine` validator here, never by hand in a handler.
 
 pub mod access_token;
+pub mod backup;
 pub mod builtin_files;
 pub mod cron;
 pub mod mcp;

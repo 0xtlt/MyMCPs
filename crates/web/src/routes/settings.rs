@@ -35,6 +35,8 @@ const REFUSED_FORM_KEY: &str = "settingsForm";
 const EMAIL_FORM: &str = "email";
 const PASSWORD_FORM: &str = "password";
 const INSTANCE_FORM: &str = "instance";
+/// The export of a backup, whose route is in [`crate::routes::backup`].
+pub(crate) const BACKUP_FORM: &str = "backup";
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
@@ -76,6 +78,7 @@ pub async fn index(
             email_form: &form(EMAIL_FORM),
             password_form: &form(PASSWORD_FORM),
             instance_form: &form(INSTANCE_FORM),
+            backup_form: &form(BACKUP_FORM),
         },
     )))
 }
@@ -83,7 +86,7 @@ pub async fn index(
 /// Answer a dialog form that was refused. The page's script gets the form
 /// again with its errors. Without the script, the browser goes back to the
 /// page, which opens the dialog on what was refused.
-fn refuse(
+pub(crate) fn refuse(
     headers: &HeaderMap,
     session: &Session,
     name: &str,
@@ -103,7 +106,7 @@ fn refuse(
     )
 }
 
-enum PasswordCheck {
+pub(crate) enum PasswordCheck {
     Confirmed,
     Wrong,
     /// Too many attempts: the answer to give.
@@ -112,7 +115,7 @@ enum PasswordCheck {
 
 /// A signed-in browser is no proof of knowing the password: without a
 /// budget, whoever holds a hijacked session could guess it here at will.
-async fn confirm_current_password(
+pub(crate) async fn confirm_current_password(
     state: &AppState,
     user: &User,
     current_password: &str,
@@ -129,7 +132,7 @@ async fn confirm_current_password(
     Ok(PasswordCheck::Confirmed)
 }
 
-fn wrong_current_password(input: &Map<String, Value>) -> FormState {
+pub(crate) fn wrong_current_password(input: &Map<String, Value>) -> FormState {
     FormState::with_error(
         "currentPassword",
         "The current password is incorrect",

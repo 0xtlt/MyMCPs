@@ -41,6 +41,9 @@ percent-encoding = "2"
 # The IANA time zones: Logs and Analytics cut their periods in the viewer's zone.
 chrono-tz = { version = "0.10", default-features = false, features = ["std"] }
 http-body-util = "0.1"
+# Reads the one form that carries a file, field by field: the backup an
+# instance is set up from goes to disk as it arrives.
+multer = "3"
 
 [features]
 # `testing::TestApp`, for functional tests.

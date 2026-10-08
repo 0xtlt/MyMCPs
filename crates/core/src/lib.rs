@@ -7,6 +7,7 @@
 //! whoever needs the database, the encryption key or the configuration, so
 //! that tests can each build their own.
 
+pub mod backup;
 pub mod client_ip;
 pub mod config;
 pub mod crypto;

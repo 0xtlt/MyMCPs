@@ -9,6 +9,7 @@ use crate::state::AppState;
 pub mod analytics;
 pub mod approvals;
 pub mod auth;
+pub mod backup;
 pub mod builtin_files;
 pub mod gateway;
 pub mod home;
@@ -41,6 +42,11 @@ pub struct FeatureRoutes {
     pub admin: Router<AppState>,
     /// First-run pages, gone once an administrator exists.
     pub first_run: Router<AppState>,
+    /// First-run pages that read their body themselves: a session and who
+    /// is signed in, but no parsed body and no CSRF check. A form that
+    /// carries a file is too large to parse before its handler runs: the
+    /// handler reads it field by field and checks the CSRF token itself.
+    pub first_run_raw: Router<AppState>,
 }
 
 impl FeatureRoutes {
@@ -52,6 +58,7 @@ impl FeatureRoutes {
         self.signed_in = self.signed_in.merge(other.signed_in);
         self.admin = self.admin.merge(other.admin);
         self.first_run = self.first_run.merge(other.first_run);
+        self.first_run_raw = self.first_run_raw.merge(other.first_run_raw);
         self
     }
 }
@@ -62,6 +69,7 @@ pub fn all() -> FeatureRoutes {
         analytics::routes(),
         approvals::routes(),
         auth::routes(),
+        backup::routes(),
         builtin_files::routes(),
         gateway::routes(),
         home::routes(),

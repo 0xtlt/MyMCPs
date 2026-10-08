@@ -1560,6 +1560,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "multer"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83e87776546dc87511aa5ee218730c92b666d7264ab6ed41f9d215af9cd5224b"
+dependencies = [
+ "bytes",
+ "encoding_rs",
+ "futures-util",
+ "http",
+ "httparse",
+ "memchr",
+ "mime",
+ "spin",
+ "version_check",
+]
+
+[[package]]
 name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1621,6 +1638,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "ipnet",
+ "mymcps-vine",
  "rand",
  "regex",
  "scrypt",
@@ -1861,6 +1879,7 @@ dependencies = [
  "http",
  "http-body-util",
  "maud",
+ "multer",
  "mymcps-builtin",
  "mymcps-core",
  "mymcps-deno",

@@ -114,6 +114,34 @@ enum TestBody {
     Form(Vec<(String, String)>),
     Json(Value),
     Raw(Bytes, String),
+    Multipart(Vec<(String, Option<String>, Bytes)>),
+}
+
+/// A `multipart/form-data` body and its content type, as a browser sends a
+/// form that carries a file: `(name, file name, content)` for each part, in
+/// this order, with a file name for the parts that are files.
+pub fn multipart_form(parts: &[(&str, Option<&str>, &[u8])]) -> (Bytes, String) {
+    const BOUNDARY: &str = "----MyMCPsTestFormBoundaryZ4hKx7q2LmP9";
+    let mut body = Vec::new();
+    for (name, file_name, content) in parts {
+        body.extend_from_slice(
+            format!("--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"{name}\"").as_bytes(),
+        );
+        if let Some(file_name) = file_name {
+            body.extend_from_slice(
+                format!("; filename=\"{file_name}\"\r\nContent-Type: application/octet-stream")
+                    .as_bytes(),
+            );
+        }
+        body.extend_from_slice(b"\r\n\r\n");
+        body.extend_from_slice(content);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
+    (
+        Bytes::from(body),
+        format!("multipart/form-data; boundary={BOUNDARY}"),
+    )
 }
 
 /// One request. Nothing is followed and nothing is kept between requests:
@@ -191,6 +219,24 @@ impl TestRequest<'_> {
 
     pub fn raw_body(mut self, body: impl Into<Bytes>, content_type: &str) -> Self {
         self.body = TestBody::Raw(body.into(), content_type.to_string());
+        self
+    }
+
+    /// Send a form that carries a file: see [`multipart_form`]. With
+    /// [`Self::csrf`], the token is its first part, where the pages put it.
+    pub fn multipart(mut self, parts: &[(&str, Option<&str>, &[u8])]) -> Self {
+        self.body = TestBody::Multipart(
+            parts
+                .iter()
+                .map(|(name, file_name, content)| {
+                    (
+                        name.to_string(),
+                        file_name.map(str::to_string),
+                        Bytes::copy_from_slice(content),
+                    )
+                })
+                .collect(),
+        );
         self
     }
 
@@ -272,6 +318,20 @@ impl TestRequest<'_> {
                 }
                 builder = builder.header(CONTENT_TYPE, content_type);
                 Body::from(bytes)
+            }
+            TestBody::Multipart(parts) => {
+                let token = csrf
+                    .as_ref()
+                    .map(|token| (CSRF_FIELD, None, token.as_bytes()));
+                let parts: Vec<(&str, Option<&str>, &[u8])> = token
+                    .into_iter()
+                    .chain(parts.iter().map(|(name, file_name, content)| {
+                        (name.as_str(), file_name.as_deref(), &content[..])
+                    }))
+                    .collect();
+                let (body, content_type) = multipart_form(&parts);
+                builder = builder.header(CONTENT_TYPE, content_type);
+                Body::from(body)
             }
         };
 

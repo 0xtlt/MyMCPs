@@ -80,58 +80,63 @@ impl Db {
     /// with the same names, so each side sees what the other applied.
     pub async fn migrate(&self) -> Result<Vec<&'static str>> {
         let mut connection = self.pool.acquire().await?;
-        let connection: &mut SqliteConnection = &mut connection;
-
-        sqlx::query(
-            "create table if not exists `adonis_schema` (`id` integer not null primary key autoincrement, `name` varchar(255) not null, `batch` integer not null, `migration_time` datetime default CURRENT_TIMESTAMP)",
-        )
-        .execute(&mut *connection)
-        .await?;
-        sqlx::query(
-            "create table if not exists `adonis_schema_versions` (`version` integer, primary key (`version`))",
-        )
-        .execute(&mut *connection)
-        .await?;
-        sqlx::query(
-            "insert into `adonis_schema_versions` (`version`) select 2 where not exists (select 1 from `adonis_schema_versions`)",
-        )
-        .execute(&mut *connection)
-        .await?;
-
-        let applied: Vec<String> = sqlx::query_scalar("select `name` from `adonis_schema`")
-            .fetch_all(&mut *connection)
-            .await?;
-        for name in &applied {
-            if !migrations::MIGRATIONS
-                .iter()
-                .any(|migration| migration.name == name)
-            {
-                tracing::warn!(
-                    migration = %name,
-                    "The database has a migration this version does not know; it was created by a newer version"
-                );
-            }
-        }
-        let batch: i64 =
-            sqlx::query_scalar("select coalesce(max(`batch`), 0) + 1 from `adonis_schema`")
-                .fetch_one(&mut *connection)
-                .await?;
-
-        let mut ran = Vec::new();
-        for migration in migrations::MIGRATIONS {
-            if applied.iter().any(|name| name == migration.name) {
-                continue;
-            }
-            run_migration(connection, migration, batch)
-                .await
-                .map_err(|source| Error::Migration {
-                    name: migration.name.to_string(),
-                    source,
-                })?;
-            ran.push(migration.name);
-        }
-        Ok(ran)
+        migrate(&mut connection).await
     }
+}
+
+/// [`Db::migrate`] on one connection, whatever database it is open on: the
+/// database of an instance, or the one a backup holds, which may have been
+/// made by an older version.
+pub(crate) async fn migrate(connection: &mut SqliteConnection) -> Result<Vec<&'static str>> {
+    sqlx::query(
+        "create table if not exists `adonis_schema` (`id` integer not null primary key autoincrement, `name` varchar(255) not null, `batch` integer not null, `migration_time` datetime default CURRENT_TIMESTAMP)",
+    )
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(
+        "create table if not exists `adonis_schema_versions` (`version` integer, primary key (`version`))",
+    )
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(
+        "insert into `adonis_schema_versions` (`version`) select 2 where not exists (select 1 from `adonis_schema_versions`)",
+    )
+    .execute(&mut *connection)
+    .await?;
+
+    let applied: Vec<String> = sqlx::query_scalar("select `name` from `adonis_schema`")
+        .fetch_all(&mut *connection)
+        .await?;
+    for name in &applied {
+        if !migrations::MIGRATIONS
+            .iter()
+            .any(|migration| migration.name == name)
+        {
+            tracing::warn!(
+                migration = %name,
+                "The database has a migration this version does not know; it was created by a newer version"
+            );
+        }
+    }
+    let batch: i64 =
+        sqlx::query_scalar("select coalesce(max(`batch`), 0) + 1 from `adonis_schema`")
+            .fetch_one(&mut *connection)
+            .await?;
+
+    let mut ran = Vec::new();
+    for migration in migrations::MIGRATIONS {
+        if applied.iter().any(|name| name == migration.name) {
+            continue;
+        }
+        run_migration(connection, migration, batch)
+            .await
+            .map_err(|source| Error::Migration {
+                name: migration.name.to_string(),
+                source,
+            })?;
+        ran.push(migration.name);
+    }
+    Ok(ran)
 }
 
 /// Two migrations rebuild a table (create, copy, drop, rename). With foreign

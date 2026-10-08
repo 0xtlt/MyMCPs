@@ -1,4 +1,5 @@
-//! The screens before sign-in: sign in, and the first-run onboarding.
+//! The screens before sign-in: sign in, and the first-run onboarding, where
+//! an instance gets its first administrator or is set up from a backup.
 
 use maud::{Markup, html};
 
@@ -104,9 +105,48 @@ pub fn onboarding_page(context: &PageContext, form: &FormState) -> Markup {
                     (password_field(form, "password", "password", "Password", "new-password", false))
                     (password_field(form, "password-confirmation", "passwordConfirmation", "Confirm password", "new-password", false))
                 }
-                button type="submit" class="button button--primary button--block" { "Create admin" }
+                div class="stack gap-300" {
+                    button type="submit" class="button button--primary button--block" { "Create admin" }
+                    a class="button button--secondary button--block" href="/onboarding/import" { "Import a backup" }
+                }
             }
         }
     };
     auth_page(context, "Set up MyMCPs", content)
+}
+
+/// The other way to set an instance up: from the backup of another one.
+/// The form carries a file, and works without the page's script.
+pub fn import_page(context: &PageContext, form: &FormState) -> Markup {
+    let file_error = form.error("backup");
+    // After a refusal, the field to correct takes the focus.
+    let password_refused = file_error.is_none() && form.error("password").is_some();
+    let content = html! {
+        section class="auth-card control-lg" aria-labelledby="import-title" {
+            (logo())
+            div class="auth-card__heading" {
+                h1 class="auth-card__title" id="import-title" { "Import a backup" }
+                p class="auth-card__subtitle" { "Restore the users, MCPs, access tokens, call logs and settings of another MyMCPs instance." }
+            }
+            form class="form" method="post" action="/onboarding/import" enctype="multipart/form-data" {
+                // First: the file is not read before the token was.
+                (context.csrf_field())
+                div class="stack" {
+                    (form_banner(form))
+                    div class="field" {
+                        label class="field__label" for="backup" { "Backup file" }
+                        input class="input" id="backup" name="backup" type="file" accept=".mymcps" required
+                            aria-invalid=[file_error.map(|_| "true")] aria-describedby=[file_error.map(|_| "backup-error")];
+                        @if let Some(message) = file_error { p class="field__error" id="backup-error" { (message) } }
+                    }
+                    (password_field(form, "password", "password", "Backup password", "off", password_refused))
+                }
+                div class="stack gap-300" {
+                    button type="submit" class="button button--primary button--block" data-busy-label="Importing…" { "Import backup" }
+                    a class="button button--block" href="/onboarding" { "Create a new instance instead" }
+                }
+            }
+        }
+    };
+    auth_page(context, "Import a backup", content)
 }

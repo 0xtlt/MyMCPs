@@ -4920,3 +4920,34 @@
     position: relative;
   }
 }
+
+/*
+ * File field: <input class="input" type="file">. The browser's own button is drawn as a quiet
+ * button at the start of the field, and the name of the chosen file follows it on one line.
+ */
+@layer components {
+  .input[type="file"] {
+    padding-block: var(--mm-space-100);
+    padding-inline-start: var(--mm-space-100);
+    color: var(--mm-color-text-secondary);
+    cursor: pointer;
+
+    &::file-selector-button {
+      block-size: calc(var(--mm-control-height) - 2 * (var(--mm-space-100) + var(--mm-border-width)));
+      margin-inline-end: var(--mm-space-300);
+      padding-inline: var(--mm-space-300);
+      border: 0;
+      border-radius: calc(var(--mm-field-radius) - var(--mm-space-100));
+      font: var(--mm-text-body-md-medium);
+      letter-spacing: var(--mm-tracking-md);
+      color: var(--mm-color-text-default);
+      background: var(--mm-color-bg-fill-secondary);
+      cursor: pointer;
+      transition: background-color var(--mm-duration-fast) var(--mm-ease);
+    }
+
+    &:hover::file-selector-button {
+      background: var(--mm-color-bg-fill-secondary-hover);
+    }
+  }
+}

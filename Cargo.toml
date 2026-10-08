@@ -70,3 +70,12 @@ strip = true
 
 [profile.dev.package."*"]
 opt-level = 1
+
+# scrypt is slow by design, and four times slower again when it is not
+# optimised: the key of a backup takes 0.8 s to derive at `opt-level = 1`
+# and 0.2 s at 3, and every test that creates a user hashes a password.
+[profile.dev.package.scrypt]
+opt-level = 3
+
+[profile.dev.package.salsa20]
+opt-level = 3
