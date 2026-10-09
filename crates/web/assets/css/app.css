@@ -4951,3 +4951,35 @@
     }
   }
 }
+
+/*
+ * QR code: <svg class="qr-code"> drawn by the server, a .qr-code__background square under one
+ * .qr-code__modules path. Scanners expect dark modules on a light ground, so both colours stay
+ * the same in the dark theme, from tokens of their own.
+ */
+@layer tokens {
+  :root {
+    --mm-color-qr-background: var(--mm-slate-0);
+    --mm-color-qr-module: var(--mm-slate-950);
+    --mm-size-qr: 12rem; /* 192 */
+  }
+}
+
+@layer components {
+  .qr-code {
+    display: block;
+    inline-size: var(--mm-size-qr);
+    block-size: var(--mm-size-qr);
+    margin-block-start: var(--mm-space-300);
+    border: var(--mm-border-width) solid var(--mm-color-border-default);
+    border-radius: var(--mm-radius-200);
+  }
+
+  .qr-code__background {
+    fill: var(--mm-color-qr-background);
+  }
+
+  .qr-code__modules {
+    fill: var(--mm-color-qr-module);
+  }
+}

@@ -92,6 +92,10 @@
  *   data-oauth-paste-error          its error text
  *   data-shortcut="mod+k"           field focused by Cmd+K (Apple) or Ctrl+K
  *   data-shortcut-hint              <kbd> that receives the platform's spelling of it
+ *   data-passkey="register|authenticate"  form: creates or uses a passkey, then submits itself
+ *   data-passkey-options="/url"     on it: where its fields are posted for the WebAuthn options
+ *   data-passkey-supported          shown only in a browser that has passkeys
+ *   data-passkey-unsupported        hidden in a browser that has passkeys
  *
  * State written for app.css
  *   html[data-dialog-open]          a modal dialog is open
@@ -1008,6 +1012,113 @@
     if (letter) hint.textContent = APPLE ? `\u2318${letter}` : `Ctrl ${letter}`
   }
 
+  // ------------------------------------------------------------------------------ passkeys
+  // A form[data-passkey] is sent twice. First its fields, without the credential, go to
+  // data-passkey-options, which answers the WebAuthn options in JSON, or the form again with its
+  // errors (422). Once the browser created or used the passkey, the form itself is submitted,
+  // the credential in its hidden `credential` field, as any other form of the page.
+  const PASSKEYS = 'PublicKeyCredential' in window
+  const PASSKEY_CANCELLED = 'The passkey request was cancelled or timed out.'
+  const PASSKEY_KNOWN = 'This passkey is already registered.'
+  const passkeyReady = new WeakSet() // forms whose next submit carries the credential
+
+  function fromBase64url(text) {
+    const binary = atob(text.replace(/-/g, '+').replace(/_/g, '/'))
+    return Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  }
+
+  function toBase64url(buffer) {
+    let binary = ''
+    for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte)
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  }
+
+  // The server's options carry their binary members in base64url; the browser wants bytes.
+  function publicKeyOptions({ publicKey }) {
+    const bytes = (list) => list?.map((item) => ({ ...item, id: fromBase64url(item.id) }))
+    const options = { ...publicKey, challenge: fromBase64url(publicKey.challenge) }
+    if (publicKey.user) options.user = { ...publicKey.user, id: fromBase64url(publicKey.user.id) }
+    if (publicKey.excludeCredentials) options.excludeCredentials = bytes(publicKey.excludeCredentials)
+    if (publicKey.allowCredentials) options.allowCredentials = bytes(publicKey.allowCredentials)
+    return options
+  }
+
+  // The credential as the server reads it. Transports and extension outputs are left out: the
+  // server does not use them, and a value it does not know would refuse the passkey.
+  function credentialJson(credential) {
+    const { response } = credential
+    const fields = { clientDataJSON: toBase64url(response.clientDataJSON) }
+    if (response.attestationObject)
+      fields.attestationObject = toBase64url(response.attestationObject)
+    if (response.authenticatorData) {
+      fields.authenticatorData = toBase64url(response.authenticatorData)
+      fields.signature = toBase64url(response.signature)
+      fields.userHandle = response.userHandle ? toBase64url(response.userHandle) : null
+    }
+    const rawId = toBase64url(credential.rawId)
+    return JSON.stringify({ id: credential.id, rawId, type: credential.type, response: fields })
+  }
+
+  async function passkeyOptions(form) {
+    const target = form.closest('[data-fragment]')
+    const fields = [...new FormData(form)].filter(([name, value]) => {
+      return name !== 'credential' && typeof value === 'string'
+    })
+    try {
+      const body = new URLSearchParams(fields)
+      const response = await request(form.dataset.passkeyOptions, { method: 'POST', body, target })
+      const { status, headers } = response
+      if (response.redirected) return location.assign(response.url)
+      if (status === 422 && target && headers.get('Content-Type')?.includes('text/html')) {
+        swap(target, await response.text())
+        return focusFirst(target)
+      }
+      const answer = await response.json().catch(() => ({}))
+      if (response.ok && answer.publicKey) return publicKeyOptions(answer)
+      toast(answer.error || GENERIC_ERROR, { tone: 'error' })
+    } catch {
+      toast(GENERIC_ERROR, { tone: 'error' })
+    }
+  }
+
+  async function passkeyCeremony(form, submitter) {
+    const buttons = [...form.elements].filter((c) => c.type === 'submit' && !c.disabled)
+    form.setAttribute('aria-busy', 'true')
+    buttons.forEach((button) => (button.disabled = true))
+    const release = () => {
+      form.removeAttribute('aria-busy')
+      buttons.forEach((button) => (button.disabled = false))
+    }
+    const publicKey = await passkeyOptions(form)
+    if (!publicKey) return release()
+    let credential
+    try {
+      const register = form.dataset.passkey === 'register'
+      credential = register
+        ? await navigator.credentials.create({ publicKey })
+        : await navigator.credentials.get({ publicKey })
+    } catch (error) {
+      const known = error?.name === 'InvalidStateError'
+      toast(known ? PASSKEY_KNOWN : PASSKEY_CANCELLED, { tone: 'error' })
+    }
+    release()
+    const field = form.elements.namedItem('credential')
+    if (!credential || !field?.isConnected) return
+    field.value = credentialJson(credential)
+    passkeyReady.add(form)
+    attempt(() => form.requestSubmit(submitter?.isConnected ? submitter : undefined))
+    passkeyReady.delete(form)
+  }
+
+  // Caught on the way down, before the handler that sends forms in the background.
+  function passkeySubmit(event) {
+    const form = event.target
+    if (!form.matches('form[data-passkey]') || passkeyReady.has(form)) return
+    event.preventDefault()
+    if (!PASSKEYS || form.getAttribute('aria-busy') === 'true') return
+    passkeyCeremony(form, event.submitter)
+  }
+
   // ------------------------------------------------------------------------------- enhance
   // Applies every behaviour that needs a look at the markup. Idempotent; run on the document
   // at load and on each fragment the server sends afterwards.
@@ -1041,6 +1152,8 @@
     })
     syncDialogs()
     each('input[data-timezone]', syncTimeZone)
+    each('[data-passkey-supported]', (node) => (node.hidden = !PASSKEYS))
+    each('[data-passkey-unsupported]', (node) => (node.hidden = PASSKEYS))
     emit(scope, 'app:enhance')
   }
 
@@ -1136,6 +1249,7 @@
     if (form?.hasAttribute('data-autosubmit') && target.name && !typed) autosubmit(form)
   })
 
+  on('submit', passkeySubmit, true)
   on('submit', (event) => {
     const { target: form, submitter } = event
     clearTimeout(autosubmitTimers.get(form))

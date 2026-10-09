@@ -30,6 +30,7 @@ hkdf = "0.13"
 scrypt = { version = "0.12", default-features = false }
 ipnet = "2"
 fancy-regex = "0.19"
+totp-rs.workspace = true
 tempfile = { workspace = true, optional = true }
 
 [features]

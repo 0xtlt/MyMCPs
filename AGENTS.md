@@ -23,7 +23,7 @@ The server renders its own pages: `maud` templates in `crates/web/src/views`, on
 Single Rust binary, `mymcps` (Cargo workspace in `crates/`, entry point `crates/cli`): an HTTP server that renders its own pages. No Redis or external DB — SQLite at `tmp/db.sqlite3`. Production packaging: `Dockerfile` (+ `docker-compose.yml`) compiles the binary and bundles Deno for npm MCP sandboxes; persist `/app/tmp`.
 
 ### Runtime
-- **Rust** through rustup, and a C compiler: SQLite and the TLS library are compiled from C. The project toolchain is the version in the `rust:` image tag of the `Dockerfile`, which the workflows install as `RUST_TOOLCHAIN`. There is no Node or pnpm.
+- **Rust** through rustup, a C compiler, `perl` and `make`: SQLite, the TLS library and OpenSSL (which verifies passkeys) are compiled from C, and the build script of OpenSSL runs `perl` and `make`. The project toolchain is the version in the `rust:` image tag of the `Dockerfile`, which the workflows install as `RUST_TOOLCHAIN`. There is no Node or pnpm.
 - Standard commands: see `README.md` (`cargo run --bin mymcps`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --release --bin mymcps`).
 - Dev server: `cargo run --bin mymcps` reads `.env` and listens on **PORT 3333**. For cloud VMs bind with `HOST=0.0.0.0` in `.env` while keeping `APP_URL=http://localhost:3333` for redirects/cookies.
 - One-time: copy `.env.example` → `.env`. The server generates its key (`tmp/app.key`) when `APP_KEY` is empty and migrates the database every time it starts; `mymcps generate:key` and `mymcps migration:run` do each step on its own. Do not commit `.env`.

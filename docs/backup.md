@@ -4,7 +4,7 @@ A backup is one file that holds everything an instance stores, encrypted with a 
 
 ## What a backup holds
 
-- Users, with their password hashes, and pending invites.
+- Users, with their password hashes, passkeys, authenticator app keys and the hashes of their recovery codes, and pending invites.
 - MCPs, with their credentials: bearer tokens, header values, OAuth clients and connections, built-in MCP sign-ins and settings, and the environment of npm MCPs.
 - Access tokens and the OAuth connections of AI clients. Agents keep working with the tokens they already have.
 - Tool approval choices and requests, call logs, and the instance settings.
@@ -43,13 +43,15 @@ To return an instance that is already set up to a backup, start from an empty da
 
 Credentials are encrypted in the database with the `APP_KEY` of the instance. A backup carries the key it was made with, so the import can read them: when the new instance has another `APP_KEY`, every credential is encrypted again with the new one. You do not have to copy `APP_KEY` from the old instance.
 
+Passkeys are tied to the host name of `APP_URL`, not to `APP_KEY`: they keep working on an instance with the same host name. See [Signing in](auth.md).
+
 Browser sessions are tied to `APP_KEY`. With another key, everyone signs in again. Access tokens of agents do not depend on it and keep working.
 
 ## Versions
 
 - A backup from an older version imports into a newer one: its data is migrated first.
 - A backup from a newer version is refused. Update the instance, then import again.
-- The TypeScript server and the Rust server write and read the same file.
+- The TypeScript server and the Rust server write and read the same file. The TypeScript server refuses a backup made by a Rust server that has passkeys and two-step verification (from 2026-10-09), whose database holds tables it does not know: to it, that backup comes from a newer version. Its own backups still import into the Rust server.
 
 ## Limits
 

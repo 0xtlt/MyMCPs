@@ -8,6 +8,7 @@ use mymcps_core::limiter::Limiter;
 use mymcps_gateway::{Gateway, McpGateway};
 use mymcps_upstream::Upstream;
 
+use crate::passkeys::Passkeys;
 use crate::routes::backup::BackupWork;
 use crate::routes::builtin_files::FileTraffic;
 
@@ -21,6 +22,9 @@ pub struct Limiters {
     pub login_address: Limiter,
     /// Current-password confirmations by one signed-in user.
     pub current_password: Limiter,
+    /// Second-step attempts (authenticator code, recovery code, passkey)
+    /// on one account, after its password was accepted.
+    pub two_factor: Limiter,
     pub oauth_authorization: Limiter,
     pub oauth_token: Limiter,
     pub oauth_registration: Limiter,
@@ -49,6 +53,7 @@ impl Limiters {
             login: limiter(5, 15 * MINUTES),
             login_address: limiter(30, 15 * MINUTES),
             current_password: limiter(5, 15 * MINUTES),
+            two_factor: limiter(5, 15 * MINUTES),
             oauth_authorization: limiter(100, 15 * MINUTES),
             oauth_token: limiter(50, 15 * MINUTES),
             oauth_registration: limiter(20, 60 * MINUTES),
@@ -84,6 +89,8 @@ pub struct AppState {
     pub file_traffic: FileTraffic,
     /// The import of a backup that is under way, and the limits of one.
     pub backups: BackupWork,
+    /// The WebAuthn relying party, and the passkey ceremonies under way.
+    pub passkeys: Arc<Passkeys>,
 }
 
 impl AppState {
@@ -101,6 +108,7 @@ impl AppState {
         // Built from the same two values: a second gateway would count the
         // requests of a token and queue its call logs on its own.
         let mcp_gateway = Arc::new(McpGateway::new(gateway.clone(), upstream.clone()));
+        let passkeys = Arc::new(Passkeys::new(&core.config));
         Self {
             core,
             limiters,
@@ -109,6 +117,7 @@ impl AppState {
             mcp_gateway,
             file_traffic: FileTraffic::new(),
             backups: BackupWork::new(),
+            passkeys,
         }
     }
 }

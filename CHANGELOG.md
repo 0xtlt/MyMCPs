@@ -4,7 +4,19 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ## 2026-10-09
 
+### Added
+
+- Added passkeys. **Settings → Sign-in security** adds them (with the current password), names, renames, and removes them, and **Sign in with a passkey** signs in without the email or the password. Passkeys need `APP_URL` set to the public origin of the instance, and stop working if its host name changes.
+- Added two-step verification with an authenticator app: set up from a QR code or a typed key and confirmed with a code, turned off with the current password. An account with a passkey or the app is no longer signed in by its password alone: a passkey, a code of the app, or a recovery code must follow within 10 minutes. Each code of the app works once.
+- Added 10 recovery codes, shown once when the first passkey or the app is added, each replacing the second step once, and regenerated from Settings.
+- Added `mymcps user:reset-2fa <email>`, which removes the passkeys, the authenticator app and the recovery codes of a user and signs the account out everywhere. `mymcps user:reset-password` leaves them in place.
+- Added [docs/auth.md](docs/auth.md), on passkeys, two-step verification, and what operators need to know about them.
+
 ### Changed
+
+- Building MyMCPs needs `perl` and `make`, besides a C compiler: OpenSSL, which verifies passkeys, is compiled into the binary. The image installs them in its build stage.
+- One migration creates the tables of passkeys, authenticator apps and recovery codes. The Node.js app ignores them, so the two can still share a database, but **the Node.js app does not ask for the second step**: an instance rolled back to it signs in protected accounts with the password alone. The Node.js app refuses to import a backup of a Rust server that has these tables, and `node ace migration:rollback` stops at this migration.
+- Backups hold the passkeys, the authenticator app keys (encrypted again when the importing instance has another `APP_KEY`), and the hashes of the recovery codes.
 
 - `/mcp` reads a message from the body of the request only. Parameters in the query string of a `POST` are ignored, where they used to replace the members of the message.
 - **Tool approvals** lists a tool whose name is blank or longer than 254 characters without a choice: it always asks, and the page saves the choices of the other tools.
@@ -17,6 +29,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Security
 
+- Adding the first passkey or turning on the authenticator app signs out the other browsers of the account, which had signed in with the password alone. The second step of a sign-in allows 5 attempts per account per 15 minutes.
 - A JSON document with many numeric keys, in the answer of a remote MCP or in a request to `/mcp`, no longer keeps a processor busy for minutes.
 - An email whose date is the last or the first minute a date can hold no longer makes the iCloud Mail MCP fail to list the mailbox it is in.
 - The package of an npm MCP can no longer write the files Deno reads in its sandbox before it starts (`.npmrc`, `deno.json`, `deno.jsonc`, `package.json`), with which it chose the registry its next start and its next update were fetched from. Files of these names are deleted from a sandbox at each start.

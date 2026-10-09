@@ -14,6 +14,7 @@ pub mod guards;
 pub mod input;
 pub mod install_config;
 pub mod mcp_templates;
+pub mod passkeys;
 pub mod redirect;
 pub mod respond;
 pub mod routes;

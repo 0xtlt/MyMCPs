@@ -551,6 +551,11 @@ be read whole (a token shown once, a redirect URI).
   <li class="step" aria-current="step"><div class="step__body"><h3 class="step__title">Paste its Client ID and Client Secret</h3>…fields…</div></li>
 </ol>
 
+<!-- a QR code (the setup of an authenticator app): one path drawn by the server, dark on light
+     in both themes, with four modules of quiet zone -->
+<svg class="qr-code" viewBox="0 0 37 37" role="img" aria-label="QR code of the authenticator app key" shape-rendering="crispEdges">
+  <rect class="qr-code__background" width="37" height="37"></rect><path class="qr-code__modules" d="M4 4h1v1h-1z…"></path></svg>
+
 <!-- a link in running text -->
 <a class="link" href="https://…" target="_blank" rel="noopener noreferrer">Strava API settings ICON(external-link)</a>
 ```
@@ -750,6 +755,8 @@ Browser floor: Chrome 126, Firefox 126, Safari 18.
 | `data-sidebar-toggle` | Collapses the desktop sidebar: `<html data-sidebar="collapsed">`, kept in `localStorage` and in the cookie `mm_sidebar=collapsed` so the server can render the attribute. |
 | `data-shortcut="mod+k"`, `data-shortcut-hint` | Cmd/Ctrl+K focuses the field; the hint shows the platform's spelling. |
 | `data-oauth-paste`, `data-oauth-paste-submit`, `data-oauth-paste-error` | Finishes OAuth from a pasted loopback address. |
+| `form[data-passkey="register\|authenticate"]`, `data-passkey-options="/url"` | Creates or uses a passkey before the form is sent; see the passkey protocol below. |
+| `data-passkey-supported`, `data-passkey-unsupported` | Shown, or hidden, in a browser that has passkeys (`PublicKeyCredential`). Render the first with `hidden`, so a browser without the script shows neither the button nor a broken promise. |
 
 State app.js writes, already styled: `html[data-dialog-open]`, `html[data-sidebar="collapsed"]`,
 `aria-current="true"` on the trigger of an open dialog, `aria-busy="true"` on a pending form and
@@ -793,6 +800,35 @@ While the request runs the form and its submit button have `aria-busy="true"` an
 button of the form is disabled. Without JavaScript the same form posts normally, so the handler
 must also answer a plain request (redirect or full page). A live refresh is a plain GET of the
 current URL: the element with the target's `id` is taken from the full page that comes back.
+
+### Passkey protocol
+
+```html
+<div data-fragment>
+  <form method="post" action="/settings/passkeys" data-async data-passkey="register"
+    data-passkey-options="/settings/passkeys/options">
+    <input type="hidden" name="_csrf" value="…"><input type="hidden" name="credential">
+    …fields…
+    <button type="submit" class="button button--primary">Add passkey</button>
+  </form>
+</div>
+```
+
+A passkey cannot be made without the script, so these forms live in dialogs, or behind a button
+rendered `hidden` with `data-passkey-supported`. On submit, app.js:
+
+1. Posts the fields of the form, without `credential`, to `data-passkey-options`, with the headers
+   of the async protocol. The answer is the WebAuthn options in JSON (`{ "publicKey": … }`, binary
+   members in base64url), a 422 with the form again (swapped into the closest `[data-fragment]`),
+   or a JSON `{ "error": "…" }` shown in an error toast.
+2. Calls `navigator.credentials.create()` (`register`) or `.get()` (`authenticate`). A cancelled
+   prompt shows a toast and leaves the form as it was.
+3. Writes the credential, as JSON with base64url members, into the hidden `credential` field and
+   submits the form again: with `data-async` it follows the async protocol, without it the
+   browser posts it.
+
+The form and its submit buttons are busy until the browser answers. The server keeps the
+challenge: a second answer to the same options is refused.
 
 ## Do and do not
 

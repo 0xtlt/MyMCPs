@@ -1,9 +1,12 @@
-//! The schema, as the 25 migrations of the AdonisJS app built it.
+//! The schema, as the 25 migrations of the AdonisJS app built it, followed
+//! by the migrations of this app alone.
 //!
 //! Generated from the SQL that knex ran for each migration, so that a
 //! database created here is the one the Node app would have created, table
 //! for table. Statements that moved data are written by hand below, since
-//! their bindings were not part of the capture.
+//! their bindings were not part of the capture. The migrations that came
+//! after only add tables, in the same SQL dialect, so that the Node app
+//! keeps running on the database.
 //!
 //! Do not edit a migration that has shipped: add a new one.
 
@@ -208,4 +211,22 @@ pub const MIGRATIONS: &[Migration] = &[
             r#"create index `approval_requests_status_expires_at_index` on `approval_requests` (`status`, `expires_at`)"#,
         ],
     },
+    // The migrations above are those of the Node app. The ones below are
+    // this app's own: the Node app runs on a database that has them, and
+    // ignores their tables, but cannot import a backup that holds them.
+    Migration {
+        name: "database/migrations/1791567196927_create_two_factor_tables",
+        statements: &[
+            r#"create table `user_totp_secrets` (`id` integer not null primary key autoincrement, `user_id` integer not null, `secret` text not null, `confirmed_at` datetime null, `last_used_step` integer null, `created_at` datetime not null, `updated_at` datetime null, foreign key(`user_id`) references `users`(`id`) on delete CASCADE)"#,
+            r#"create unique index `user_totp_secrets_user_id_unique` on `user_totp_secrets` (`user_id`)"#,
+            r#"create table `user_recovery_codes` (`id` integer not null primary key autoincrement, `user_id` integer not null, `code_hash` varchar(64) not null, `used_at` datetime null, `created_at` datetime not null, foreign key(`user_id`) references `users`(`id`) on delete CASCADE)"#,
+            r#"create index `user_recovery_codes_user_id_index` on `user_recovery_codes` (`user_id`)"#,
+            r#"create table `user_passkeys` (`id` integer not null primary key autoincrement, `user_id` integer not null, `name` varchar(120) not null, `credential_id` varchar(1400) not null, `user_handle` varchar(36) not null, `passkey` text not null, `last_used_at` datetime null, `created_at` datetime not null, `updated_at` datetime null, foreign key(`user_id`) references `users`(`id`) on delete CASCADE)"#,
+            r#"create unique index `user_passkeys_credential_id_unique` on `user_passkeys` (`credential_id`)"#,
+            r#"create index `user_passkeys_user_id_index` on `user_passkeys` (`user_id`)"#,
+        ],
+    },
 ];
+
+/// How many of [`MIGRATIONS`] the Node app has. The others are this app's own.
+pub const NODE_MIGRATIONS: usize = 25;

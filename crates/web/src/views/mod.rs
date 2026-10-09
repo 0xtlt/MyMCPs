@@ -15,6 +15,7 @@ pub mod oauth;
 pub mod settings;
 pub mod shell;
 pub mod tokens;
+pub mod two_factor;
 
 use maud::{Markup, html};
 use mymcps_core::Timestamp;

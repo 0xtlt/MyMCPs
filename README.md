@@ -17,7 +17,7 @@ MyMCPs is self-hosted and invite-only. The first user becomes the administrator 
 
 ## Run locally
 
-You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Deno](https://deno.com/) if you want to run npm-based MCPs.
+You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler, `perl` and `make` (OpenSSL is compiled into the binary; releases are built with Rust 1.98), and [Deno](https://deno.com/) if you want to run npm-based MCPs.
 
 ```bash
 cp .env.example .env
@@ -116,6 +116,14 @@ docker compose exec mymcps mymcps user:reset-password user@example.com
 ```
 
 The first `mymcps` names the Compose service and the second the server binary, which loads the persisted application key when needed. Successful resets end the account's browser sessions and revoke its remember-me tokens; MCP access tokens and OAuth connections are unchanged.
+
+A new password does not turn off two-step verification. When a user has also lost their passkeys, their authenticator app and their recovery codes, remove all three so the password alone signs in again:
+
+```sh
+mymcps user:reset-2fa user@example.com
+```
+
+It also ends the account's browser sessions and revokes its remember-me tokens. See [docs/auth.md](docs/auth.md) for how passkeys and two-step verification work.
 
 ## Releases
 

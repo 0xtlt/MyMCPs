@@ -7,6 +7,7 @@ use mymcps_core::models::{DEFAULT_MCP_AUTO_UPDATE_CRON, InstanceSetting, McpLogL
 use crate::forms::FormState;
 use crate::views::icon::icon;
 use crate::views::shell::{PageContext, app_page};
+use crate::views::two_factor::{SecurityView, security_dialogs, security_section};
 
 /// What the Settings page shows.
 pub struct SettingsPage<'a> {
@@ -20,28 +21,30 @@ pub struct SettingsPage<'a> {
     pub instance_form: &'a FormState,
     /// The export of a backup. Administrators only.
     pub backup_form: &'a FormState,
+    /// Passkeys, the authenticator app, and the recovery codes.
+    pub security: SecurityView<'a>,
 }
 
 /// The message of a field and the attributes that tie it to its control.
-struct FieldError<'a> {
+pub(crate) struct FieldError<'a> {
     message: Option<&'a str>,
     id: String,
 }
 
 impl<'a> FieldError<'a> {
-    fn of(form: &'a FormState, name: &str, field_id: &str) -> Self {
+    pub(crate) fn of(form: &'a FormState, name: &str, field_id: &str) -> Self {
         Self {
             message: form.error(name),
             id: format!("{field_id}-error"),
         }
     }
 
-    fn invalid(&self) -> Option<&'static str> {
+    pub(crate) fn invalid(&self) -> Option<&'static str> {
         self.message.map(|_| "true")
     }
 
     /// `aria-describedby`: the error, then the help line of the field.
-    fn described_by(&self, help_id: Option<&str>) -> Option<String> {
+    pub(crate) fn described_by(&self, help_id: Option<&str>) -> Option<String> {
         match (self.message, help_id) {
             (Some(_), Some(help_id)) => Some(format!("{} {help_id}", self.id)),
             (Some(_), None) => Some(self.id.clone()),
@@ -49,7 +52,7 @@ impl<'a> FieldError<'a> {
         }
     }
 
-    fn line(&self) -> Markup {
+    pub(crate) fn line(&self) -> Markup {
         html! {
             @if let Some(message) = self.message { p class="field__error" id=(self.id) { (message) } }
         }
@@ -58,7 +61,7 @@ impl<'a> FieldError<'a> {
 
 /// A password field of a dialog, with its show/hide button. Its value is
 /// never rendered.
-fn password_field(
+pub(crate) fn password_field(
     form: &FormState,
     id: &str,
     name: &str,
@@ -70,7 +73,7 @@ fn password_field(
 }
 
 /// [`password_field`], with a line under it that says what to type.
-fn password_field_with_help(
+pub(crate) fn password_field_with_help(
     form: &FormState,
     id: &str,
     name: &str,
@@ -101,7 +104,7 @@ fn password_field_with_help(
     }
 }
 
-fn dialog_header(title_id: &str, title: &str, subtitle: &str) -> Markup {
+pub(crate) fn dialog_header(title_id: &str, title: &str, subtitle: &str) -> Markup {
     html! {
         div class="dialog__header" {
             div class="dialog__heading" {
@@ -113,7 +116,7 @@ fn dialog_header(title_id: &str, title: &str, subtitle: &str) -> Markup {
     }
 }
 
-fn dialog_footer(submit: &str) -> Markup {
+pub(crate) fn dialog_footer(submit: &str) -> Markup {
     html! {
         div class="dialog__footer" {
             button type="button" class="button button--secondary" data-dialog-close { "Cancel" }
@@ -204,7 +207,7 @@ pub fn backup_form(context: &PageContext, form: &FormState) -> Markup {
 }
 
 /// A dialog whose form the script sends and swaps in place.
-fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) -> Markup {
+pub(crate) fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) -> Markup {
     html! {
         dialog class="dialog dialog--sm" id=(id) aria-labelledby=(title_id) data-dialog-reset data-open[open] {
             div data-fragment { (form) }
@@ -212,7 +215,7 @@ fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) -> Markup {
     }
 }
 
-fn detail_row(label: &str, value: &str, action: Option<(&str, &str)>) -> Markup {
+pub(crate) fn detail_row(label: &str, value: &str, action: Option<(&str, &str)>) -> Markup {
     html! {
         div class="detail-row" {
             div class="detail-row__text" {
@@ -462,6 +465,7 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
         settings.backup_form,
     ]
     .into_iter()
+    .chain(settings.security.refused.map(|(_, form)| form))
     .find(|form| form.has_errors());
     let mut context = context.clone();
     if reopened.is_some_and(|form| context.flash_error.as_deref() == form.first_error()) {
@@ -477,6 +481,7 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
             }
         }
         (account_section(settings.user))
+        (security_section(&settings.security))
         @if let Some(instance) = settings.instance {
             (instance_section(context, instance, settings.instance_form))
         }
@@ -495,6 +500,7 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
             settings.password_form.has_errors(),
             password_form(context, settings.password_form),
         ))
+        (security_dialogs(context, &settings.security))
         @if settings.user.is_admin() {
             (form_dialog(
                 "export-backup",

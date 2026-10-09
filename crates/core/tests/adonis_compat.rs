@@ -8,7 +8,10 @@ use std::collections::BTreeMap;
 
 use mymcps_core::config::TEST_APP_KEY;
 use mymcps_core::crypto::{Encryption, hash_password, sha256_hex, verify_password};
-use mymcps_core::db::{Db, migrations::MIGRATIONS};
+use mymcps_core::db::{
+    Db,
+    migrations::{MIGRATIONS, NODE_MIGRATIONS},
+};
 use serde_json::Value;
 
 const ADONIS_SCHEMA: &str = include_str!("fixtures/adonis_schema.sql");
@@ -49,7 +52,7 @@ async fn fresh_database() -> (Db, tempfile::TempDir) {
 async fn a_fresh_database_has_the_schema_the_node_migrations_built() {
     let (db, _dir) = fresh_database().await;
     let ran = db.migrate().await.unwrap();
-    assert_eq!(ran.len(), 25);
+    assert_eq!(NODE_MIGRATIONS, 25);
     assert_eq!(
         ran,
         MIGRATIONS
@@ -64,7 +67,21 @@ async fn a_fresh_database_has_the_schema_the_node_migrations_built() {
     .fetch_all(&*db)
     .await
     .unwrap();
-    let built = statements(built.into_iter());
+    // The tables of this app's own migrations come on top of the Node schema.
+    let own = statements(
+        MIGRATIONS[NODE_MIGRATIONS..]
+            .iter()
+            .flat_map(|migration| migration.statements.iter().map(|s| s.to_string())),
+    );
+    let mut built = statements(built.into_iter());
+    for (name, statement) in &own {
+        // SQLite upper-cases the leading `create table` and `create index`.
+        assert_eq!(
+            built.remove(name).map(|built| built.to_lowercase()),
+            Some(statement.to_lowercase()),
+            "{name}"
+        );
+    }
     let expected = statements(ADONIS_SCHEMA.lines().map(str::to_string));
 
     assert_eq!(
@@ -82,14 +99,14 @@ async fn a_fresh_database_has_the_schema_the_node_migrations_built() {
             .fetch_all(&*db)
             .await
             .unwrap();
-    assert_eq!(ledger.len(), 25);
+    assert_eq!(ledger.len(), MIGRATIONS.len());
     assert!(ledger.iter().all(|(_, batch)| *batch == 1));
     assert_eq!(
         ledger[0].0,
         "database/migrations/1761885935168_create_users_table"
     );
     assert_eq!(
-        ledger[24].0,
+        ledger[NODE_MIGRATIONS - 1].0,
         "database/migrations/1791378864679_create_approval_requests_table"
     );
     let version: i64 = sqlx::query_scalar("select `version` from `adonis_schema_versions`")
@@ -130,7 +147,7 @@ async fn a_database_migrated_by_the_node_app_is_left_alone() {
         .execute(&*db)
         .await
         .unwrap();
-    for migration in MIGRATIONS {
+    for migration in &MIGRATIONS[..NODE_MIGRATIONS] {
         sqlx::query("insert into `adonis_schema` (`name`, `batch`) values (?, 1)")
             .bind(migration.name)
             .execute(&*db)
@@ -144,6 +161,15 @@ async fn a_database_migrated_by_the_node_app_is_left_alone() {
     .await
     .unwrap();
 
+    // Only this app's own tables are added, in a later batch.
+    let ran = db.migrate().await.unwrap();
+    assert_eq!(
+        ran,
+        MIGRATIONS[NODE_MIGRATIONS..]
+            .iter()
+            .map(|migration| migration.name)
+            .collect::<Vec<_>>()
+    );
     assert!(db.migrate().await.unwrap().is_empty());
     let users: i64 = sqlx::query_scalar("select count(*) from `users`")
         .fetch_one(&*db)

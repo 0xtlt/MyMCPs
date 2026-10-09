@@ -8,4 +8,5 @@ pub mod cron;
 pub mod mcp;
 pub mod route_params;
 pub mod session;
+pub mod two_factor;
 pub mod user;

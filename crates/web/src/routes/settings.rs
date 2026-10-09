@@ -8,7 +8,8 @@ use axum::response::Response;
 use axum::routing::{get, patch};
 use http::HeaderMap;
 use maud::Markup;
-use mymcps_core::models::{GatewayToolMode, InstanceSetting, McpLogLevel, User};
+use mymcps_core::models::{GatewayToolMode, InstanceSetting, McpLogLevel, User, UserPasskey};
+use mymcps_core::two_factor::TwoFactorStatus;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -28,6 +29,7 @@ use crate::validators::user::{
 };
 use crate::views::settings::{SettingsPage, email_form, password_form, settings_page};
 use crate::views::shell::PageContext;
+use crate::views::two_factor::SecurityView;
 
 /// Session key naming the form of the page that the previous request
 /// refused, flashed along with its [`FormState`].
@@ -70,6 +72,14 @@ pub async fn index(
             FormState::default()
         }
     };
+    let status = TwoFactorStatus::of(&state.core.db, user.id).await?;
+    let passkeys = UserPasskey::for_user(&*state.core.db, user.id).await?;
+    // The forms of this page have names of their own; any other is a dialog
+    // of the "Sign-in security" section, named by its id.
+    let security_form = match refused.as_deref() {
+        Some(EMAIL_FORM | PASSWORD_FORM | INSTANCE_FORM | BACKUP_FORM) | None => None,
+        Some(dialog) => Some((dialog, FormState::from_session(&session))),
+    };
     Ok(page(settings_page(
         &context,
         &SettingsPage {
@@ -79,6 +89,12 @@ pub async fn index(
             password_form: &form(PASSWORD_FORM),
             instance_form: &form(INSTANCE_FORM),
             backup_form: &form(BACKUP_FORM),
+            security: SecurityView {
+                status,
+                passkeys: &passkeys,
+                passkeys_available: state.passkeys.is_available(),
+                refused: security_form.as_ref().map(|(dialog, form)| (*dialog, form)),
+            },
         },
     )))
 }

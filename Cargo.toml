@@ -54,6 +54,15 @@ base64 = "0.23"
 rand = "0.10"
 subtle = "2.6"
 
+# Two-step verification
+webauthn-rs = { version = "0.5.5", features = ["conditional-ui"] }
+# webauthn-rs verifies signatures with OpenSSL. It is compiled from source
+# and linked statically, like SQLite: nothing to install on the build
+# machine but Perl and make, and nothing at all in the runtime image.
+openssl = { version = "0.10", features = ["vendored"] }
+totp-rs = { version = "6", default-features = false, features = ["std", "otpauth"] }
+qrcodegen = "1.8"
+
 # Tests
 tempfile = "3"
 
