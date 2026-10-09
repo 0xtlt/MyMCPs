@@ -11,6 +11,7 @@ use mymcps_core::client_ip::rate_limit_client_key;
 use mymcps_core::crypto::sha256_hex;
 use mymcps_core::limiter::{Limiter, LimiterError, LimiterResponse};
 use mymcps_core::models::{User, UserRole};
+use mymcps_core::two_factor::TwoFactorStatus;
 use serde::Deserialize;
 
 use crate::auth::{CurrentUser, sign_in, sign_out};
@@ -22,11 +23,12 @@ use crate::input::Input;
 use crate::redirect::{redirect_back, redirect_to, with_query};
 use crate::respond::page;
 use crate::routes::FeatureRoutes;
+use crate::routes::two_factor::{begin_second_step, login_view, verify_path};
 use crate::session::Session;
 use crate::state::AppState;
 use crate::validators::session::{APPROVAL_RETURN_TO_VALIDATOR, OAUTH_RETURN_TO_VALIDATOR};
 use crate::validators::user::{LOGIN_VALIDATOR, ONBOARDING_VALIDATOR};
-use crate::views::auth::{login_page, onboarding_page};
+use crate::views::auth::onboarding_page;
 use crate::views::shell::PageContext;
 
 pub fn routes() -> FeatureRoutes {
@@ -62,8 +64,12 @@ pub async fn consume(limiter: &Limiter, key: &str) -> Result<Result<(), Response
 }
 
 /// `GET /login`
-pub async fn show_login(context: PageContext, session: Session) -> Response {
-    page(login_page(&context, &FormState::from_session(&session)))
+pub async fn show_login(
+    State(state): State<AppState>,
+    context: PageContext,
+    session: Session,
+) -> Response {
+    login_view(&state, &context, &session)
 }
 
 #[derive(Deserialize)]
@@ -120,7 +126,29 @@ pub async fn login(
     state.limiters.login.delete(&account_key).await?;
     state.limiters.login_address.decrement(&address_key).await?;
 
-    sign_in(&state.core, &session, &cookies, &user).await?;
+    // An account with a passkey or an authenticator app is not signed in by
+    // its password alone.
+    if TwoFactorStatus::of(&state.core.db, user.id)
+        .await?
+        .is_enabled()
+    {
+        begin_second_step(&session, &user);
+        return Ok(redirect_to(&verify_path(uri.query())));
+    }
+    finish_sign_in(&state, &session, &cookies, &user, uri.query()).await
+}
+
+/// Open the session of `user`, whose sign-in is complete, and go where the
+/// sign-in was asked from: an OAuth authorization, a tool call to approve,
+/// or home.
+pub(crate) async fn finish_sign_in(
+    state: &AppState,
+    session: &Session,
+    cookies: &Cookies,
+    user: &User,
+    query: Option<&str>,
+) -> Result<Response, AppError> {
+    sign_in(&state.core, session, cookies, user).await?;
 
     // Both paths are complete: the query string of this request is not
     // appended after them.
@@ -135,7 +163,7 @@ pub async fn login(
     if let Some(approval_return_to) = return_to(&APPROVAL_RETURN_TO_VALIDATOR, "approvalReturnTo") {
         return Ok(redirect_to(&approval_return_to));
     }
-    Ok(redirect_to(&with_query("/", uri.query())))
+    Ok(redirect_to(&with_query("/", query)))
 }
 
 /// `POST /logout`

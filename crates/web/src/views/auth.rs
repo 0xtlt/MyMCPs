@@ -65,7 +65,9 @@ pub(crate) fn password_field(
     }
 }
 
-pub fn login_page(context: &PageContext, form: &FormState) -> Markup {
+/// `passkeys`: whether this instance offers to sign in with a passkey. The
+/// button stays hidden in a browser that has none.
+pub fn login_page(context: &PageContext, form: &FormState, passkeys: bool) -> Markup {
     let content = html! {
         section class="auth-card control-lg" aria-labelledby="sign-in-title" {
             (logo())
@@ -82,6 +84,14 @@ pub fn login_page(context: &PageContext, form: &FormState) -> Markup {
                     (password_field(form, "password", "password", "Password", "current-password", form.has_errors()))
                 }
                 button type="submit" class="button button--primary button--block" { "Sign in" }
+            }
+            @if passkeys {
+                form method="post" action="/login/passkey" data-passkey="authenticate"
+                    data-passkey-options="/login/passkey/options" data-passkey-supported hidden {
+                    (context.csrf_field())
+                    input type="hidden" name="credential";
+                    button type="submit" class="button button--secondary button--block" { (icon("key-round")) "Sign in with a passkey" }
+                }
             }
         }
     };
