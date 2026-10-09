@@ -937,6 +937,7 @@ struct Rename {
 }
 
 /// `PATCH /settings/passkeys/{id}`
+#[allow(clippy::too_many_arguments)]
 pub async fn rename_passkey(
     State(state): State<AppState>,
     context: PageContext,
@@ -972,6 +973,7 @@ pub async fn rename_passkey(
 }
 
 /// `DELETE /settings/passkeys/{id}`
+#[allow(clippy::too_many_arguments)]
 pub async fn remove_passkey(
     State(state): State<AppState>,
     context: PageContext,
