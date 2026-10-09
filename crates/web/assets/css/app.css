@@ -1,0 +1,4953 @@
+/*
+ * MyMCPs design system.
+ * Source of truth: Figma file RkOcSJ3wZ4gJOl1RlRLDl2 (Foundations, Icons, Components, Screens).
+ * Reference for page developers: docs/design-system.md.
+ *
+ * Plain CSS, no build step. Token names are the Figma variables' own code syntax
+ * (`bg/surface` -> --mm-color-bg-surface, `space/300` -> --mm-space-300, `radius/200` -> --mm-radius-200).
+ * Class names are `.block`, `.block__element`, `.block--variant`; state comes from HTML and ARIA
+ * attributes (`disabled`, `hidden`, `aria-current`, `aria-selected`, `aria-pressed`, `aria-invalid`,
+ * `aria-busy`, `open`) and from the `data-` attributes app.js sets.
+ */
+
+@layer reset, tokens, base, components, layout, utilities;
+
+/* ------------------------------------------------------------------ Fonts */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../fonts/inter-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../fonts/inter-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("../fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("../fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ----------------------------------------------------------------- Tokens */
+
+@layer tokens {
+  :root {
+    /* Theme: follows the system. <html data-theme="light|dark"> forces one. */
+    color-scheme: light dark;
+
+    /* Primitives (Figma collection "Primitives"). Do not use in components. */
+    --mm-slate-0: #ffffff;
+    --mm-slate-25: #fafbfb;
+    --mm-slate-50: #f4f6f7;
+    --mm-slate-100: #eceff1;
+    --mm-slate-150: #e4e8eb;
+    --mm-slate-200: #dde2e5;
+    --mm-slate-300: #c5ccd1;
+    --mm-slate-400: #9aa4ab;
+    --mm-slate-450: #808b93;
+    --mm-slate-500: #66727a;
+    --mm-slate-600: #55616a;
+    --mm-slate-650: #4a555d;
+    --mm-slate-700: #3d4850;
+    --mm-slate-750: #2f3940;
+    --mm-slate-800: #252d33;
+    --mm-slate-850: #1b2228;
+    --mm-slate-900: #141a1e;
+    --mm-slate-950: #0b0f12;
+    --mm-slate-1000: #050708;
+    --mm-brand-50: #eef3f6;
+    --mm-brand-100: #dce6eb;
+    --mm-brand-200: #b9ccd6;
+    --mm-brand-300: #8faab8;
+    --mm-brand-400: #5f8196;
+    --mm-brand-500: #395667;
+    --mm-brand-600: #2f4857;
+    --mm-brand-700: #263a46;
+    --mm-brand-800: #1c2b34;
+    --mm-brand-900: #13202a;
+    --mm-green-50: #e4f8e9;
+    --mm-green-300: #a6e9b8;
+    --mm-green-400: #4cc26d;
+    --mm-green-500: #2e9a4b;
+    --mm-green-900: #0f3d1d;
+    --mm-green-950: #10291a;
+    --mm-amber-50: #fff0cc;
+    --mm-amber-300: #ffd98a;
+    --mm-amber-500: #f2a20c;
+    --mm-amber-900: #4a3000;
+    --mm-amber-950: #332400;
+    --mm-red-50: #ffe8e6;
+    --mm-red-300: #ffb4ad;
+    --mm-red-400: #f0554a;
+    --mm-red-500: #d92d20;
+    --mm-red-600: #b42318;
+    --mm-red-900: #6b0f0a;
+    --mm-red-950: #3a1512;
+    --mm-cyan-50: #daf3fc;
+    --mm-cyan-300: #9fddf4;
+    --mm-cyan-400: #2ca9d6;
+    --mm-cyan-500: #0e8fbc;
+    --mm-cyan-900: #063f54;
+    --mm-cyan-950: #082c3a;
+
+    /* Color (Figma collection "Color", modes Light and Dark): light-dark(light, dark). */
+    --mm-color-bg-frame: light-dark(var(--mm-slate-950), var(--mm-slate-1000));
+    --mm-color-bg-frame-hover: light-dark(var(--mm-slate-900), var(--mm-slate-950));
+    --mm-color-bg-frame-selected: light-dark(var(--mm-slate-850), var(--mm-slate-900));
+    --mm-color-bg-canvas: light-dark(var(--mm-slate-0), var(--mm-slate-900));
+    --mm-color-bg-page: light-dark(var(--mm-slate-50), var(--mm-slate-950));
+    --mm-color-bg-surface: light-dark(var(--mm-slate-0), var(--mm-slate-850));
+    --mm-color-bg-surface-secondary: light-dark(var(--mm-slate-25), #171d22);
+    --mm-color-bg-surface-tertiary: light-dark(var(--mm-slate-50), var(--mm-slate-800));
+    --mm-color-bg-input: light-dark(var(--mm-slate-0), var(--mm-slate-900));
+    --mm-color-bg-fill-secondary: light-dark(var(--mm-slate-100), var(--mm-slate-800));
+    --mm-color-bg-fill-secondary-hover: light-dark(var(--mm-slate-150), var(--mm-slate-750));
+    --mm-color-bg-fill-brand: light-dark(var(--mm-brand-500), var(--mm-brand-100));
+    --mm-color-bg-fill-brand-hover: light-dark(var(--mm-brand-600), var(--mm-brand-50));
+    --mm-color-bg-fill-critical: light-dark(var(--mm-red-500), var(--mm-red-400));
+    --mm-color-bg-fill-critical-hover: light-dark(var(--mm-red-600), var(--mm-red-500));
+    --mm-color-bg-fill-disabled: light-dark(var(--mm-slate-50), var(--mm-slate-850));
+    --mm-color-bg-brand-subtle: light-dark(var(--mm-brand-50), var(--mm-brand-800));
+    --mm-color-bg-neutral: light-dark(var(--mm-slate-100), var(--mm-slate-800));
+    --mm-color-bg-success: light-dark(var(--mm-green-50), var(--mm-green-950));
+    --mm-color-bg-warning: light-dark(var(--mm-amber-50), var(--mm-amber-950));
+    --mm-color-bg-critical: light-dark(var(--mm-red-50), var(--mm-red-950));
+    --mm-color-bg-info: light-dark(var(--mm-cyan-50), var(--mm-cyan-950));
+
+    --mm-color-text-default: light-dark(var(--mm-slate-900), var(--mm-slate-50));
+    --mm-color-text-secondary: light-dark(var(--mm-slate-650), var(--mm-slate-300));
+    --mm-color-text-tertiary: light-dark(var(--mm-slate-500), var(--mm-slate-400));
+    --mm-color-text-disabled: light-dark(var(--mm-slate-400), var(--mm-slate-600));
+    --mm-color-text-brand: light-dark(var(--mm-brand-500), var(--mm-brand-200));
+    --mm-color-text-on-brand: light-dark(var(--mm-slate-0), var(--mm-slate-950));
+    --mm-color-text-on-critical: var(--mm-slate-0);
+    --mm-color-text-on-frame: var(--mm-slate-300);
+    --mm-color-text-on-frame-active: var(--mm-slate-25);
+    --mm-color-text-on-frame-secondary: var(--mm-slate-450);
+    --mm-color-text-neutral: light-dark(var(--mm-slate-700), var(--mm-slate-300));
+    --mm-color-text-success: light-dark(var(--mm-green-900), var(--mm-green-300));
+    --mm-color-text-warning: light-dark(var(--mm-amber-900), var(--mm-amber-300));
+    --mm-color-text-critical: light-dark(var(--mm-red-900), var(--mm-red-300));
+    --mm-color-text-info: light-dark(var(--mm-cyan-900), var(--mm-cyan-300));
+
+    --mm-color-icon-default: light-dark(var(--mm-slate-900), var(--mm-slate-50));
+    --mm-color-icon-secondary: light-dark(var(--mm-slate-500), var(--mm-slate-400));
+    --mm-color-icon-disabled: light-dark(var(--mm-slate-400), var(--mm-slate-600));
+    --mm-color-icon-brand: light-dark(var(--mm-brand-500), var(--mm-brand-300));
+    --mm-color-icon-on-brand: light-dark(var(--mm-slate-0), var(--mm-slate-950));
+    --mm-color-icon-on-frame: var(--mm-slate-400);
+    --mm-color-icon-on-frame-active: var(--mm-slate-25);
+    --mm-color-icon-neutral: light-dark(var(--mm-slate-500), var(--mm-slate-400));
+    --mm-color-icon-success: light-dark(var(--mm-green-500), var(--mm-green-400));
+    --mm-color-icon-warning: var(--mm-amber-500);
+    --mm-color-icon-critical: light-dark(var(--mm-red-500), var(--mm-red-400));
+    --mm-color-icon-info: light-dark(var(--mm-cyan-500), var(--mm-cyan-400));
+
+    --mm-color-border-default: light-dark(var(--mm-slate-200), var(--mm-slate-750));
+    --mm-color-border-secondary: light-dark(var(--mm-slate-100), var(--mm-slate-800));
+    --mm-color-border-strong: light-dark(var(--mm-slate-300), var(--mm-slate-700));
+    --mm-color-border-focus: light-dark(var(--mm-brand-500), var(--mm-brand-300));
+    --mm-color-border-critical: light-dark(var(--mm-red-500), var(--mm-red-400));
+    --mm-color-border-frame: light-dark(var(--mm-slate-800), var(--mm-slate-850));
+
+    --mm-color-chart-primary: light-dark(var(--mm-brand-500), var(--mm-brand-300));
+    --mm-color-chart-secondary: light-dark(var(--mm-brand-200), var(--mm-brand-600));
+    --mm-color-chart-muted: light-dark(var(--mm-slate-200), var(--mm-slate-750));
+    --mm-color-chart-critical: var(--mm-red-400);
+
+    /* Not in Figma (it draws no floating surface in Dark): a hairline around dialogs, side panels
+       and menus in dark mode, where their shadow cannot be seen. */
+    --mm-color-border-floating: light-dark(transparent, var(--mm-color-border-default));
+
+    /* The overlay behind dialogs (Figma: bg/frame at 55% opacity, no blur). */
+    --mm-color-backdrop: color-mix(in srgb, var(--mm-color-bg-frame) 55%, transparent);
+
+    /* Scale (Figma collection "Scale"). 1rem = 16px. */
+    --mm-space-0: 0;
+    --mm-space-025: 0.0625rem; /* 1 */
+    --mm-space-050: 0.125rem; /* 2 */
+    --mm-space-100: 0.25rem; /* 4 */
+    --mm-space-150: 0.375rem; /* 6 */
+    --mm-space-200: 0.5rem; /* 8 */
+    --mm-space-300: 0.75rem; /* 12 */
+    --mm-space-400: 1rem; /* 16 */
+    --mm-space-500: 1.25rem; /* 20 */
+    --mm-space-600: 1.5rem; /* 24 */
+    --mm-space-800: 2rem; /* 32 */
+    --mm-space-1000: 2.5rem; /* 40 */
+    --mm-space-1200: 3rem; /* 48 */
+    --mm-space-1600: 4rem; /* 64 */
+
+    --mm-radius-100: 0.25rem; /* 4 */
+    --mm-radius-150: 0.375rem; /* 6 */
+    --mm-radius-200: 0.5rem; /* 8 */
+    --mm-radius-250: 0.625rem; /* 10 */
+    --mm-radius-300: 0.75rem; /* 12 */
+    --mm-radius-400: 1rem; /* 16 */
+    --mm-radius-500: 1.25rem; /* 20 */
+    --mm-radius-full: 624.9375rem; /* 9999 */
+
+    --mm-border-width: 1px;
+
+    /* Typography (Figma text styles). Use the .text-* classes or `font: var(--mm-text-*)`. */
+    --mm-font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mm-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --mm-font-weight-regular: 400;
+    --mm-font-weight-medium: 500;
+
+    --mm-text-heading-4xl: var(--mm-font-weight-medium) 3rem / 3.5rem var(--mm-font-sans);
+    --mm-text-heading-3xl: var(--mm-font-weight-medium) 2rem / 2.5rem var(--mm-font-sans);
+    --mm-text-heading-2xl: var(--mm-font-weight-medium) 1.5rem / 2rem var(--mm-font-sans);
+    --mm-text-heading-xl: var(--mm-font-weight-medium) 1.25rem / 1.75rem var(--mm-font-sans);
+    --mm-text-heading-lg: var(--mm-font-weight-medium) 1rem / 1.5rem var(--mm-font-sans);
+    --mm-text-heading-md: var(--mm-font-weight-medium) 0.875rem / 1.25rem var(--mm-font-sans);
+    --mm-text-heading-sm: var(--mm-font-weight-medium) 0.8125rem / 1.25rem var(--mm-font-sans);
+    --mm-text-body-lg: var(--mm-font-weight-regular) 0.875rem / 1.25rem var(--mm-font-sans);
+    --mm-text-body-lg-medium: var(--mm-font-weight-medium) 0.875rem / 1.25rem var(--mm-font-sans);
+    --mm-text-body-md: var(--mm-font-weight-regular) 0.8125rem / 1.25rem var(--mm-font-sans);
+    --mm-text-body-md-medium: var(--mm-font-weight-medium) 0.8125rem / 1.25rem var(--mm-font-sans);
+    --mm-text-body-sm: var(--mm-font-weight-regular) 0.75rem / 1rem var(--mm-font-sans);
+    --mm-text-body-sm-medium: var(--mm-font-weight-medium) 0.75rem / 1rem var(--mm-font-sans);
+    --mm-text-body-xs: var(--mm-font-weight-medium) 0.6875rem / 1rem var(--mm-font-sans);
+    --mm-text-code-md: var(--mm-font-weight-regular) 0.8125rem / 1.25rem var(--mm-font-mono);
+    --mm-text-code-sm: var(--mm-font-weight-regular) 0.75rem / 1rem var(--mm-font-mono);
+    --mm-text-code-sm-medium: var(--mm-font-weight-medium) 0.75rem / 1rem var(--mm-font-mono);
+
+    /* Letter spacing of the text styles (Figma percent -> em). */
+    --mm-tracking-4xl: -0.025em;
+    --mm-tracking-3xl: -0.02em;
+    --mm-tracking-2xl: -0.02em;
+    --mm-tracking-xl: -0.015em;
+    --mm-tracking-md: -0.01em; /* heading/lg, md, sm and body/lg, md */
+    --mm-tracking-sm: -0.005em; /* body/sm */
+    --mm-tracking-none: 0; /* body/xs and code */
+
+    /* Elevation (Figma effect styles). */
+    --mm-shadow-100: 0 0 2px rgb(11 15 18 / 22%), 0 2px 12px rgb(11 15 18 / 3%), 0 4px 16px rgb(11 15 18 / 2%),
+      0 4px 48px rgb(11 15 18 / 2%);
+    --mm-shadow-300: 0 0 2px rgb(11 15 18 / 20%), 0 2px 4px rgb(11 15 18 / 5%), 0 6px 12px rgb(11 15 18 / 6%),
+      0 12px 24px rgb(11 15 18 / 6%);
+    --mm-shadow-600: 0 0 2px rgb(11 15 18 / 20%), 0 4px 8px rgb(11 15 18 / 6%), 0 12px 24px rgb(11 15 18 / 8%),
+      0 32px 64px rgb(11 15 18 / 12%);
+    --mm-shadow-button: 0 1px 2px rgb(11 15 18 / 16%), 0 3px 6px rgb(11 15 18 / 12%),
+      inset 0 1px 4px rgb(255 255 255 / 18%), inset 0 0 2px rgb(255 255 255 / 10%);
+    --mm-shadow-input: 0 1px 2px rgb(11 15 18 / 5%);
+
+    /* Sizes used by components. */
+    --mm-size-control-md: 2rem; /* 32: default controls */
+    --mm-size-control-lg: 2.75rem; /* 44: mobile and auth screens */
+    --mm-size-icon: 1rem; /* 16 */
+    --mm-size-icon-lg: 1.25rem; /* 20 */
+    --mm-size-icon-stroke: 1.5px;
+    --mm-size-sidebar: 15.5rem; /* 248 */
+    --mm-size-sidebar-rail: 3.5rem; /* 56: collapsed */
+    --mm-size-topbar: 3.5rem; /* 56 */
+    --mm-size-focus-ring: 2px;
+    --mm-size-grid-fit: 20rem; /* 320: narrowest column of a .grid--fit */
+    --mm-size-line: 1.25rem; /* 20: one line of body text */
+    --mm-size-page-max: 80rem; /* 1280: widest page content */
+    --mm-size-page-narrow: 45rem; /* 720: a single column of text */
+    --mm-size-sidebar-drawer: 17.5rem; /* 280: the sidebar as a drawer on mobile */
+    --mm-size-auth-card: 26.25rem; /* 420 */
+    --mm-size-auth-card-wide: 32.5rem; /* 520: Authorize client */
+
+    /* Motion. */
+    --mm-duration-fast: 120ms;
+    --mm-duration-base: 180ms;
+    --mm-duration-spin: 0.8s;
+    --mm-ease: cubic-bezier(0.2, 0, 0, 1);
+
+    /* Stacking inside the page (dialogs and popovers live in the top layer). */
+    --mm-z-sticky: 10;
+    --mm-z-toast: 100;
+
+    /* Raw sizes of the Figma components that are not bound to a Scale variable. */
+    --mm-size-icon-xs: 0.75rem; /* 12: check inside a checkbox */
+    --mm-size-icon-sm: 0.875rem; /* 14: chip chevron, breadcrumb separator, gateway copy */
+    --mm-size-icon-md: 1.125rem; /* 18: template tile */
+    --mm-size-field-inset-md: 0.625rem; /* 10: field padding, option card gap, logo gap */
+    --mm-size-field-inset-lg: 0.875rem; /* 14: large field padding, code block and card header inset */
+    --mm-size-chip: 1.75rem; /* 28: filter chip, segment, nav avatar */
+    --mm-size-tab: 2.25rem; /* 36: tab, large tile */
+    --mm-size-badge: 1.25rem; /* 20 */
+    --mm-size-count: 1.125rem; /* 18: nav count chip, switch height */
+    --mm-size-check: 1rem; /* 16: checkbox and radio */
+    --mm-size-dot: 0.5rem; /* 8: status dot */
+    --mm-size-dot-sm: 0.375rem; /* 6: badge dot */
+    --mm-size-switch: 2rem; /* 32 wide, 18 high, 14 knob */
+    --mm-size-switch-knob: 0.875rem;
+    --mm-size-radio-ring: 0.3125rem; /* 5: selected radio border, leaves a 6px dot */
+    --mm-size-tile: 2rem; /* 32 */
+    --mm-size-tile-lg: 2.25rem; /* 36 */
+    --mm-size-tile-xl: 3rem; /* 48: empty state */
+    --mm-size-avatar-sm: 1.5rem; /* 24 */
+    --mm-size-avatar: 1.75rem; /* 28: on the frame */
+    --mm-size-avatar-md: 2rem; /* 32 */
+    --mm-size-logo: 1.75rem; /* 28 */
+    --mm-size-spinner: 0.875rem;
+    --mm-size-check-dash: 0.21875rem; /* 3.5: inset of the indeterminate dash */
+    --mm-size-empty-text: 24.5rem; /* 392: widest empty-state text */
+    --mm-size-toast-max: 26rem; /* 416 */
+    --mm-size-option-min: 10rem; /* 160: narrowest option card */
+    --mm-size-code-max: 22.5rem; /* 360: a code block scrolls beyond */
+    --mm-opacity-busy: 0.72;
+    --mm-opacity-muted: 0.6; /* shortcut hint on the frame */
+
+    /* The mark: brand tile and white letter on the canvas, inverted on the dark frame. */
+    --mm-color-logo-tile: var(--mm-color-bg-fill-brand);
+    --mm-color-logo-letter: var(--mm-color-text-on-brand);
+    --mm-color-logo-tile-on-frame: var(--mm-color-text-on-frame-active);
+    --mm-color-logo-letter-on-frame: var(--mm-color-icon-brand);
+
+    /*
+     * Control density. Medium (32px) by default, Large (44px) under 48rem and inside
+     * .control-lg (auth screens). Compact contexts (.control-md, tables, card headers,
+     * banners, list rows, pagination, toasts, menus) stay Medium on every screen.
+     */
+    --mm-control-height: var(--mm-size-control-md);
+    --mm-control-inset: var(--mm-space-300);
+    --mm-control-gap: var(--mm-space-150);
+    --mm-control-font: var(--mm-text-body-md-medium);
+    --mm-field-inset: var(--mm-size-field-inset-md);
+    --mm-field-radius: var(--mm-radius-200);
+    --mm-field-font: var(--mm-text-body-md);
+
+    /* Raw sizes of the screen patterns (Figma: Screens) that are not bound to a Scale variable. */
+    --mm-size-table-header: 2.5rem; /* 40 */
+    --mm-size-table-row: 3.5rem; /* 56: min height, border included */
+    --mm-size-table-row-dense: 3rem; /* 48: logs */
+    --mm-size-table-row-tight: 2.75rem; /* 44: ranking tables */
+    --mm-size-table-cell-inset: 0.625rem; /* 10: row padding */
+    --mm-size-copy-field: 2.5rem; /* 40 */
+    --mm-size-copy-field-lg: 3rem; /* 48: hero endpoint */
+    --mm-size-step: 1.25rem; /* 20: step index */
+    --mm-size-dialog-sm: 30rem; /* 480 */
+    --mm-size-dialog: 40rem; /* 640 */
+    --mm-size-dialog-lg: 42.5rem; /* 680 */
+    --mm-size-dialog-xl: 56rem; /* 896 */
+    --mm-size-dialog-offset: 2.5rem; /* 40 from the top; 48 for lg, 64 for xl */
+    --mm-size-dialog-offset-lg: 3rem;
+    --mm-size-dialog-offset-xl: 4rem;
+    --mm-size-table-header-sm: 2.25rem; /* 36: under a card header */
+    --mm-size-table-min: 42.5rem; /* 680: below this a table scrolls inside its card */
+    --mm-size-table-min-wide: 56rem; /* 896 */
+    --mm-size-drawer: 27.5rem; /* 440 */
+    --mm-size-drawer-offset: 1.5rem; /* 24 from the top and right */
+    --mm-size-menu-min: 11.25rem; /* 180 */
+    --mm-size-menu-max: 20rem;
+    --mm-size-search: 20rem; /* 320: the search field of a toolbar */
+
+    --mm-size-hero-card: 42.5rem; /* 680 */
+    --mm-size-overview-side: 22.5rem; /* 360 */
+    --mm-size-bar-chart: 8.25rem; /* 132 */
+    --mm-size-bar-chart-sm: 6rem; /* 96: on mobile */
+    --mm-size-bar-radius-sm: 0.1875rem; /* 3: bar radius on mobile */
+    --mm-size-section-intro: 18.75rem; /* 300 */
+
+    /* Raw sizes of the Analytics line chart (Figma: 09 Analytics). */
+    --mm-size-line-chart: 15rem; /* 240: from the top grid line to the baseline */
+    --mm-size-chart-bleed: 0.25rem; /* 4: room kept around the plot for strokes and markers */
+    --mm-size-chart-axis: 2.25rem; /* 36: y axis labels column */
+    --mm-size-chart-line: 0.125rem; /* 2: series stroke */
+    --mm-size-chart-point: 0.375rem; /* 6: marker of the first series */
+    --mm-size-chart-point-sm: 0.3125rem; /* 5: marker of the other series */
+    --mm-opacity-chart-area: 0.08; /* fill under the first series */
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  @media (width < 48rem) {
+    :root {
+      --mm-control-height: var(--mm-size-control-lg);
+      --mm-control-inset: var(--mm-space-500);
+      --mm-control-gap: var(--mm-space-200);
+      --mm-control-font: var(--mm-text-body-lg-medium);
+      --mm-field-inset: var(--mm-size-field-inset-lg);
+      --mm-field-radius: var(--mm-radius-250);
+      --mm-field-font: var(--mm-text-body-lg);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------- Reset */
+
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body,
+  h1,
+  h2,
+  h3,
+  h4,
+  p,
+  ul,
+  ol,
+  dl,
+  dd,
+  figure,
+  blockquote,
+  pre,
+  fieldset,
+  legend {
+    margin: 0;
+    padding: 0;
+  }
+
+  ul,
+  ol {
+    list-style: none;
+  }
+
+  fieldset {
+    min-inline-size: 0;
+    border: 0;
+  }
+
+  img,
+  svg,
+  video {
+    display: block;
+    max-inline-size: 100%;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    margin: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
+
+  button {
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  table {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+
+  th {
+    font: inherit;
+    text-align: start;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+/* -------------------------------------------------------------------- Base */
+
+@layer base {
+  html {
+    block-size: 100%;
+    background: var(--mm-color-bg-frame);
+  }
+
+  body {
+    min-block-size: 100%;
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-frame);
+    font-feature-settings: "calt", "liga";
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font: var(--mm-text-heading-md);
+    letter-spacing: var(--mm-tracking-md);
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font: var(--mm-text-code-sm);
+    letter-spacing: var(--mm-tracking-none);
+  }
+
+  ::selection {
+    background: var(--mm-color-bg-brand-subtle);
+    color: var(--mm-color-text-default);
+  }
+
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: var(--mm-size-focus-ring) solid var(--mm-color-border-focus);
+    outline-offset: var(--mm-size-focus-ring);
+  }
+
+  ::placeholder {
+    color: var(--mm-color-text-tertiary);
+    opacity: 1;
+  }
+
+  /* The page never scrolls sideways; long identifiers wrap instead. */
+  html,
+  body {
+    max-inline-size: 100%;
+    overflow-x: clip;
+  }
+
+  html[data-dialog-open] {
+    overflow: hidden;
+  }
+}
+
+/* -------------------------------------------------------------- Components */
+
+@layer components {
+  .text-heading-4xl { font: var(--mm-text-heading-4xl); letter-spacing: var(--mm-tracking-4xl); }
+  .text-heading-3xl { font: var(--mm-text-heading-3xl); letter-spacing: var(--mm-tracking-3xl); }
+  .text-heading-2xl { font: var(--mm-text-heading-2xl); letter-spacing: var(--mm-tracking-2xl); }
+  .text-heading-xl { font: var(--mm-text-heading-xl); letter-spacing: var(--mm-tracking-xl); }
+  .text-heading-lg { font: var(--mm-text-heading-lg); letter-spacing: var(--mm-tracking-md); }
+  .text-heading-md { font: var(--mm-text-heading-md); letter-spacing: var(--mm-tracking-md); }
+  .text-heading-sm { font: var(--mm-text-heading-sm); letter-spacing: var(--mm-tracking-md); }
+  .text-body-lg { font: var(--mm-text-body-lg); letter-spacing: var(--mm-tracking-md); }
+  .text-body-lg-medium { font: var(--mm-text-body-lg-medium); letter-spacing: var(--mm-tracking-md); }
+  .text-body-md { font: var(--mm-text-body-md); letter-spacing: var(--mm-tracking-md); }
+  .text-body-md-medium { font: var(--mm-text-body-md-medium); letter-spacing: var(--mm-tracking-md); }
+  .text-body-sm { font: var(--mm-text-body-sm); letter-spacing: var(--mm-tracking-sm); }
+  .text-body-sm-medium { font: var(--mm-text-body-sm-medium); letter-spacing: var(--mm-tracking-sm); }
+  .text-body-xs { font: var(--mm-text-body-xs); letter-spacing: var(--mm-tracking-none); }
+  .text-code-md { font: var(--mm-text-code-md); letter-spacing: var(--mm-tracking-none); }
+  .text-code-sm { font: var(--mm-text-code-sm); letter-spacing: var(--mm-tracking-none); }
+  .text-code-sm-medium { font: var(--mm-text-code-sm-medium); letter-spacing: var(--mm-tracking-none); }
+
+  .text-default { color: var(--mm-color-text-default); }
+  .text-secondary { color: var(--mm-color-text-secondary); }
+  .text-tertiary { color: var(--mm-color-text-tertiary); }
+  .text-brand { color: var(--mm-color-text-brand); }
+  .text-success { color: var(--mm-color-text-success); }
+  .text-warning { color: var(--mm-color-text-warning); }
+  .text-critical { color: var(--mm-color-text-critical); }
+  .text-info { color: var(--mm-color-text-info); }
+
+  /*
+   * Icons: Lucide SVG inlined by the server, 24px viewBox, drawn at 16px with a 1.5px stroke
+   * whatever the size. <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">…</svg>
+   */
+  .icon {
+    flex: none;
+    inline-size: var(--mm-size-icon);
+    block-size: var(--mm-size-icon);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--mm-size-icon-stroke);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+
+    & * {
+      vector-effect: non-scaling-stroke;
+    }
+  }
+
+  .icon--lg {
+    inline-size: var(--mm-size-icon-lg);
+    block-size: var(--mm-size-icon-lg);
+  }
+
+  .icon--secondary { color: var(--mm-color-icon-secondary); }
+  .icon--brand { color: var(--mm-color-icon-brand); }
+  .icon--success { color: var(--mm-color-icon-success); }
+  .icon--warning { color: var(--mm-color-icon-warning); }
+  .icon--critical { color: var(--mm-color-icon-critical); }
+  .icon--info { color: var(--mm-color-icon-info); }
+
+  /* Brand marks (icons/brands/*.svg) are filled, not stroked. */
+  .icon--filled {
+    fill: currentColor;
+    stroke: none;
+  }
+
+  .icon--spin {
+    animation: mm-spin var(--mm-duration-spin) linear infinite;
+  }
+
+  .control-lg,
+  .button--lg,
+  .input--lg {
+    --mm-control-height: var(--mm-size-control-lg);
+    --mm-control-inset: var(--mm-space-500);
+    --mm-control-gap: var(--mm-space-200);
+    --mm-control-font: var(--mm-text-body-lg-medium);
+    --mm-field-inset: var(--mm-size-field-inset-lg);
+    --mm-field-radius: var(--mm-radius-250);
+    --mm-field-font: var(--mm-text-body-lg);
+  }
+
+  .control-md,
+  .button--md,
+  .input--md,
+  .table,
+  .card__header,
+  .banner,
+  .list-row,
+  .pagination,
+  .toast,
+  .menu,
+  .code-block,
+  .toolbar {
+    --mm-control-height: var(--mm-size-control-md);
+    --mm-control-inset: var(--mm-space-300);
+    --mm-control-gap: var(--mm-space-150);
+    --mm-control-font: var(--mm-text-body-md-medium);
+    --mm-field-inset: var(--mm-size-field-inset-md);
+    --mm-field-radius: var(--mm-radius-200);
+    --mm-field-font: var(--mm-text-body-md);
+  }
+
+  /* ================================================================ Actions */
+
+  /* Button (Figma: Actions / Button). <button class="button button--primary">, also on <a>. */
+  .button {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: var(--mm-control-gap);
+    block-size: var(--mm-control-height);
+    padding-inline: var(--mm-control-inset);
+    border-radius: var(--mm-radius-full);
+    font: var(--mm-control-font);
+    letter-spacing: var(--mm-tracking-md);
+    white-space: nowrap;
+    color: var(--mm-color-text-default);
+    background: transparent;
+    cursor: pointer;
+    user-select: none;
+    transition:
+      background-color var(--mm-duration-fast) var(--mm-ease),
+      color var(--mm-duration-fast) var(--mm-ease);
+
+    &:hover {
+      background: var(--mm-color-bg-fill-secondary);
+    }
+  }
+
+  .button--secondary {
+    background: var(--mm-color-bg-fill-secondary);
+
+    &:hover {
+      background: var(--mm-color-bg-fill-secondary-hover);
+    }
+  }
+
+  .button--primary {
+    color: var(--mm-color-text-on-brand);
+    background: var(--mm-color-bg-fill-brand);
+    box-shadow: var(--mm-shadow-button);
+
+    &:hover {
+      background: var(--mm-color-bg-fill-brand-hover);
+    }
+  }
+
+  .button--critical {
+    color: var(--mm-color-text-on-critical);
+    background: var(--mm-color-bg-fill-critical);
+    box-shadow: var(--mm-shadow-button);
+
+    &:hover {
+      background: var(--mm-color-bg-fill-critical-hover);
+    }
+  }
+
+  .button--block {
+    inline-size: 100%;
+  }
+
+  .button:is(:disabled, [aria-disabled="true"]):not([aria-busy="true"]) {
+    color: var(--mm-color-text-disabled);
+    background: var(--mm-color-bg-fill-disabled);
+    box-shadow: none;
+    cursor: not-allowed;
+
+    &.button--tertiary,
+    &:not(.button--primary, .button--secondary, .button--critical) {
+      background: transparent;
+    }
+  }
+
+  /* Pending submit: app.js sets aria-busy on the submitter. The spinner replaces the icon. */
+  .button[aria-busy="true"] {
+    opacity: var(--mm-opacity-busy);
+    cursor: progress;
+
+    & > .icon {
+      display: none;
+    }
+
+    &::before {
+      content: "";
+      flex: none;
+      inline-size: var(--mm-size-spinner);
+      block-size: var(--mm-size-spinner);
+      border: var(--mm-size-icon-stroke) solid currentColor;
+      border-inline-end-color: transparent;
+      border-radius: var(--mm-radius-full);
+      animation: mm-spin var(--mm-duration-spin) linear infinite;
+    }
+  }
+
+  /* Icon Button (Figma: Actions / Icon Button). Always give it an aria-label. */
+  .icon-button {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    inline-size: var(--mm-size-control-md);
+    block-size: var(--mm-size-control-md);
+    border-radius: var(--mm-radius-full);
+    color: var(--mm-color-icon-secondary);
+    background: transparent;
+    cursor: pointer;
+    transition:
+      background-color var(--mm-duration-fast) var(--mm-ease),
+      color var(--mm-duration-fast) var(--mm-ease);
+
+    &:hover,
+    &[aria-expanded="true"] {
+      color: var(--mm-color-icon-default);
+      background: var(--mm-color-bg-fill-secondary);
+    }
+  }
+
+  .icon-button--secondary {
+    color: var(--mm-color-icon-default);
+    background: var(--mm-color-bg-fill-secondary);
+
+    &:hover,
+    &[aria-expanded="true"] {
+      background: var(--mm-color-bg-fill-secondary-hover);
+    }
+  }
+
+  .icon-button--on-frame {
+    color: var(--mm-color-icon-on-frame);
+
+    &:hover,
+    &[aria-expanded="true"] {
+      color: var(--mm-color-icon-on-frame-active);
+      background: var(--mm-color-bg-frame-selected);
+    }
+  }
+
+  .icon-button--lg {
+    inline-size: var(--mm-size-control-lg);
+    block-size: var(--mm-size-control-lg);
+  }
+
+  .icon-button:is(:disabled, [aria-disabled="true"]) {
+    color: var(--mm-color-icon-disabled);
+    cursor: not-allowed;
+
+    &.icon-button--secondary {
+      background: var(--mm-color-bg-fill-disabled);
+    }
+
+    &:not(.icon-button--secondary) {
+      background: transparent;
+    }
+  }
+
+  /* Copy feedback (app.js sets data-copied for 2 s): show the second icon instead of the first. */
+  [data-copy] > .icon + .icon,
+  [data-copy-target] > .icon + .icon {
+    display: none;
+  }
+
+  :is([data-copy], [data-copy-target])[data-copied] > .icon:first-of-type:not(:only-of-type) {
+    display: none;
+  }
+
+  :is([data-copy], [data-copy-target])[data-copied] > .icon + .icon {
+    display: block;
+    color: var(--mm-color-icon-success);
+  }
+
+  /* Pressed toggles with two icons (password show/hide): first icon off, second icon on. */
+  [data-password-toggle] > .icon + .icon,
+  [data-password-toggle][aria-pressed="true"] > .icon:first-of-type {
+    display: none;
+  }
+
+  [data-password-toggle][aria-pressed="true"] > .icon + .icon {
+    display: block;
+  }
+
+  /* =============================================================== Feedback */
+
+  /* Badge (Figma: Feedback / Badge). <span class="badge badge--success">Active</span> */
+  .badge {
+    --badge-dot: var(--mm-color-icon-neutral);
+
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-150);
+    block-size: var(--mm-size-badge);
+    padding: var(--mm-space-050) var(--mm-space-200);
+    border-radius: var(--mm-radius-150);
+    font: var(--mm-text-body-sm-medium);
+    letter-spacing: var(--mm-tracking-sm);
+    white-space: nowrap;
+    color: var(--mm-color-text-neutral);
+    background: var(--mm-color-bg-neutral);
+
+    &::before {
+      content: "";
+      flex: none;
+      inline-size: var(--mm-size-dot-sm);
+      block-size: var(--mm-size-dot-sm);
+      border-radius: var(--mm-radius-full);
+      background: var(--badge-dot);
+    }
+  }
+
+  .badge--no-dot::before {
+    content: none;
+  }
+
+  .badge--success {
+    --badge-dot: var(--mm-color-icon-success);
+    color: var(--mm-color-text-success);
+    background: var(--mm-color-bg-success);
+  }
+
+  .badge--warning {
+    --badge-dot: var(--mm-color-icon-warning);
+    color: var(--mm-color-text-warning);
+    background: var(--mm-color-bg-warning);
+  }
+
+  .badge--critical {
+    --badge-dot: var(--mm-color-icon-critical);
+    color: var(--mm-color-text-critical);
+    background: var(--mm-color-bg-critical);
+  }
+
+  .badge--info {
+    --badge-dot: var(--mm-color-icon-info);
+    color: var(--mm-color-text-info);
+    background: var(--mm-color-bg-info);
+  }
+
+  .badge--brand {
+    --badge-dot: var(--mm-color-icon-brand);
+    color: var(--mm-color-text-brand);
+    background: var(--mm-color-bg-brand-subtle);
+  }
+
+  /* Status (Figma: Feedback / Status). <span class="status status--success">ready</span> */
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mm-space-200);
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    white-space: nowrap;
+    color: var(--mm-color-text-default);
+
+    &::before {
+      content: "";
+      flex: none;
+      inline-size: var(--mm-size-dot);
+      block-size: var(--mm-size-dot);
+      border-radius: var(--mm-radius-full);
+      background: var(--mm-color-icon-neutral);
+    }
+  }
+
+  .status--success::before { background: var(--mm-color-icon-success); }
+  .status--warning::before { background: var(--mm-color-icon-warning); }
+  .status--critical::before { background: var(--mm-color-icon-critical); }
+
+  /* The dot alone. */
+  .status-dot {
+    display: inline-block;
+    flex: none;
+    inline-size: var(--mm-size-dot);
+    block-size: var(--mm-size-dot);
+    border-radius: var(--mm-radius-full);
+    background: var(--mm-color-icon-neutral);
+  }
+
+  .status-dot--success { background: var(--mm-color-icon-success); }
+  .status-dot--warning { background: var(--mm-color-icon-warning); }
+  .status-dot--critical { background: var(--mm-color-icon-critical); }
+
+  /* Code and Kbd (Figma: Feedback / Code, Kbd). */
+  .code {
+    display: inline-block;
+    padding: var(--mm-space-050) var(--mm-space-150);
+    border-radius: var(--mm-radius-150);
+    font: var(--mm-text-code-sm);
+    letter-spacing: var(--mm-tracking-none);
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-surface-tertiary);
+    overflow-wrap: anywhere;
+  }
+
+  .kbd {
+    display: inline-block;
+    flex: none;
+    padding: var(--mm-space-025) calc(var(--mm-space-100) + var(--mm-space-025));
+    border: var(--mm-border-width) solid var(--mm-color-border-default);
+    border-radius: var(--mm-radius-100);
+    font: var(--mm-text-body-xs);
+    letter-spacing: var(--mm-tracking-none);
+    white-space: nowrap;
+    color: var(--mm-color-text-tertiary);
+    background: var(--mm-color-bg-surface);
+  }
+
+  /* Avatar (Figma: Feedback / Avatar). Initials on the brand tint. */
+  .avatar {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    inline-size: var(--mm-size-avatar-sm);
+    block-size: var(--mm-size-avatar-sm);
+    border-radius: var(--mm-radius-150);
+    font: var(--mm-text-body-xs);
+    letter-spacing: var(--mm-tracking-none);
+    color: var(--mm-color-text-brand);
+    background: var(--mm-color-bg-brand-subtle);
+  }
+
+  .avatar--md {
+    inline-size: var(--mm-size-avatar-md);
+    block-size: var(--mm-size-avatar-md);
+    border-radius: var(--mm-radius-200);
+    font: var(--mm-text-body-sm-medium);
+    letter-spacing: var(--mm-tracking-sm);
+  }
+
+  .avatar--on-frame {
+    inline-size: var(--mm-size-avatar);
+    block-size: var(--mm-size-avatar);
+    border-radius: var(--mm-radius-200);
+    color: var(--mm-color-text-on-frame-active);
+    background: var(--mm-color-bg-frame-selected);
+  }
+
+  /* Tile: the square behind an icon in rows and cards. */
+  .tile {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    inline-size: var(--mm-size-tile);
+    block-size: var(--mm-size-tile);
+    border-radius: var(--mm-radius-200);
+    color: var(--mm-color-icon-secondary);
+    background: var(--mm-color-bg-surface-tertiary);
+  }
+
+  .tile--lg {
+    inline-size: var(--mm-size-tile-lg);
+    block-size: var(--mm-size-tile-lg);
+    border-radius: var(--mm-radius-250);
+    color: var(--mm-color-icon-default);
+
+    & > .icon {
+      inline-size: var(--mm-size-icon-md);
+      block-size: var(--mm-size-icon-md);
+    }
+  }
+
+  .tile--round {
+    inline-size: var(--mm-size-tile-xl);
+    block-size: var(--mm-size-tile-xl);
+    border-radius: var(--mm-radius-full);
+  }
+
+  .tile--critical {
+    color: var(--mm-color-icon-critical);
+    background: var(--mm-color-bg-critical);
+  }
+
+  /* A tile that holds an image instead of an icon (the app icon preview). */
+  .tile > img {
+    inline-size: 100%;
+    block-size: 100%;
+    border-radius: inherit;
+    object-fit: cover;
+  }
+
+  /* Banner (Figma: Feedback / Banner). Page-level or card-level message. */
+  .banner {
+    --banner-icon: var(--mm-color-icon-info);
+
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mm-space-300);
+    padding: var(--mm-space-400);
+    border-radius: var(--mm-radius-300);
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-info);
+    background: var(--mm-color-bg-info);
+
+    & > .icon {
+      inline-size: var(--mm-size-icon-lg);
+      block-size: var(--mm-size-icon-lg);
+      color: var(--banner-icon);
+    }
+  }
+
+  .banner--success {
+    --banner-icon: var(--mm-color-icon-success);
+    color: var(--mm-color-text-success);
+    background: var(--mm-color-bg-success);
+  }
+
+  .banner--warning {
+    --banner-icon: var(--mm-color-icon-warning);
+    color: var(--mm-color-text-warning);
+    background: var(--mm-color-bg-warning);
+  }
+
+  .banner--critical {
+    --banner-icon: var(--mm-color-icon-critical);
+    color: var(--mm-color-text-critical);
+    background: var(--mm-color-bg-critical);
+  }
+
+  .banner__content {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: var(--mm-space-050);
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .banner__title {
+    font: var(--mm-text-body-md-medium);
+  }
+
+  .banner .button {
+    color: var(--mm-color-text-default);
+  }
+
+  /* Empty State (Figma: Feedback / Empty State). Replaces a table or chart with no data. */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--mm-space-400);
+    padding: var(--mm-space-1000) var(--mm-space-600);
+    text-align: center;
+  }
+
+  .empty-state__icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    inline-size: var(--mm-size-tile-xl);
+    block-size: var(--mm-size-tile-xl);
+    border-radius: var(--mm-radius-full);
+    color: var(--mm-color-icon-secondary);
+    background: var(--mm-color-bg-surface-tertiary);
+
+    & > .icon {
+      inline-size: var(--mm-size-icon-lg);
+      block-size: var(--mm-size-icon-lg);
+    }
+  }
+
+  .empty-state__icon--critical {
+    color: var(--mm-color-icon-critical);
+    background: var(--mm-color-bg-critical);
+  }
+
+  .empty-state__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-100);
+    max-inline-size: var(--mm-size-empty-text);
+  }
+
+  .empty-state__title {
+    font: var(--mm-text-heading-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .empty-state__description {
+    font: var(--mm-text-body-md);
+    color: var(--mm-color-text-secondary);
+  }
+
+  /* Toast (Figma: Feedback / Toast). Top-right; errors stay until dismissed. */
+  .toast-region {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    z-index: var(--mm-z-toast);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--mm-space-200);
+    max-inline-size: 100%;
+    padding: var(--mm-space-400);
+    pointer-events: none;
+  }
+
+  .toast {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-size-field-inset-md);
+    max-inline-size: var(--mm-size-toast-max);
+    padding: var(--mm-size-field-inset-md) var(--mm-space-300) var(--mm-size-field-inset-md)
+      var(--mm-size-field-inset-lg);
+    border-radius: var(--mm-radius-300);
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-on-frame-active);
+    background: var(--mm-color-bg-frame);
+    box-shadow: var(--mm-shadow-600);
+    pointer-events: auto;
+    transition:
+      opacity var(--mm-duration-base) var(--mm-ease),
+      translate var(--mm-duration-base) var(--mm-ease);
+
+    @starting-style {
+      opacity: 0;
+      translate: 0 calc(-1 * var(--mm-space-200));
+    }
+
+    &[data-leaving] {
+      opacity: 0;
+      translate: 0 calc(-1 * var(--mm-space-200));
+    }
+
+    & > .icon {
+      color: var(--mm-color-icon-on-frame-active);
+    }
+  }
+
+  .toast--error > .icon {
+    color: var(--mm-color-icon-critical);
+  }
+
+  .toast__message {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .toast__dismiss {
+    display: grid;
+    flex: none;
+    place-items: center;
+    inline-size: var(--mm-size-icon);
+    block-size: var(--mm-size-icon);
+    border-radius: var(--mm-radius-100);
+    color: var(--mm-color-icon-on-frame);
+
+    &:hover {
+      color: var(--mm-color-icon-on-frame-active);
+    }
+  }
+
+  /* ================================================================== Forms */
+
+  /* Field: label, control, help or error. */
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-150);
+    min-inline-size: 0;
+  }
+
+  .field__label {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .field__optional {
+    font: var(--mm-text-body-md);
+    color: var(--mm-color-text-tertiary);
+  }
+
+  .field:has(.input:disabled, .input-group :disabled) > .field__label {
+    color: var(--mm-color-text-disabled);
+  }
+
+  .field__help,
+  .field__error {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-tertiary);
+    overflow-wrap: anywhere;
+  }
+
+  .field__error {
+    color: var(--mm-color-text-critical);
+  }
+
+  /* Text Field (Figma: Forms / Text Field): <input>, <select> and <textarea> share .input. */
+  .input,
+  .input-group {
+    inline-size: 100%;
+    min-inline-size: 0;
+    block-size: var(--mm-control-height);
+    padding-inline: var(--mm-field-inset);
+    border: var(--mm-border-width) solid var(--mm-color-border-strong);
+    border-radius: var(--mm-field-radius);
+    font: var(--mm-field-font);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-input);
+    box-shadow: var(--mm-shadow-input);
+    transition:
+      border-color var(--mm-duration-fast) var(--mm-ease),
+      box-shadow var(--mm-duration-fast) var(--mm-ease);
+  }
+
+  /* Focus is a 2px inside border: the second pixel is an inset shadow so nothing shifts. */
+  .input:focus,
+  .input-group:focus-within {
+    border-color: var(--mm-color-border-focus);
+    outline: none;
+    box-shadow:
+      inset 0 0 0 var(--mm-border-width) var(--mm-color-border-focus),
+      var(--mm-shadow-input);
+  }
+
+  .input[aria-invalid="true"],
+  .input-group:has([aria-invalid="true"]) {
+    border-color: var(--mm-color-border-critical);
+
+    &:focus,
+    &:focus-within {
+      box-shadow:
+        inset 0 0 0 var(--mm-border-width) var(--mm-color-border-critical),
+        var(--mm-shadow-input);
+    }
+  }
+
+  .input:disabled,
+  .input-group:has(.input-group__control:disabled) {
+    border-color: var(--mm-color-border-secondary);
+    color: var(--mm-color-text-disabled);
+    background: var(--mm-color-bg-fill-disabled);
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+
+  .input[readonly] {
+    background: var(--mm-color-bg-surface-secondary);
+  }
+
+  .input--mono,
+  .input--mono .input-group__control {
+    font-family: var(--mm-font-mono);
+    letter-spacing: var(--mm-tracking-none);
+  }
+
+  textarea.input {
+    block-size: auto;
+    min-block-size: calc(var(--mm-control-height) * 2.5);
+    padding-block: calc((var(--mm-control-height) - var(--mm-size-line)) / 2 - var(--mm-border-width));
+    resize: vertical;
+    field-sizing: content;
+  }
+
+  /* Select: a Text Field with the chevron-down trailing icon. */
+  .select {
+    position: relative;
+    display: block;
+    min-inline-size: 0;
+
+    & > select.input {
+      padding-inline-end: calc(var(--mm-field-inset) + var(--mm-size-icon) + var(--mm-space-200));
+      appearance: none;
+      cursor: pointer;
+      text-overflow: ellipsis;
+    }
+
+    & > .icon {
+      position: absolute;
+      inset-block-start: calc(50% - var(--mm-size-icon) / 2);
+      /* 11px from the field's outer edge: its border plus its inset. */
+      inset-inline-end: calc(var(--mm-field-inset) + var(--mm-border-width));
+      color: var(--mm-color-icon-secondary);
+      pointer-events: none;
+    }
+  }
+
+  /* Field with a leading icon and/or a trailing action (password show/hide). */
+  .input-group {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-200);
+
+    & > .icon {
+      color: var(--mm-color-icon-secondary);
+    }
+  }
+
+  .input-group__control {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    block-size: 100%;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    appearance: none;
+
+    &::-webkit-search-cancel-button {
+      appearance: none;
+    }
+  }
+
+  .input-group__action {
+    display: grid;
+    flex: none;
+    place-items: center;
+    inline-size: var(--mm-size-icon);
+    block-size: var(--mm-size-icon);
+    border-radius: var(--mm-radius-100);
+    color: var(--mm-color-icon-secondary);
+
+    &:hover {
+      color: var(--mm-color-icon-default);
+    }
+  }
+
+  /*
+   * Unit after a number (Figma: Settings, Log retention "14 days"): the control hugs its value
+   * and the unit follows at a word space. No spin buttons: they would sit between the two.
+   * <label class="input-group"><input class="input-group__control" type="number"><span class="input-group__unit">days</span></label>
+   */
+  .input-group:has(> .input-group__unit) {
+    cursor: text;
+  }
+
+  .input-group__control:has(+ .input-group__unit) {
+    flex: none;
+    min-inline-size: 1ch;
+    max-inline-size: 100%;
+    field-sizing: content;
+    appearance: textfield;
+
+    &::-webkit-inner-spin-button,
+    &::-webkit-outer-spin-button {
+      display: none;
+    }
+  }
+
+  .input-group__unit {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    /* The group's 8px gap becomes a 4px word space. */
+    margin-inline-start: calc(-1 * var(--mm-space-100));
+    white-space: nowrap;
+  }
+
+  /* Search Field (Figma: Forms / Search Field). <label class="search">icon, input, kbd</label> */
+  .search {
+    padding-inline-end: var(--mm-space-200);
+    cursor: text;
+  }
+
+  .search--on-frame {
+    border-color: transparent;
+    color: var(--mm-color-text-on-frame-active);
+    background: var(--mm-color-bg-frame-selected);
+    box-shadow: none;
+
+    & > .icon {
+      color: var(--mm-color-icon-on-frame);
+    }
+
+    & ::placeholder {
+      color: var(--mm-color-text-on-frame-secondary);
+    }
+
+    & > .kbd {
+      opacity: var(--mm-opacity-muted);
+    }
+  }
+
+  /* Checkbox, Radio, Switch (Figma: Forms). The <input> itself carries the class. */
+  .choice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mm-space-200);
+    min-inline-size: 0;
+    cursor: pointer;
+
+    &:has(:disabled) {
+      cursor: not-allowed;
+    }
+  }
+
+  .choice__text {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .choice__label {
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .choice__description {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-tertiary);
+  }
+
+  .checkbox,
+  .radio {
+    position: relative;
+    flex: none;
+    inline-size: var(--mm-size-check);
+    block-size: var(--mm-size-check);
+    /* Centres the 16px box on the first 20px text line. */
+    margin-block: var(--mm-space-050);
+    border: var(--mm-border-width) solid var(--mm-color-border-strong);
+    background: var(--mm-color-bg-input);
+    appearance: none;
+    cursor: pointer;
+    transition:
+      background-color var(--mm-duration-fast) var(--mm-ease),
+      border-color var(--mm-duration-fast) var(--mm-ease);
+
+    &:disabled {
+      border-color: var(--mm-color-border-secondary);
+      background: var(--mm-color-bg-fill-disabled);
+      cursor: not-allowed;
+    }
+  }
+
+  .checkbox {
+    border-radius: var(--mm-radius-100);
+
+    &:checked,
+    &:indeterminate {
+      border-color: transparent;
+      background: var(--mm-color-bg-fill-brand);
+    }
+
+    /*
+     * The Lucide check (12px, 1.5px stroke) as the outline of its stroke: an image could not
+     * follow the theme, and a mask cannot load from file:// in the prototypes.
+     */
+    &:checked::before {
+      content: "";
+      position: absolute;
+      inset: calc(-1 * var(--mm-border-width));
+      background: var(--mm-color-icon-on-brand);
+      clip-path: polygon(25% 43.4%, 40.6% 59%, 75% 24.6%, 81.6% 31.25%, 40.6% 72.25%, 18.4% 50%);
+    }
+
+    &:indeterminate::before {
+      content: "";
+      position: absolute;
+      inset-block-start: calc(50% - var(--mm-size-icon-stroke) / 2);
+      inset-inline: var(--mm-size-check-dash);
+      block-size: var(--mm-size-icon-stroke);
+      border-radius: var(--mm-radius-full);
+      background: var(--mm-color-icon-on-brand);
+    }
+
+    &:disabled:is(:checked, :indeterminate) {
+      background: var(--mm-color-icon-disabled);
+    }
+  }
+
+  .radio {
+    border-radius: var(--mm-radius-full);
+
+    &:checked {
+      border: var(--mm-size-radio-ring) solid var(--mm-color-border-focus);
+    }
+
+    &:disabled:checked {
+      border-color: var(--mm-color-icon-disabled);
+    }
+  }
+
+  .switch {
+    position: relative;
+    flex: none;
+    inline-size: var(--mm-size-switch);
+    block-size: var(--mm-size-count);
+    border-radius: var(--mm-radius-full);
+    background: var(--mm-color-icon-disabled);
+    appearance: none;
+    cursor: pointer;
+    transition: background-color var(--mm-duration-fast) var(--mm-ease);
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset-block-start: var(--mm-space-050);
+      inset-inline-start: var(--mm-space-050);
+      inline-size: var(--mm-size-switch-knob);
+      block-size: var(--mm-size-switch-knob);
+      border-radius: var(--mm-radius-full);
+      background: var(--mm-color-icon-on-frame-active);
+      box-shadow: var(--mm-shadow-input);
+      transition: translate var(--mm-duration-fast) var(--mm-ease);
+    }
+
+    &:checked {
+      background: var(--mm-color-bg-fill-brand);
+
+      &::before {
+        /* Dark mode turns the brand fill light, so the knob takes the on-brand colour. */
+        background: var(--mm-color-icon-on-brand);
+        translate: var(--mm-size-switch-knob) 0;
+      }
+    }
+
+    &:disabled {
+      opacity: var(--mm-opacity-muted);
+      cursor: not-allowed;
+    }
+  }
+
+  /*
+   * A switch that is a button: it submits its own form (role="switch" aria-checked), or it is a
+   * toggle app.js drives (aria-pressed, live refresh).
+   */
+  button.switch:is([aria-checked="true"], [aria-pressed="true"]) {
+    background: var(--mm-color-bg-fill-brand);
+
+    &::before {
+      background: var(--mm-color-icon-on-brand);
+      translate: var(--mm-size-switch-knob) 0;
+    }
+  }
+
+  /* Option Card (Figma: Forms / Option Card): a radio with a title and a description. */
+  .option-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(var(--mm-size-option-min), 1fr));
+    gap: var(--mm-space-300);
+  }
+
+  .option-card {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mm-size-field-inset-md);
+    min-inline-size: 0;
+    padding: var(--mm-space-300);
+    border: var(--mm-border-width) solid var(--mm-color-border-default);
+    border-radius: var(--mm-radius-300);
+    background: var(--mm-color-bg-surface);
+    cursor: pointer;
+    transition:
+      background-color var(--mm-duration-fast) var(--mm-ease),
+      border-color var(--mm-duration-fast) var(--mm-ease);
+
+    &:hover {
+      border-color: var(--mm-color-border-strong);
+    }
+
+    &:has(:checked) {
+      border-color: var(--mm-color-border-focus);
+      background: var(--mm-color-bg-brand-subtle);
+    }
+
+    &:has(:focus-visible) {
+      outline: var(--mm-size-focus-ring) solid var(--mm-color-border-focus);
+      outline-offset: var(--mm-size-focus-ring);
+    }
+
+    &:has(:disabled) {
+      cursor: not-allowed;
+    }
+
+    & > :is(.radio, .checkbox):focus-visible {
+      outline: none;
+    }
+  }
+
+  .option-card__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .option-card__title {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .option-card__description {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  /* Filter Chip (Figma: Forms / Filter Chip). Opens a menu; brand tint once a value is set. */
+  .chip {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-100);
+    block-size: var(--mm-size-chip);
+    padding-inline: var(--mm-space-300) var(--mm-space-200);
+    border-radius: var(--mm-radius-full);
+    font: var(--mm-text-body-sm-medium);
+    letter-spacing: var(--mm-tracking-sm);
+    white-space: nowrap;
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-fill-secondary);
+    cursor: pointer;
+    transition: background-color var(--mm-duration-fast) var(--mm-ease);
+
+    & .icon {
+      inline-size: var(--mm-size-icon-sm);
+      block-size: var(--mm-size-icon-sm);
+      color: var(--mm-color-icon-secondary);
+    }
+
+    &:is(button, a):hover,
+    &[aria-expanded="true"] {
+      background: var(--mm-color-bg-fill-secondary-hover);
+    }
+  }
+
+  .chip--active {
+    color: var(--mm-color-text-brand);
+    background: var(--mm-color-bg-brand-subtle);
+
+    & .icon {
+      color: var(--mm-color-icon-brand);
+    }
+
+    &:is(button, a):hover,
+    &[aria-expanded="true"] {
+      background: var(--mm-color-bg-brand-subtle);
+    }
+  }
+
+  /* An active chip is two controls: the label reopens the menu, the x clears the filter. */
+  .chip__label {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .chip__clear {
+    display: grid;
+    place-items: center;
+    border-radius: var(--mm-radius-full);
+    cursor: pointer;
+  }
+
+  /* Segment (Figma: Forms / Segment): 2 to 4 exclusive views in a pill track. */
+  .segmented {
+    display: inline-flex;
+    flex: none;
+    gap: var(--mm-space-050);
+    padding: var(--mm-space-050);
+    border-radius: var(--mm-radius-full);
+    background: var(--mm-color-bg-fill-secondary);
+  }
+
+  .segmented--block {
+    display: flex;
+
+    & > .segment {
+      flex: 1 1 0;
+    }
+  }
+
+  .segment {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--mm-space-150);
+    block-size: var(--mm-size-chip);
+    padding-inline: var(--mm-space-300);
+    border-radius: var(--mm-radius-full);
+    font: var(--mm-text-body-sm-medium);
+    letter-spacing: var(--mm-tracking-sm);
+    white-space: nowrap;
+    color: var(--mm-color-text-secondary);
+    cursor: pointer;
+    transition:
+      background-color var(--mm-duration-fast) var(--mm-ease),
+      color var(--mm-duration-fast) var(--mm-ease);
+
+    &:hover {
+      color: var(--mm-color-text-default);
+    }
+
+    &:is([aria-selected="true"], [aria-current], [aria-pressed="true"]),
+    &:has(:checked) {
+      color: var(--mm-color-text-default);
+      background: var(--mm-color-bg-surface);
+      box-shadow: var(--mm-shadow-input);
+    }
+
+    &:has(:focus-visible) {
+      outline: var(--mm-size-focus-ring) solid var(--mm-color-border-focus);
+      outline-offset: var(--mm-size-focus-ring);
+    }
+  }
+
+  /* Tab (Figma: Forms / Tab): switches content inside a page or a dialog. The panel is 16px under the list. */
+  .tabs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+  }
+
+  .tabs__list {
+    display: flex;
+    gap: var(--mm-space-600);
+    min-inline-size: 0;
+    overflow-x: auto;
+    border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+    scrollbar-width: none;
+  }
+
+  .tab {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    block-size: var(--mm-size-tab);
+    padding-inline: var(--mm-space-050);
+    /* The 2px indicator sits on top of the list's 1px divider: the row is 37px. */
+    border-block-end: var(--mm-space-050) solid transparent;
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    white-space: nowrap;
+    color: var(--mm-color-text-tertiary);
+    cursor: pointer;
+    transition: color var(--mm-duration-fast) var(--mm-ease);
+
+    &:hover {
+      color: var(--mm-color-text-default);
+    }
+
+    &:is([aria-selected="true"], [aria-current]) {
+      border-block-end-color: var(--mm-color-border-focus);
+      color: var(--mm-color-text-default);
+    }
+
+    &:focus-visible {
+      outline-offset: calc(-1 * var(--mm-size-focus-ring));
+    }
+  }
+
+  /* ============================================================= Navigation */
+
+  /* Logo (Figma: Navigation / Logo). The mark is an inline SVG with two paths. */
+  .logo {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-size-field-inset-md);
+    font: var(--mm-text-heading-lg);
+    letter-spacing: var(--mm-tracking-md);
+    white-space: nowrap;
+    color: var(--mm-color-text-default);
+  }
+
+  .logo__mark {
+    flex: none;
+    inline-size: var(--mm-size-logo);
+    block-size: var(--mm-size-logo);
+  }
+
+  .logo__tile { fill: var(--mm-color-logo-tile); }
+  .logo__letter { fill: var(--mm-color-logo-letter); }
+
+  .logo--on-frame {
+    color: var(--mm-color-text-on-frame-active);
+
+    & .logo__tile { fill: var(--mm-color-logo-tile-on-frame); }
+    & .logo__letter { fill: var(--mm-color-logo-letter-on-frame); }
+  }
+
+  /* Nav Item, Nav Section (Figma: Navigation). Selected = aria-current="page". */
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-200);
+    inline-size: 100%;
+    block-size: var(--mm-size-control-md);
+    padding-inline: var(--mm-space-200);
+    border-radius: var(--mm-radius-200);
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-on-frame);
+    transition:
+      background-color var(--mm-duration-fast) var(--mm-ease),
+      color var(--mm-duration-fast) var(--mm-ease);
+
+    & > .icon {
+      color: var(--mm-color-icon-on-frame);
+    }
+
+    &:hover {
+      color: var(--mm-color-text-on-frame-active);
+      background: var(--mm-color-bg-frame-hover);
+
+      & > .icon {
+        color: var(--mm-color-icon-on-frame-active);
+      }
+    }
+
+    &[aria-current="page"] {
+      color: var(--mm-color-text-on-frame-active);
+      background: var(--mm-color-bg-frame-selected);
+
+      & > .icon {
+        color: var(--mm-color-icon-on-frame-active);
+      }
+
+      & > .nav-item__count {
+        background: var(--mm-color-bg-frame-hover);
+      }
+    }
+  }
+
+  .nav-item__label {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-item__count {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    block-size: var(--mm-size-count);
+    padding-inline: var(--mm-space-150);
+    border-radius: var(--mm-radius-150);
+    font: var(--mm-text-body-xs);
+    letter-spacing: var(--mm-tracking-none);
+    color: var(--mm-color-text-on-frame);
+    background: var(--mm-color-bg-frame-selected);
+  }
+
+  .nav-section {
+    display: flex;
+    align-items: flex-start;
+    inline-size: 100%;
+    block-size: var(--mm-size-control-md);
+    padding: var(--mm-space-300) var(--mm-space-200) var(--mm-space-100);
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    white-space: nowrap;
+    color: var(--mm-color-text-on-frame-secondary);
+  }
+
+  /* Nav User (Figma: Navigation / Nav User): closes the sidebar. */
+  .nav-user {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-200);
+    inline-size: 100%;
+    padding: var(--mm-space-200);
+    border-radius: var(--mm-radius-200);
+  }
+
+  .nav-user__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+    border-radius: var(--mm-radius-100);
+  }
+
+  .nav-user__name,
+  .nav-user__role {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-user__name {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-on-frame-active);
+  }
+
+  .nav-user__role {
+    font: var(--mm-text-body-xs);
+    letter-spacing: var(--mm-tracking-none);
+    color: var(--mm-color-text-on-frame-secondary);
+  }
+
+  /* Gateway card (Figma: Navigation / Sidebar): keeps the endpoint one click away. */
+  .gateway-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-200);
+    inline-size: 100%;
+    padding: var(--mm-space-300);
+    border: var(--mm-border-width) solid var(--mm-color-border-frame);
+    border-radius: var(--mm-radius-300);
+    background: var(--mm-color-bg-frame-hover);
+  }
+
+  .gateway-card__status {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-200);
+    font: var(--mm-text-body-sm-medium);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-on-frame-active);
+  }
+
+  .gateway-card__endpoint {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-200);
+    min-inline-size: 0;
+    font: var(--mm-text-code-sm);
+    letter-spacing: var(--mm-tracking-none);
+    color: var(--mm-color-text-on-frame-secondary);
+
+    & > :first-child {
+      flex: 1 1 0;
+      min-inline-size: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .gateway-card__copy {
+    display: grid;
+    flex: none;
+    place-items: center;
+    border-radius: var(--mm-radius-100);
+    color: var(--mm-color-icon-on-frame);
+
+    & > .icon {
+      inline-size: var(--mm-size-icon-sm);
+      block-size: var(--mm-size-icon-sm);
+    }
+
+    &:hover {
+      color: var(--mm-color-icon-on-frame-active);
+    }
+  }
+
+  /* Page Header (Figma: Navigation / Page Header): title, one sentence, one primary action. */
+  .page-header {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-600);
+    min-inline-size: 0;
+  }
+
+  .page-header__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: var(--mm-space-100);
+    min-inline-size: 0;
+  }
+
+  .page-header__title {
+    font: var(--mm-text-heading-2xl);
+    letter-spacing: var(--mm-tracking-2xl);
+    color: var(--mm-color-text-default);
+  }
+
+  .page-header__subtitle {
+    font: var(--mm-text-body-lg);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .page-header__actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-200);
+  }
+
+  @media (width < 48rem) {
+    .page-header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--mm-space-500);
+    }
+
+    .page-header__actions {
+      flex-direction: column;
+      align-items: stretch;
+
+      & > .button {
+        inline-size: 100%;
+      }
+    }
+  }
+
+  /* Pagination (Figma: Navigation / Pagination). */
+  .pagination {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-300);
+  }
+
+  .pagination__range {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    white-space: nowrap;
+    color: var(--mm-color-text-secondary);
+  }
+
+  .pagination__buttons {
+    display: flex;
+    gap: var(--mm-space-100);
+  }
+
+  /* Breadcrumb (Figma: Navigation / Breadcrumb). --truncate: one line, the current page is cut. */
+  .breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mm-space-150);
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-tertiary);
+
+    & > a:hover {
+      color: var(--mm-color-text-default);
+    }
+
+    & > .icon {
+      inline-size: var(--mm-size-icon-sm);
+      block-size: var(--mm-size-icon-sm);
+      color: var(--mm-color-icon-secondary);
+    }
+
+    & > [aria-current] {
+      font: var(--mm-text-body-md-medium);
+      color: var(--mm-color-text-default);
+    }
+  }
+
+  .breadcrumb--truncate {
+    flex-wrap: nowrap;
+    min-inline-size: 0;
+
+    & > :not([aria-current]) {
+      flex: none;
+    }
+
+    & > [aria-current] {
+      min-inline-size: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  /* =================================================================== Data */
+
+  /* Card: a standalone widget. Dense data goes in .table or .list inside it. */
+  .card {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    overflow: clip;
+    border-radius: var(--mm-radius-400);
+    background: var(--mm-color-bg-surface);
+    box-shadow: var(--mm-shadow-100);
+  }
+
+  /* Card footer (Figma: Settings): the card's own action, on the tinted strip. */
+  .card__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--mm-space-200);
+    padding: var(--mm-size-field-inset-lg) var(--mm-space-500);
+    border-block-start: var(--mm-border-width) solid var(--mm-color-border-secondary);
+    background: var(--mm-color-bg-surface-secondary);
+  }
+
+  .card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+    padding: var(--mm-space-500);
+  }
+
+  /* A note at the start of a card footer (what is waiting to be saved); the actions stay at the end. */
+  .card__footer-note {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  /* Under 48rem everything in a card is 16px from its edge, and footer buttons share the row. */
+  @media (width < 48rem) {
+    .card__body {
+      padding: var(--mm-space-400);
+    }
+
+    .card__footer {
+      padding-inline: var(--mm-space-400);
+
+      & > .button {
+        flex: 1 1 auto;
+      }
+    }
+
+    .card__footer-note {
+      flex-basis: 100%;
+    }
+  }
+
+  /* Card Header (Figma: Data / Card Header): titles a card and carries its single link. */
+  .card__header {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+    padding: var(--mm-size-field-inset-lg) var(--mm-space-300) var(--mm-size-field-inset-lg) var(--mm-space-500);
+    border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+  }
+
+  .card__heading {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .card__title {
+    font: var(--mm-text-heading-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .card__subtitle {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  /* KPI Card, Metric, Key Value (Figma: Data). */
+  .kpi {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-200);
+    min-inline-size: 0;
+    padding: var(--mm-space-500);
+    border-radius: var(--mm-radius-400);
+    background: var(--mm-color-bg-surface);
+    box-shadow: var(--mm-shadow-100);
+  }
+
+  @media (width < 48rem) {
+    .kpi {
+      padding: var(--mm-space-400);
+    }
+  }
+
+  .kpi__label {
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .kpi__value {
+    font: var(--mm-text-heading-2xl);
+    letter-spacing: var(--mm-tracking-2xl);
+    color: var(--mm-color-text-default);
+  }
+
+  .kpi__footer {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-200);
+    min-inline-size: 0;
+    min-block-size: var(--mm-size-badge);
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-tertiary);
+
+    & > :not(.badge) {
+      flex: 1 1 0;
+      min-inline-size: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .metric {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-100);
+    min-inline-size: 0;
+  }
+
+  .metric__label {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .metric__value {
+    font: var(--mm-text-heading-xl);
+    letter-spacing: var(--mm-tracking-xl);
+    color: var(--mm-color-text-default);
+  }
+
+  .key-value {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-050);
+    min-inline-size: 0;
+
+    /* For a change: the value it replaces, under the new one. <dd class="key-value__before">Now: …</dd> */
+    & > .key-value__before {
+      font: var(--mm-text-body-sm);
+      letter-spacing: var(--mm-tracking-sm);
+      color: var(--mm-color-text-secondary);
+    }
+
+    & > dt {
+      font: var(--mm-text-body-sm);
+      letter-spacing: var(--mm-tracking-sm);
+      color: var(--mm-color-text-tertiary);
+    }
+
+    & > dd {
+      font: var(--mm-text-body-md-medium);
+      letter-spacing: var(--mm-tracking-md);
+      color: var(--mm-color-text-default);
+      overflow-wrap: anywhere;
+    }
+  }
+
+  /* List Row (Figma: Data / List Row): icon tile, two lines, a meta and a badge. */
+  .list-row {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+    padding: var(--mm-space-300) var(--mm-space-500);
+    border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+    color: inherit;
+
+    &:last-child {
+      border-block-end: 0;
+    }
+  }
+
+  a.list-row:hover {
+    background: var(--mm-color-bg-surface-secondary);
+  }
+
+  a.list-row:focus-visible {
+    outline-offset: calc(-1 * var(--mm-size-focus-ring));
+  }
+
+  .list-row__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .list-row__title,
+  .list-row__subtitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .list-row__title {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  /* Tool names and other identifiers. */
+  .list-row__title--code {
+    font: var(--mm-text-code-sm-medium);
+    letter-spacing: var(--mm-tracking-none);
+  }
+
+  .list-row__subtitle {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .list-row__meta {
+    flex: none;
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    white-space: nowrap;
+    color: var(--mm-color-text-tertiary);
+  }
+
+  /* A note in the place of the row's icon button ("You"): as wide, so the badges before it line up. */
+  .list-row__meta--slot {
+    min-inline-size: var(--mm-size-control-md);
+    text-align: center;
+  }
+
+  /*
+   * A row whose title is a sentence: title and subtitle wrap, the badge and the meta take a
+   * line of their own (.list-row__footer, inside .list-row__text), a chevron ends the row.
+   */
+  .list-row--wrap {
+    align-items: flex-start;
+
+    & .list-row__text {
+      gap: var(--mm-space-050);
+    }
+
+    & :is(.list-row__title, .list-row__subtitle) {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    & > .icon {
+      align-self: center;
+      color: var(--mm-color-icon-secondary);
+    }
+  }
+
+  .list-row__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mm-space-100) var(--mm-space-200);
+    margin-block-start: var(--mm-space-100);
+  }
+
+  /* Code Block (Figma: Data / Code Block): JSON, TOML and shell snippets with a copy action. */
+  .code-block {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    overflow: hidden;
+    border: var(--mm-border-width) solid var(--mm-color-border-secondary);
+    border-radius: var(--mm-radius-300);
+    background: var(--mm-color-bg-surface-tertiary);
+  }
+
+  .code-block__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mm-space-200);
+    /* 41px with or without the copy button. */
+    min-block-size: calc(var(--mm-size-control-md) + 2 * var(--mm-space-100) + var(--mm-border-width));
+    padding: var(--mm-space-100) var(--mm-space-100) var(--mm-space-100) var(--mm-size-field-inset-lg);
+    border-block-end: var(--mm-border-width) solid var(--mm-color-border-default);
+  }
+
+  .code-block__title {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font: var(--mm-text-code-sm);
+    letter-spacing: var(--mm-tracking-none);
+    white-space: nowrap;
+    color: var(--mm-color-text-tertiary);
+  }
+
+  .code-block__body {
+    max-block-size: var(--mm-size-code-max);
+    overflow: auto;
+    padding: var(--mm-space-300) var(--mm-size-field-inset-lg);
+    font: var(--mm-text-code-sm);
+    letter-spacing: var(--mm-tracking-none);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--mm-color-text-default);
+    tab-size: 2;
+  }
+
+  /* Template Card (Figma: Data / Template Card): one entry of the MCP gallery. */
+  .template-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+    padding: var(--mm-space-400);
+    border: var(--mm-border-width) solid var(--mm-color-border-default);
+    border-radius: var(--mm-radius-400);
+    background: var(--mm-color-bg-surface);
+  }
+
+  .template-card__header {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-size-field-inset-md);
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  .template-card__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .template-card__name,
+  .template-card__category {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .template-card__name {
+    font: var(--mm-text-heading-sm);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .template-card__category {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-tertiary);
+  }
+
+  .template-card__description {
+    display: -webkit-box;
+    inline-size: 100%;
+    /* Three lines, so every card in a row is the same height. */
+    block-size: calc(3 * var(--mm-size-line));
+    overflow: hidden;
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  /* ================================================================= Blocks */
+
+  /* A title and its sentence, inside a card body or above a group of fields. */
+  .heading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-050);
+    min-inline-size: 0;
+  }
+
+  .heading__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mm-space-200);
+    font: var(--mm-text-heading-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .heading__description {
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+  }
+
+  /* A tinted box inside a card (Figma: Authorize client, what is granted). */
+  .well {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+    padding: var(--mm-space-400);
+    border-radius: var(--mm-radius-300);
+    background: var(--mm-color-bg-surface-tertiary);
+  }
+
+  /* Code on a tinted box would vanish: it takes the info tint there. */
+  .code--info {
+    background: var(--mm-color-bg-info);
+  }
+
+  /* Copy field (Figma: Access tokens, Home): a read-only value and its copy button. */
+  .copy-field {
+    display: flex;
+    /* Grows beside a button in a row; keeps its height in a column. */
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+    block-size: var(--mm-size-copy-field);
+    padding-inline: var(--mm-size-field-inset-lg) var(--mm-space-100);
+    border-radius: var(--mm-radius-250);
+    background: var(--mm-color-bg-surface-tertiary);
+  }
+
+  .copy-field__value {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font: var(--mm-text-code-md);
+    letter-spacing: var(--mm-tracking-none);
+    white-space: nowrap;
+    color: var(--mm-color-text-default);
+  }
+
+  .copy-field--lg {
+    block-size: var(--mm-size-copy-field-lg);
+    padding-inline: var(--mm-space-400) var(--mm-space-200);
+    border-radius: var(--mm-radius-300);
+  }
+
+  /* A value that must be read whole (a token shown once, a redirect URI): it wraps, the field grows. */
+  .copy-field--wrap {
+    block-size: auto;
+    min-block-size: var(--mm-size-copy-field);
+    padding-block: var(--mm-space-100);
+
+    & > .copy-field__value {
+      padding-block: var(--mm-space-150);
+      overflow: visible;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  @media (width < 48rem) {
+    /* Figma: Mobile · Home. The endpoint field is 44px and its copy button fills its end. */
+    .copy-field--lg {
+      gap: var(--mm-space-200);
+      block-size: var(--mm-size-control-lg);
+      padding-inline: var(--mm-size-field-inset-lg) 0;
+
+      & > .icon-button {
+        inline-size: var(--mm-size-control-lg);
+        block-size: var(--mm-size-control-lg);
+      }
+    }
+
+    /* Beside its action in a .cluster: the field takes the row, the action fills the next one. */
+    .cluster > .copy-field {
+      flex-basis: 100%;
+    }
+
+    .cluster > .copy-field ~ .button {
+      flex: 1 1 auto;
+    }
+  }
+
+  /* Setting row (Figma: Install dialog, Settings): a switch with its title and description. */
+  .setting-row {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+    padding: var(--mm-space-300) var(--mm-size-field-inset-lg);
+    border: var(--mm-border-width) solid var(--mm-color-border-default);
+    border-radius: var(--mm-radius-300);
+    cursor: pointer;
+  }
+
+  .setting-row__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .setting-row__title {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .setting-row__description {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-tertiary);
+  }
+
+  /* Numbered steps (Figma: Install dialog). <ol class="steps"><li class="step">…</li></ol> */
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-200);
+    counter-reset: step;
+  }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mm-size-field-inset-md);
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+    counter-increment: step;
+
+    &:first-child {
+      color: var(--mm-color-text-default);
+    }
+
+    &::before {
+      content: counter(step);
+      display: grid;
+      flex: none;
+      place-items: center;
+      inline-size: var(--mm-size-step);
+      block-size: var(--mm-size-step);
+      border-radius: var(--mm-radius-full);
+      font: var(--mm-text-body-xs);
+      letter-spacing: var(--mm-tracking-none);
+      color: var(--mm-color-text-secondary);
+      background: var(--mm-color-bg-fill-secondary);
+    }
+  }
+
+  /* Live indicator (Figma: Logs, Analytics): dot, sentence, switch. The dot is green while it is on. */
+  .live {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-200);
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    white-space: nowrap;
+    color: var(--mm-color-text-secondary);
+
+    &:has(.switch:is([aria-pressed="false"], [aria-checked="false"], input:not(:checked))) > .status-dot {
+      background: var(--mm-color-icon-neutral);
+    }
+  }
+
+  /* Key Value grid (Figma: Call details): two equal columns. <dl class="key-values"> */
+  .key-values {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--mm-space-400);
+  }
+
+  /* ================================================================ Toolbar */
+
+  /* The row above a table: search, filter chips, then a note or actions pushed to the end. */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+    min-block-size: var(--mm-size-control-md);
+  }
+
+  .toolbar--tight {
+    gap: var(--mm-space-200);
+  }
+
+  .toolbar > .search {
+    inline-size: var(--mm-size-search);
+  }
+
+  .toolbar__note {
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    white-space: nowrap;
+    color: var(--mm-color-text-secondary);
+  }
+
+  @media (width < 48rem) {
+    .toolbar > .search {
+      --mm-control-height: var(--mm-size-control-lg);
+      --mm-field-inset: var(--mm-size-field-inset-lg);
+      --mm-field-radius: var(--mm-radius-250);
+      --mm-field-font: var(--mm-text-body-lg);
+
+      inline-size: 100%;
+      padding-inline-end: var(--mm-field-inset);
+
+      /* No keyboard, no shortcut. */
+      & > .kbd {
+        display: none;
+      }
+    }
+  }
+
+  /* ================================================================== Table */
+
+  /*
+   * Table (Figma: MCPs, Access tokens, Logs, Team, Analytics). A card that clips a real <table>.
+   * Fixed layout: give the fixed columns a .col-<px> class on their <th>, the others share the rest.
+   *
+   * <div class="card"><div class="table-scroll"><table class="table">…</table></div>
+   *   <div class="table-footer">note + pagination</div></div>
+   */
+  .table-scroll {
+    min-inline-size: 0;
+    overflow-x: auto;
+  }
+
+  /* Under a card header the column titles are a little shorter. */
+  .card__header + .table-scroll th {
+    block-size: var(--mm-size-table-header-sm);
+  }
+
+  .table {
+    inline-size: 100%;
+    /* The fixed columns keep their width: below this the card scrolls instead of crushing the others. */
+    min-inline-size: var(--mm-size-table-min);
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+
+    & th {
+      block-size: var(--mm-size-table-header);
+      padding: 0 var(--mm-space-200);
+      overflow: hidden;
+      border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+      font: var(--mm-text-body-sm-medium);
+      letter-spacing: var(--mm-tracking-sm);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--mm-color-text-secondary);
+      background: var(--mm-color-bg-surface-secondary);
+    }
+
+    & td {
+      block-size: var(--mm-size-table-row);
+      padding: var(--mm-size-table-cell-inset) var(--mm-space-200);
+      overflow: hidden;
+      border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+      font: var(--mm-text-body-md);
+      letter-spacing: var(--mm-tracking-md);
+      text-overflow: ellipsis;
+      vertical-align: middle;
+      white-space: nowrap;
+      color: var(--mm-color-text-default);
+    }
+
+    & :is(th, td):first-child {
+      padding-inline-start: var(--mm-space-500);
+    }
+
+    & :is(th, td):last-child {
+      padding-inline-end: var(--mm-space-500);
+    }
+
+    /* The last row keeps its divider only when a footer follows the table. */
+    & tbody tr:last-child td {
+      border-block-end: 0;
+    }
+
+    & tbody tr[aria-selected="true"],
+    & tbody tr:has([aria-current="true"]) {
+      background: var(--mm-color-bg-brand-subtle);
+    }
+  }
+
+  .table-scroll:not(:last-child) .table tbody tr:last-child td {
+    border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+  }
+
+  .table--dense td {
+    block-size: var(--mm-size-table-row-dense);
+  }
+
+  /* A table with a sentence in a cell needs more room. */
+  .table--wide {
+    min-inline-size: var(--mm-size-table-min-wide);
+  }
+
+  /* Ranking tables (Figma: Analytics): 44px rows, 12px between columns, narrow enough for a phone. */
+  .table--tight {
+    min-inline-size: 0;
+
+    & td {
+      block-size: var(--mm-size-table-row-tight);
+    }
+
+    & :is(th, td) {
+      padding-inline: var(--mm-space-150);
+    }
+
+    & :is(th, td):first-child {
+      padding-inline-start: var(--mm-space-500);
+    }
+
+    & :is(th, td):last-child {
+      padding-inline-end: var(--mm-space-500);
+    }
+  }
+
+  /* A status, a code chip or a badge alone in a cell takes a line of its own height. */
+  .table td > :is(.status, .code, .badge) {
+    vertical-align: top;
+  }
+
+  .table td > form:has(> .switch:only-of-type) {
+    display: flex;
+  }
+
+  /*
+   * Row link (Figma: Logs, whose rows open the Call details panel): the link in a cell of a
+   * .table--interactive row. Its hit area is the whole row, and so is its focus ring.
+   * <tr><td><a class="row-link" href="…">…</a></td>…</tr>
+   */
+  .table--interactive tbody tr {
+    position: relative;
+  }
+
+  .row-link {
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+    }
+
+    &:focus-visible {
+      outline: none;
+
+      &::after {
+        outline: var(--mm-size-focus-ring) solid var(--mm-color-border-focus);
+        outline-offset: calc(-1 * var(--mm-size-focus-ring));
+      }
+    }
+  }
+
+  /* Rows that open something: the whole row reacts. */
+  .table--interactive tbody tr:hover:not([aria-selected="true"], :has([aria-current="true"])) {
+    background: var(--mm-color-bg-surface-secondary);
+  }
+
+  /* Cell contents. */
+  .table :is(th, td).cell-end {
+    text-align: end;
+  }
+
+  .table td.cell-secondary {
+    color: var(--mm-color-text-secondary);
+  }
+
+  .table td.cell-tertiary {
+    color: var(--mm-color-text-tertiary);
+  }
+
+  .table td.cell-strong {
+    font: var(--mm-text-body-md-medium);
+  }
+
+  .table td.cell-code {
+    font: var(--mm-text-code-sm);
+    letter-spacing: var(--mm-tracking-none);
+  }
+
+  .table td.cell-code-strong {
+    font: var(--mm-text-code-sm-medium);
+    letter-spacing: var(--mm-tracking-none);
+  }
+
+  .table td.cell-wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Icon tile + two lines (Name column). */
+  .cell-media {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+  }
+
+  /* Two lines in one cell. */
+  .cell-stack {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+
+    & > * {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .cell-title {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .cell-sub {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-tertiary);
+  }
+
+  .cell-sub--code {
+    font: var(--mm-text-code-sm);
+    letter-spacing: var(--mm-tracking-none);
+  }
+
+  .cell-sub--secondary {
+    color: var(--mm-color-text-secondary);
+  }
+
+  /* Two lines whose first is a sentence to read whole: they wrap instead of being cut. */
+  .cell-stack--wrap > * {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .cell-sub--critical {
+    color: var(--mm-color-text-critical);
+  }
+
+  .cell-code {
+    font: var(--mm-text-code-sm);
+    letter-spacing: var(--mm-tracking-none);
+    color: var(--mm-color-text-default);
+  }
+
+  /* Row actions: tertiary buttons flush with the right edge. */
+  .row-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    vertical-align: middle;
+
+    & > .icon-button {
+      margin-inline-start: var(--mm-space-050);
+    }
+
+    & > form {
+      display: contents;
+    }
+  }
+
+  .table-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mm-space-300);
+    padding: var(--mm-size-table-cell-inset) var(--mm-space-300) var(--mm-size-table-cell-inset) var(--mm-space-500);
+  }
+
+  .table-footer__note {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  @media (width < 48rem) {
+    .table-footer {
+      flex-wrap: wrap;
+    }
+
+    /* A ranking table lines up with the card header, 16px from the edge. */
+    .table--tight :is(th, td):first-child {
+      padding-inline-start: var(--mm-space-400);
+    }
+
+    .table--tight :is(th, td):last-child {
+      padding-inline-end: var(--mm-space-400);
+    }
+
+    /* A table that keeps the width of a phone (a name and a control): its cells wrap (.cell-wrap). */
+    .table--fluid {
+      min-inline-size: 0;
+
+      & :is(th, td):first-child {
+        padding-inline-start: var(--mm-space-400);
+      }
+
+      & :is(th, td):last-child {
+        padding-inline-end: var(--mm-space-400);
+      }
+    }
+  }
+
+  /* ================================================================ Dialog */
+
+  /*
+   * Dialog (Figma: Add an MCP, Edit MCP, Install MyMCPs). A native <dialog>, opened by app.js
+   * with showModal(): pinned 48px from the top, the body scrolls between header and footer.
+   *
+   * <dialog class="dialog" id="…" aria-labelledby="…">
+   *   <div class="dialog__header"><div class="dialog__heading"><h2 class="dialog__title">…</h2>
+   *     <p class="dialog__subtitle">…</p></div><button class="icon-button" data-dialog-close>…</button></div>
+   *   <div class="dialog__body">…</div>
+   *   <div class="dialog__footer">…</div>
+   * </dialog>
+   */
+  .dialog {
+    position: fixed;
+    inset: var(--mm-size-dialog-offset) 0 auto;
+    flex-direction: column;
+    inline-size: calc(100% - 2 * var(--mm-space-400));
+    max-inline-size: var(--mm-size-dialog);
+    block-size: auto;
+    /* Figma leaves about twice the top offset under a dialog. */
+    max-block-size: calc(100dvh - 3 * var(--mm-size-dialog-offset));
+    margin: 0 auto;
+    padding: 0;
+    overflow: clip;
+    border: 0;
+    border-radius: var(--mm-radius-500);
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-surface);
+    box-shadow: 0 0 0 var(--mm-border-width) var(--mm-color-border-floating), var(--mm-shadow-600);
+    transition:
+      opacity var(--mm-duration-base) var(--mm-ease),
+      translate var(--mm-duration-base) var(--mm-ease),
+      display var(--mm-duration-base) allow-discrete,
+      overlay var(--mm-duration-base) allow-discrete;
+
+    &[open] {
+      display: flex;
+
+      @starting-style {
+        opacity: 0;
+        translate: 0 var(--mm-space-200);
+      }
+    }
+
+    &:not([open]) {
+      opacity: 0;
+      translate: 0 var(--mm-space-200);
+    }
+
+    &::backdrop {
+      background: var(--mm-color-backdrop);
+      transition:
+        opacity var(--mm-duration-base) var(--mm-ease),
+        display var(--mm-duration-base) allow-discrete,
+        overlay var(--mm-duration-base) allow-discrete;
+    }
+
+    &[open]::backdrop {
+      @starting-style {
+        opacity: 0;
+      }
+    }
+  }
+
+  /* app.js focuses a dialog that has no field to start on: the surface itself shows no ring. */
+  :is(.dialog, .drawer):focus-visible {
+    outline: none;
+  }
+
+  .dialog--sm { max-inline-size: var(--mm-size-dialog-sm); }
+
+  .dialog--lg {
+    --mm-size-dialog-offset: var(--mm-size-dialog-offset-lg);
+    max-inline-size: var(--mm-size-dialog-lg);
+  }
+
+  .dialog--xl {
+    --mm-size-dialog-offset: var(--mm-size-dialog-offset-xl);
+    max-inline-size: var(--mm-size-dialog-xl);
+  }
+
+  /*
+   * A form or a fragment that wraps header, body and footer keeps the column layout. It is the
+   * only child apart from the toast region, which app.js moves into the open dialog.
+   */
+  :is(.dialog, .drawer) > :is(form, [data-fragment]):first-child:is(:last-child, :has(+ [data-toasts]:last-child)),
+  :is(.dialog, .drawer) > [data-fragment]:first-child:is(:last-child, :has(+ [data-toasts]:last-child)) > form:only-child {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-block-size: 0;
+  }
+
+  .dialog__header {
+    display: flex;
+    flex: none;
+    align-items: flex-start;
+    gap: var(--mm-space-400);
+    padding: var(--mm-space-500) var(--mm-space-400) var(--mm-space-300) var(--mm-space-600);
+  }
+
+  .dialog__heading {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: var(--mm-space-050);
+    min-inline-size: 0;
+  }
+
+  .dialog__title {
+    font: var(--mm-text-heading-xl);
+    letter-spacing: var(--mm-tracking-xl);
+    color: var(--mm-color-text-default);
+  }
+
+  .dialog__subtitle {
+    font: var(--mm-text-body-lg);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .dialog__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--mm-space-400);
+    min-block-size: 0;
+    padding: var(--mm-space-200) var(--mm-space-600) var(--mm-space-600);
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-color-border-strong) transparent;
+
+    /* The body scrolls, so its blocks keep their own height. */
+    & > * {
+      flex: none;
+    }
+  }
+
+  .dialog__footer {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--mm-space-200);
+    padding: var(--mm-space-400) var(--mm-space-600);
+    border-block-start: var(--mm-border-width) solid var(--mm-color-border-secondary);
+    background: var(--mm-color-bg-surface-secondary);
+  }
+
+  /* The destructive action sits alone on the left. */
+  .dialog__footer-start {
+    margin-inline-end: auto;
+  }
+
+  @media (width < 48rem) {
+    .dialog {
+      inset-block-start: var(--mm-space-200);
+      inline-size: calc(100% - 2 * var(--mm-space-200));
+      max-inline-size: none;
+      max-block-size: calc(100dvh - 2 * var(--mm-space-200));
+    }
+
+    .dialog__header {
+      padding-inline-start: var(--mm-space-400);
+    }
+
+    .dialog__body {
+      padding-inline: var(--mm-space-400);
+    }
+
+    .dialog__footer {
+      padding-inline: var(--mm-space-400);
+
+      & > .button {
+        flex: 1 1 auto;
+      }
+    }
+  }
+
+  /*
+   * Side panel (Figma: Logs, Call details). A <dialog class="drawer" data-dialog-modal="false">:
+   * it floats over the page 24px from the top and the right, without dimming it.
+   */
+  .drawer {
+    position: fixed;
+    inset: var(--mm-size-drawer-offset) var(--mm-size-drawer-offset) auto auto;
+    z-index: var(--mm-z-sticky);
+    flex-direction: column;
+    inline-size: calc(100% - 2 * var(--mm-size-drawer-offset));
+    max-inline-size: var(--mm-size-drawer);
+    block-size: auto;
+    max-block-size: calc(100dvh - 2 * var(--mm-size-drawer-offset));
+    margin: 0;
+    padding: 0;
+    overflow: clip;
+    border: 0;
+    border-radius: var(--mm-radius-500);
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-surface);
+    box-shadow: 0 0 0 var(--mm-border-width) var(--mm-color-border-floating), var(--mm-shadow-600);
+    transition:
+      opacity var(--mm-duration-base) var(--mm-ease),
+      translate var(--mm-duration-base) var(--mm-ease),
+      display var(--mm-duration-base) allow-discrete,
+      overlay var(--mm-duration-base) allow-discrete;
+
+    &[open] {
+      display: flex;
+
+      @starting-style {
+        opacity: 0;
+        translate: var(--mm-space-400) 0;
+      }
+    }
+
+    &:not([open]) {
+      opacity: 0;
+      translate: var(--mm-space-400) 0;
+    }
+
+    &::backdrop {
+      background: transparent;
+    }
+  }
+
+  .drawer__header {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-300);
+    padding: var(--mm-space-400) var(--mm-space-300) var(--mm-space-400) var(--mm-space-500);
+    border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+  }
+
+  .drawer__heading {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .drawer__title {
+    font: var(--mm-text-heading-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .drawer__meta {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .drawer__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--mm-space-500);
+    min-block-size: 0;
+    padding: var(--mm-space-500);
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-color-border-strong) transparent;
+  }
+
+  .drawer__footer {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mm-space-200);
+    padding: var(--mm-space-300) var(--mm-space-500);
+    border-block-start: var(--mm-border-width) solid var(--mm-color-border-secondary);
+  }
+
+  @media (width < 48rem) {
+    .drawer {
+      inset: var(--mm-space-200) var(--mm-space-200) auto;
+      inline-size: auto;
+      max-inline-size: none;
+      max-block-size: calc(100dvh - 2 * var(--mm-space-200));
+    }
+  }
+
+  /* ================================================================== Menu */
+
+  /*
+   * Menu: a native popover under its invoker (the Figma file draws no open menu; it uses the
+   * floating surface, shadow/300, and the control radius).
+   *
+   * <button popovertarget="m1">…</button>
+   * <div class="menu" id="m1" popover role="menu"><a class="menu__item" role="menuitem">…</a></div>
+   */
+  .menu {
+    position: fixed;
+    inset: auto;
+    flex-direction: column;
+    gap: var(--mm-space-025);
+    min-inline-size: var(--mm-size-menu-min);
+    max-inline-size: min(var(--mm-size-menu-max), calc(100vw - 2 * var(--mm-space-200)));
+    max-block-size: min(var(--mm-size-code-max), calc(100dvh - 2 * var(--mm-space-400)));
+    margin: var(--mm-space-100) 0;
+    padding: var(--mm-space-100);
+    overflow: hidden auto;
+    border: 0;
+    border-radius: var(--mm-radius-300);
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-surface);
+    box-shadow: 0 0 0 var(--mm-border-width) var(--mm-color-border-floating), var(--mm-shadow-300);
+    /* Under the invoker, right edges aligned; flips when there is no room. */
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+
+    &:popover-open {
+      display: flex;
+    }
+
+    /* Browsers without CSS anchor positioning: app.js measures and sets the two properties. */
+    &[data-popover-positioned] {
+      inset-block-start: var(--popover-top, 0);
+      inset-inline-start: var(--popover-left, 0);
+      margin: 0;
+      position-area: none;
+    }
+  }
+
+  /* Left edges aligned (under a filter chip). */
+  .menu--start {
+    position-area: block-end span-inline-end;
+  }
+
+  .menu__item {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-200);
+    inline-size: 100%;
+    min-block-size: var(--mm-size-control-md);
+    padding: var(--mm-space-150) var(--mm-space-200);
+    border-radius: var(--mm-radius-200);
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    text-align: start;
+    color: var(--mm-color-text-default);
+    cursor: pointer;
+
+    & > .icon {
+      color: var(--mm-color-icon-secondary);
+    }
+
+    &:hover,
+    &:focus-visible {
+      outline: none;
+      background: var(--mm-color-bg-fill-secondary);
+    }
+
+    /* The current choice: a link (aria-checked, aria-current) or a radio of a form inside the item. */
+    &:is([aria-checked="true"], [aria-current]),
+    &:has(:checked) {
+      font: var(--mm-text-body-md-medium);
+      color: var(--mm-color-text-brand);
+      background: var(--mm-color-bg-brand-subtle);
+    }
+
+    &:has(:focus-visible) {
+      outline: var(--mm-size-focus-ring) solid var(--mm-color-border-focus);
+      outline-offset: calc(-1 * var(--mm-size-focus-ring));
+    }
+
+    &:is(:disabled, [aria-disabled="true"]) {
+      color: var(--mm-color-text-disabled);
+      background: transparent;
+      cursor: not-allowed;
+    }
+  }
+
+  .menu__item--critical {
+    color: var(--mm-color-text-critical);
+
+    & > .icon {
+      color: var(--mm-color-icon-critical);
+    }
+
+    &:hover,
+    &:focus-visible {
+      background: var(--mm-color-bg-critical);
+    }
+  }
+
+  .menu > form {
+    display: contents;
+  }
+
+  .menu__separator {
+    flex: none;
+    block-size: var(--mm-border-width);
+    margin: var(--mm-space-100) calc(-1 * var(--mm-space-100));
+    background: var(--mm-color-border-secondary);
+  }
+
+  .menu__label {
+    padding: var(--mm-space-150) var(--mm-space-200) var(--mm-space-050);
+    font: var(--mm-text-body-xs);
+    letter-spacing: var(--mm-tracking-none);
+    color: var(--mm-color-text-tertiary);
+  }
+
+  /* ================================================================== Home */
+
+  /* Context bar (Figma: Home): the period on the left, small stats on the right. */
+  .context-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+  }
+
+  /* A quiet menu trigger: label and chevron, no fill. */
+  .range {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-150);
+    border-radius: var(--mm-radius-100);
+    font: var(--mm-text-body-lg);
+    letter-spacing: var(--mm-tracking-md);
+    white-space: nowrap;
+    color: var(--mm-color-text-secondary);
+    cursor: pointer;
+
+    & > .icon {
+      inline-size: var(--mm-size-icon-sm);
+      block-size: var(--mm-size-icon-sm);
+      color: var(--mm-color-icon-secondary);
+    }
+
+    &:hover,
+    &[aria-expanded="true"] {
+      color: var(--mm-color-text-default);
+    }
+  }
+
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--mm-space-200) var(--mm-space-800);
+    white-space: nowrap;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat__label {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .stat__value {
+    font: var(--mm-text-heading-sm);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  /* Hero (Figma: Home): greeting, gateway endpoint card, attention chips, all centred. */
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--mm-space-800);
+    padding: var(--mm-space-1000) 0 var(--mm-space-800);
+  }
+
+  .hero__greeting {
+    font: var(--mm-text-heading-3xl);
+    letter-spacing: var(--mm-tracking-3xl);
+    text-align: center;
+    color: var(--mm-color-text-default);
+
+    & > span {
+      display: block;
+      color: var(--mm-color-text-tertiary);
+    }
+  }
+
+  .hero-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-400);
+    inline-size: 100%;
+    max-inline-size: var(--mm-size-hero-card);
+    padding: var(--mm-space-500);
+    border-radius: var(--mm-radius-500);
+    background: var(--mm-color-bg-surface);
+    box-shadow: var(--mm-shadow-300);
+  }
+
+  .hero-card__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mm-space-200);
+    min-inline-size: 0;
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+  }
+
+  /* Attention chip (Figma: Home): one thing that needs the person, links to where it is fixed. */
+  .attention {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--mm-space-200);
+  }
+
+  .attention__item {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--mm-space-200);
+    block-size: var(--mm-size-control-md);
+    padding-inline: var(--mm-space-300) var(--mm-size-field-inset-lg);
+    border-radius: var(--mm-radius-full);
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    white-space: nowrap;
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-fill-secondary);
+    transition: background-color var(--mm-duration-fast) var(--mm-ease);
+
+    &:hover {
+      background: var(--mm-color-bg-fill-secondary-hover);
+    }
+
+    & > .icon {
+      color: var(--mm-color-icon-default);
+    }
+
+    /* The chevron only shows on mobile, where the chip is a full-width row. */
+    & > .icon:last-child:not(:first-child) {
+      display: none;
+    }
+  }
+
+  /* Overview (Figma: Home): the main card and a 360px column of side cards. */
+  .overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--mm-size-overview-side);
+    align-items: start;
+    gap: var(--mm-space-400);
+  }
+
+  .overview__side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+  }
+
+  /* Chart section of a card: the total line, the chart, the axis. */
+  .chart-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-500);
+    padding: var(--mm-space-500) var(--mm-space-500) var(--mm-space-400);
+    border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+
+    &:last-child {
+      border-block-end: 0;
+    }
+  }
+
+  .chart-total {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mm-space-300);
+    font: var(--mm-text-body-lg);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .chart-total__value {
+    font: var(--mm-text-heading-2xl);
+    letter-spacing: var(--mm-tracking-2xl);
+    color: var(--mm-color-text-default);
+  }
+
+  /*
+   * Bar chart (Figma: Home, Gateway activity). One element per bar; its height is the
+   * data-pct attribute (0 to 100, share of the tallest bar). The last bar is the current period.
+   * <div class="bar-chart" role="img" aria-label="…"><span class="bar-chart__bar" data-pct="38"></span>…</div>
+   */
+  .bar-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--mm-space-150);
+    block-size: var(--mm-size-bar-chart);
+  }
+
+  .bar-chart__bar {
+    flex: 1 1 0;
+    min-inline-size: var(--mm-border-width);
+    block-size: var(--pct, 0%);
+    min-block-size: var(--mm-space-050);
+    border-radius: var(--mm-radius-100);
+    background: var(--mm-color-chart-muted);
+
+    &:last-child,
+    &[aria-current="true"] {
+      background: var(--mm-color-chart-primary);
+    }
+  }
+
+  .chart-axis {
+    display: flex;
+    justify-content: space-between;
+    font: var(--mm-text-body-xs);
+    letter-spacing: var(--mm-tracking-none);
+    white-space: nowrap;
+    color: var(--mm-color-text-tertiary);
+  }
+
+  /* Under 72rem the side cards go below the main card, side by side while two fit. */
+  @media (width < 72rem) {
+    .overview {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .overview__side {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--mm-size-grid-fit)), 1fr));
+      align-items: start;
+    }
+  }
+
+  /* Figma: Mobile · Home. */
+  @media (width < 48rem) {
+    .hero {
+      align-items: stretch;
+      gap: var(--mm-space-500);
+      padding: 0;
+    }
+
+    .hero__greeting {
+      font: var(--mm-text-heading-2xl);
+      letter-spacing: var(--mm-tracking-2xl);
+      text-align: start;
+    }
+
+    .hero-card {
+      gap: var(--mm-space-300);
+      padding: var(--mm-space-400);
+      border-radius: var(--mm-radius-400);
+    }
+
+    /* With its chips hidden, the last row of the card is the full-width install button. */
+    .hero-card__row > .button {
+      flex: 1 1 auto;
+    }
+
+    .attention {
+      flex-direction: column;
+      flex-wrap: nowrap;
+    }
+
+    .attention__item {
+      gap: var(--mm-size-field-inset-md);
+      block-size: var(--mm-size-control-lg);
+      padding-inline: var(--mm-size-field-inset-lg) var(--mm-space-300);
+      border-radius: var(--mm-radius-300);
+      font: var(--mm-text-body-lg-medium);
+
+      & > .icon:last-child:not(:first-child) {
+        display: block;
+        margin-inline-start: auto;
+        color: var(--mm-color-icon-secondary);
+      }
+    }
+
+    .card__header {
+      padding-inline-start: var(--mm-space-400);
+    }
+
+    .list-row {
+      padding-inline: var(--mm-space-400);
+    }
+
+    .chart-section {
+      gap: var(--mm-space-400);
+      padding: var(--mm-space-400);
+    }
+
+    .chart-total {
+      gap: var(--mm-size-field-inset-md);
+    }
+
+    .bar-chart {
+      gap: var(--mm-space-100);
+      block-size: var(--mm-size-bar-chart-sm);
+    }
+
+    .bar-chart__bar {
+      border-radius: var(--mm-size-bar-radius-sm);
+    }
+  }
+
+  /* ============================================================== Settings */
+
+  /*
+   * Section (Figma: Settings): a 300px intro on the left, its card on the right.
+   * <section class="section"><div class="section__intro">…</div><div class="card">…</div></section>
+   */
+  .section {
+    display: grid;
+    grid-template-columns: var(--mm-size-section-intro) minmax(0, 1fr);
+    align-items: start;
+    gap: var(--mm-space-800);
+  }
+
+  .section__intro {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-100);
+    min-inline-size: 0;
+  }
+
+  .section__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mm-space-200);
+    font: var(--mm-text-heading-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  .section__description {
+    font: var(--mm-text-body-md);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+  }
+
+  /* Beside the sidebar the card needs the full width under 80rem. */
+  @media (width < 80rem) {
+    .section {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--mm-space-300);
+    }
+  }
+
+  /* Detail row (Figma: Settings, account card): a label, its value, and one action. */
+  .detail-row {
+    display: flex;
+    align-items: center;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+    padding: var(--mm-size-field-inset-lg) var(--mm-space-500);
+    border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+
+    &:last-child {
+      border-block-end: 0;
+    }
+  }
+
+  .detail-row__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  .detail-row__label {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-tertiary);
+  }
+
+  .detail-row__value {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+    overflow-wrap: anywhere;
+  }
+
+  @media (width < 48rem) {
+    .detail-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--mm-space-300);
+      padding-inline: var(--mm-space-400);
+    }
+  }
+
+  /*
+   * Field group: a label (and an optional help line ABOVE the control) for a set of option
+   * cards, checkboxes or radios. <fieldset class="field-group"><legend>…</legend>…</fieldset>
+   */
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-200);
+    min-inline-size: 0;
+  }
+
+  .field-group__label {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  /* A <legend> is placed by the fieldset itself, outside the flex column: the gap comes from here. */
+  legend.field-group__label {
+    margin-block-end: var(--mm-space-200);
+  }
+
+  .field-group__help {
+    /* 2px under the label, 8px above the control. */
+    margin-block-start: calc(var(--mm-space-050) - var(--mm-space-200));
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-tertiary);
+  }
+
+  /* Form layout: blocks 16px apart; two fields side by side with .grid.grid--2. */
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+  }
+
+  /* ============================================================== Analytics */
+
+  /*
+   * Metric strip (Figma: 09 Analytics, KPI Strip): Metrics side by side in one card, a divider
+   * between them. <dl class="card metric-strip"><div class="metric"><dt class="metric__label">…</dt>
+   *   <dd class="metric__value">…</dd></div>…</dl>
+   */
+  .metric-strip {
+    flex-direction: row;
+
+    & > .metric {
+      flex: 1 1 0;
+      padding: var(--mm-space-500);
+
+      & + .metric {
+        border-inline-start: var(--mm-border-width) solid var(--mm-color-border-secondary);
+      }
+    }
+  }
+
+  @media (width < 48rem) {
+    /* Two by two: the dividers follow the grid. */
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+
+      & > .metric {
+        padding: var(--mm-space-400);
+
+        &:nth-child(odd) {
+          border-inline-start: 0;
+        }
+
+        &:nth-child(n + 3) {
+          border-block-start: var(--mm-border-width) solid var(--mm-color-border-secondary);
+        }
+      }
+    }
+  }
+
+  /*
+   * Line chart (Figma: 09 Analytics, "Calls and errors over time", frame Chart). A section of a
+   * card: y labels, the plot, x labels, the legend. The plot is an inline <svg> written by the
+   * server; everything that is text stays HTML so it never stretches.
+   *
+   * <div class="line-chart">
+   *   <div class="line-chart__y" aria-hidden="true"><span>2,000</span>…<span>0</span></div>
+   *   <div class="line-chart__canvas">
+   *     <svg class="line-chart__svg" viewBox="0 0 6 2000" preserveAspectRatio="none" role="img" aria-label="…">
+   *       <path class="line-chart__grid" d="M0 0H6M0 500H6…"/>
+   *       <g class="line-chart__series line-chart__series--primary">
+   *         <path class="line-chart__area" d="…"/><path class="line-chart__line" d="…"/>
+   *         <path class="line-chart__point" d="M0 1020h0"/>…</g>
+   *       <rect class="line-chart__hit" x="-0.5" y="0" width="1" height="2000"><title>…</title></rect>…
+   *     </svg>
+   *   </div>
+   *   <div class="line-chart__x" aria-hidden="true"><span>Oct 1</span>…</div>
+   *   <ul class="line-chart__legend"><li class="line-chart__key line-chart__key--primary">Calls</li>…</ul>
+   * </div>
+   */
+  .line-chart {
+    display: grid;
+    grid-template-columns: minmax(var(--mm-size-chart-axis), auto) minmax(0, 1fr);
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+    padding: var(--mm-space-500) var(--mm-space-600) var(--mm-space-400) var(--mm-space-500);
+  }
+
+  /* Tick labels spread from the top of the plot to its bottom, the largest first. */
+  .line-chart__y {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    font: var(--mm-text-body-xs);
+    letter-spacing: var(--mm-tracking-none);
+    white-space: nowrap;
+    color: var(--mm-color-text-tertiary);
+  }
+
+  /*
+   * The plot area. It is clipped 4px outside the data range on every side, so a line on the
+   * baseline and the markers of the first and last points are drawn whole. The 12px kept free
+   * after it leave room for the last x label, centred under the last point.
+   */
+  .line-chart__canvas {
+    min-inline-size: 0;
+    margin-inline: calc(-1 * var(--mm-size-chart-bleed)) calc(var(--mm-space-300) - var(--mm-size-chart-bleed));
+    padding: var(--mm-size-chart-bleed);
+    overflow: hidden;
+  }
+
+  .line-chart__svg {
+    display: block;
+    inline-size: 100%;
+    block-size: var(--mm-size-line-chart);
+    overflow: visible;
+    fill: none;
+
+    /* The viewBox is in data units and stretched: strokes keep their width in pixels. */
+    & * {
+      vector-effect: non-scaling-stroke;
+    }
+  }
+
+  .line-chart__grid {
+    stroke: var(--mm-color-border-secondary);
+    stroke-width: var(--mm-border-width);
+    shape-rendering: crispEdges;
+  }
+
+  .line-chart__series {
+    --series: var(--mm-color-chart-primary);
+    --point: var(--mm-size-chart-point);
+  }
+
+  .line-chart__series--critical {
+    --series: var(--mm-color-chart-critical);
+    --point: var(--mm-size-chart-point-sm);
+  }
+
+  .line-chart__area {
+    fill: var(--series);
+    fill-opacity: var(--mm-opacity-chart-area);
+  }
+
+  .line-chart__line {
+    stroke: var(--series);
+    stroke-width: var(--mm-size-chart-line);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* A zero-length segment with round caps: a dot that stays round whatever the stretch. */
+  .line-chart__point {
+    stroke: var(--series);
+    stroke-width: var(--point);
+    stroke-linecap: round;
+  }
+
+  /* One invisible column per bucket: its <title> is the tooltip of that bucket. */
+  .line-chart__hit {
+    fill: transparent;
+    pointer-events: all;
+  }
+
+  /*
+   * One <span> per bucket, each centred under its point (the spans are zero wide and spread
+   * from the first point to the last). Leave a span empty to skip its label.
+   */
+  .line-chart__x {
+    display: flex;
+    grid-column: 2;
+    justify-content: space-between;
+    margin-inline-end: var(--mm-space-300);
+    font: var(--mm-text-body-xs);
+    letter-spacing: var(--mm-tracking-none);
+    white-space: nowrap;
+    color: var(--mm-color-text-tertiary);
+
+    & > span {
+      display: flex;
+      flex: none;
+      justify-content: center;
+      inline-size: 0;
+      min-block-size: var(--mm-space-400);
+    }
+  }
+
+  .line-chart__legend {
+    display: flex;
+    flex-wrap: wrap;
+    grid-column: 1 / -1;
+    align-items: center;
+    justify-content: center;
+    gap: var(--mm-space-100) var(--mm-space-500);
+  }
+
+  .line-chart__key {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mm-space-150);
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    white-space: nowrap;
+    color: var(--mm-color-text-secondary);
+
+    &::before {
+      content: "";
+      flex: none;
+      inline-size: var(--mm-size-dot);
+      block-size: var(--mm-size-dot);
+      border-radius: var(--mm-radius-full);
+      background: var(--mm-color-chart-primary);
+    }
+  }
+
+  .line-chart__key--critical::before {
+    background: var(--mm-color-chart-critical);
+  }
+
+  @media (width < 48rem) {
+    .line-chart {
+      padding: var(--mm-space-400);
+    }
+  }
+
+  /*
+   * Repeatable rows (app.js: data-repeat, data-repeat-list, data-repeat-row). Not drawn in
+   * Figma; built with the form rhythm of 04 Edit MCP (17:996): rows 12px apart like the option
+   * cards, the fields of a row side by side, the row's "Remove" button on the line of the inputs.
+   *
+   * <fieldset class="field-group" data-repeat>
+   *   <legend class="field-group__label">Environment variables</legend>
+   *   <div class="repeat-list" data-repeat-list>
+   *     <div class="repeat-row" data-repeat-row>.field .field <button class="button" data-repeat-remove>Remove</button></div>
+   *   </div>
+   *   <template data-repeat-template>…</template>
+   *   <div class="cluster"><button class="button button--secondary" data-repeat-add>Add variable</button></div>
+   * </fieldset>
+   */
+  .repeat-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+
+    /* No row yet: the list takes no room, so the group keeps one gap between its blocks. */
+    &:empty {
+      display: none;
+    }
+  }
+
+  .repeat-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+
+    /* Level with the inputs whatever help or error text the fields carry: under the label line. */
+    & > :is(.button, .icon-button) {
+      margin-block-start: calc(var(--mm-size-line) + var(--mm-space-150));
+    }
+  }
+
+  @media (width < 48rem) {
+    .repeat-row {
+      grid-template-columns: minmax(0, 1fr);
+
+      & > :is(.button, .icon-button) {
+        justify-self: start;
+        margin-block-start: 0;
+      }
+    }
+  }
+
+  /*
+   * Detailed steps (no Figma source; React: the vertical Stepper of builtin_mcp_fields.tsx).
+   * The numbered steps of the Install dialog (Figma: 06 Install MyMCPs, Steps), where each step
+   * has a title and its own content: text, values to copy, fields.
+   *
+   * <ol class="steps steps--detailed" aria-label="Strava setup">
+   *   <li class="step" data-complete><div class="step__body"><h3 class="step__title">…</h3>…</div></li>
+   *   <li class="step" aria-current="step">…</li>
+   *   <li class="step">…</li>
+   * </ol>
+   */
+  .steps--detailed {
+    gap: var(--mm-space-500);
+
+    /* Every step reads the same: the title carries the emphasis, not the first step. */
+    & > .step {
+      color: var(--mm-color-text-secondary);
+    }
+  }
+
+  .step__body {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: var(--mm-space-300);
+    min-inline-size: 0;
+  }
+
+  .step__title {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
+  /* Where the person is in the sequence: the step to do now takes the brand fill. */
+  .step[aria-current="step"]::before {
+    color: var(--mm-color-text-on-brand);
+    background: var(--mm-color-bg-fill-brand);
+  }
+
+  /* A step that is done shows the Lucide check (the outline drawn for .checkbox) in place of its number. */
+  .step[data-complete]::before {
+    content: "";
+    border-radius: 0;
+    background: var(--mm-color-icon-success);
+    clip-path: polygon(25% 43.4%, 40.6% 59%, 75% 24.6%, 81.6% 31.25%, 40.6% 72.25%, 18.4% 50%);
+  }
+
+  /*
+   * Inline link in running text (no Figma component; React: Astryx Link in the setup guides).
+   * <a class="link" href="https://…" target="_blank" rel="noopener noreferrer">Strava API settings ICON(external-link)</a>
+   */
+  .link {
+    border-radius: var(--mm-radius-100);
+    color: var(--mm-color-text-brand);
+    text-decoration: underline;
+    text-decoration-thickness: var(--mm-border-width);
+    text-underline-offset: var(--mm-space-050);
+
+    &:hover {
+      color: var(--mm-color-text-default);
+    }
+
+    /* The mark of a link that leaves the app, on the text line. */
+    & > .icon {
+      display: inline-block;
+      inline-size: var(--mm-size-icon-xs);
+      block-size: var(--mm-size-icon-xs);
+      margin-inline-start: var(--mm-space-050);
+      vertical-align: calc(-1 * var(--mm-space-025));
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ Layout */
+
+@layer layout {
+  /*
+   * Application shell (Figma: Screens). A dark frame, the sidebar on the left, and the page in
+   * a rounded panel. Under 48rem the Top Bar replaces the sidebar, which becomes a popover.
+   *
+   * <body class="app">
+   *   <header class="topbar">…</header>
+   *   <aside class="sidebar" id="sidebar" popover>…</aside>
+   *   <main class="panel" id="main"><div class="page">…</div></main>
+   */
+  .app {
+    display: grid;
+    grid-template-columns: var(--mm-size-sidebar) minmax(0, 1fr);
+    block-size: 100dvh;
+    /* The frame shows 8px around the panel, and above and below the sidebar. */
+    padding: var(--mm-space-200) var(--mm-space-200) var(--mm-space-200) 0;
+    overflow: hidden;
+    transition: grid-template-columns var(--mm-duration-base) var(--mm-ease);
+  }
+
+  .skip-link {
+    position: fixed;
+    inset-block-start: var(--mm-space-200);
+    inset-inline-start: var(--mm-space-200);
+    z-index: var(--mm-z-toast);
+    padding: var(--mm-space-200) var(--mm-space-300);
+    border-radius: var(--mm-radius-200);
+    font: var(--mm-text-body-md-medium);
+    color: var(--mm-color-text-on-brand);
+    background: var(--mm-color-bg-fill-brand);
+    translate: 0 -200%;
+
+    &:focus-visible {
+      translate: 0;
+    }
+  }
+
+  .topbar {
+    display: none;
+  }
+
+  /* Sidebar (Figma: Navigation / Sidebar). The popover attribute only matters on mobile. */
+  .sidebar {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    inline-size: auto;
+    block-size: 100%;
+    min-block-size: 0;
+    margin: 0;
+    padding: var(--mm-space-400) var(--mm-space-200) var(--mm-space-200);
+    overflow: hidden auto;
+    border: 0;
+    color: var(--mm-color-text-on-frame);
+    background: var(--mm-color-bg-frame);
+    scrollbar-width: none;
+  }
+
+  .sidebar__header {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0 var(--mm-space-300) var(--mm-space-200);
+  }
+
+  .sidebar__close {
+    display: none;
+  }
+
+  .sidebar__nav {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    gap: var(--mm-space-050);
+    padding-block-end: var(--mm-space-400);
+  }
+
+  .sidebar > .gateway-card {
+    flex: none;
+    margin-block-end: var(--mm-space-200);
+  }
+
+  .sidebar > .nav-user {
+    flex: none;
+  }
+
+  /* The page lives in the panel, which scrolls; the frame stays put. */
+  .panel {
+    min-inline-size: 0;
+    padding: var(--mm-space-800);
+    overflow: hidden auto;
+    border-radius: var(--mm-radius-500);
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-canvas);
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-color-border-strong) transparent;
+  }
+
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-600);
+    inline-size: 100%;
+    max-inline-size: var(--mm-size-page-max);
+    margin-inline: auto;
+  }
+
+  .page--narrow {
+    max-inline-size: var(--mm-size-page-narrow);
+  }
+
+  /* A page that holds one centred block (an error inside the app shell). */
+  .page--center {
+    justify-content: center;
+    min-block-size: 100%;
+  }
+
+  /*
+   * The part of a page that live refresh swaps (data-live-refresh="#id" points at it): its
+   * children stay direct items of .page, so the page keeps its rhythm.
+   */
+  .page__body {
+    display: contents;
+  }
+
+  /* Collapsed rail (desktop). <html data-sidebar="collapsed">, set by app.js or by the server. */
+  @media (width >= 48rem) {
+    :root[data-sidebar="collapsed"] {
+      & .app {
+        grid-template-columns: var(--mm-size-sidebar-rail) minmax(0, 1fr);
+      }
+
+      & .sidebar__header {
+        flex-direction: column;
+        gap: var(--mm-space-200);
+        padding-inline-start: 0;
+      }
+
+      & .logo__wordmark,
+      & .nav-item__label,
+      & .nav-item__count,
+      & .nav-user__text,
+      & .nav-user form,
+      & .gateway-card {
+        display: none;
+      }
+
+      & .nav-item {
+        justify-content: center;
+        padding-inline: 0;
+      }
+
+      /* Section labels become dividers. */
+      & .nav-section {
+        block-size: var(--mm-space-300);
+        margin-block-start: var(--mm-space-300);
+        padding: 0;
+        border-block-start: var(--mm-border-width) solid var(--mm-color-border-frame);
+        font-size: 0;
+      }
+
+      & .nav-user {
+        justify-content: center;
+        padding-inline: 0;
+      }
+    }
+  }
+
+  /* Mobile: Top Bar (Figma: Navigation / Top Bar), the document scrolls, the sidebar is a drawer. */
+  @media (width < 48rem) {
+    .app {
+      display: block;
+      block-size: auto;
+      min-block-size: 100dvh;
+      padding: 0;
+      overflow: visible;
+    }
+
+    .topbar {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: var(--mm-z-sticky);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      block-size: var(--mm-size-topbar);
+      padding-inline: var(--mm-space-300);
+      background: var(--mm-color-bg-frame);
+    }
+
+    .topbar__account {
+      display: grid;
+      place-items: center;
+      inline-size: var(--mm-size-control-lg);
+      block-size: var(--mm-size-control-lg);
+      border-radius: var(--mm-radius-full);
+    }
+
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      inline-size: min(var(--mm-size-sidebar-drawer), calc(100vw - var(--mm-space-1200)));
+      block-size: 100dvh;
+      max-block-size: none;
+      border-inline-end: var(--mm-border-width) solid var(--mm-color-border-frame);
+      box-shadow: var(--mm-shadow-600);
+      translate: -100% 0;
+      transition:
+        translate var(--mm-duration-base) var(--mm-ease),
+        display var(--mm-duration-base) allow-discrete,
+        overlay var(--mm-duration-base) allow-discrete;
+
+      &:not(:popover-open) {
+        display: none;
+      }
+
+      &:popover-open {
+        translate: 0;
+
+        @starting-style {
+          translate: -100% 0;
+        }
+      }
+
+      &::backdrop {
+        background: var(--mm-color-backdrop);
+      }
+    }
+
+    .sidebar__collapse {
+      display: none;
+    }
+
+    .sidebar__close {
+      display: inline-grid;
+    }
+
+    .panel {
+      margin: 0 var(--mm-space-200) var(--mm-space-200);
+      padding: var(--mm-space-600) var(--mm-space-400);
+      overflow: clip;
+    }
+
+    .page {
+      gap: var(--mm-space-500);
+    }
+  }
+
+  /*
+   * Auth screens (Figma: 00 Sign in, Authorize client, Onboarding and invite): the card is
+   * centred on the dark frame, controls are Large.
+   *
+   * <body class="auth"><main class="auth__main"><section class="auth-card control-lg">…</section>
+   *   <p class="auth__footnote">…</p></main>
+   */
+  .auth {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-block-size: 100dvh;
+    padding: var(--mm-space-600) 0;
+    background: var(--mm-color-bg-frame);
+  }
+
+  .auth__main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--mm-space-600);
+    inline-size: 100%;
+  }
+
+
+  .auth__cards {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--mm-space-1200);
+    inline-size: 100%;
+  }
+
+  .auth-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-600);
+    inline-size: 100%;
+    max-inline-size: var(--mm-size-auth-card);
+    padding: var(--mm-space-800);
+    border-radius: var(--mm-radius-500);
+    color: var(--mm-color-text-default);
+    background: var(--mm-color-bg-surface);
+    box-shadow: var(--mm-shadow-600);
+  }
+
+  .auth-card--wide {
+    max-inline-size: var(--mm-size-auth-card-wide);
+  }
+
+  /* The logo hugs its content at the start of the card. */
+  .auth-card > .logo {
+    align-self: flex-start;
+  }
+
+  /*
+   * Fields are 16px apart (put them in a .stack) and the submit follows at the card's own gap:
+   * <form class="form"><div class="stack">.field …</div><button class="button button--block">…
+   */
+  .auth-card > .form {
+    gap: inherit;
+  }
+
+  .auth-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--mm-space-200);
+  }
+
+  .auth-card__heading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-100);
+  }
+
+  .auth-card__title {
+    font: var(--mm-text-heading-2xl);
+    letter-spacing: var(--mm-tracking-2xl);
+  }
+
+  .auth-card__subtitle {
+    font: var(--mm-text-body-lg);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .auth__footnote {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    text-align: center;
+    color: var(--mm-color-text-on-frame-secondary);
+  }
+
+  /* Figma: Mobile · Sign in. */
+  @media (width < 48rem) {
+    .auth {
+      padding-inline: var(--mm-space-400);
+    }
+
+    .auth__main {
+      gap: var(--mm-space-500);
+    }
+
+    .auth-card {
+      gap: var(--mm-space-500);
+      padding: var(--mm-space-600);
+    }
+  }
+}
+
+/* --------------------------------------------------------------- Utilities */
+
+@layer utilities {
+  .visually-hidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .truncate {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Endpoints, slugs, tokens: wrap anywhere rather than overflow. */
+  .break-anywhere {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* What an agent sent is shown as it is: long words wrap and line breaks stay. */
+  .preserve-lines {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* At most three lines of text. */
+  .clamp-3 {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  /* Layout helpers. Gaps are set with the --gap-* modifiers so no inline style is needed. */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+  }
+
+  .cluster {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mm-space-200);
+    min-inline-size: 0;
+  }
+
+  .cluster--nowrap { flex-wrap: nowrap; }
+  .cluster--between { justify-content: space-between; }
+  .cluster--end { justify-content: flex-end; }
+  .cluster--top { align-items: flex-start; }
+
+  .grow { flex: 1 1 0; min-inline-size: 0; }
+  .shrink-0 { flex: none; }
+  .push-end { margin-inline-start: auto; }
+  .align-end { text-align: end; }
+  .align-center { text-align: center; }
+  .full-width { inline-size: 100%; }
+
+  .grid {
+    display: grid;
+    gap: var(--mm-space-400);
+    min-inline-size: 0;
+  }
+
+  .grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  /* As many equal columns as fit, 320px at least (Figma: Analytics, three ranking tables). */
+  .grid--fit { grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--mm-size-grid-fit)), 1fr)); }
+
+  /* Four cards in a row cut their captions under 64rem: .grid--keep-2 folds to two from there. */
+  @media (width < 64rem) {
+    .grid--4.grid--keep-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (width < 48rem) {
+    .grid--2:not(.grid--keep),
+    .grid--3,
+    .grid--4:not(.grid--keep-2) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Figma: Mobile · Home, KPI grid. */
+    .grid--4.grid--keep-2 {
+      gap: var(--mm-space-300);
+    }
+
+    .hide-mobile { display: none !important; }
+  }
+
+  @media (width >= 48rem) {
+    .hide-desktop { display: none !important; }
+  }
+
+  /* Gap modifiers for .stack, .cluster and .grid (declared after them, so they win). */
+  .gap-0 { gap: var(--mm-space-0); }
+  .gap-050 { gap: var(--mm-space-050); }
+  .gap-100 { gap: var(--mm-space-100); }
+  .gap-150 { gap: var(--mm-space-150); }
+  .gap-200 { gap: var(--mm-space-200); }
+  .gap-300 { gap: var(--mm-space-300); }
+  .gap-400 { gap: var(--mm-space-400); }
+  .gap-500 { gap: var(--mm-space-500); }
+  .gap-600 { gap: var(--mm-space-600); }
+  .gap-800 { gap: var(--mm-space-800); }
+
+  .col-40 { --col: 2.5rem; }
+  .col-44 { --col: 2.75rem; }
+  .col-48 { --col: 3rem; }
+  .col-52 { --col: 3.25rem; }
+  .col-56 { --col: 3.5rem; }
+  .col-60 { --col: 3.75rem; }
+  .col-64 { --col: 4rem; }
+  .col-68 { --col: 4.25rem; }
+  .col-72 { --col: 4.5rem; }
+  .col-76 { --col: 4.75rem; }
+  .col-80 { --col: 5rem; }
+  .col-84 { --col: 5.25rem; }
+  .col-88 { --col: 5.5rem; }
+  .col-92 { --col: 5.75rem; }
+  .col-96 { --col: 6rem; }
+  .col-100 { --col: 6.25rem; }
+  .col-104 { --col: 6.5rem; }
+  .col-108 { --col: 6.75rem; }
+  .col-112 { --col: 7rem; }
+  .col-116 { --col: 7.25rem; }
+  .col-120 { --col: 7.5rem; }
+  .col-124 { --col: 7.75rem; }
+  .col-128 { --col: 8rem; }
+  .col-132 { --col: 8.25rem; }
+  .col-136 { --col: 8.5rem; }
+  .col-140 { --col: 8.75rem; }
+  .col-144 { --col: 9rem; }
+  .col-148 { --col: 9.25rem; }
+  .col-152 { --col: 9.5rem; }
+  .col-156 { --col: 9.75rem; }
+  .col-160 { --col: 10rem; }
+  .col-164 { --col: 10.25rem; }
+  .col-168 { --col: 10.5rem; }
+  .col-172 { --col: 10.75rem; }
+  .col-176 { --col: 11rem; }
+  .col-180 { --col: 11.25rem; }
+  .col-184 { --col: 11.5rem; }
+  .col-188 { --col: 11.75rem; }
+  .col-192 { --col: 12rem; }
+  .col-196 { --col: 12.25rem; }
+  .col-200 { --col: 12.5rem; }
+  .col-204 { --col: 12.75rem; }
+  .col-208 { --col: 13rem; }
+  .col-212 { --col: 13.25rem; }
+  .col-216 { --col: 13.5rem; }
+  .col-220 { --col: 13.75rem; }
+  .col-224 { --col: 14rem; }
+  .col-228 { --col: 14.25rem; }
+  .col-232 { --col: 14.5rem; }
+  .col-236 { --col: 14.75rem; }
+  .col-240 { --col: 15rem; }
+
+  .table th[class*="col-"] {
+    inline-size: calc(var(--col) + var(--mm-space-400));
+  }
+
+  .table th:is(:first-child, :last-child)[class*="col-"] {
+    inline-size: calc(var(--col) + var(--mm-space-500) + var(--mm-space-200));
+  }
+
+  /* Ranking tables have 12px between columns. */
+  .table.table--tight th[class*="col-"] {
+    inline-size: calc(var(--col) + var(--mm-space-300));
+  }
+
+  .table.table--tight th:is(:first-child, :last-child)[class*="col-"] {
+    inline-size: calc(var(--col) + var(--mm-space-500) + var(--mm-space-150));
+  }
+
+  @media (width < 48rem) {
+    .table.table--tight th:is(:first-child, :last-child)[class*="col-"] {
+      inline-size: calc(var(--col) + var(--mm-space-400) + var(--mm-space-150));
+    }
+  }
+
+  [data-pct="0"] { --pct: 0%; }
+  [data-pct="1"] { --pct: 1%; }
+  [data-pct="2"] { --pct: 2%; }
+  [data-pct="3"] { --pct: 3%; }
+  [data-pct="4"] { --pct: 4%; }
+  [data-pct="5"] { --pct: 5%; }
+  [data-pct="6"] { --pct: 6%; }
+  [data-pct="7"] { --pct: 7%; }
+  [data-pct="8"] { --pct: 8%; }
+  [data-pct="9"] { --pct: 9%; }
+  [data-pct="10"] { --pct: 10%; }
+  [data-pct="11"] { --pct: 11%; }
+  [data-pct="12"] { --pct: 12%; }
+  [data-pct="13"] { --pct: 13%; }
+  [data-pct="14"] { --pct: 14%; }
+  [data-pct="15"] { --pct: 15%; }
+  [data-pct="16"] { --pct: 16%; }
+  [data-pct="17"] { --pct: 17%; }
+  [data-pct="18"] { --pct: 18%; }
+  [data-pct="19"] { --pct: 19%; }
+  [data-pct="20"] { --pct: 20%; }
+  [data-pct="21"] { --pct: 21%; }
+  [data-pct="22"] { --pct: 22%; }
+  [data-pct="23"] { --pct: 23%; }
+  [data-pct="24"] { --pct: 24%; }
+  [data-pct="25"] { --pct: 25%; }
+  [data-pct="26"] { --pct: 26%; }
+  [data-pct="27"] { --pct: 27%; }
+  [data-pct="28"] { --pct: 28%; }
+  [data-pct="29"] { --pct: 29%; }
+  [data-pct="30"] { --pct: 30%; }
+  [data-pct="31"] { --pct: 31%; }
+  [data-pct="32"] { --pct: 32%; }
+  [data-pct="33"] { --pct: 33%; }
+  [data-pct="34"] { --pct: 34%; }
+  [data-pct="35"] { --pct: 35%; }
+  [data-pct="36"] { --pct: 36%; }
+  [data-pct="37"] { --pct: 37%; }
+  [data-pct="38"] { --pct: 38%; }
+  [data-pct="39"] { --pct: 39%; }
+  [data-pct="40"] { --pct: 40%; }
+  [data-pct="41"] { --pct: 41%; }
+  [data-pct="42"] { --pct: 42%; }
+  [data-pct="43"] { --pct: 43%; }
+  [data-pct="44"] { --pct: 44%; }
+  [data-pct="45"] { --pct: 45%; }
+  [data-pct="46"] { --pct: 46%; }
+  [data-pct="47"] { --pct: 47%; }
+  [data-pct="48"] { --pct: 48%; }
+  [data-pct="49"] { --pct: 49%; }
+  [data-pct="50"] { --pct: 50%; }
+  [data-pct="51"] { --pct: 51%; }
+  [data-pct="52"] { --pct: 52%; }
+  [data-pct="53"] { --pct: 53%; }
+  [data-pct="54"] { --pct: 54%; }
+  [data-pct="55"] { --pct: 55%; }
+  [data-pct="56"] { --pct: 56%; }
+  [data-pct="57"] { --pct: 57%; }
+  [data-pct="58"] { --pct: 58%; }
+  [data-pct="59"] { --pct: 59%; }
+  [data-pct="60"] { --pct: 60%; }
+  [data-pct="61"] { --pct: 61%; }
+  [data-pct="62"] { --pct: 62%; }
+  [data-pct="63"] { --pct: 63%; }
+  [data-pct="64"] { --pct: 64%; }
+  [data-pct="65"] { --pct: 65%; }
+  [data-pct="66"] { --pct: 66%; }
+  [data-pct="67"] { --pct: 67%; }
+  [data-pct="68"] { --pct: 68%; }
+  [data-pct="69"] { --pct: 69%; }
+  [data-pct="70"] { --pct: 70%; }
+  [data-pct="71"] { --pct: 71%; }
+  [data-pct="72"] { --pct: 72%; }
+  [data-pct="73"] { --pct: 73%; }
+  [data-pct="74"] { --pct: 74%; }
+  [data-pct="75"] { --pct: 75%; }
+  [data-pct="76"] { --pct: 76%; }
+  [data-pct="77"] { --pct: 77%; }
+  [data-pct="78"] { --pct: 78%; }
+  [data-pct="79"] { --pct: 79%; }
+  [data-pct="80"] { --pct: 80%; }
+  [data-pct="81"] { --pct: 81%; }
+  [data-pct="82"] { --pct: 82%; }
+  [data-pct="83"] { --pct: 83%; }
+  [data-pct="84"] { --pct: 84%; }
+  [data-pct="85"] { --pct: 85%; }
+  [data-pct="86"] { --pct: 86%; }
+  [data-pct="87"] { --pct: 87%; }
+  [data-pct="88"] { --pct: 88%; }
+  [data-pct="89"] { --pct: 89%; }
+  [data-pct="90"] { --pct: 90%; }
+  [data-pct="91"] { --pct: 91%; }
+  [data-pct="92"] { --pct: 92%; }
+  [data-pct="93"] { --pct: 93%; }
+  [data-pct="94"] { --pct: 94%; }
+  [data-pct="95"] { --pct: 95%; }
+  [data-pct="96"] { --pct: 96%; }
+  [data-pct="97"] { --pct: 97%; }
+  [data-pct="98"] { --pct: 98%; }
+  [data-pct="99"] { --pct: 99%; }
+  [data-pct="100"] { --pct: 100%; }
+}
+
+@keyframes mm-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Tool approvals: a segment holds the radio it stands for, hidden with .visually-hidden. Placed
+ * against the document instead, the radios of a long list made the document as tall as the list
+ * that scrolls inside the panel, and the page scrolled into nothing under the frame.
+ */
+@layer components {
+  .segment {
+    position: relative;
+  }
+}
+
+/*
+ * File field: <input class="input" type="file">. The browser's own button is drawn as a quiet
+ * button at the start of the field, and the name of the chosen file follows it on one line.
+ */
+@layer components {
+  .input[type="file"] {
+    padding-block: var(--mm-space-100);
+    padding-inline-start: var(--mm-space-100);
+    color: var(--mm-color-text-secondary);
+    cursor: pointer;
+
+    &::file-selector-button {
+      block-size: calc(var(--mm-control-height) - 2 * (var(--mm-space-100) + var(--mm-border-width)));
+      margin-inline-end: var(--mm-space-300);
+      padding-inline: var(--mm-space-300);
+      border: 0;
+      border-radius: calc(var(--mm-field-radius) - var(--mm-space-100));
+      font: var(--mm-text-body-md-medium);
+      letter-spacing: var(--mm-tracking-md);
+      color: var(--mm-color-text-default);
+      background: var(--mm-color-bg-fill-secondary);
+      cursor: pointer;
+      transition: background-color var(--mm-duration-fast) var(--mm-ease);
+    }
+
+    &:hover::file-selector-button {
+      background: var(--mm-color-bg-fill-secondary-hover);
+    }
+  }
+}

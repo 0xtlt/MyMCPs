@@ -11,23 +11,20 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 - Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
 - Exposes every allowed upstream through `GET` and `POST /mcp`.
 - Records gateway activity and usage analytics.
-- Exports the whole instance to one password-protected file, to import on a new instance.
+- Exports the whole instance to one encrypted backup file, and sets a new instance up from one.
 
 MyMCPs is self-hosted and invite-only. The first user becomes the administrator during onboarding.
 
 ## Run locally
 
-You need [Node.js 24 or newer](https://nodejs.org/), [pnpm](https://pnpm.io/), and [Deno](https://deno.com/) if you want to run npm-based MCPs.
+You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Deno](https://deno.com/) if you want to run npm-based MCPs.
 
 ```bash
-pnpm install
 cp .env.example .env
-node ace generate:key
-node ace migration:run
-pnpm run dev
+cargo run --bin mymcps
 ```
 
-Open [http://localhost:3333](http://localhost:3333) and create the admin account.
+The server creates its key and its SQLite database under `tmp/` and applies database migrations when it starts. Open [http://localhost:3333](http://localhost:3333) and create the admin account.
 
 ## Connect an AI client
 
@@ -70,7 +67,7 @@ Some services have no MCP that a self-hosted gateway is allowed to use. MyMCPs i
 
 ### Tool approvals
 
-An agent that can call a tool can call it wrongly. For any MCP, built-in or connected, open **Edit → Tool approvals** and set the tools that matter to **Asks**. A call to such a tool is not run: the agent gets a link to give you, and the call runs once you have signed in and approved it, when the agent makes it again with the same arguments. Administrators decide any request, and members the ones made with their own access tokens.
+An agent that can call a tool can call it wrongly. For any MCP, built-in or connected, open its **⋯** menu on the **MCPs** page, choose **Tool approvals**, and set the tools that matter to **Asks**. A call to such a tool is not run: the agent gets a link to give you, and the call runs once you have signed in and approved it, when the agent makes it again with the same arguments. Administrators decide any request, and members the ones made with their own access tokens.
 
 The page you approve on is written by MyMCPs from the call itself, never by the agent. For a built-in tool it says what would change, with the current value beside the new one: "Change the daily budget of the campaign "Spring sale" from €2.50 to €250.00". For a tool of a connected MCP it lists the exact arguments beside the description the MCP gives of its tool. An approval covers one call with those exact arguments, is used once, and expires after 24 hours. Open requests are listed under **Approvals**. See [docs/tool-approvals.md](docs/tool-approvals.md).
 
@@ -84,32 +81,30 @@ This repository includes a production Docker image, a Compose service, and a `co
 4. Add a domain to the `mymcps` service and set `APP_URL` to the same HTTPS origin, for example `https://mcp.example.com`.
 5. Deploy, open the domain, and complete onboarding.
 
-The deployment exposes port `3333`, checks `/health`, and runs database migrations before the app starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`. Files the container creates in the volume are readable only by its `node` user.
+The deployment exposes port `3333` and checks `/health`, and the server applies database migrations when it starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`. Files the server creates in the volume are readable only by the user it runs as, uid 1000. Coolify builds the image from source: the first deployment compiles the server and takes longer than the next ones, which reuse the build cache of the Docker host.
 
-`APP_KEY` is required, but you do not need to create it in Coolify. On the first start, the container generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable. In production the server refuses to start with either key published in this repository: the Docker build placeholder or the test key in `.env.test`.
-
-To move an instance, or to keep a copy outside the volume, an administrator can export an encrypted backup under **Settings → Backup** and import it on the setup screen of a new instance, whatever its `APP_KEY`. See [docs/backup.md](docs/backup.md).
+You do not need to create `APP_KEY` in Coolify. On the first start, the server generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable. To keep a copy of an instance without its volume, or to move it to another server, export an encrypted backup under **Settings** and import it on the setup screen of a new instance, whatever its key: see [docs/backup.md](docs/backup.md). In production the server refuses to start with a key published in this repository: the key the tests use, or the placeholder that images of earlier versions were built with.
 
 The Coolify profile sets `TRUST_PROXY=loopback,uniquelocal`: the app accepts a forwarded client IP only from a proxy on the loopback interface or a private network, such as Coolify's proxy. Rate limits and logs then use the real client address, and a client cannot choose its own. `TRUST_PROXY` accepts `true`, `false`, or a comma-separated list of proxy IPs, CIDR ranges, and the names `loopback`, `linklocal`, and `uniquelocal`. If a CDN sits in front of the proxy, add the CDN's address ranges, or every client appears as a CDN edge address. A deployment created before this default changed keeps the `true` stored in its environment until you edit it.
 
 ## Useful commands
 
 ```bash
-pnpm run dev        # Start the development server
-pnpm test           # Run all tests
-pnpm run lint       # Check code style
-pnpm run typecheck  # Check TypeScript
-pnpm run build      # Create a production build
+cargo run --bin mymcps                                 # Start the server with the settings in .env
+cargo test --workspace                                 # Run all tests
+cargo fmt --all --check                                # Check formatting
+cargo clippy --workspace --all-targets -- -D warnings  # Lint and type-check
+cargo build --release --bin mymcps                     # Create a production build: target/release/mymcps
 ```
 
-Pull requests and pushes to `main` run the same lint, typecheck, and test suites in the **Quality** workflow.
+Pull requests and pushes to `main` run the same format check, lint, tests, and production build in the **Quality** workflow.
 
 ### Reset a user password
 
 Run this on the server from the application directory, using the instance's usual environment and database:
 
 ```sh
-node ace user:reset-password user@example.com
+mymcps user:reset-password user@example.com
 ```
 
 Enter and confirm the new password at the hidden prompts. Passwords must contain 8–32 characters and are never passed as command-line arguments. The command works for administrator and member accounts without the old password, and exits with a nonzero status if the account does not exist or validation fails.
@@ -117,19 +112,19 @@ Enter and confirm the new password at the hidden prompts. Passwords must contain
 For Docker Compose (including Coolify), run:
 
 ```sh
-docker compose exec mymcps /app/docker-entrypoint.sh node ace user:reset-password user@example.com
+docker compose exec mymcps mymcps user:reset-password user@example.com
 ```
 
-The entrypoint loads the persisted application key when needed. Successful resets end the account's browser sessions and revoke its remember-me tokens; MCP access tokens and OAuth connections are unchanged.
+The first `mymcps` names the Compose service and the second the server binary, which loads the persisted application key when needed. Successful resets end the account's browser sessions and revoke its remember-me tokens; MCP access tokens and OAuth connections are unchanged.
 
 ## Releases
 
 GitHub Actions publishes releases without an AI or an external release service:
 
-- **Nightly release** runs at 02:42 UTC and publishes a GitHub prerelease only when `main` has moved since the previous nightly. Its semantic prerelease tag includes the UTC date and commit, for example `v0.1.1-nightly.20260808.gabc1234`. It does not change the stable version in `package.json`.
-- **Stable release** runs only when a repository maintainer starts it from **Actions → Stable release → Run workflow** and chooses a `patch`, `minor`, or `major` increment. It validates the application, updates `package.json` and `CHANGELOG.md`, commits the release, creates the stable tag, and publishes automatically generated GitHub release notes.
+- **Nightly release** runs at 02:42 UTC and publishes a GitHub prerelease only when `main` has moved since the previous nightly. Its semantic prerelease tag includes the UTC date and commit, for example `v0.1.1-nightly.20260808.gabc1234`. It does not change the stable version in `Cargo.toml`.
+- **Stable release** runs only when a repository maintainer starts it from **Actions → Stable release → Run workflow** and chooses a `patch`, `minor`, or `major` increment. It validates the application, updates the version in `Cargo.toml` and `Cargo.lock` and adds the release to `CHANGELOG.md`, commits the release, creates the stable tag, and publishes automatically generated GitHub release notes.
 
-Both workflows use the repository-provided `GITHUB_TOKEN`; no release secret or AI service is required. Each one installs dependencies and runs lint, typecheck, tests, the build, and the audit in a job whose token is read-only; a second job with write access then checks out that exact commit and tags and publishes it without installing anything. If a run fails after pushing a release commit or tag, rerun the same stable workflow to resume publication instead of incrementing the version again.
+Both workflows use the repository-provided `GITHUB_TOKEN`; no release secret or AI service is required. Each one compiles the dependencies and runs the format check, lint, tests, the production build, and the dependency audit in a job whose token is read-only; a second job with write access then checks out that exact commit and tags and publishes it. The only code that job compiles is the release tool of this repository (`crates/xtask`), which has no dependencies. If a run fails after pushing a release commit or tag, rerun the same stable workflow to resume publication instead of incrementing the version again.
 
 ### Release container images
 
@@ -146,7 +141,6 @@ docker run --name mymcps -p 127.0.0.1:3333:3333 \
   -e APP_URL=https://mcp.example.com \
   -e TRUST_PROXY=loopback,uniquelocal \
   -e LOG_LEVEL=info \
-  -e SESSION_DRIVER=cookie \
   -v mymcps-data:/app/tmp \
   ghcr.io/0xtlt/mymcps:stable
 ```
@@ -159,7 +153,7 @@ After the first image publication, verify the package is anonymously pullable. I
 
 ## Stack
 
-MyMCPs uses AdonisJS 7, Inertia, React 19, SQLite, the MCP TypeScript SDK, and Deno. See [SECURITY.md](SECURITY.md) for the deployment security baseline and vulnerability reporting process.
+MyMCPs is one Rust binary: an [axum](https://github.com/tokio-rs/axum) server that renders its pages with [maud](https://maud.lambda.xyz/), stores its data in SQLite, speaks MCP with its own implementation of the protocol, and runs npm-based MCPs in [Deno](https://deno.com/) sandboxes. Its pages need no JavaScript build. See [SECURITY.md](SECURITY.md) for the deployment security baseline and vulnerability reporting process.
 
 ## License
 

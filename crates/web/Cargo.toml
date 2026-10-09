@@ -1,0 +1,61 @@
+[package]
+name = "mymcps-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mymcps-core.workspace = true
+mymcps-vine.workspace = true
+mymcps-net.workspace = true
+mymcps-deno.workspace = true
+mymcps-gateway.workspace = true
+mymcps-upstream.workspace = true
+mymcps-builtin.workspace = true
+mymcps-strava.workspace = true
+mymcps-icloud-mail.workspace = true
+mymcps-google-ads.workspace = true
+tokio.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+http.workspace = true
+bytes.workspace = true
+url.workspace = true
+base64.workspace = true
+sha2.workspace = true
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "query", "matched-path", "original-uri"] }
+tower = { version = "0.5", features = ["util"] }
+maud = { version = "0.27", features = ["axum"] }
+rust-embed = { version = "8", features = ["mime-guess"] }
+percent-encoding = "2"
+# The IANA time zones: Logs and Analytics cut their periods in the viewer's zone.
+chrono-tz = { version = "0.10", default-features = false, features = ["std"] }
+http-body-util = "0.1"
+# Reads the one form that carries a file, field by field: the backup an
+# instance is set up from goes to disk as it arrives.
+multer = "3"
+
+[features]
+# `testing::TestApp`, for functional tests.
+test-util = ["mymcps-core/test-util"]
+
+[dev-dependencies]
+async-trait.workspace = true
+# The mail account and the Google Ads API that the tests of the MCPs page sign in to.
+mymcps-icloud-mail = { workspace = true, features = ["test-util"] }
+mymcps-google-ads = { workspace = true, features = ["test-util"] }
+mymcps-web = { path = ".", features = ["test-util"] }
+tempfile.workspace = true
+# A paused clock, for the tests of what a slow client is given up on.
+tokio = { workspace = true, features = ["test-util"] }
+base64.workspace = true

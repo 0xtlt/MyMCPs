@@ -6,7 +6,7 @@ It works for every MCP behind the gateway: the built-in ones, the ones reached o
 
 ## Choose which tools ask
 
-1. Open **MCPs**, select **Edit** on an MCP, then **Tool approvals**.
+1. Open **MCPs**, open the **⋯** menu of an MCP, then select **Tool approvals**. On a phone, the same button is in the MCP's edit dialog.
 2. Each tool of the MCP is listed with two choices:
    - **Runs**: the tool runs when an agent calls it.
    - **Asks**: the call is not run. The agent gets a link for a person to approve it.

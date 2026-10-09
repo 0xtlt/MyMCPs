@@ -23,9 +23,10 @@ permissions.
 - Complete first-run onboarding before exposing the instance to untrusted traffic;
   the first account created becomes the administrator.
 - Set a unique production `APP_KEY` and keep `.env` outside version control. The
-  container can generate and persist one in `/app/tmp` when it is omitted. The
-  server refuses to start in production with the Docker build placeholder or the
-  test key committed in `.env.test`.
+  server generates and persists one in its data directory (`/app/tmp` in the
+  container) when it is omitted. It refuses to start in production with a key
+  published in this repository: the key the tests use, or the placeholder that
+  images of earlier versions were built with.
 - Set `APP_URL` explicitly to the HTTPS URL used by the deployment. In Coolify,
   set it to the same public origin assigned to the service.
 - Set `TRUST_PROXY` to the proxies in front of the instance. The Compose and
@@ -34,7 +35,7 @@ permissions.
   `X-Forwarded-For`; otherwise clients choose the address that rate limits and
   call logs record.
 - Persist `/app/tmp`; losing it also loses the SQLite database, encrypted MCP
-  secrets, generated key, and Deno sandbox cache. The container creates its files
+  secrets, generated key, and Deno sandbox cache. The server creates its files
   there with `umask 077`; a volume created by an earlier version keeps its
   existing modes until you run `chmod -R go-rwx /app/tmp` in the container.
 - Put the application behind a TLS-terminating reverse proxy rather than exposing
@@ -68,9 +69,11 @@ permissions.
   within the same origin. Upstream responses are limited to 32 MiB, and error
   responses to 64 KiB.
 - npm MCP packages run in a Deno sandbox that can read and write only its own
-  directory. Environment variables that would configure the sandbox itself, such
-  as `PATH` and loader or Deno runtime variables, are refused. All npm MCPs share
-  one Deno cache that packages can read but not write.
+  directory, less the files Deno itself reads there when it starts (`.npmrc`,
+  `deno.json`, `deno.jsonc`, `package.json`). Environment variables that would
+  configure the sandbox itself, such as `PATH`, `SSLKEYLOGFILE` and loader or
+  Deno runtime variables, are refused. All npm MCPs share one Deno cache that
+  packages can read but not write.
 - A saved bearer token, header value, or environment value is not carried over
   when an MCP is pointed at another origin, transport, or npm package.
 - An MCP on a public address cannot send the instance to OAuth endpoints on
@@ -100,11 +103,22 @@ permissions.
 
 ## Build and release safeguards
 
-- The container image builds from base images pinned by digest: the Node runtime
-  and the Deno binary that sandboxes npm MCP packages. Dependabot proposes
-  updates for them, for npm packages, and for GitHub Actions.
-- Release workflows install and run dependency code with a read-only token. Only
-  a separate job that installs nothing can push the tag and create the release,
-  and it publishes the exact commit that was validated.
-- Pull requests and pushes to `main` run lint, typecheck, and the unit,
-  functional, and browser suites.
+- The container image builds from base images pinned by digest: the Rust
+  toolchain that compiles the server, the Debian runtime, and the Deno binary
+  that sandboxes npm MCP packages. The build refuses a `Cargo.lock` that does
+  not match the manifests. Dependabot proposes updates for the images, for
+  Cargo dependencies, and for GitHub Actions.
+- The image runs the server as an unprivileged user, uid 1000, under an init
+  that reaps the Deno child processes. Before an image is published, a
+  container of each architecture is started without capabilities and checked:
+  it must answer `/health`, run as uid 1000, and leave nothing in its data
+  directory that another user can read.
+- Release workflows compile and run dependency code with a read-only token.
+  Only a separate job can push the tag and create the release, and it publishes
+  the exact commit that was validated. That job restores no cache, and the only
+  code it compiles is the release tool of this repository, which has no
+  dependencies.
+- Pull requests and pushes to `main` run the format check, Clippy with warnings
+  denied, the tests of every crate, and a release build. The security checks
+  audit `Cargo.lock` against the RustSec advisory database, analyse the code
+  with CodeQL, and scan the history for secrets.

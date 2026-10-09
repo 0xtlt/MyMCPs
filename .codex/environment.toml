@@ -6,55 +6,28 @@ name = "MyMCPs"
 script = """
 set -e
 
-codex_nvm_dir="${NVM_DIR:-${HOME}/.nvm}"
-if [ -s "${codex_nvm_dir}/nvm.sh" ]; then
-  export NVM_DIR="${codex_nvm_dir}"
-  . "${NVM_DIR}/nvm.sh"
-  nvm use 24
-fi
-
-node -e 'const major = Number(process.versions.node.split(".")[0]); if (major < 24) { console.error(`MyMCPs requires Node.js >= 24; found ${process.versions.node}`); process.exit(1) }'
-
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "MyMCPs requires pnpm. Install pnpm and rerun the Codex setup." >&2
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "MyMCPs requires Rust. Install it from https://rustup.rs and rerun the Codex setup." >&2
   exit 1
 fi
 
-pnpm install --frozen-lockfile --config.minimumReleaseAge=0
+cargo fetch --locked
 
 if [ ! -f .env ]; then
   cp .env.example .env
 fi
-
-if ! grep -Eq '^APP_KEY=.+$' .env; then
-  node ace generate:key
-fi
-
-node ace migration:run --no-schema-generate --compact-output
 """
 
 [[actions]]
 name = "Dev"
 icon = "run"
 command = """
-codex_nvm_dir="${NVM_DIR:-${HOME}/.nvm}"
-if [ -s "${codex_nvm_dir}/nvm.sh" ]; then
-  export NVM_DIR="${codex_nvm_dir}"
-  . "${NVM_DIR}/nvm.sh"
-  nvm use 24
-fi
-pnpm run dev
+cargo run --bin mymcps
 """
 
 [[actions]]
 name = "Tests"
 icon = "test"
 command = """
-codex_nvm_dir="${NVM_DIR:-${HOME}/.nvm}"
-if [ -s "${codex_nvm_dir}/nvm.sh" ]; then
-  export NVM_DIR="${codex_nvm_dir}"
-  . "${NVM_DIR}/nvm.sh"
-  nvm use 24
-fi
-pnpm test
+cargo test --workspace
 """

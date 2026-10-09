@@ -1,0 +1,29 @@
+[package]
+name = "mymcps-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+http.workspace = true
+url.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+base64.workspace = true
+# Only for the reason phrase a server sent, which reqwest keeps as a hyper extension.
+hyper = { version = "1", default-features = false, features = ["http1"] }
+
+[dev-dependencies]
+axum = "0.8"
+tokio = { workspace = true, features = ["test-util"] }

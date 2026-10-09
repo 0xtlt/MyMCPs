@@ -1,29 +1,19 @@
-# Dependencies and AdonisJS build
-node_modules
-build
-dist
+# Build output
+/target/
+/target-*/
+
+# Data of a local server: the database, the generated key, MCP sandboxes
 tmp/*
 !tmp/.gitkeep
-
-# Local package manager store (should never live in the repo)
-.pnpm-store
 
 # Secrets
 .env
 .env.*
 !.env.example
-!.env.test
-
-# Frontend assets compiled code
-public/assets
 
 # Logs and caches
-npm-debug.log*
-yarn-error.log*
-pnpm-debug.log*
 *.log
 .cache
-coverage
 
 # Editors specific
 .fleet
