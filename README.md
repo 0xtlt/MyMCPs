@@ -17,7 +17,7 @@ MyMCPs is self-hosted and invite-only. The first user becomes the administrator 
 
 ## Run locally
 
-You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Deno](https://deno.com/) if you want to run npm-based MCPs.
+You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler, `perl` and `make` (OpenSSL is compiled into the binary; releases are built with Rust 1.98), and [Deno](https://deno.com/) if you want to run npm-based MCPs.
 
 ```bash
 cp .env.example .env
