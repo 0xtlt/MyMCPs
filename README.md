@@ -117,6 +117,14 @@ docker compose exec mymcps mymcps user:reset-password user@example.com
 
 The first `mymcps` names the Compose service and the second the server binary, which loads the persisted application key when needed. Successful resets end the account's browser sessions and revoke its remember-me tokens; MCP access tokens and OAuth connections are unchanged.
 
+A new password does not turn off two-step verification. When a user has also lost their passkeys, their authenticator app and their recovery codes, remove all three so the password alone signs in again:
+
+```sh
+mymcps user:reset-2fa user@example.com
+```
+
+It also ends the account's browser sessions and revokes its remember-me tokens. See [docs/auth.md](docs/auth.md) for how passkeys and two-step verification work.
+
 ## Releases
 
 GitHub Actions publishes releases without an AI or an external release service:
