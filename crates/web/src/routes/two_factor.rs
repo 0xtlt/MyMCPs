@@ -25,7 +25,7 @@ use crate::cookies::Cookies;
 use crate::error::AppError;
 use crate::forms::{FormState, refusal};
 use crate::input::Input;
-use crate::passkeys::{NewPasskey, PasskeyFailure};
+use crate::passkeys::{NewPasskey, PasskeyFailure, Passkeys};
 use crate::redirect::{redirect_to, with_query};
 use crate::respond::{navigate, page};
 use crate::routes::FeatureRoutes;
@@ -67,6 +67,7 @@ const REPLAYED_CODE: &str =
 const WRONG_RECOVERY_CODE: &str = "This recovery code is not valid, or was already used.";
 const PASSKEY_REFUSED: &str = "The passkey was not accepted. Try again.";
 const UNKNOWN_PASSKEY: &str = "This passkey is not registered on this instance.";
+const ALREADY_REGISTERED: &str = "This passkey is already registered";
 const NO_CEREMONY: &str = "The passkey request expired. Try again.";
 const PASSKEYS_OFF: &str = "Passkeys are not available on this instance.";
 const BUSY: &str = "Too many passkey requests are in progress. Try again in a moment.";
@@ -865,6 +866,16 @@ pub async fn add_passkey(
         Ok(credential) => credential,
         Err(message) => return Ok(refused(&message)),
     };
+    let db = &state.core.db;
+    // Checked first: webauthn-rs refuses a credential the options excluded,
+    // under the name of another error.
+    if let Some(id) = Passkeys::registered_id(&credential)
+        && UserPasskey::find_by_credential_id(&**db, &id)
+            .await?
+            .is_some()
+    {
+        return Ok(refused(ALREADY_REGISTERED));
+    }
     let new = match state
         .passkeys
         .finish_registration(&session, &user, &credential)
@@ -873,12 +884,11 @@ pub async fn add_passkey(
         Err(PasskeyFailure::NoCeremony) => return Ok(refused(NO_CEREMONY)),
         Err(_) => return Ok(refused("The passkey could not be added. Try again.")),
     };
-    let db = &state.core.db;
     if UserPasskey::find_by_credential_id(&**db, &new.credential_id)
         .await?
         .is_some()
     {
-        return Ok(refused("This passkey is already registered"));
+        return Ok(refused(ALREADY_REGISTERED));
     }
     let was_enabled = TwoFactorStatus::of(db, user.id).await?.is_enabled();
     let NewPasskey {

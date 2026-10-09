@@ -214,6 +214,16 @@ impl Passkeys {
         Some(options)
     }
 
+    /// The ID of the credential a registration answer carries, as stored.
+    pub fn registered_id(credential: &str) -> Option<String> {
+        serde_json::from_str::<RegisterPublicKeyCredential>(credential)
+            .ok()
+            .map(|credential| {
+                let bytes: &[u8] = credential.raw_id.as_ref();
+                URL_SAFE_NO_PAD.encode(bytes)
+            })
+    }
+
     /// Verify the answer to [`Passkeys::start_registration`].
     pub fn finish_registration(
         &self,
