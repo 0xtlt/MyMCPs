@@ -93,13 +93,29 @@ pub fn saved_tool_approvals(mcp: &Mcp) -> Option<SavedToolApprovals> {
         .map(SavedToolApprovals)
 }
 
+/// The longest tool name the tools page saves a choice for, in UTF-16 units.
+pub const MAX_CHOOSABLE_NAME_UNITS: usize = 254;
+
+/// Whether an admin can choose what this tool does. The tools page sends the
+/// name of each tool as a form value, which arrives trimmed and is refused
+/// when it is blank or longer than this. An MCP names its tools as it likes.
+pub fn can_be_chosen(tool_name: &str) -> bool {
+    let name = mymcps_vine::js::trim(tool_name);
+    !name.is_empty() && name.encode_utf16().count() <= MAX_CHOOSABLE_NAME_UNITS
+}
+
 /// What a tool does until the admin chooses: built-in tools that commit money
-/// or go live ask, and every other tool runs.
+/// or go live ask, and every other tool runs. A tool the admin cannot choose
+/// for asks: its MCP must not decide, by how it names a tool, that it runs
+/// unattended for good.
 pub fn default_tool_approval(
     builtins: &BuiltinRegistry,
     mcp: &Mcp,
     tool_name: &str,
 ) -> ToolApprovalMode {
+    if !can_be_chosen(tool_name) {
+        return ToolApprovalMode::Ask;
+    }
     let asks = builtins
         .get(mcp.builtin_key.as_deref())
         .and_then(|definition| definition.tool(tool_name))

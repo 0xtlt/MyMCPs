@@ -151,6 +151,13 @@ impl HttpFetch for OAuthEndpoints {
             .assert_allowed(&request.url, "OAuth endpoint")
             .await
             .map_err(HttpFetchError::other)?;
+        // The name was checked a moment ago, and is resolved again to
+        // connect: whoever answers for it may say something else by then.
+        let fetcher = if self.guard.must_be_public(&request.url).await {
+            self.fetcher.public_only()
+        } else {
+            self.fetcher.clone()
+        };
 
         let HttpRequest {
             method,
@@ -173,8 +180,7 @@ impl HttpFetch for OAuthEndpoints {
             max_response_bytes: Some(MAX_OAUTH_RESPONSE_BYTES),
             ..UpstreamResponseLimits::default()
         };
-        let mut response = self
-            .fetcher
+        let mut response = fetcher
             .fetch_with_same_origin_redirects(fetch, "OAuth endpoint", limits)
             .await
             .map_err(oauth_fetch_error)?;

@@ -203,9 +203,21 @@ mod deno_sandbox_process {
         ]);
         let sandbox_dir = runner.sandbox_root_for(mcp.id);
         let deno_dir = sandbox.deno_dir();
+        // What a version of the package that ran before left where Deno reads
+        // its configuration and the registry of npm, next to a file of its own.
+        std::fs::create_dir_all(&sandbox_dir).unwrap();
+        let planted = [".npmrc", "deno.json", "deno.jsonc", "package.json"];
+        for name in planted {
+            std::fs::write(sandbox_dir.join(name), "registry=http://evil.example/\n").unwrap();
+        }
+        std::fs::write(sandbox_dir.join("notes.txt"), "kept").unwrap();
 
         runner.list_tools(&mcp).await.unwrap();
         let snapshot = Snapshot::read(&sandbox_dir, "started");
+        for name in planted {
+            assert!(!sandbox_dir.join(name).exists(), "{name}");
+        }
+        assert!(sandbox_dir.join("notes.txt").exists());
 
         let listed = [
             "PATH",
@@ -271,6 +283,10 @@ mod deno_sandbox_process {
                     deno_dir.display()
                 ),
                 format!("--allow-write={}", sandbox_dir.display()),
+                format!(
+                    "--deny-write={0}/.npmrc,{0}/deno.json,{0}/deno.jsonc,{0}/package.json",
+                    sandbox_dir.display()
+                ),
                 "--allow-net".to_owned(),
                 "--allow-env".to_owned(),
                 "--allow-sys=homedir".to_owned(),
@@ -627,7 +643,7 @@ mod requests_of_an_npm_mcp {
         );
         let started = Snapshot::read(&sandbox_dir, "started");
         assert_eq!(
-            started.argv[10..],
+            started.argv[11..],
             ["npm:@example/fake-mcp@1.2.3", "--stdio", "--verbose"]
         );
         assert!(!is_running(&started.pid));

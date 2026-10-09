@@ -23,9 +23,12 @@ const RESERVED: &[ReservedNames] = &[
     ReservedNames {
         // DENO_DIR, DENO_V8_FLAGS, DENO_CERT, DENO_TLS_CA_STORE, DENO_AUTH_TOKENS...
         prefixes: &["DENO_"],
-        // Deno does not act on these today, but they address the runtime rather
-        // than the package and Node compatibility keeps growing.
-        names: &["NODE_OPTIONS", "NODE_PATH"],
+        // Deno does not act on the two NODE names today, but they address the
+        // runtime rather than the package and Node compatibility keeps growing.
+        // SSLKEYLOGFILE names a file the runtime appends the keys of every TLS
+        // session to, without asking its own write permission: any file the
+        // server can write, the database among them.
+        names: &["NODE_OPTIONS", "NODE_PATH", "SSLKEYLOGFILE"],
         reason: |name| {
             format!(
                 "\"{name}\" configures the runtime that sandboxes the package, not the package, and cannot be set"
@@ -109,6 +112,8 @@ mod tests {
             "deno_auth_tokens",
             "NODE_OPTIONS",
             "NODE_PATH",
+            "SSLKEYLOGFILE",
+            "sslkeylogfile",
             "GLIBC_TUNABLES",
             "GCONV_PATH",
             "HOSTALIASES",

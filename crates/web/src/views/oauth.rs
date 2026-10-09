@@ -59,6 +59,20 @@ pub fn authorize_page(context: &PageContext, consent: &Consent<'_>) -> Markup {
                         }
                     }
                 }
+            } @else {
+                // A client registers itself, under the name it likes: the
+                // name in the title says nothing of who receives the access.
+                div class="banner banner--warning" role="status" {
+                    (icon("triangle-alert"))
+                    div class="banner__content" {
+                        p class="banner__title" { "Check where the access goes" }
+                        p {
+                            "This client chose its own name, which MyMCPs cannot verify. After approval, the authorization code will be sent to "
+                            (consent.redirect_host)
+                            ". Only continue if you started this connection yourself and that address belongs to the client you expect."
+                        }
+                    }
+                }
             }
 
             // One form, two submits: the button pressed sends decision=deny or decision=approve.

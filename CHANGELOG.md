@@ -2,6 +2,32 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-09
+
+### Changed
+
+- `/mcp` reads a message from the body of the request only. Parameters in the query string of a `POST` are ignored, where they used to replace the members of the message.
+- **Tool approvals** lists a tool whose name is blank or longer than 254 characters without a choice: it always asks, and the page saves the choices of the other tools.
+- The consent page of the OAuth server warns that a client chose its own name and shows where the authorization code is sent, also when the callback is not a local address.
+- A download link of a built-in MCP has 10 minutes to deliver its file.
+
+### Fixed
+
+- The server starts when the schedule of the npm auto-update cannot be read, and says so in its log.
+
+### Security
+
+- A JSON document with many numeric keys, in the answer of a remote MCP or in a request to `/mcp`, no longer keeps a processor busy for minutes.
+- An email whose date is the last or the first minute a date can hold no longer makes the iCloud Mail MCP fail to list the mailbox it is in.
+- The package of an npm MCP can no longer write the files Deno reads in its sandbox before it starts (`.npmrc`, `deno.json`, `deno.jsonc`, `package.json`), with which it chose the registry its next start and its next update were fetched from. Files of these names are deleted from a sandbox at each start.
+- `SSLKEYLOGFILE` can no longer be set on an npm MCP: Deno appended TLS keys to the file it named, anywhere the server can write.
+- The OAuth endpoints a remote MCP names are connected to at public addresses only, also when their name resolves to another address between the check and the connection.
+- The import of a backup keeps at most 1 MB of its form in memory before the file starts, where a form without a file part was kept whole. It refuses a database with generated columns, expression defaults, or indexes on expressions or on some rows, evaluates no `CHECK` constraint of the file, stops after 20 minutes, and refuses settings or administrators the server could not read afterwards.
+- A stored password hash that asks for more than 16 times the work of the hashes MyMCPs writes, or more memory than Node allowed, is never computed.
+- Signing in or out gives the session a new CSRF secret.
+- The rate limits of the OAuth server count the addresses of one IPv6 /64 network together, as sign-in does.
+- `/mcps/oauth/callback` shows the error of a provider only when it answers an authorization the session started.
+
 ## 2026-10-08
 
 ### Added

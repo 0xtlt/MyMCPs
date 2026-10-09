@@ -203,6 +203,7 @@ pub async fn sign_in(
     create_remember_token(core, cookies, user).await?;
     session.put(LOGIN_KEY, user.id);
     stamp_session(session, user);
+    crate::csrf::forget_csrf_secret(session);
     Ok(())
 }
 
@@ -219,6 +220,7 @@ pub async fn sign_out(
             .await?;
     }
     forget_session_login(session);
+    crate::csrf::forget_csrf_secret(session);
     cookies.clear(REMEMBER_COOKIE);
     Ok(())
 }

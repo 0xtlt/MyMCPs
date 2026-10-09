@@ -568,6 +568,10 @@ async fn shows_the_consent_screen_of_an_authorization_request() {
         .text();
     assert!(page.contains("Callback: client.example:8443</p>"));
     assert!(!page.contains("Local callback"));
+    // The name in the title is the client's own word: the page says so, and
+    // where the code goes.
+    assert!(page.contains("This client chose its own name, which MyMCPs cannot verify."));
+    assert!(page.contains("the authorization code will be sent to client.example:8443."));
     assert!(!page.contains("name=\"state\""));
 }
 
@@ -957,6 +961,26 @@ async fn holds_each_client_address_to_its_allowance() {
     assert_eq!(refused.json(), limited);
     assert_eq!(refused.header("cache-control"), Some("no-store"));
     assert_eq!(refused.header("pragma"), Some("no-cache"));
+    // The addresses of one IPv6 network share an allowance: a visitor has
+    // all of them to send from.
+    for host in 0..50 {
+        let response = app
+            .post("/token")
+            .api()
+            .header("x-forwarded-for", &format!("2001:db8:1:2::{host:x}"))
+            .form(&[("client_id", "mcp_client_unknown")])
+            .send()
+            .await;
+        assert_eq!(response.status, StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(
+        token_from("2001:db8:1:2:ffff::1").await.status,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        token_from("2001:db8:1:3::1").await.status,
+        StatusCode::UNAUTHORIZED
+    );
     // Another address has its own allowance, and so does revocation.
     assert_eq!(
         token_from("198.51.100.8").await.status,

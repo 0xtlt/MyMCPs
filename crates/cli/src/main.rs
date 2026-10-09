@@ -155,7 +155,11 @@ async fn serve() -> CommandResult {
 
     // Refreshes the npm MCPs that follow `latest`, when the instance asks for it.
     let mcp_gateway = state.mcp_gateway.clone();
-    mcp_gateway.auto_update.start().await?;
+    // The server answers without them: settings that cannot be read are
+    // said in the log, and do not keep the instance from starting at all.
+    if let Err(error) = mcp_gateway.auto_update.start().await {
+        tracing::error!(%error, "Could not schedule the automatic updates of npm MCPs");
+    }
 
     let service = mymcps_web::app::service(state);
     server::serve(

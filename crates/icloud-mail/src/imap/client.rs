@@ -1297,7 +1297,9 @@ impl ImapClient {
                     // A date has no time: before the middle of a day is before the next day.
                     let is_midnight = to_iso(*date).ends_with("T00:00:00.000Z");
                     let date = if is_before && !is_midnight {
-                        *date + chrono::Duration::days(1)
+                        // The last day a date can hold has no next one.
+                        date.checked_add_signed(chrono::Duration::days(1))
+                            .unwrap_or(*date)
                     } else {
                         *date
                     };

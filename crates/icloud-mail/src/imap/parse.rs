@@ -170,7 +170,11 @@ pub(crate) fn parse_date(text: &str) -> Option<DateTime<Utc>> {
     }
     let (hour, minute, second) = time.unwrap_or((0, 0, 0));
     let local = NaiveDate::from_ymd_opt(year?, month?, day?)?.and_hms_opt(hour, minute, second)?;
-    Some(Utc.from_utc_datetime(&local) - chrono::Duration::minutes(offset.unwrap_or(0)))
+    // `None` for an instant chrono cannot hold: a date is whatever the
+    // sender of a message wrote, and the last minute of the last year it
+    // reads, moved by a zone, is past the end.
+    Utc.from_utc_datetime(&local)
+        .checked_sub_signed(chrono::Duration::minutes(offset.unwrap_or(0)))
 }
 
 /// `processAddresses`: the addresses of one header of an envelope.
@@ -592,6 +596,9 @@ mod tests {
             "32 Oct 2026 09:30:00 +0000",
             "1 Oct",
             "Thu, 01 Oct 2026 25:00:00 +0000",
+            // Past the last, and before the first, instant a date can hold.
+            "Fri, 31 Dec 262142 23:59:59 -0001",
+            "1 Jan -262143 00:00:00 +0001",
         ] {
             assert_eq!(parse_date(not_a_date), None, "{not_a_date}");
         }

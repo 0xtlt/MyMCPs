@@ -65,6 +65,10 @@ const STALLED_CLIENT: Duration = Duration::from_secs(60);
 /// What Node gave any request to arrive whole. Without it, a client sending
 /// a few bytes a minute would keep its place for as long as it pleased.
 const WHOLE_UPLOAD: Duration = Duration::from_secs(300);
+/// A download has this long to leave whole. A client that takes a piece
+/// every minute never stalls, and would keep its place, and the file in
+/// memory, for hours.
+const WHOLE_DOWNLOAD: Duration = Duration::from_secs(600);
 /// A file is handed to the connection in pieces of this size at most, so
 /// that the time since the last one says whether the client still reads,
 /// and so that a connection never holds more of a file than a few of them.
@@ -201,13 +205,14 @@ fn attachment_disposition(filename: &str) -> String {
 /// A file being sent to a client, and the place it holds meanwhile.
 struct Leaving {
     pieces: VecDeque<Bytes>,
+    started_at: Instant,
     taken_at: Instant,
     _place: Place,
 }
 
 /// The body of a download. It keeps the place of the download for as long
-/// as the file is in memory: until the client has it, has gone, or has
-/// stopped reading for too long.
+/// as the file is in memory: until the client has it, has gone, has stopped
+/// reading for too long, or has taken too long to read all of it.
 struct FileBody {
     leaving: Arc<Mutex<Option<Leaving>>>,
 }
@@ -217,23 +222,31 @@ struct FileBody {
 struct StalledClient;
 
 impl FileBody {
-    fn new(content: Vec<Bytes>, place: Place, patience: Duration) -> Self {
+    fn new(content: Vec<Bytes>, place: Place, patience: Duration, whole: Duration) -> Self {
+        let now = Instant::now();
         let leaving = Arc::new(Mutex::new(Some(Leaving {
             pieces: content.into(),
-            taken_at: Instant::now(),
+            started_at: now,
+            taken_at: now,
             _place: place,
         })));
         tokio::spawn(give_up_on_a_stalled_client(
             Arc::downgrade(&leaving),
             patience,
+            whole,
         ));
         Self { leaving }
     }
 }
 
 /// Drop the file and give its place back once nothing was taken of it for
-/// `patience`. Ends when the body is dropped, which does the same.
-async fn give_up_on_a_stalled_client(leaving: Weak<Mutex<Option<Leaving>>>, patience: Duration) {
+/// `patience`, or once it has been leaving for `whole`. Ends when the body
+/// is dropped, which does the same.
+async fn give_up_on_a_stalled_client(
+    leaving: Weak<Mutex<Option<Leaving>>>,
+    patience: Duration,
+    whole: Duration,
+) {
     loop {
         let wait_until = {
             let Some(leaving) = leaving.upgrade() else {
@@ -241,7 +254,11 @@ async fn give_up_on_a_stalled_client(leaving: Weak<Mutex<Option<Leaving>>>, pati
             };
             let mut leaving = lock(&leaving);
             match leaving.as_ref() {
-                Some(file) if file.taken_at.elapsed() < patience => file.taken_at + patience,
+                Some(file)
+                    if file.taken_at.elapsed() < patience && file.started_at.elapsed() < whole =>
+                {
+                    (file.taken_at + patience).min(file.started_at + whole)
+                }
                 _ => {
                     *leaving = None;
                     return;
@@ -351,7 +368,12 @@ async fn show(
     let length: usize = file.content.iter().map(Bytes::len).sum();
 
     // The place is kept for as long as the file is in memory.
-    let body = FileBody::new(file.content, place, state.file_traffic.stalled_client);
+    let body = FileBody::new(
+        file.content,
+        place,
+        state.file_traffic.stalled_client,
+        WHOLE_DOWNLOAD,
+    );
     let mut response = Response::new(Body::from_stream(body));
     let headers = response.headers_mut();
     headers.insert(CONTENT_TYPE, content_type);
@@ -678,6 +700,7 @@ mod tests {
             vec![Bytes::new(), large, Bytes::from_static(b"end")],
             places.take(1).unwrap(),
             STALLED_CLIENT,
+            WHOLE_DOWNLOAD,
         );
 
         let mut sizes = Vec::new();
@@ -706,12 +729,40 @@ mod tests {
             vec![Bytes::from(vec![7; 3 * PIECE_BYTES])],
             places.take(1).unwrap(),
             patience,
+            WHOLE_DOWNLOAD,
         );
         assert_eq!(body.next().await.unwrap().unwrap().len(), PIECE_BYTES);
         assert!(places.take(1).is_none());
 
         tokio::time::sleep(patience * 3).await;
         // The place is free and the file is gone, though the body is still held.
+        assert!(places.take(1).is_some());
+        assert!(lock(&body.leaving).is_none());
+        assert!(body.next().await.unwrap().is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn gives_up_on_a_file_taken_a_piece_at_a_time_for_too_long() {
+        let places = LimitedPlaces::new(1);
+        let patience = Duration::from_secs(60);
+        let whole = Duration::from_secs(150);
+        let mut body = FileBody::new(
+            vec![Bytes::from(vec![7; 10 * PIECE_BYTES])],
+            places.take(1).unwrap(),
+            patience,
+            whole,
+        );
+
+        // Never stalled: a piece is taken well within the patience, each time.
+        for _ in 0..3 {
+            assert_eq!(body.next().await.unwrap().unwrap().len(), PIECE_BYTES);
+            assert!(places.take(1).is_none());
+            tokio::time::sleep(Duration::from_secs(45)).await;
+        }
+        assert_eq!(body.next().await.unwrap().unwrap().len(), PIECE_BYTES);
+        tokio::time::sleep(Duration::from_secs(45)).await;
+
+        // Three minutes in, with most of the file still to take.
         assert!(places.take(1).is_some());
         assert!(lock(&body.leaving).is_none());
         assert!(body.next().await.unwrap().is_err());

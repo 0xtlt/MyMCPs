@@ -20,6 +20,9 @@ pub struct ToolRow {
     pub default_mode: ToolApprovalMode,
     /// False for a tool with a saved choice that its MCP no longer lists.
     pub is_listed: bool,
+    /// False for a tool whose name the form cannot send: it is shown, and
+    /// has no choice to make.
+    pub can_be_chosen: bool,
 }
 
 /// What the Tool approvals page shows.
@@ -39,9 +42,13 @@ impl McpToolsPage {
         format!("/mcps/{}/tools", self.mcp_id)
     }
 
+    /// The tools the form sends, each with its choice.
+    fn choosable(&self) -> impl Iterator<Item = &ToolRow> {
+        self.tools.iter().filter(|tool| tool.can_be_chosen)
+    }
+
     fn asking(&self) -> usize {
-        self.tools
-            .iter()
+        self.choosable()
             .filter(|tool| tool.mode == ToolApprovalMode::Ask)
             .count()
     }
@@ -131,6 +138,22 @@ fn tool_row(index: usize, tool: &ToolRow) -> Markup {
     }
 }
 
+/// A tool whose name the form cannot send. It asks, whatever is chosen
+/// for the others, and the form is saved without it.
+fn fixed_row(tool: &ToolRow) -> Markup {
+    html! {
+        tr data-filter-item data-filter-text=(tool.name) {
+            td class="cell-wrap" {
+                div class="cell-stack cell-stack--wrap gap-050" {
+                    span class="cell-code" { (tool.name) }
+                    span class="status status--warning" { "Always asks: no choice can be saved for a name that is blank or this long" }
+                }
+            }
+            td class="cell-end" {}
+        }
+    }
+}
+
 /// The search, the two bulk buttons, the table and the save bar, in one
 /// form: every tool is sent, in view or not.
 fn tools_form(context: &PageContext, page: &McpToolsPage) -> Markup {
@@ -140,7 +163,7 @@ fn tools_form(context: &PageContext, page: &McpToolsPage) -> Markup {
             data-async data-dirty data-filter {
             (context.csrf_field())
             // Sent before the tools: a form too long to arrive whole is not saved in part.
-            input type="hidden" name="toolCount" value=(page.tools.len());
+            input type="hidden" name="toolCount" value=(page.choosable().count());
 
             div class="toolbar" {
                 label class="input-group search" {
@@ -158,7 +181,7 @@ fn tools_form(context: &PageContext, page: &McpToolsPage) -> Markup {
                     div class="card__heading" {
                         h2 class="card__title" id="mcp-tools-title" {
                             span data-select-count=(table) { (page.asking()) }
-                            " of " (page.tools.len()) " tools ask for approval"
+                            " of " (page.choosable().count()) " tools ask for approval"
                         }
                     }
                 }
@@ -169,7 +192,8 @@ fn tools_form(context: &PageContext, page: &McpToolsPage) -> Markup {
                             th scope="col" class="col-136 cell-end" { "When an agent calls it" }
                         } }
                         tbody {
-                            @for (index, tool) in page.tools.iter().enumerate() { (tool_row(index, tool)) }
+                            @for (index, tool) in page.choosable().enumerate() { (tool_row(index, tool)) }
+                            @for tool in page.tools.iter().filter(|tool| !tool.can_be_chosen) { (fixed_row(tool)) }
                         }
                     }
                 }

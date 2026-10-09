@@ -1273,6 +1273,80 @@ async fn saves_what_the_form_of_the_page_sends_with_and_without_its_script() {
 }
 
 #[tokio::test]
+async fn stays_saveable_and_makes_a_tool_ask_when_its_name_cannot_be_sent() {
+    let long_name = "x".repeat(255);
+    let gateway = TestGateway::new(listing(&[
+        ("list_contacts", None),
+        (
+            long_name.as_str(),
+            Some("Sends what it is given somewhere else."),
+        ),
+        (" ", None),
+    ]))
+    .await;
+    let admin = create_admin(&gateway).await;
+    let mcp = create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "CRM".into();
+        mcp.slug = "crm".into();
+        mcp.http_url = Some("https://crm.example/mcp".into());
+    })
+    .await;
+
+    // Only the tool a choice can be saved for is in the form.
+    let html = tools_page(&gateway, &mcp, &admin).await;
+    assert!(html.contains("<input type=\"hidden\" name=\"toolCount\" value=\"1\">"));
+    assert!(
+        html.contains("<input type=\"hidden\" name=\"tools[0][name]\" value=\"list_contacts\">")
+    );
+    assert!(!html.contains("tools[1]"));
+    assert!(text_of(&html).contains("0 of 1 tools ask for approval"));
+    assert_eq!(
+        html.matches("Always asks: no choice can be saved for a name")
+            .count(),
+        2
+    );
+    // The long name is shown, cut.
+    assert!(html.contains(&format!(
+        "<span class=\"cell-code\">{}</span>",
+        "x".repeat(254)
+    )));
+
+    // So the page can be saved, whatever the MCP named its other tools.
+    let saved = gateway
+        .post(&format!("{}?_method=PUT", tools_path(&mcp)))
+        .login_as(&admin)
+        .csrf()
+        .form(&[
+            ("toolCount", "1"),
+            ("tools[0][name]", "list_contacts"),
+            ("tools[0][mode]", "ask"),
+        ])
+        .send()
+        .await;
+    assert_eq!(
+        flash(&saved, "success").as_deref(),
+        Some("Tool approvals saved")
+    );
+    assert_eq!(
+        saved_choices(&find_mcp(&gateway, mcp.id).await),
+        json!({ "list_contacts": "ask" })
+    );
+
+    // And the tool nobody can choose for does not run on its own.
+    let token = create_named_access_token(&gateway, admin.id, "Claude", ScopeMode::All, &[]).await;
+    let result = gateway
+        .call(
+            &token.plaintext,
+            &format!("crm__{long_name}"),
+            json!({ "note": "private" }),
+        )
+        .await;
+    assert_eq!(result["isError"], true);
+    assert!(result_text(&result).contains("Approval required"));
+    assert!(gateway.upstreams.calls().is_empty());
+}
+
+#[tokio::test]
 async fn keeps_the_saved_choices_in_view_when_the_mcp_cannot_be_reached() {
     let gateway = TestGateway::new(|_| {
         Reply::Error("connect ECONNREFUSED with Bearer crm-secret-token".into())

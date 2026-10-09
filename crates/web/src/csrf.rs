@@ -36,6 +36,14 @@ pub fn csrf_token(session: &Session) -> String {
     format!("{salt}.{}", digest(&salt, &secret))
 }
 
+/// Forget the secret, so that the next form gets a new one. Done when
+/// someone signs in or out: whoever had a hand in the session before that,
+/// by planting its cookie in the browser from a neighbouring site, knows the
+/// tokens of the old secret and none of the new one.
+pub fn forget_csrf_secret(session: &Session) {
+    session.forget(SECRET_KEY);
+}
+
 pub fn verify_csrf_token(session: &Session, token: Option<&str>) -> bool {
     let (Some(secret), Some(token)) = (session.get_as::<String>(SECRET_KEY), token) else {
         return false;

@@ -56,4 +56,6 @@ mymcps-icloud-mail = { workspace = true, features = ["test-util"] }
 mymcps-google-ads = { workspace = true, features = ["test-util"] }
 mymcps-web = { path = ".", features = ["test-util"] }
 tempfile.workspace = true
+# A paused clock, for the tests of what a slow client is given up on.
+tokio = { workspace = true, features = ["test-util"] }
 base64.workspace = true

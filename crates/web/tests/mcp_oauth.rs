@@ -366,6 +366,20 @@ async fn refuses_a_callback_that_does_not_answer_an_authorization_of_this_sessio
     );
     // The state without the code it answers with.
     invalid(&flow.callback(&start, &[("state", &state)]).await);
+    // An error of the sender's own making: no provider was asked anything.
+    invalid(
+        &flow
+            .callback(&start, &[("error", "Sign in again at evil.example")])
+            .await,
+    );
+    invalid(
+        &flow
+            .callback(
+                &start,
+                &[("error", "access_denied"), ("state", "forged-state")],
+            )
+            .await,
+    );
     // Another session: the state means nothing there.
     let elsewhere = flow
         .app

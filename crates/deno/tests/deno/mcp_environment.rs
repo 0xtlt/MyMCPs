@@ -74,6 +74,7 @@ mod npm_mcp_environment_variables {
                     runner.resolve_deno_dir().display()
                 ),
                 "--allow-write=/safe/sandbox".to_owned(),
+                "--deny-write=/safe/sandbox/.npmrc,/safe/sandbox/deno.json,/safe/sandbox/deno.jsonc,/safe/sandbox/package.json".to_owned(),
                 "--allow-net".to_owned(),
                 "--allow-env".to_owned(),
                 "--allow-sys=homedir".to_owned(),
@@ -93,7 +94,7 @@ mod npm_mcp_environment_variables {
             mcp.npm_version = version.map(str::to_owned);
             let args = runner.build_args(&mcp, Path::new("/safe/sandbox")).unwrap();
             assert_eq!(args.last().unwrap(), "npm:@example/fake-mcp@latest");
-            assert_eq!(args.len(), 11);
+            assert_eq!(args.len(), 12);
         }
     }
 

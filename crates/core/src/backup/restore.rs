@@ -12,7 +12,7 @@
 use std::io::{self, BufReader, BufWriter, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteConnection};
@@ -26,6 +26,7 @@ use super::{
 use crate::context::Core;
 use crate::crypto::Encryption;
 use crate::db::migrations::MIGRATIONS;
+use crate::models::{InstanceSetting, User};
 
 /// The name of the decrypted database in its [`BackupDir`].
 const DATABASE_FILE: &str = "db.sqlite3";
@@ -76,6 +77,24 @@ const SECRET_COLUMNS: &[SecretColumns] = &[
 const IMPORTED_TABLES: &str =
     "`type` = 'table' and `name` not like 'sqlite\\_%' escape '\\' and `name` <> 'rate_limits'";
 
+/// How long the statements run on the database of a backup may take, all
+/// together. The file is whatever its author made it: nothing in it decides
+/// how long the server works on it, nor that the one import that may run
+/// never ends.
+const IMPORT_DEADLINE: Duration = Duration::from_secs(20 * 60);
+/// How many steps SQLite runs between two looks at the clock.
+const DEADLINE_STEPS: i32 = 10_000;
+
+/// Stop the statements of this connection once `deadline` has passed. They
+/// then fail as interrupted, which [`blame`] puts on the backup.
+async fn stop_at(connection: &mut SqliteConnection, deadline: Instant) -> Result<(), sqlx::Error> {
+    connection
+        .lock_handle()
+        .await?
+        .set_progress_handler(DEADLINE_STEPS, move || Instant::now() < deadline);
+    Ok(())
+}
+
 /// What an import did.
 #[derive(Debug, Clone)]
 pub struct Imported {
@@ -96,8 +115,9 @@ pub struct Imported {
 /// backup can fail with is the fault of the backup.
 fn is_instance_trouble(error: &sqlx::Error) -> bool {
     // The primary result codes of SQLite: PERM, ABORT, BUSY, LOCKED, NOMEM,
-    // READONLY, INTERRUPT, IOERR, FULL, CANTOPEN, PROTOCOL.
-    const TROUBLE: &[i32] = &[3, 4, 5, 6, 7, 8, 9, 10, 13, 14, 15];
+    // READONLY, IOERR, FULL, CANTOPEN, PROTOCOL. Not INTERRUPT: a statement
+    // is only interrupted for taking longer than an import may.
+    const TROUBLE: &[i32] = &[3, 4, 5, 6, 7, 8, 10, 13, 14, 15];
     match error {
         sqlx::Error::Database(error) => error
             .code()
@@ -186,8 +206,9 @@ pub async fn import(
     .await?;
     let metadata = Metadata::parse(&metadata)?;
 
-    let (migrated, reencrypted) = prepare(core, &database, &metadata).await?;
-    let users = replace_rows(core, &database).await?;
+    let deadline = Instant::now() + IMPORT_DEADLINE;
+    let (migrated, reencrypted) = prepare(core, &database, &metadata, deadline).await?;
+    let users = replace_rows(core, &database, deadline).await?;
     Ok(Imported {
         created_at: metadata.created_at,
         migrated,
@@ -211,6 +232,7 @@ async fn prepare(
     core: &Core,
     database: &Path,
     metadata: &Metadata,
+    deadline: Instant,
 ) -> Result<(Vec<&'static str>, bool), BackupError> {
     if !starts_like_sqlite(database).await? {
         return Err(BackupError::Damaged);
@@ -223,10 +245,16 @@ async fn prepare(
         // about their size are caught where they are read.
         .pragma("trusted_schema", "OFF")
         .pragma("cell_size_check", "ON")
+        // Nor is a CHECK constraint of its tables evaluated, by the check of
+        // the file or by a write of the steps that follow: the constraints
+        // that count are those of the instance, which the rows are copied
+        // into.
+        .pragma("ignore_check_constraints", "ON")
         .busy_timeout(BUSY_TIMEOUT)
         .connect()
         .await
         .map_err(blame)?;
+    stop_at(&mut connection, deadline).await.map_err(blame)?;
 
     let outcome = prepare_on(&mut connection, core, metadata).await;
     // The file is attached to the database of the instance next: this
@@ -254,6 +282,8 @@ async fn prepare_on(
             crate::Error::Config(message) => BackupError::Io(io::Error::other(message)),
         })?;
 
+    readable(connection).await?;
+
     let reencrypted = metadata.app_key != core.config.app_key;
     if reencrypted {
         let from = Encryption::new(&metadata.app_key);
@@ -264,16 +294,24 @@ async fn prepare_on(
     Ok((migrated, reencrypted))
 }
 
-/// Step 4: what the database must be before anything is run on it.
-async fn check(connection: &mut SqliteConnection) -> Result<(), BackupError> {
-    let report: Vec<String> = sqlx::query_scalar("PRAGMA quick_check")
+/// The rows the server reads to start and to sign someone in, read as it
+/// reads them. A value it cannot read there (a setting that is none of its
+/// choices, a date that is not one) would be copied like any other, and
+/// leave an instance that does neither.
+async fn readable(connection: &mut SqliteConnection) -> Result<(), BackupError> {
+    sqlx::query_as::<_, InstanceSetting>("select * from `instance_settings`")
         .fetch_all(&mut *connection)
         .await
         .map_err(blame)?;
-    if report != ["ok"] {
-        return Err(BackupError::Damaged);
-    }
+    sqlx::query_as::<_, User>("select * from `users` where `role` = 'admin'")
+        .fetch_all(&mut *connection)
+        .await
+        .map_err(blame)?;
+    Ok(())
+}
 
+/// Step 4: what the database must be before anything is run on it.
+async fn check(connection: &mut SqliteConnection) -> Result<(), BackupError> {
     // Tables and their indexes, each with pages of its own: no trigger and
     // no view, which would run on the rows that are copied, and no virtual
     // table, which has no page and is read by code of its own.
@@ -284,6 +322,33 @@ async fn check(connection: &mut SqliteConnection) -> Result<(), BackupError> {
     .await
     .map_err(blame)?;
     if others > 0 {
+        return Err(BackupError::Damaged);
+    }
+
+    // And nothing in them that is computed: an expression of the file would
+    // be evaluated for each row that is read or written, at the cost its
+    // author chose. The tables of an instance have no generated column, no
+    // default that is an expression, and their indexes are on plain columns
+    // and on every row.
+    for computed in [
+        "select count(*) from `sqlite_master` as `object`, pragma_table_xinfo(`object`.`name`) as `column` where `object`.`type` = 'table' and (`column`.`hidden` <> 0 or instr(coalesce(`column`.`dflt_value`, ''), '(') > 0)",
+        "select count(*) from `sqlite_master` as `object`, pragma_index_list(`object`.`name`) as `index` where `object`.`type` = 'table' and `index`.`partial` <> 0",
+        "select count(*) from `sqlite_master` as `object`, pragma_index_xinfo(`object`.`name`) as `column` where `object`.`type` = 'index' and `column`.`cid` = -2",
+    ] {
+        let found: i64 = sqlx::query_scalar(computed)
+            .fetch_one(&mut *connection)
+            .await
+            .map_err(blame)?;
+        if found > 0 {
+            return Err(BackupError::Damaged);
+        }
+    }
+
+    let report: Vec<String> = sqlx::query_scalar("PRAGMA quick_check")
+        .fetch_all(&mut *connection)
+        .await
+        .map_err(blame)?;
+    if report != ["ok"] {
         return Err(BackupError::Damaged);
     }
 
@@ -417,7 +482,7 @@ async fn reencrypt(
 
 /// Step 7, on a connection of its own to the database of the instance:
 /// none of the pool, which a request could be using.
-async fn replace_rows(core: &Core, backup: &Path) -> Result<i64, BackupError> {
+async fn replace_rows(core: &Core, backup: &Path, deadline: Instant) -> Result<i64, BackupError> {
     let mut live = SqliteConnectOptions::new()
         .filename(sqlite_path(&core.config.database_path())?)
         .create_if_missing(false)
@@ -431,6 +496,7 @@ async fn replace_rows(core: &Core, backup: &Path) -> Result<i64, BackupError> {
         .busy_timeout(BUSY_TIMEOUT)
         .connect()
         .await?;
+    stop_at(&mut live, deadline).await?;
 
     let attached = sqlx::query("attach database ? as `backup`")
         .bind(sqlite_path(backup)?)
@@ -547,7 +613,8 @@ async fn copy_rows(live: &mut SqliteConnection) -> Result<i64, BackupError> {
         .await?;
     sqlx::query(AssertSqlSafe(format!(
         "insert into `main`.`sqlite_sequence` (`name`, `seq`) select `name`, `seq` from `backup`.`sqlite_sequence` \
-         where `name` in (select `name` from `main`.`sqlite_master` where {IMPORTED_TABLES})"
+         where `name` in (select `name` from `main`.`sqlite_master` where {IMPORTED_TABLES}) \
+         and typeof(`seq`) = 'integer' and `seq` between 0 and 9007199254740991"
     )))
     .execute(&mut *transaction)
     .await

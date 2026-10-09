@@ -230,6 +230,8 @@ enum Interrupted {
     TooSlow,
     #[error("The backup stopped arriving")]
     Broken,
+    #[error("The form holds more than it may")]
+    TooLarge,
 }
 
 struct ArrivingState {
@@ -239,6 +241,14 @@ struct ArrivingState {
     started: bool,
     /// A piece was just handed over: the next one waits for a turn.
     handed: bool,
+    /// How much of the body has arrived, and how much may. The form parser
+    /// keeps what it reads until it finds the end of what it looks for: a
+    /// body with no such end would be kept whole, so no more arrives than
+    /// what the parts read so far may hold.
+    arrived: u64,
+    allowance: u64,
+    /// What is left is being dropped as it arrives: nothing holds it.
+    dropping: bool,
 }
 
 /// The body of an import as it arrives, until the time a whole form is
@@ -284,8 +294,24 @@ impl Arriving {
                     .is_some_and(|value| value.trim().eq_ignore_ascii_case("100-continue")),
                 started: false,
                 handed: false,
+                arrived: 0,
+                allowance: FORM_OVERHEAD_BYTES,
+                dropping: false,
             })),
         }
+    }
+
+    /// The file of the form starts here, and is written to disk as it
+    /// arrives: let that much more through.
+    fn admit_file(&self, max_bytes: u64) {
+        let mut state = lock(&self.state);
+        state.allowance = state.allowance.saturating_add(max_bytes);
+    }
+
+    /// The file has ended: what follows is small again.
+    fn file_ended(&self) {
+        let mut state = lock(&self.state);
+        state.allowance = state.arrived.saturating_add(FORM_OVERHEAD_BYTES);
     }
 
     /// Read and drop what the client is still sending: a browser reads its
@@ -293,12 +319,13 @@ impl Arriving {
     /// lose it the answer. Ends with the time a form is given.
     async fn drain(mut self) {
         {
-            let state = lock(&self.state);
             // A client that waits to be told to go ahead sends nothing once
             // it has its answer, and asking for its body would tell it to.
+            let mut state = lock(&self.state);
             if state.waits_to_continue && !state.started {
                 return;
             }
+            state.dropping = true;
         }
         while let Some(Ok(_)) = self.next().await {}
     }
@@ -319,7 +346,11 @@ impl Stream for Arriving {
             return Poll::Pending;
         }
         let next = state.chunks.poll_next_unpin(context);
-        if matches!(next, Poll::Ready(Some(Ok(_)))) {
+        if let Poll::Ready(Some(Ok(piece))) = &next {
+            state.arrived = state.arrived.saturating_add(piece.len() as u64);
+            if !state.dropping && state.arrived > state.allowance {
+                return Poll::Ready(Some(Err(Interrupted::TooLarge)));
+            }
             state.handed = true;
         }
         next
@@ -348,6 +379,7 @@ fn refused_form(error: multer::Error) -> Refused {
         multer::Error::FieldSizeExceeded { .. } => Refused::Body(BodyRefusal::TooLarge),
         multer::Error::StreamReadFailed(cause) => match cause.downcast_ref::<Interrupted>() {
             Some(Interrupted::TooSlow) => Refused::Body(BodyRefusal::TooSlow),
+            Some(Interrupted::TooLarge) => Refused::Body(BodyRefusal::TooLarge),
             _ => Refused::Body(BodyRefusal::Broken),
         },
         _ => Refused::Body(BodyRefusal::Broken),
@@ -467,6 +499,7 @@ async fn read_form(
     let constraints = multer::Constraints::new()
         .allowed_fields(vec![CSRF_FIELD, FILE_FIELD, PASSWORD_FIELD])
         .size_limit(limits);
+    let arriving = body.clone();
     let mut form = multer::Multipart::with_constraints(body, boundary, constraints);
 
     let mut password = None;
@@ -487,7 +520,10 @@ async fn read_form(
             if std::mem::replace(&mut file_seen, true) {
                 return Ok(Err(Refused::Body(BodyRefusal::Broken)));
             }
-            upload = match receive_file(state, &mut field).await? {
+            arriving.admit_file(max_upload_bytes);
+            let received = receive_file(state, &mut field).await?;
+            arriving.file_ended();
+            upload = match received {
                 Ok(upload) => upload,
                 Err(refused) => return Ok(Err(refused)),
             };
@@ -763,6 +799,28 @@ mod tests {
         let body = Arriving::new(pieces(5), &HeaderMap::new(), WHOLE_UPLOAD);
         let mut reader = body.clone();
         assert!(reader.next().await.is_some());
+        body.drain().await;
+        assert_eq!(reader.next().await, None);
+
+        // No more arrives than the parts read so far may hold, until what
+        // is left is dropped.
+        let large = || {
+            Body::from_stream(futures::stream::iter((0..3).map(|_| {
+                Ok::<_, std::io::Error>(Bytes::from(vec![0; FORM_OVERHEAD_BYTES as usize / 2 + 1]))
+            })))
+        };
+        let mut body = Arriving::new(large(), &HeaderMap::new(), WHOLE_UPLOAD);
+        assert!(matches!(body.next().await, Some(Ok(_))));
+        assert_eq!(body.next().await, Some(Err(Interrupted::TooLarge)));
+        let mut body = Arriving::new(large(), &HeaderMap::new(), WHOLE_UPLOAD);
+        body.admit_file(FORM_OVERHEAD_BYTES);
+        assert!(matches!(body.next().await, Some(Ok(_))));
+        assert!(matches!(body.next().await, Some(Ok(_))));
+        body.file_ended();
+        assert!(matches!(body.next().await, Some(Ok(_))));
+        assert_eq!(body.next().await, None);
+        let body = Arriving::new(large(), &HeaderMap::new(), WHOLE_UPLOAD);
+        let mut reader = body.clone();
         body.drain().await;
         assert_eq!(reader.next().await, None);
 

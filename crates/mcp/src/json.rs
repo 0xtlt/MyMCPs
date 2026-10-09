@@ -43,30 +43,36 @@ pub fn js_key_order(value: &mut Value) {
 }
 
 fn reorder(map: &mut Map<String, Value>) {
-    let mut indices: Vec<(u32, String)> = map
+    // Each array index among the keys, with where its entry is now.
+    let mut indices: Vec<(u32, usize)> = map
         .keys()
-        .filter_map(|key| array_index(key).map(|index| (index, key.clone())))
+        .enumerate()
+        .filter_map(|(position, key)| array_index(key).map(|index| (index, position)))
         .collect();
     if indices.is_empty() {
         return;
     }
-    let ordered_already = map
-        .keys()
-        .zip(indices.iter())
-        .all(|(key, (_, index_key))| key == index_key)
+    let ordered_already = indices
+        .iter()
+        .enumerate()
+        .all(|(expected, (_, position))| *position == expected)
         && indices.windows(2).all(|pair| pair[0].0 < pair[1].0);
     if ordered_already {
         return;
     }
 
-    indices.sort_by_key(|(index, _)| *index);
-    let mut previous = std::mem::take(map);
-    for (_, key) in &indices {
-        if let Some(value) = previous.shift_remove(key) {
-            map.insert(key.clone(), value);
+    // One pass over the entries, whatever their number: the keys come from
+    // whoever wrote the JSON, and taking them out of the map one at a time
+    // costs a pass each.
+    indices.sort_unstable_by_key(|(index, _)| *index);
+    let mut entries: Vec<Option<(String, Value)>> =
+        std::mem::take(map).into_iter().map(Some).collect();
+    for (_, position) in &indices {
+        if let Some((key, value)) = entries[*position].take() {
+            map.insert(key, value);
         }
     }
-    map.extend(previous);
+    map.extend(entries.into_iter().flatten());
 }
 
 /// An ECMAScript array index: a canonical decimal integer below 2^32 - 1.
@@ -285,6 +291,33 @@ mod tests {
             to_string(&value),
             r#"{"2":{"1":0,"z":0},"10":2,"b":1,"a":3,"01":4,"4294967295":5}"#
         );
+    }
+
+    #[test]
+    fn orders_the_keys_of_a_large_object_in_one_pass() {
+        use std::fmt::Write;
+
+        // Written backwards after another key, so that every index moves.
+        let count = 200_000;
+        let mut text = String::from("{\"last\":true");
+        for index in (0..count).rev() {
+            write!(text, ",\"{index}\":{index}").unwrap();
+        }
+        text.push('}');
+
+        let started = std::time::Instant::now();
+        let value = parse(&text).unwrap();
+        // Moved one at a time, this many keys took over a minute.
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+
+        let object = value.as_object().unwrap();
+        assert_eq!(object.len(), count + 1);
+        let mut keys = object.keys();
+        for index in 0..count {
+            assert_eq!(keys.next().unwrap(), &index.to_string());
+        }
+        assert_eq!(keys.next().unwrap(), "last");
+        assert_eq!(object["4242"], 4242);
     }
 
     #[test]

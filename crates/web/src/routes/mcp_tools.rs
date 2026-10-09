@@ -11,8 +11,8 @@ use mymcps_core::models::Mcp;
 use mymcps_core::redaction::sanitize_mcp_diagnostic;
 use mymcps_gateway::validators::approvals::UPDATE_TOOL_APPROVALS;
 use mymcps_upstream::approvals::{
-    ToolApprovalChoice, ToolApprovalMode, assign_tool_approvals, default_tool_approval,
-    saved_tool_approvals,
+    MAX_CHOOSABLE_NAME_UNITS, ToolApprovalChoice, ToolApprovalMode, assign_tool_approvals,
+    can_be_chosen, default_tool_approval, saved_tool_approvals,
 };
 use mymcps_vine::ValidationError;
 use serde::Deserialize;
@@ -129,8 +129,14 @@ async fn tools_page(state: &AppState, mcp: &mut Mcp) -> McpToolsPage {
 
     let row = |name: &str, description: Option<&str>, is_listed: bool| {
         let default_mode = default_tool_approval(builtins, mcp, name);
+        let can_be_chosen = can_be_chosen(name);
         ToolRow {
-            name: name.to_string(),
+            // A name no choice is saved for is only shown, and not at any length.
+            name: if can_be_chosen {
+                name.to_string()
+            } else {
+                first_units(name, MAX_CHOOSABLE_NAME_UNITS).to_string()
+            },
             description: description
                 .map(|description| first_units(description, MAX_DESCRIPTION_CHARS).to_string()),
             mode: match &saved {
@@ -139,6 +145,7 @@ async fn tools_page(state: &AppState, mcp: &mut Mcp) -> McpToolsPage {
             },
             default_mode,
             is_listed,
+            can_be_chosen,
         }
     };
     let rows = tools

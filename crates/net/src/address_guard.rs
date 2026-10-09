@@ -245,8 +245,9 @@ impl AddressGuard {
     ///
     /// The check resolves the name before the request is made and the HTTP client
     /// resolves it again to connect, so a DNS answer that changes in between (DNS
-    /// rebinding) is not caught. Closing that window needs the check at connect
-    /// time, in the name resolution of a dedicated HTTP client.
+    /// rebinding) is not caught here. The request to an endpoint that
+    /// [`must_be_public`](DiscoveredEndpointGuard::must_be_public) is therefore
+    /// made with `Fetcher::public_only`, which checks the addresses it connects to.
     pub fn discovered_endpoint_guard(&self, mcp_url: &Url) -> DiscoveredEndpointGuard {
         DiscoveredEndpointGuard {
             state: Arc::new(GuardState {
@@ -299,6 +300,24 @@ pub struct DiscoveredEndpointGuard {
 }
 
 impl DiscoveredEndpointGuard {
+    /// Whether `target` is an endpoint that may only be at a public address:
+    /// one on another host than the MCP, when the MCP itself is not in a
+    /// restricted network.
+    pub async fn must_be_public(&self, target: &Url) -> bool {
+        let state = &*self.state;
+        if target.host_str().unwrap_or_default() == state.mcp_hostname {
+            return false;
+        }
+        !*state
+            .mcp_is_restricted
+            .get_or_init(|| {
+                state
+                    .addresses
+                    .resolves_to_restricted_address(&state.mcp_hostname)
+            })
+            .await
+    }
+
     /// Refuse `target` when it leads into a restricted network the MCP is not in.
     /// `label` names the endpoint in the error.
     pub async fn assert_allowed(

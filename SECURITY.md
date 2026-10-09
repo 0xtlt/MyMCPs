@@ -69,9 +69,11 @@ permissions.
   within the same origin. Upstream responses are limited to 32 MiB, and error
   responses to 64 KiB.
 - npm MCP packages run in a Deno sandbox that can read and write only its own
-  directory. Environment variables that would configure the sandbox itself, such
-  as `PATH` and loader or Deno runtime variables, are refused. All npm MCPs share
-  one Deno cache that packages can read but not write.
+  directory, less the files Deno itself reads there when it starts (`.npmrc`,
+  `deno.json`, `deno.jsonc`, `package.json`). Environment variables that would
+  configure the sandbox itself, such as `PATH`, `SSLKEYLOGFILE` and loader or
+  Deno runtime variables, are refused. All npm MCPs share one Deno cache that
+  packages can read but not write.
 - A saved bearer token, header value, or environment value is not carried over
   when an MCP is pointed at another origin, transport, or npm package.
 - An MCP on a public address cannot send the instance to OAuth endpoints on

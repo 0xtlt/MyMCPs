@@ -312,10 +312,12 @@ async fn runs_a_package_that_reads_its_cache_and_writes_only_its_sandbox() {
     .unwrap();
 
     // What an earlier run of the package may have left in its sandbox must
-    // not turn the sandbox into a Node project for Deno.
+    // not turn the sandbox into a Node project for Deno, nor send it to
+    // another registry for the package: nothing listens on that port.
     std::fs::create_dir_all(&sandbox_dir).unwrap();
     let left_behind = r#"{"name":"left-by-the-package","dependencies":{"left-pad":"1.3.0"}}"#;
     std::fs::write(sandbox_dir.join("package.json"), left_behind).unwrap();
+    std::fs::write(sandbox_dir.join(".npmrc"), "registry=http://127.0.0.1:9/\n").unwrap();
 
     // Update MCP: the package is downloaded into the one cache directory.
     runner.reload_npm_package_cache(&mcp).await.unwrap();
@@ -366,6 +368,9 @@ async fn runs_a_package_that_reads_its_cache_and_writes_only_its_sandbox() {
             "application": sandbox.host().current_dir.join("written-by-package"),
             "neighbour": neighbour.join("token.json"),
             "cache": deno_dir.join("written-by-package"),
+            "registry": sandbox_dir.join(".npmrc"),
+            "denoConfig": "deno.json",
+            "nodeProject": sandbox_dir.join("package.json"),
         },
     });
     let result = runner
@@ -459,6 +464,10 @@ async fn runs_a_package_that_reads_its_cache_and_writes_only_its_sandbox() {
     refused(&probe["write"]["application"], "write");
     refused(&probe["write"]["neighbour"], "write");
     refused(&probe["write"]["cache"], "write");
+    // Nor what Deno reads in the sandbox before it runs the package.
+    refused(&probe["write"]["registry"], "write");
+    refused(&probe["write"]["denoConfig"], "write");
+    refused(&probe["write"]["nodeProject"], "write");
     refused(&probe["rewriteItself"], "write");
     assert_eq!(probe["run"]["ok"], json!(false), "{}", probe["run"]);
     assert!(
@@ -479,19 +488,18 @@ async fn runs_a_package_that_reads_its_cache_and_writes_only_its_sandbox() {
     );
 
     // Deno kept its cache where it was told to, and left no project files.
+    // The ones left behind were deleted before it started.
     for unwanted in [
         ".cache",
         "Library",
         "node_modules",
         "deno.lock",
         "deno.json",
+        "package.json",
+        ".npmrc",
     ] {
         assert!(!sandbox_dir.join(unwanted).exists(), "{unwanted}");
     }
-    assert_eq!(
-        std::fs::read_to_string(sandbox_dir.join("package.json")).unwrap(),
-        left_behind
-    );
 
     // The cache Deno wrote is the one the version shown in the UI is read
     // from. That reader looks under the public registry, so stand it in.

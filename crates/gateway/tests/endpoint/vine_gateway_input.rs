@@ -349,10 +349,15 @@ async fn splits_an_eager_tool_name_at_its_first_separator_and_refuses_names_with
         "issues__create_issue",
         "issues__create__issue",
         "issues___x",
-        "issues__",
     ] {
         assert!(call(name).await.get("isError").is_none(), "{name}");
     }
+    // A tool without a name is one no choice can be saved for on the Tool
+    // approvals page: it asks for a person, and a tool that asks is looked
+    // up first. The Node app sent the call on.
+    let unnamed = call("issues__").await;
+    assert_eq!(unnamed["isError"], true);
+    assert_eq!(result_text(&unnamed), "Issues has no tool named \"\"");
     assert_eq!(
         gateway
             .upstreams
@@ -360,6 +365,6 @@ async fn splits_an_eager_tool_name_at_its_first_separator_and_refuses_names_with
             .iter()
             .map(|sent| sent["name"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["create_issue", "create__issue", "_x", ""]
+        ["create_issue", "create__issue", "_x"]
     );
 }

@@ -235,6 +235,36 @@ async fn revokes_the_remember_token_on_logout() {
 }
 
 #[tokio::test]
+async fn gives_the_session_a_new_csrf_secret_when_someone_signs_in_or_out() {
+    let app = TestApp::new().await;
+    let admin = create_admin_with(&app, "fixed@example.com").await;
+    // A session someone else started and planted in this browser: they know
+    // its secret, and so the tokens of its forms.
+    let planted = serde_json::Map::from_iter([("csrf-secret".to_string(), json!("known-to-them"))]);
+
+    let signed_in = app
+        .post("/login")
+        .session(planted.clone())
+        .csrf()
+        .form(&[("email", "fixed@example.com"), ("password", "password123")])
+        .send()
+        .await;
+    assert_eq!(signed_in.redirect_path().as_deref(), Some("/"));
+    assert_eq!(signed_in.session().get("auth_web"), Some(&json!(admin.id)));
+    assert_eq!(signed_in.session().get("csrf-secret"), None);
+
+    let signed_out = app
+        .post("/logout")
+        .login_as(&admin)
+        .session(planted)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(signed_out.redirect_path().as_deref(), Some("/login"));
+    assert_eq!(signed_out.session().get("csrf-secret"), None);
+}
+
+#[tokio::test]
 async fn logs_an_authenticated_user_out() {
     let app = TestApp::new().await;
     let admin = create_admin(&app).await;

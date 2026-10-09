@@ -1281,7 +1281,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
 
     // The copy as it is would be imported: each change below is the one
     // reason of its refusal.
-    let cases: [(&str, &[&'static str], &str); 13] = [
+    let cases: [(&str, &[&'static str], &str); 18] = [
         (
             "a trigger",
             &[
@@ -1325,6 +1325,38 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         (
             "a column too many",
             &["alter table `users` add column `nickname` text"],
+            DAMAGED,
+        ),
+        (
+            "a column that is computed",
+            &[
+                "alter table `users` add column `shadow` text generated always as (hex(zeroblob(1000))) virtual",
+            ],
+            DAMAGED,
+        ),
+        (
+            "an index on what is computed",
+            &["create index `computed` on `users` (hex(`email`))"],
+            DAMAGED,
+        ),
+        (
+            "an index on some of the rows",
+            &["create index `some` on `users` (`email`) where length(`email`) > 0"],
+            DAMAGED,
+        ),
+        (
+            "a constraint of its own",
+            &[
+                "alter table `users` add column `checked` text check (length(hex(zeroblob(1000))) > 0)",
+            ],
+            DAMAGED,
+        ),
+        (
+            "settings the server cannot read",
+            &[
+                "PRAGMA ignore_check_constraints = ON",
+                "insert or replace into `instance_settings` (`id`, `gateway_tool_mode`, `mcp_log_level`, `mcp_log_retention_days`, `mcp_auto_update_enabled`, `mcp_auto_update_cron`, `created_at`, `updated_at`) values (1, 'eager', 'everything', 14, 0, '0 3 * * *', '2026-01-01 00:00:00', '2026-01-01 00:00:00')",
+            ],
             DAMAGED,
         ),
         (
@@ -1583,6 +1615,25 @@ async fn refuses_an_import_without_a_valid_token_and_writes_nothing() {
         .send()
         .await;
     assert_eq!(long_password.status, StatusCode::PAYLOAD_TOO_LARGE);
+    // A body in which no part ever starts, or in which the headers of one
+    // never end, would be kept in memory while its end is looked for: it is
+    // refused once it is larger than a form without its file can be.
+    let (_, content_type) = multipart_form(&parts);
+    let boundary = content_type.split("boundary=").nth(1).unwrap();
+    let endless = vec![b'0'; 3 * 1024 * 1024];
+    let no_part = import_request(&app)
+        .raw_body(endless.clone(), &content_type)
+        .send()
+        .await;
+    assert_eq!(no_part.status, StatusCode::PAYLOAD_TOO_LARGE);
+    let mut no_end_of_headers = format!("--{boundary}\r\ncontent-disposition: ").into_bytes();
+    no_end_of_headers.extend_from_slice(&endless);
+    let headers_only = import_request(&app)
+        .csrf()
+        .raw_body(no_end_of_headers, &content_type)
+        .send()
+        .await;
+    assert_eq!(headers_only.status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_untouched(&app).await;
 
     // The token in the form, before the file, or in the header: an import.

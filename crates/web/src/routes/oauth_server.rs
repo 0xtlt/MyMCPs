@@ -13,6 +13,7 @@ use http::header::{
     ALLOW, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, LOCATION, PRAGMA, WWW_AUTHENTICATE,
 };
 use http::{HeaderMap, HeaderValue, Method, StatusCode, Uri};
+use mymcps_core::client_ip::rate_limit_client_key;
 use mymcps_core::limiter::Limiter;
 use mymcps_core::models::User;
 use mymcps_core::public_url::PublicUrlError;
@@ -124,9 +125,12 @@ fn refused(code: &'static str, message: &str, status: u16) -> Response {
     error_response(&GatewayOauthError::with_status(code, message, status).into())
 }
 
-/// Count one request of this client address. `false` once its allowance is used up.
+/// Count one request of this client address. `false` once its allowance is
+/// used up. An IPv6 visitor has a whole /64 of addresses to send from, so
+/// they are counted as one, as for sign-in.
 async fn within_allowance(limiter: &Limiter, prefix: &str, ip: &str) -> Result<bool, AppError> {
-    Ok(limiter.attempt(&format!("{prefix}:{ip}")).await?)
+    let client = rate_limit_client_key(ip);
+    Ok(limiter.attempt(&format!("{prefix}:{client}")).await?)
 }
 
 /// The `Authorization` header as the client sent it.

@@ -510,23 +510,27 @@ async fn answers_as_the_stateless_server_of_an_agent() {
 }
 
 #[tokio::test]
-async fn reads_the_query_string_over_the_body_as_the_node_app_did() {
+async fn reads_a_message_from_the_body_and_nothing_of_it_from_the_address() {
     let (gateway, plaintext) = gateway_with_token().await;
     let post = |path: &'static str| {
         gateway.post_to(path, &plaintext, rpc(json!({ "id": 5, "method": "ping" })))
     };
 
-    let renamed = post("/mcp?id=from-the-query").await;
-    assert_eq!(renamed.status, StatusCode::OK);
-    assert_eq!(rpc_of(&renamed)["id"], "from-the-query");
-
-    // A message has no other member than its own.
-    let surplus = post("/mcp?surplus=1").await;
-    assert_eq!(surplus.status, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        surplus.json()["error"]["message"],
-        "Parse error: Invalid JSON-RPC message"
-    );
+    // The Node app read the query string over the body. An address could
+    // then name the call every message of a client was turned into.
+    for path in [
+        "/mcp?id=from-the-query",
+        "/mcp?method=tools%2Fcall&params[name]=notes__delete_all",
+        "/mcp?surplus=1",
+    ] {
+        let answered = post(path).await;
+        assert_eq!(answered.status, StatusCode::OK, "{path}");
+        let message = rpc_of(&answered);
+        assert_eq!(message["id"], 5, "{path}");
+        // What a ping is answered with.
+        assert_eq!(message["result"], json!({}), "{path}");
+    }
+    assert!(gateway.upstreams.requests().is_empty());
 }
 
 #[tokio::test]

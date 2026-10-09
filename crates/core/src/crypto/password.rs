@@ -14,14 +14,25 @@ const PARALLELIZATION: u32 = 1;
 const SALT_BYTES: usize = 16;
 const KEY_BYTES: usize = 64;
 /// Node's `maxmem` for the driver: a hash asking for more is never computed.
-const MAX_MEMORY_BYTES: u64 = 33_554_432;
+const MAX_MEMORY_BYTES: u128 = 33_554_432;
+/// How much more work than a hash of this app a stored hash may ask for. The
+/// hashes of an imported backup are whatever its author wrote, and checking
+/// one is what anyone who sends a password to the sign-in form asks for.
+const MAX_WORK_FACTOR: u128 = 16;
 
 fn derive(password: &str, salt: &[u8], n: u32, r: u32, p: u32, length: usize) -> Option<Vec<u8>> {
     if n < 2 || !n.is_power_of_two() || r == 0 || p == 0 {
         return None;
     }
-    // The memory scrypt needs, as Node checks it against `maxmem`.
-    if 128 * u64::from(n) * u64::from(r) > MAX_MEMORY_BYTES {
+    let (cost, block, parallel) = (u128::from(n), u128::from(r), u128::from(p));
+    // The memory scrypt needs, as OpenSSL checks it against `maxmem` for
+    // Node: the blocks of each of the `p` mixes, and the table of one.
+    if 128 * block * parallel + 128 * block * (cost + 2) > MAX_MEMORY_BYTES {
+        return None;
+    }
+    if cost * block * parallel
+        > MAX_WORK_FACTOR * u128::from(COST) * u128::from(BLOCK_SIZE) * u128::from(PARALLELIZATION)
+    {
         return None;
     }
     let params = Params::new(n.trailing_zeros() as u8, r, p).ok()?;
@@ -101,4 +112,41 @@ fn parse_phc(stored: &str) -> Option<Phc> {
         salt,
         hash,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    #[test]
+    fn checks_a_password_against_its_own_hashes() {
+        let stored = hash_password("correct horse");
+        assert!(stored.starts_with("$scrypt$n=16384,r=8,p=1$"));
+        assert!(verify_password(&stored, "correct horse"));
+        assert!(!verify_password(&stored, "wrong horse"));
+    }
+
+    #[test]
+    fn never_computes_a_hash_that_asks_for_more_than_a_sign_in_may_cost() {
+        let stored = hash_password("correct horse");
+        let (_, salt_and_hash) = stored.split_at("$scrypt$n=16384,r=8,p=1".len());
+        let started = Instant::now();
+        for parameters in [
+            // Sixty-five thousand mixes: an hour of one core.
+            "n=16384,r=8,p=65536",
+            // A hundred gigabytes of blocks.
+            "n=2,r=1,p=1073741823",
+            // More memory than Node allowed, which the table alone asks for.
+            "n=32768,r=8,p=1",
+            // Within the memory, and twenty times the work.
+            "n=16384,r=8,p=20",
+            "n=4294967295,r=4294967295,p=4294967295",
+        ] {
+            let stored = format!("$scrypt${parameters}{salt_and_hash}");
+            assert!(!verify_password(&stored, "correct horse"), "{parameters}");
+        }
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 }

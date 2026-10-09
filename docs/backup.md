@@ -54,7 +54,7 @@ Browser sessions are tied to `APP_KEY`. With another key, everyone signs in agai
 ## Limits
 
 - A backup file can be up to 4 GB. A reverse proxy in front of the instance must accept a request body of the size of your file on `POST /onboarding/import`.
-- The file has 30 minutes to arrive.
+- The file has 30 minutes to arrive, and its import 20 minutes to run once it has.
 - An address can try 10 imports per 15 minutes, and one import runs at a time.
 - An export or an import keeps a copy of the database in `backup-tmp`, in the data directory, while it runs: the disk needs room for it. The copy is deleted when the work ends, and when the server starts.
 

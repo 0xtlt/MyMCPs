@@ -1297,10 +1297,13 @@ pub async fn oauth_callback(
     upstream.clear_oauth_session(&session, callback_state.as_deref());
 
     if let Some(oauth_error) = callback.error.filter(|error| !error.is_empty()) {
-        let mcp = match &oauth {
-            Some(oauth) => Mcp::find(db, oauth.mcp_id).await?,
-            None => None,
+        // Only the answer to an authorization this session started is the
+        // word of a provider. Any page can send a browser here with an
+        // `error` of its own, which the registry would show as its message.
+        let Some(oauth) = &oauth else {
+            return Ok(invalid());
         };
+        let mcp = Mcp::find(db, oauth.mcp_id).await?;
         let message = format!("OAuth error: {oauth_error}");
         let callback_credentials = [code.as_deref(), callback_state.as_deref()]
             .into_iter()
@@ -1318,9 +1321,7 @@ pub async fn oauth_callback(
                 None => sanitize_diagnostic_with(&message, 500, callback_credentials),
             },
         );
-        if let Some(oauth) = &oauth {
-            session.flash(EDITING_KEY, oauth.mcp_id);
-        }
+        session.flash(EDITING_KEY, oauth.mcp_id);
         return Ok(to_registry());
     }
 

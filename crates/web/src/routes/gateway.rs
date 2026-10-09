@@ -58,7 +58,12 @@ pub async fn handle(State(state): State<AppState>, request: Request) -> Result<R
 
     // The body is read before the access token is: a body that is too
     // large, or is not JSON, is refused whoever sends it.
-    let mut input = if parts.method == Method::POST {
+    // The message is the body, and nothing of the address. The Node app read
+    // the query string over the body (`request.all()`): an address someone
+    // was handed, `/mcp?method=tools/call&params[name]=...`, then turned
+    // every message of their client into the call it named, made with their
+    // own access token.
+    let input = if parts.method == Method::POST {
         let bytes = match read_body(body).await {
             Ok(bytes) => bytes,
             Err(refusal) => return Ok(refusal.into_response()),
@@ -70,14 +75,8 @@ pub async fn handle(State(state): State<AppState>, request: Request) -> Result<R
             }
         }
     } else {
-        Map::new()
+        Map::from_iter(parse_query(parts.uri.query().unwrap_or("")))
     };
-    // The query string over the body, as `request.all()` gave it to the MCP
-    // server. A message is refused for any member it should not have, so
-    // nothing is left out here.
-    for (key, value) in parse_query(parts.uri.query().unwrap_or("")) {
-        input.insert(key, value);
-    }
 
     let response = state
         .mcp_gateway

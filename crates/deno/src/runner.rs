@@ -30,6 +30,13 @@ const DENO_CACHE_RELOAD_MAX_BUFFER: usize = 1024 * 1024;
 const DENO_NODE_MODULES_DIR: &str = "--node-modules-dir=none";
 const DENO_NO_LOCK: &str = "--no-lock";
 
+/// What Deno reads in the directory it starts in, and in the home directory,
+/// before it runs anything: its own configuration, and the registry npm
+/// packages are fetched from. Both directories are the sandbox, which the
+/// package writes to. Left there, such a file would decide where the next
+/// start, and the next update, take the code of the package from.
+const SANDBOX_CONFIG_FILES: [&str; 4] = [".npmrc", "deno.json", "deno.jsonc", "package.json"];
+
 /// The largest id JavaScript holds exactly, `Number.MAX_SAFE_INTEGER`.
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
@@ -162,6 +169,13 @@ impl DenoRunner {
             DENO_NO_LOCK.to_owned(),
             format!("--allow-read={sandbox_dir},{}", deno_dir.display()),
             format!("--allow-write={sandbox_dir}"),
+            // The package cannot write what Deno reads when it starts.
+            format!(
+                "--deny-write={}",
+                SANDBOX_CONFIG_FILES
+                    .map(|name| format!("{sandbox_dir}/{name}"))
+                    .join(",")
+            ),
             "--allow-net".to_owned(),
             "--allow-env".to_owned(),
             "--allow-sys=homedir".to_owned(),
@@ -248,6 +262,14 @@ impl DenoRunner {
         tokio::fs::create_dir_all(&sandbox_dir)
             .await
             .map_err(|error| DenoError::file_system("mkdir", &sandbox_dir, error))?;
+        // Written by a version of the package that ran before it was refused
+        // the right to. Deno must not start, or update the package, with them.
+        for name in SANDBOX_CONFIG_FILES {
+            let planted = sandbox_dir.join(name);
+            remove_recursively(&planted)
+                .await
+                .map_err(|error| DenoError::file_system("rm", planted, error))?;
+        }
         Ok(sandbox_dir)
     }
 

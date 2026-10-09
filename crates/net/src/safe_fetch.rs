@@ -312,7 +312,7 @@ fn switches_to_get(status: StatusCode, method: &Method) -> bool {
             && method == Method::POST)
 }
 
-fn build_client() -> Result<reqwest::Client, reqwest::Error> {
+fn client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         // Redirects are followed here, one checked hop at a time.
         .redirect(reqwest::redirect::Policy::none())
@@ -321,7 +321,54 @@ fn build_client() -> Result<reqwest::Client, reqwest::Error> {
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(IDLE_TIMEOUT)
         .user_agent(DEFAULT_USER_AGENT)
-        .build()
+}
+
+fn build_client() -> Result<reqwest::Client, reqwest::Error> {
+    client_builder().build()
+}
+
+/// Name resolution that gives no address when one of them is a loopback,
+/// private or link-local one: the client that uses it connects to public
+/// addresses only, whatever a name resolved to when it was checked before.
+struct PublicOnlyResolver;
+
+impl reqwest::dns::Resolve for PublicOnlyResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let addresses: Vec<std::net::SocketAddr> =
+                tokio::net::lookup_host((name.as_str(), 0)).await?.collect();
+            if addresses
+                .iter()
+                .any(|address| crate::address_guard::is_restricted_ip(address.ip()))
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!(
+                        "\"{}\" resolves to a loopback, private or link-local address",
+                        name.as_str()
+                    ),
+                )
+                .into());
+            }
+            Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// The client of the requests that must not reach the network the instance
+/// runs in, see [`Fetcher::public_only`]. Apart from where it connects, it
+/// is [`shared_client`].
+fn public_only_client() -> Result<&'static reqwest::Client, FetchError> {
+    static CLIENT: OnceLock<Result<reqwest::Client, FetchError>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            client_builder()
+                .dns_resolver(PublicOnlyResolver)
+                .build()
+                .map_err(FetchError::from)
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 /// The HTTP client every outbound request of the gateway shares, so
@@ -406,6 +453,8 @@ type Answer = dyn Fn(&SentRequest) -> Option<CannedResponse> + Send + Sync;
 
 enum Transport {
     Network,
+    /// The network, less the names that resolve to a restricted address.
+    PublicNetwork,
     Offline,
     Answering {
         answer: Box<Answer>,
@@ -424,6 +473,14 @@ impl Transport {
                     *hop.headers_mut() = request.headers.clone();
                     *hop.body_mut() = request.body.clone().map(reqwest::Body::from);
                     let response = shared_client()?.execute(hop).await?;
+                    return Ok(RawResponse::from_network(response));
+                }
+                Transport::PublicNetwork => {
+                    let mut hop =
+                        reqwest::Request::new(request.method.clone(), request.url.clone());
+                    *hop.headers_mut() = request.headers.clone();
+                    *hop.body_mut() = request.body.clone().map(reqwest::Body::from);
+                    let response = public_only_client()?.execute(hop).await?;
                     return Ok(RawResponse::from_network(response));
                 }
                 Transport::Offline => return Err(FetchError::Offline),
@@ -680,6 +737,21 @@ impl Fetcher {
         }
     }
 
+    /// The same fetcher, for a URL that must not lead into the network the
+    /// instance runs in: over the network, the name is resolved where the
+    /// connection is made, and a name that resolves to a loopback, private
+    /// or link-local address is not connected to. A check of the name made
+    /// before the request says nothing of what it resolves to by then. A
+    /// fetcher that does not use the network is returned as it is.
+    pub fn public_only(&self) -> Self {
+        match *self.transport {
+            Transport::Network => Self {
+                transport: Arc::new(Transport::PublicNetwork),
+            },
+            _ => self.clone(),
+        }
+    }
+
     /// Sends nothing: a request fails like one the network could not carry.
     /// With [`answering`](Self::answering), for a test that must stay off the
     /// network.
@@ -807,6 +879,7 @@ impl fmt::Debug for Fetcher {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let transport = match *self.transport {
             Transport::Network => "network",
+            Transport::PublicNetwork => "public network",
             Transport::Offline => "offline",
             Transport::Answering { .. } => "answering",
         };
@@ -833,6 +906,50 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::*;
+
+    #[tokio::test]
+    async fn connects_to_no_restricted_address_when_the_endpoint_must_be_public() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let counted = accepted.clone();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                counted.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request).await;
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok",
+                    )
+                    .await;
+            }
+        });
+        let get = |fetcher: Fetcher| async move {
+            let url = Url::parse(&format!("http://localhost:{port}/")).unwrap();
+            fetcher
+                .fetch_with_same_origin_redirects(
+                    FetchRequest::new(Method::GET, url),
+                    "OAuth endpoint",
+                    UpstreamResponseLimits::default(),
+                )
+                .await
+        };
+
+        // Whatever the name resolved to when it was checked, it is this
+        // machine by the time it is connected to: nothing is sent there.
+        assert!(get(Fetcher::shared().public_only()).await.is_err());
+        assert_eq!(accepted.load(Ordering::SeqCst), 0);
+
+        // The same request is answered where nothing forbids the address.
+        let answered = get(Fetcher::shared()).await.unwrap();
+        assert_eq!(answered.status(), StatusCode::OK);
+        assert_eq!(accepted.load(Ordering::SeqCst), 1);
+    }
 
     /// A body of `chunks` chunks of `chunk_bytes`, or endless, that records being dropped.
     struct StreamedBody {
