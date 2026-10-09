@@ -14,8 +14,8 @@ use mymcps_core::backup::{
 };
 use mymcps_core::config::{TEST_APP_KEY, generate_app_key};
 use mymcps_core::crypto::{Encryption, hash_password};
-use mymcps_core::db::migrations::MIGRATIONS;
-use mymcps_core::models::{ApprovalRequest, InstanceSetting, Mcp, User};
+use mymcps_core::db::migrations::{MIGRATIONS, NODE_MIGRATIONS};
+use mymcps_core::models::{ApprovalRequest, InstanceSetting, Mcp, User, UserTotpSecret};
 use mymcps_core::secrets::{EnvironmentInput, decrypt_environment, merge_environment};
 use mymcps_core::{Timestamp, VERSION};
 use mymcps_web::AppState;
@@ -602,6 +602,7 @@ async fn the_setup_screen_offers_to_import_a_backup() {
 struct Secrets {
     mcp_id: i64,
     approval_id: i64,
+    totp_id: i64,
 }
 
 const SINGLE_SECRETS: [(&str, &str); 6] = [
@@ -622,6 +623,7 @@ const BUILTIN_SETTINGS: [(&str, &str); 2] = [
 ];
 const ARGUMENTS: &str = r#"{"campaign":"Autumn","budget":25}"#;
 const SUMMARY: &str = "Raise the budget of Autumn to 25 a day";
+const TOTP_SECRET: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
 
 fn environment(pairs: &[(&str, &str)]) -> Vec<EnvironmentInput> {
     pairs
@@ -661,9 +663,17 @@ async fn populate_secrets(app: &TestApp, admin: &User) -> Secrets {
         ..Default::default()
     };
     approval.insert(&*core.db).await.unwrap();
+    // Not confirmed, so that the account still signs in with its password.
+    let mut totp = UserTotpSecret {
+        user_id: admin.id,
+        secret: core.encryption.encrypt(TOTP_SECRET),
+        ..Default::default()
+    };
+    totp.insert(&*core.db).await.unwrap();
     Secrets {
         mcp_id: mcp.id,
         approval_id: approval.id,
+        totp_id: totp.id,
     }
 }
 
@@ -719,6 +729,16 @@ async fn assert_secrets(app: &TestApp, secrets: &Secrets, stranger: &Encryption)
     );
     assert_eq!(stranger.decrypt(&approval.arguments), None);
     assert_eq!(stranger.decrypt(&approval.summary), None);
+
+    let totp = UserTotpSecret::find(&*core.db, secrets.totp_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        core.encryption.decrypt(&totp.secret).as_deref(),
+        Some(TOTP_SECRET)
+    );
+    assert_eq!(stranger.decrypt(&totp.secret), None);
 }
 
 #[tokio::test]
@@ -901,9 +921,10 @@ async fn older_database(
 
 #[tokio::test]
 async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
-    // Three migrations short: no session version on users, no tool
-    // approvals or settings on MCPs, no approval requests.
-    let older = MIGRATIONS.len() - 3;
+    // A Node backup three migrations short: no session version on users, no
+    // tool approvals or settings on MCPs, no approval requests, and none of
+    // this app's own tables.
+    let older = NODE_MIGRATIONS - 3;
     assert_eq!(
         MIGRATIONS[older].name,
         "database/migrations/1791132214318_add_session_version_to_users_table"
@@ -942,7 +963,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
     assert_eq!(temporary_files(&target), Vec::<PathBuf>::new());
 
     // The ledger says what ran where: the migrations of the old instance,
-    // then the three it lacked, as a second batch.
+    // then those it lacked, as a second batch.
     let ledger: Vec<(String, i64)> =
         sqlx::query_as("select `name`, `batch` from `adonis_schema` order by `id`")
             .fetch_all(&*target.core.db)
@@ -995,6 +1016,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
         Some("the bearer of the old instance")
     );
     assert_eq!(count(&target, "approval_requests").await, 0);
+    assert_eq!(count(&target, "user_passkeys").await, 0);
 }
 
 #[tokio::test]

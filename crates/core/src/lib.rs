@@ -20,6 +20,7 @@ pub mod public_url;
 pub mod redaction;
 pub mod secrets;
 pub mod time;
+pub mod two_factor;
 
 mod context;
 

@@ -44,6 +44,10 @@ http-body-util = "0.1"
 # Reads the one form that carries a file, field by field: the backup an
 # instance is set up from goes to disk as it arrives.
 multer = "3"
+webauthn-rs.workspace = true
+openssl.workspace = true
+qrcodegen.workspace = true
+uuid.workspace = true
 
 [features]
 # `testing::TestApp`, for functional tests.
@@ -59,3 +63,5 @@ tempfile.workspace = true
 # A paused clock, for the tests of what a slow client is given up on.
 tokio = { workspace = true, features = ["test-util"] }
 base64.workspace = true
+# The software authenticator the tests of passkeys sign with.
+p256 = { version = "0.13", features = ["ecdsa"] }

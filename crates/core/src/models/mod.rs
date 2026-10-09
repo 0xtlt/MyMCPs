@@ -11,6 +11,7 @@ mod invite;
 mod mcp;
 mod mcp_call_log;
 mod oauth;
+mod two_factor;
 mod user;
 
 pub use access_token::{AccessToken, ScopeMode, TokenSource};
@@ -20,6 +21,7 @@ pub use invite::Invite;
 pub use mcp::{Mcp, McpAuthType, McpStatus, McpTransport};
 pub use mcp_call_log::{CallErrorCategory, CallOutcome, McpCallLog};
 pub use oauth::{OauthAuthorizationCode, OauthClient};
+pub use two_factor::{UserPasskey, UserRecoveryCode, UserTotpSecret};
 pub use user::{User, UserRole};
 
 /// The cron expression npm MCPs are refreshed on until the admin sets another.

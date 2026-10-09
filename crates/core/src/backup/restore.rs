@@ -70,6 +70,11 @@ const SECRET_COLUMNS: &[SecretColumns] = &[
         single: &["arguments", "summary"],
         maps: &[],
     },
+    SecretColumns {
+        table: "user_totp_secrets",
+        single: &["secret"],
+        maps: &[],
+    },
 ];
 
 /// The tables whose rows a backup replaces: those of the instance, less
