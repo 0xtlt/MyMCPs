@@ -27,6 +27,12 @@ FROM --platform=$BUILDPLATFORM rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511
 
 ARG TARGETARCH
 
+# OpenSSL, which verifies passkeys (webauthn-rs), is compiled from source by
+# its build script, which runs perl and make.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends make perl \
+  && rm -rf /var/lib/apt/lists/*
+
 # The Rust target of the image. When the builder has another architecture, the
 # C code of the workspace (SQLite, the TLS library) and the final link need a
 # cross compiler and the C library of the target.
