@@ -37,7 +37,7 @@ Approval links need `APP_URL` to be set to the public origin of the instance.
 
 ## What you see
 
-The link opens the request in MyMCPs. It grants nothing by itself: whoever follows it signs in first and is then brought back to the request. An administrator can read and decide every request. A member can read and decide the ones made with access tokens they created, since a request shows the arguments of a call, which the call log only shows to administrators. The request records who decided. Open requests are also listed under **Approvals**, with a count in the navigation.
+The link opens the request in MyMCPs. It grants nothing by itself: whoever follows it signs in first and is then brought back to the request. A request belongs to the team of the access token that made it. An owner or an admin of that team can read and decide every request of the team. A member can read and decide the ones made with access tokens they created, since a request shows the arguments of a call, which the call log only shows to owners and admins. Someone who is in several teams is taken to the team of the request when they follow its link. The request records who decided. Open requests are also listed under **Approvals**, with a count in the navigation.
 
 **The page is written by MyMCPs, never by the agent.** An agent that meant to set a budget of 2.50 and wrote 250 cannot describe its call as "a small adjustment": the only thing it hands over is the link.
 

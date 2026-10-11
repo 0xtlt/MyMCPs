@@ -276,47 +276,62 @@ fn table_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Mark
                 Some(count) => { td class="cell-secondary tabular" { (grouped(count)) } }
                 None => { td class="cell-tertiary" { "—" } }
             }
-            td {
-                form method="post" action=(format!("/mcps/{}/toggle", mcp.id)) {
-                    (context.csrf_field())
-                    // The button names the state it asks for, so that a stale page cannot undo a change.
-                    button type="submit" class="switch" role="switch" name="enabled" value=(if mcp.enabled { "false" } else { "true" })
-                        aria-checked=(if mcp.enabled { "true" } else { "false" }) aria-label=(format!("{} enabled", mcp.name)) {}
+            // A member of the team reads the registry: the controls that
+            // change it are for its administrators.
+            @if context.is_team_admin() {
+                td {
+                    form method="post" action=(format!("/mcps/{}/toggle", mcp.id)) {
+                        (context.csrf_field())
+                        // The button names the state it asks for, so that a stale page cannot undo a change.
+                        button type="submit" class="switch" role="switch" name="enabled" value=(if mcp.enabled { "false" } else { "true" })
+                            aria-checked=(if mcp.enabled { "true" } else { "false" }) aria-label=(format!("{} enabled", mcp.name)) {}
+                    }
                 }
-            }
-            td class="cell-end" {
-                span class="row-actions" {
-                    a class="button" id=(format!("mcp-{}-edit", mcp.id)) href=(edit_href(mcp, query))
-                        data-dialog-open="#edit-mcp" data-dialog-fetch data-dialog-history { "Edit" }
-                    button type="button" class="icon-button" popovertarget=(format!("mcp-{}-menu", mcp.id))
-                        aria-label=(format!("More actions for {}", mcp.name)) { (icon("ellipsis")) }
+                td class="cell-end" {
+                    span class="row-actions" {
+                        a class="button" id=(format!("mcp-{}-edit", mcp.id)) href=(edit_href(mcp, query))
+                            data-dialog-open="#edit-mcp" data-dialog-fetch data-dialog-history { "Edit" }
+                        button type="button" class="icon-button" popovertarget=(format!("mcp-{}-menu", mcp.id))
+                            aria-label=(format!("More actions for {}", mcp.name)) { (icon("ellipsis")) }
+                    }
+                    (row_menu(context, mcp, query))
                 }
-                (row_menu(context, mcp, query))
+            } @else {
+                td {
+                    @if mcp.enabled { span class="status status--success" { "on" } } @else { span class="status" { "off" } }
+                }
+                td class="cell-end" {}
             }
         }
     }
 }
 
 /// A row of the list shown under 768px: it opens the edit dialog, which
-/// holds the actions the table has in its row menu.
-fn list_row(mcp: &McpView, query: &McpListQuery) -> Markup {
+/// holds the actions the table has in its row menu. For a member of the
+/// team, who changes nothing of an MCP, it opens nothing.
+fn list_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Markup {
     // A disabled MCP is not what its status says to agents: its badge is neutral.
     let badge = if mcp.enabled {
         format!("badge badge--{}", status_tone(mcp.status))
     } else {
         "badge".to_string()
     };
-    html! {
-        a class="list-row" href=(edit_href(mcp, query)) data-dialog-open="#edit-mcp" data-dialog-fetch data-dialog-history {
-            span class="tile" { (icon(mcp.icon)) }
-            span class="list-row__text" {
-                span class="list-row__title" { (mcp.name) }
-                span class="list-row__subtitle" {
-                    (mcp.slug) " · " (transport_label(mcp.transport))
-                    @if !mcp.enabled { " · off" }
-                }
+    let content = html! {
+        span class="tile" { (icon(mcp.icon)) }
+        span class="list-row__text" {
+            span class="list-row__title" { (mcp.name) }
+            span class="list-row__subtitle" {
+                (mcp.slug) " · " (transport_label(mcp.transport))
+                @if !mcp.enabled { " · off" }
             }
-            span class=(badge) { (mcp.status.as_str()) }
+        }
+        span class=(badge) { (mcp.status.as_str()) }
+    };
+    html! {
+        @if context.is_team_admin() {
+            a class="list-row" href=(edit_href(mcp, query)) data-dialog-open="#edit-mcp" data-dialog-fetch data-dialog-history { (content) }
+        } @else {
+            div class="list-row" { (content) }
         }
     }
 }
@@ -362,18 +377,24 @@ fn table_footer(page: &McpsPage) -> Markup {
     }
 }
 
-fn empty_registry(page: &McpsPage) -> Markup {
+fn empty_registry(context: &PageContext, page: &McpsPage) -> Markup {
     html! {
         div class="card" {
             div class="empty-state" {
                 span class="empty-state__icon" { (icon("plug")) }
                 div class="empty-state__text" {
                     p class="empty-state__title" { "No MCPs yet" }
-                    p class="empty-state__description" { "Create an MCP to start routing agent traffic." }
+                    @if context.is_team_admin() {
+                        p class="empty-state__description" { "Create an MCP to start routing agent traffic." }
+                    } @else {
+                        p class="empty-state__description" { "An admin of this team adds the MCPs its agents can reach." }
+                    }
                 }
-                // Under 768px the header action sits right above the card: the second button would repeat it.
-                a class="button button--secondary hide-mobile" href=(href("/mcps/new", page.query, &[])) data-dialog-open="#add-mcp" {
-                    (icon("plus")) "Add MCP"
+                @if context.is_team_admin() {
+                    // Under 768px the header action sits right above the card: the second button would repeat it.
+                    a class="button button--secondary hide-mobile" href=(href("/mcps/new", page.query, &[])) data-dialog-open="#add-mcp" {
+                        (icon("plus")) "Add MCP"
+                    }
                 }
             }
         }
@@ -399,7 +420,7 @@ fn no_match() -> Markup {
 pub(super) fn registry(context: &PageContext, page: &McpsPage) -> Markup {
     // Nothing to search or to filter before the first MCP.
     if page.registered == 0 {
-        return empty_registry(page);
+        return empty_registry(context, page);
     }
     let query = page.query;
     html! {
@@ -436,7 +457,7 @@ pub(super) fn registry(context: &PageContext, page: &McpsPage) -> Markup {
                         p class="card__subtitle" { (summary(page)) }
                     }
                 }
-                @for mcp in page.rows { (list_row(mcp, query)) }
+                @for mcp in page.rows { (list_row(context, mcp, query)) }
                 // One page holds most registries: the footer only shows when there is another.
                 @if page.matching > ROWS_PER_PAGE { (table_footer(page)) }
             }

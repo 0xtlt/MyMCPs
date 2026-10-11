@@ -15,7 +15,8 @@ use axum::routing::get;
 use chrono::{DateTime, Duration, Utc};
 use http::{HeaderMap, StatusCode};
 use mymcps_core::models::{
-    AccessToken, GatewayToolMode, Mcp, McpCallLog, McpLogLevel, McpStatus, TokenSource, User,
+    AccessToken, GatewayToolMode, Mcp, McpCallLog, McpLogLevel, McpStatus, Membership, TokenSource,
+    User,
 };
 use mymcps_core::{Db, Timestamp};
 use mymcps_vine as vine;
@@ -307,11 +308,17 @@ fn first_name(user: &User) -> Option<String> {
 
 /// Calls of the last hours or days, counted from now as the Logs page
 /// counts them: its error filter lists what the errors figure counts.
-async fn stats(db: &Db, range: LogRange, now: DateTime<Utc>) -> Result<Metrics, sqlx::Error> {
+async fn stats(
+    db: &Db,
+    team_id: i64,
+    range: LogRange,
+    now: DateTime<Utc>,
+) -> Result<Metrics, sqlx::Error> {
     let (total, errors, average): (i64, Option<i64>, Option<f64>) = sqlx::query_as(
         "select count(*), sum(case when `outcome` = 'error' then 1 else 0 end), avg(`duration_ms`) \
-         from `mcp_call_logs` where `created_at` >= ?",
+         from `mcp_call_logs` where `team_id` = ? and `created_at` >= ?",
     )
+    .bind(team_id)
     .bind(range.cutoff(now).unwrap_or_default())
     .fetch_one(&**db)
     .await?;
@@ -322,10 +329,11 @@ async fn stats(db: &Db, range: LogRange, now: DateTime<Utc>) -> Result<Metrics, 
     })
 }
 
-/// The last 14 days of calls by day of the viewer's zone, the 14 days
-/// before for comparison, and the latest calls.
+/// The last 14 days of the calls of a team by day of the viewer's zone, the
+/// 14 days before for comparison, and the latest calls.
 pub async fn activity(
     db: &Db,
+    team_id: i64,
     time_zone: &str,
     zone: Zone,
     logging_off: bool,
@@ -333,12 +341,13 @@ pub async fn activity(
 ) -> Result<Activity, sqlx::Error> {
     let config = days_ending_today(Range::Custom, ACTIVITY_DAYS, zone, now);
     let buckets = buckets(&config);
-    let days = timeline(&**db, &config, &buckets).await?;
+    let days = timeline(&**db, team_id, &config, &buckets).await?;
     let before = config.start.plus_days(-(ACTIVITY_DAYS as i64));
-    let previous = metrics(&**db, &before, &config.start).await?;
+    let previous = metrics(&**db, team_id, &before, &config.start).await?;
     let recent = sqlx::query_as(
-        "select * from `mcp_call_logs` order by `created_at` desc, `id` desc limit 5",
+        "select * from `mcp_call_logs` where `team_id` = ? order by `created_at` desc, `id` desc limit 5",
     )
+    .bind(team_id)
     .fetch_all(&**db)
     .await?;
     Ok(Activity {
@@ -359,11 +368,12 @@ pub async fn activity(
     })
 }
 
-/// Everything the page shows to this person. `tool_counts` is what
-/// [`AppState::known_tool_counts`] answers.
+/// Everything the page shows to this person of the team they work in.
+/// `tool_counts` is what [`AppState::known_tool_counts`] answers.
 pub async fn load(
     state: &AppState,
     user: &User,
+    team: &Membership,
     query: HomeQuery,
     zone: Zone,
     pending_approvals: i64,
@@ -371,26 +381,38 @@ pub async fn load(
 ) -> Result<Home, AppError> {
     let db = &state.core.db;
     let now = Utc::now();
-    let admin = user.is_admin();
-    // What a member is shown on the MCPs and Access tokens pages: all of them.
-    let mcps: Vec<Mcp> = sqlx::query_as("select * from `mcps` order by `name` asc")
-        .fetch_all(&**db)
-        .await?;
-    let tokens: Vec<AccessToken> = sqlx::query_as(
-        "select * from `access_tokens` order by `last_used_at` is null, `last_used_at` desc, `created_at` desc, `id` desc",
-    )
-    .fetch_all(&**db)
-    .await?;
+    let admin = team.role.is_admin();
+    let team_id = team.team.id;
+    // What the MCPs and Access tokens pages show them: the MCPs of the
+    // team, and its access tokens, a member their own.
+    let mcps: Vec<Mcp> =
+        sqlx::query_as("select * from `mcps` where `team_id` = ? order by `name` asc")
+            .bind(team_id)
+            .fetch_all(&**db)
+            .await?;
+    let mut tokens =
+        sqlx::QueryBuilder::<sqlx::Sqlite>::new("select * from `access_tokens` where `team_id` = ");
+    tokens.push_bind(team_id);
+    if !admin {
+        tokens.push(" and `created_by` = ").push_bind(user.id);
+    }
+    tokens.push(
+        " order by `last_used_at` is null, `last_used_at` desc, `created_at` desc, `id` desc",
+    );
+    let tokens: Vec<AccessToken> = tokens.build_query_as().fetch_all(&**db).await?;
     let settings = state.gateway.call_log.settings().await?;
     let logging_off = settings.mcp_log_level == McpLogLevel::Off;
 
     let (team, stats_of_range, activity_of_days) = if admin {
-        let members: i64 = sqlx::query_scalar("select count(*) from `users`")
-            .fetch_one(&**db)
-            .await?;
+        let members: i64 =
+            sqlx::query_scalar("select count(*) from `team_user` where `team_id` = ?")
+                .bind(team_id)
+                .fetch_one(&**db)
+                .await?;
         let invites: i64 = sqlx::query_scalar(
-            "select count(*) from `invites` where `accepted_at` is null and `expires_at` > ?",
+            "select count(*) from `invites` where `team_id` = ? and `accepted_at` is null and `expires_at` > ?",
         )
+        .bind(team_id)
         .bind(Timestamp::from(now))
         .fetch_one(&**db)
         .await?;
@@ -398,10 +420,10 @@ pub async fn load(
         (
             Some((members, invites)),
             Some(Stats {
-                metrics: stats(db, query.range, now).await?,
+                metrics: stats(db, team_id, query.range, now).await?,
                 logging_off,
             }),
-            Some(activity(db, &time_zone, zone, logging_off, now).await?),
+            Some(activity(db, team_id, &time_zone, zone, logging_off, now).await?),
         )
     } else {
         (None, None, None)
@@ -436,13 +458,13 @@ pub async fn show(
     headers: HeaderMap,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    let Some(user) = context.user.clone() else {
+    let (Some(user), Some(team)) = (context.user.clone(), context.team.clone()) else {
         return Err(AppError::Unauthorized);
     };
     let mut query = HomeQuery::read(&input);
     // The figures of an administrator come from the call log: it is read
     // within its retention, as the Logs and Analytics pages read it.
-    if user.is_admin() {
+    if team.role.is_admin() {
         state.gateway.call_log.prune_expired(false).await;
     }
 
@@ -464,6 +486,7 @@ pub async fn show(
     let home = load(
         &state,
         &user,
+        &team,
         query,
         zone,
         context.pending_approvals,

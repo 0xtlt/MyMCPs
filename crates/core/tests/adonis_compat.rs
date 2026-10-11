@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use mymcps_core::config::TEST_APP_KEY;
 use mymcps_core::crypto::{Encryption, hash_password, sha256_hex, verify_password};
 use mymcps_core::db::{Db, migrations::MIGRATIONS};
+use mymcps_core::models::Team;
 use serde_json::Value;
 
 const ADONIS_SCHEMA: &str = include_str!("fixtures/adonis_schema.sql");
@@ -45,18 +46,41 @@ async fn fresh_database() -> (Db, tempfile::TempDir) {
     (db, dir)
 }
 
+/// How many migrations the Node app had: the first ones of [`MIGRATIONS`].
+const NODE_MIGRATIONS: usize = 25;
+
+/// Run some migrations as the ledger says the Node app ran them. On one
+/// connection: another one would name a table by what it last read of the
+/// schema, which a rebuild changes under it.
+async fn apply(db: &Db, migrations: &[mymcps_core::db::migrations::Migration]) {
+    let mut connection = db.acquire().await.unwrap();
+    sqlx::query("create table if not exists `adonis_schema` (`id` integer not null primary key autoincrement, `name` varchar(255) not null, `batch` integer not null, `migration_time` datetime default CURRENT_TIMESTAMP)")
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    sqlx::query("create table if not exists `adonis_schema_versions` (`version` integer, primary key (`version`))")
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+    for migration in migrations {
+        for statement in migration.statements {
+            sqlx::query(sqlx::AssertSqlSafe(*statement))
+                .execute(&mut *connection)
+                .await
+                .unwrap();
+        }
+        sqlx::query("insert into `adonis_schema` (`name`, `batch`) values (?, 1)")
+            .bind(migration.name)
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+    }
+}
+
 #[tokio::test]
-async fn a_fresh_database_has_the_schema_the_node_migrations_built() {
+async fn the_first_migrations_build_the_schema_the_node_migrations_built() {
     let (db, _dir) = fresh_database().await;
-    let ran = db.migrate().await.unwrap();
-    assert_eq!(ran.len(), 25);
-    assert_eq!(
-        ran,
-        MIGRATIONS
-            .iter()
-            .map(|migration| migration.name)
-            .collect::<Vec<_>>()
-    );
+    apply(&db, &MIGRATIONS[..NODE_MIGRATIONS]).await;
 
     let built: Vec<String> = sqlx::query_scalar(
         "select `sql` from `sqlite_master` where `sql` is not null order by `rowid`",
@@ -75,6 +99,19 @@ async fn a_fresh_database_has_the_schema_the_node_migrations_built() {
     for (name, statement) in &expected {
         assert_eq!(&built[name], statement, "{name}");
     }
+}
+
+#[tokio::test]
+async fn a_fresh_database_runs_every_migration_once() {
+    let (db, _dir) = fresh_database().await;
+    let ran = db.migrate().await.unwrap();
+    assert_eq!(
+        ran,
+        MIGRATIONS
+            .iter()
+            .map(|migration| migration.name)
+            .collect::<Vec<_>>()
+    );
 
     // The ledger reads as if the Node app had migrated the database.
     let ledger: Vec<(String, i64)> =
@@ -82,14 +119,14 @@ async fn a_fresh_database_has_the_schema_the_node_migrations_built() {
             .fetch_all(&*db)
             .await
             .unwrap();
-    assert_eq!(ledger.len(), 25);
+    assert_eq!(ledger.len(), MIGRATIONS.len());
     assert!(ledger.iter().all(|(_, batch)| *batch == 1));
     assert_eq!(
         ledger[0].0,
         "database/migrations/1761885935168_create_users_table"
     );
     assert_eq!(
-        ledger[24].0,
+        ledger[NODE_MIGRATIONS - 1].0,
         "database/migrations/1791378864679_create_approval_requests_table"
     );
     let version: i64 = sqlx::query_scalar("select `version` from `adonis_schema_versions`")
@@ -98,14 +135,31 @@ async fn a_fresh_database_has_the_schema_the_node_migrations_built() {
         .unwrap();
     assert_eq!(version, 2);
 
-    // The settings row the Node migration seeded.
-    let (level, days): (String, i64) = sqlx::query_as(
-        "select `mcp_log_level`, `mcp_log_retention_days` from `instance_settings` where `id` = 1",
+    // The settings row the Node migration seeded. Nobody registers until
+    // someone who runs the instance says so.
+    let (level, days, registration): (String, i64, bool) = sqlx::query_as(
+        "select `mcp_log_level`, `mcp_log_retention_days`, `is_registration_enabled` from `instance_settings` where `id` = 1",
     )
     .fetch_one(&*db)
     .await
     .unwrap();
-    assert_eq!((level.as_str(), days), ("metadata", 14));
+    assert_eq!(
+        (level.as_str(), days, registration),
+        ("metadata", 14, false)
+    );
+
+    // The Root Team is there before the first account, and has nobody yet.
+    let teams: Vec<(i64, String, bool)> =
+        sqlx::query_as("select `id`, `name`, `personal_team` from `teams`")
+            .fetch_all(&*db)
+            .await
+            .unwrap();
+    assert_eq!(teams, [(Team::ROOT_ID, "Root Team".to_string(), true)]);
+    let members: i64 = sqlx::query_scalar("select count(*) from `team_user`")
+        .fetch_one(&*db)
+        .await
+        .unwrap();
+    assert_eq!(members, 0);
 
     assert!(
         db.migrate().await.unwrap().is_empty(),
@@ -130,7 +184,7 @@ async fn a_database_migrated_by_the_node_app_is_left_alone() {
         .execute(&*db)
         .await
         .unwrap();
-    for migration in MIGRATIONS {
+    for migration in &MIGRATIONS[..NODE_MIGRATIONS] {
         sqlx::query("insert into `adonis_schema` (`name`, `batch`) values (?, 1)")
             .bind(migration.name)
             .execute(&*db)
@@ -144,12 +198,153 @@ async fn a_database_migrated_by_the_node_app_is_left_alone() {
     .await
     .unwrap();
 
-    assert!(db.migrate().await.unwrap().is_empty());
+    // None of the migrations the Node app ran runs again: only those
+    // written since.
+    assert_eq!(
+        db.migrate().await.unwrap(),
+        MIGRATIONS[NODE_MIGRATIONS..]
+            .iter()
+            .map(|migration| migration.name)
+            .collect::<Vec<_>>()
+    );
     let users: i64 = sqlx::query_scalar("select count(*) from `users`")
         .fetch_one(&*db)
         .await
         .unwrap();
     assert_eq!(users, 1);
+}
+
+#[tokio::test]
+async fn an_instance_from_before_teams_goes_to_the_root_team_whole() {
+    let (db, _dir) = fresh_database().await;
+    apply(&db, &MIGRATIONS[..NODE_MIGRATIONS]).await;
+    for statement in [
+        "insert into `users` (`id`, `full_name`, `email`, `password`, `created_at`, `role`) values (1, 'Ada Admin', 'ada@example.com', 'x', '2026-10-07 12:19:57', 'admin')",
+        "insert into `users` (`id`, `full_name`, `email`, `password`, `created_at`, `role`) values (2, null, 'bob@example.com', 'x', '2026-10-07 12:19:57', 'member')",
+        "insert into `users` (`id`, `full_name`, `email`, `password`, `created_at`, `role`) values (3, 'Cy Second', 'cy@example.com', 'x', '2026-10-07 12:19:57', 'admin')",
+        "insert into `mcps` (`id`, `name`, `slug`, `transport`, `created_by`, `created_at`) values (7, 'Notion', 'notion', 'http', 1, '2026-10-07 12:19:57')",
+        // A row that was deleted since: its id is not given out again.
+        "insert into `mcps` (`id`, `name`, `slug`, `transport`, `created_by`, `created_at`) values (9, 'Gone', 'gone', 'http', 1, '2026-10-07 12:19:57')",
+        "delete from `mcps` where `id` = 9",
+        "insert into `access_tokens` (`id`, `name`, `token_prefix`, `token_hash`, `scope_mode`, `created_by`, `created_at`) values (3, 'Agent', 'mcp_abc', 'hash', 'selected', 2, '2026-10-07 12:19:57')",
+        "insert into `access_token_mcps` (`access_token_id`, `mcp_id`, `created_at`) values (3, 7, '2026-10-07 12:19:57')",
+        "insert into `mcp_call_logs` (`access_token_id`, `access_token_name`, `access_token_prefix`, `mcp_id`, `requested_tool_name`, `outcome`, `duration_ms`, `created_at`) values (3, 'Agent', 'mcp_abc', 7, 'notion__search', 'success', 12, '2026-10-07 12:19:57')",
+        "insert into `invites` (`token`, `email`, `role`, `created_by`, `expires_at`, `created_at`) values ('token', 'new@example.com', 'member', 1, '2027-01-01 00:00:00', '2026-10-07 12:19:57')",
+        "insert into `approval_requests` (`public_id`, `mcp_id`, `access_token_id`, `tool_name`, `arguments`, `arguments_hash`, `summary`, `expires_at`, `created_at`) values ('public', 7, 3, 'search', '{}', 'hash', '{}', '2027-01-01 00:00:00', '2026-10-07 12:19:57')",
+    ] {
+        sqlx::query(statement).execute(&*db).await.unwrap();
+    }
+
+    let ran = db.migrate().await.unwrap();
+    assert_eq!(ran.len(), MIGRATIONS.len() - NODE_MIGRATIONS);
+
+    // The first administrator owns the Root Team, which is theirs. The
+    // others keep what they were in it, and get a team of their own.
+    let teams: Vec<(i64, String, bool)> =
+        sqlx::query_as("select `id`, `name`, `personal_team` from `teams` order by `id`")
+            .fetch_all(&*db)
+            .await
+            .unwrap();
+    assert_eq!(
+        teams,
+        [
+            (Team::ROOT_ID, "Root Team".to_string(), true),
+            (2, "bob@example.com's Team".to_string(), true),
+            (3, "Cy Second's Team".to_string(), true),
+        ]
+    );
+    let members: Vec<(i64, i64, String)> =
+        sqlx::query_as("select `team_id`, `user_id`, `role` from `team_user` order by `id`")
+            .fetch_all(&*db)
+            .await
+            .unwrap();
+    assert_eq!(
+        members,
+        [
+            (Team::ROOT_ID, 1, "owner".to_string()),
+            (Team::ROOT_ID, 2, "member".to_string()),
+            (Team::ROOT_ID, 3, "admin".to_string()),
+            (2, 2, "owner".to_string()),
+            (3, 3, "owner".to_string()),
+        ]
+    );
+    let role_columns: i64 =
+        sqlx::query_scalar("select count(*) from pragma_table_info('users') where `name` = 'role'")
+            .fetch_one(&*db)
+            .await
+            .unwrap();
+    assert_eq!(
+        role_columns, 0,
+        "what someone may do is said by their teams"
+    );
+
+    // Every row the instance had belongs to the Root Team, and the rows
+    // that point at a rebuilt table still do.
+    for table in ["mcps", "access_tokens", "mcp_call_logs", "invites"] {
+        let team_ids: Vec<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "select `team_id` from `{table}`"
+        )))
+        .fetch_all(&*db)
+        .await
+        .unwrap();
+        assert_eq!(team_ids, [Team::ROOT_ID], "{table}");
+    }
+    for table in ["access_token_mcps", "approval_requests"] {
+        let rows: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "select count(*) from `{table}`"
+        )))
+        .fetch_one(&*db)
+        .await
+        .unwrap();
+        assert_eq!(rows, 1, "{table}");
+    }
+    let logged: (Option<i64>, Option<i64>) =
+        sqlx::query_as("select `mcp_id`, `access_token_id` from `mcp_call_logs`")
+            .fetch_one(&*db)
+            .await
+            .unwrap();
+    assert_eq!(logged, (Some(7), Some(3)));
+    let dangling: Vec<(String,)> = sqlx::query_as("select `table` from pragma_foreign_key_check")
+        .fetch_all(&*db)
+        .await
+        .unwrap();
+    assert!(dangling.is_empty(), "{dangling:?}");
+
+    // Ids keep counting past the rows that were deleted.
+    let next: i64 = sqlx::query_scalar(
+        "insert into `mcps` (`name`, `slug`, `transport`, `created_by`, `created_at`, `team_id`) values ('Next', 'next', 'http', 1, '2026-10-07 12:19:57', 1) returning `id`",
+    )
+    .fetch_one(&*db)
+    .await
+    .unwrap();
+    assert_eq!(next, 10);
+
+    // A slug is taken in its team only, and a row needs a team that exists.
+    sqlx::query("insert into `mcps` (`name`, `slug`, `transport`, `created_by`, `created_at`, `team_id`) values ('Notion', 'notion', 'http', 2, '2026-10-07 12:19:57', 2)")
+        .execute(&*db)
+        .await
+        .unwrap();
+    for refused in [
+        "insert into `mcps` (`name`, `slug`, `transport`, `created_by`, `created_at`, `team_id`) values ('Notion', 'notion', 'http', 1, '2026-10-07 12:19:57', 1)",
+        "insert into `mcps` (`name`, `slug`, `transport`, `created_by`, `created_at`, `team_id`) values ('Stray', 'stray', 'http', 1, '2026-10-07 12:19:57', 0)",
+        "insert into `mcps` (`name`, `slug`, `transport`, `created_by`, `created_at`) values ('Stray', 'stray', 'http', 1, '2026-10-07 12:19:57')",
+    ] {
+        assert!(
+            sqlx::query(refused).execute(&*db).await.is_err(),
+            "{refused}"
+        );
+    }
+
+    // Deleting a team takes what it had, and nothing of another team.
+    sqlx::query("delete from `teams` where `id` = 2")
+        .execute(&*db)
+        .await
+        .unwrap();
+    let left: Vec<(i64, i64)> = sqlx::query_as("select `id`, `team_id` from `mcps` order by `id`")
+        .fetch_all(&*db)
+        .await
+        .unwrap();
+    assert_eq!(left, [(7, Team::ROOT_ID), (10, Team::ROOT_ID)]);
 }
 
 #[tokio::test]

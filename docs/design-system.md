@@ -99,16 +99,26 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
       <button type="button" class="icon-button icon-button--on-frame sidebar__close" popovertarget="sidebar" popovertargetaction="hide" aria-label="Close navigation">ICON x</button>
     </div>
     <nav class="sidebar__nav" aria-label="Main navigation">
+      <!-- team switcher: the team the person works in; a button, since it opens a menu -->
+      <button type="button" class="nav-item" popovertarget="team-menu" aria-label="Team: Root Team. Switch team">ICON chevrons-up-down<span class="nav-item__label">Root Team</span></button>
+      <div class="menu menu--start" id="team-menu" popover role="menu">
+        <p class="menu__label">Teams</p>
+        <form method="post" action="/teams/switch"><input type="hidden" name="_csrf" value="…"><input type="hidden" name="teamId" value="1">
+          <button type="submit" class="menu__item" role="menuitemradio" aria-checked="true">ICON users Root Team</button></form>
+        <div class="menu__separator"></div>
+        <a class="menu__item" role="menuitem" href="/teams/new" data-dialog-open="#create-team">ICON plus Create team</a>
+      </div>
       <a class="nav-item" href="/" aria-current="page">ICON house<span class="nav-item__label">Home</span></a>
       <p class="nav-section">Gateway</p>
       <a class="nav-item" href="/mcps">ICON plug<span class="nav-item__label">MCPs</span></a>
       <a class="nav-item" href="/tokens">ICON key-round<span class="nav-item__label">Access tokens</span></a>
       <a class="nav-item" href="/approvals" aria-label="Approvals, 2 waiting">ICON shield-check<span class="nav-item__label">Approvals</span><span class="nav-item__count" aria-hidden="true">2</span></a>
-      <p class="nav-section">Observability</p>    <!-- admins only, with Logs and Analytics -->
+      <p class="nav-section">Observability</p>    <!-- owners and admins of the team only, with Logs and Analytics -->
       <a class="nav-item" href="/logs">ICON scroll-text<span class="nav-item__label">Logs</span></a>
       <a class="nav-item" href="/analytics">ICON chart-column<span class="nav-item__label">Analytics</span></a>
       <p class="nav-section">Instance</p>
-      <a class="nav-item" href="/invites">ICON users<span class="nav-item__label">Team</span></a>   <!-- admins only -->
+      <a class="nav-item" href="/team">ICON users<span class="nav-item__label">Team</span></a>
+      <a class="nav-item" href="/users">ICON user<span class="nav-item__label">Users</span></a>   <!-- owners and admins of the Root Team only -->
       <a class="nav-item" href="/settings">ICON settings<span class="nav-item__label">Settings</span></a>
     </nav>
     <div class="gateway-card">
@@ -118,7 +128,7 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
     </div>
     <div class="nav-user">
       <span class="avatar avatar--on-frame">TT</span>
-      <span class="nav-user__text"><span class="nav-user__name">Thomas Tastet</span><span class="nav-user__role">admin</span></span>
+      <span class="nav-user__text"><span class="nav-user__name">Thomas Tastet</span><span class="nav-user__role">owner</span></span>   <!-- the role in the team they work in -->
       <form method="post" action="/logout"><input type="hidden" name="_csrf" value="…">
         <button type="submit" class="icon-button icon-button--on-frame" aria-label="Log out">ICON log-out</button></form>
     </div>
@@ -131,6 +141,7 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
   </main>
 
   <!-- dialogs and side panels of the page go here, next to <main> -->
+  <!-- then <dialog id="create-team">, which the team switcher opens on every page -->
 
   <div class="toast-region" data-toasts><!-- flash toasts --></div>
   <template id="toast-template">…</template>
@@ -141,11 +152,19 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
 ```
 
 The selected entry is `aria-current="page"`. The count chip is optional (pending approvals).
+The team switcher is the first entry of the navigation: a `button.nav-item` that opens a menu of
+the person's teams. Each team is a form of its own, so switching works without the script; the
+current one is `aria-checked="true"`. What a page shows belongs to that team. A control that
+changes something of the team (an MCP, a member, an invite) is only drawn for its owners and
+admins (`PageContext::is_team_admin`), and what belongs to the instance only for the owners and
+admins of the Root Team (`PageContext::instance_admin`): a member gets the same page without it.
 On desktop the panel scrolls and the frame stays put; on mobile the document scrolls under a
 sticky top bar.
 
-Auth screens (sign in, authorize, onboarding, import of a backup, invite, errors without a
-session). A second action goes under the primary button, 12px apart, as a secondary or a
+Auth screens (sign in, sign up, authorize, onboarding, import of a backup, invite, errors
+without a session). The subtitle of the sign-in card and the footnote say whether registration
+is open (`PageContext::registration_open`); the sign-in card then has a tertiary
+"Create an account" link under its button. A second action goes under the primary button, 12px apart, as a secondary or a
 tertiary button: `<div class="stack gap-300"><button class="button button--primary
 button--block">Create admin</button><a class="button button--secondary button--block"
 href="/onboarding/import">Import a backup</a></div>`.

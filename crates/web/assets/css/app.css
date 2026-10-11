@@ -4951,3 +4951,13 @@
     }
   }
 }
+
+/*
+ * Team switcher: a nav item that is a button, since it opens the menu of the person's teams
+ * instead of a page. A button centres its text, where a link starts it.
+ */
+@layer components {
+  button.nav-item {
+    text-align: start;
+  }
+}

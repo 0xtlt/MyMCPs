@@ -37,6 +37,7 @@ async fn reads_token_and_code_expiries_back_from_the_database_unchanged() {
             scopes: "mcp:tools",
             resource: RESOURCE,
             created_by: admin.id,
+            team_id: Team::ROOT_ID,
         },
     )
     .await
@@ -81,6 +82,7 @@ async fn reads_token_and_code_expiries_back_from_the_database_unchanged() {
                 resource: RESOURCE.into(),
             },
             admin.id,
+            Team::ROOT_ID,
         )
         .await
         .unwrap();

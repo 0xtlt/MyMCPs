@@ -19,6 +19,9 @@ pub struct Limiters {
     pub login: Limiter,
     /// Failed sign-in attempts from one client address, whichever accounts they target.
     pub login_address: Limiter,
+    /// Accounts made from one client address on the sign-up page: each one
+    /// costs a password hash, and a team.
+    pub registration: Limiter,
     /// Current-password confirmations by one signed-in user.
     pub current_password: Limiter,
     pub oauth_authorization: Limiter,
@@ -48,6 +51,7 @@ impl Limiters {
         Self {
             login: limiter(5, 15 * MINUTES),
             login_address: limiter(30, 15 * MINUTES),
+            registration: limiter(10, 60 * MINUTES),
             current_password: limiter(5, 15 * MINUTES),
             oauth_authorization: limiter(100, 15 * MINUTES),
             oauth_token: limiter(50, 15 * MINUTES),
@@ -114,12 +118,13 @@ impl AppState {
 }
 
 impl AppState {
-    /// How many tool calls wait for this person's approval.
+    /// How many tool calls wait for this person's approval in the team
+    /// they work in.
     pub async fn pending_approvals(
         &self,
-        user: &mymcps_core::models::User,
+        scope: mymcps_gateway::approvals::ApprovalScope,
     ) -> Result<i64, sqlx::Error> {
-        self.mcp_gateway.approvals.pending_count(user).await
+        self.mcp_gateway.approvals.pending_count(scope).await
     }
 
     /// How many tools each MCP exposed the last time its tools were listed

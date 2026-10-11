@@ -11,6 +11,7 @@ mod invite;
 mod mcp;
 mod mcp_call_log;
 mod oauth;
+mod team;
 mod user;
 
 pub use access_token::{AccessToken, ScopeMode, TokenSource};
@@ -20,7 +21,8 @@ pub use invite::Invite;
 pub use mcp::{Mcp, McpAuthType, McpStatus, McpTransport};
 pub use mcp_call_log::{CallErrorCategory, CallOutcome, McpCallLog};
 pub use oauth::{OauthAuthorizationCode, OauthClient};
-pub use user::{User, UserRole};
+pub use team::{AccountRemovalRefusal, Membership, Team, TeamMember, TeamRole};
+pub use user::User;
 
 /// The cron expression npm MCPs are refreshed on until the admin sets another.
 pub const DEFAULT_MCP_AUTO_UPDATE_CRON: &str = "0 2 * * *";

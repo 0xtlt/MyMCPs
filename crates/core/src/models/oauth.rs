@@ -65,5 +65,7 @@ model! {
         pub resource: String,
         pub expires_at: Timestamp,
         pub created_at: Timestamp,
+        /// The team the user granted access to.
+        pub team_id: i64,
     }
 }

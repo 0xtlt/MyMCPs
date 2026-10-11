@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use http::{HeaderMap, StatusCode};
 use mymcps_builtin::BuiltinRegistry;
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, User, UserRole};
+use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, Team, TeamRole, User};
 use mymcps_core::{Core, TestCore};
 use mymcps_net::{AddressGuard, CannedResponse, Fetcher, Resolver, SentRequest, StaticResolver};
 use mymcps_upstream::{OauthSessionStore, Upstream};
@@ -335,11 +335,13 @@ pub async fn create_admin(core: &Core) -> i64 {
         full_name: Some("Test User".to_owned()),
         email: format!("{}@example.com", next_value("user")),
         password: "not a hash: nobody signs in here".to_owned(),
-        role: UserRole::Admin,
         session_version: 1,
         ..Default::default()
     };
     admin.insert(&*core.db).await.unwrap();
+    Team::attach(&*core.db, Team::ROOT_ID, admin.id, TeamRole::Admin)
+        .await
+        .unwrap();
     admin.id
 }
 
@@ -353,6 +355,7 @@ pub async fn create_mcp(core: &Core, adjust: impl FnOnce(&mut Mcp)) -> Mcp {
         status: McpStatus::Ready,
         enabled: true,
         created_by: create_admin(core).await,
+        team_id: Team::ROOT_ID,
         ..Default::default()
     };
     adjust(&mut mcp);

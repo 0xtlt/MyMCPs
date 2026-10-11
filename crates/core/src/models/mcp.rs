@@ -90,6 +90,8 @@ model! {
         /// JSON object of setting key to encrypted value: what a built-in
         /// MCP needs beyond its sign-in.
         pub builtin_settings: Option<String>,
+        /// The team the MCP belongs to. Its slug is unique there.
+        pub team_id: i64,
     }
 }
 

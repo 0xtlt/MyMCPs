@@ -3,7 +3,7 @@
 //! form: what a replayed session cookie and a remember-me cookie are worth.
 
 use http::StatusCode;
-use mymcps_core::models::{User, UserRole};
+use mymcps_core::models::{Team, TeamRole, User};
 use mymcps_web::auth::{self, REMEMBER_COOKIE, SESSION_STAMP_KEY, SessionStamp};
 use mymcps_web::cookies::Cookies;
 use mymcps_web::session::Session;
@@ -18,15 +18,13 @@ fn now() -> i64 {
 }
 
 async fn create_admin(app: &TestApp) -> User {
-    let mut user = User::with_password(
-        "admin@example.com",
-        Some("Admin"),
-        "password123",
-        UserRole::Admin,
-    )
-    .await
-    .unwrap();
+    let mut user = User::with_password("admin@example.com", Some("Admin"), "password123")
+        .await
+        .unwrap();
     user.insert(&*app.core.db).await.unwrap();
+    Team::attach(&*app.core.db, Team::ROOT_ID, user.id, TeamRole::Admin)
+        .await
+        .unwrap();
     user
 }
 

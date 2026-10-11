@@ -167,6 +167,7 @@ async fn stored_grant(app: &TestApp, client: &OauthClient, user: &User) {
             scopes: "mcp:tools",
             resource: RESOURCE,
             created_by: user.id,
+            team_id: mymcps_core::models::Team::ROOT_ID,
         },
     )
     .await
@@ -616,8 +617,8 @@ async fn evicts_the_oldest_unused_client_when_the_client_limit_is_reached() {
     // Once every client is in use there is nothing left to evict.
     sqlx::query(
         "insert into `oauth_authorization_codes` \
-         (`code_hash`, `oauth_client_id`, `user_id`, `redirect_uri`, `code_challenge`, `scopes`, `resource`, `expires_at`, `created_at`) \
-         select 'pending-' || `id`, `id`, ?, ?, ?, 'mcp:tools', ?, ?, ? from `oauth_clients`",
+         (`code_hash`, `oauth_client_id`, `user_id`, `redirect_uri`, `code_challenge`, `scopes`, `resource`, `expires_at`, `created_at`, `team_id`) \
+         select 'pending-' || `id`, `id`, ?, ?, ?, 'mcp:tools', ?, ?, ?, 1 from `oauth_clients`",
     )
     .bind(admin.id)
     .bind(LOOPBACK_REDIRECT_URI)

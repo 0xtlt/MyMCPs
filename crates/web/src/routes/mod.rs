@@ -19,6 +19,7 @@ pub mod mcp_tools;
 pub mod mcps;
 pub mod oauth_server;
 pub mod settings;
+pub mod teams;
 pub mod tokens;
 
 /// The routes of one part of the app, by who may reach them.
@@ -38,9 +39,13 @@ pub struct FeatureRoutes {
     pub guest: Router<AppState>,
     /// Pages of a signed-in person. A visitor is sent to sign in.
     pub signed_in: Router<AppState>,
-    /// Pages of an administrator. Anyone else is sent home with a message.
+    /// Pages of an owner or an administrator of the team the person works
+    /// in. Anyone else is sent home with a message.
     pub admin: Router<AppState>,
-    /// First-run pages, gone once an administrator exists.
+    /// Pages of those who run the instance: the owners and administrators
+    /// of the Root Team. Anyone else is sent home with a message.
+    pub instance_admin: Router<AppState>,
+    /// First-run pages, gone once the first account exists.
     pub first_run: Router<AppState>,
     /// First-run pages that read their body themselves: a session and who
     /// is signed in, but no parsed body and no CSRF check. A form that
@@ -57,6 +62,7 @@ impl FeatureRoutes {
         self.guest = self.guest.merge(other.guest);
         self.signed_in = self.signed_in.merge(other.signed_in);
         self.admin = self.admin.merge(other.admin);
+        self.instance_admin = self.instance_admin.merge(other.instance_admin);
         self.first_run = self.first_run.merge(other.first_run);
         self.first_run_raw = self.first_run_raw.merge(other.first_run_raw);
         self
@@ -79,6 +85,7 @@ pub fn all() -> FeatureRoutes {
         mcps::routes(),
         oauth_server::routes(),
         settings::routes(),
+        teams::routes(),
         tokens::routes(),
     ]
     .into_iter()

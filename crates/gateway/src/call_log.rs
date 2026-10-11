@@ -346,6 +346,7 @@ fn record_of(core: &Core, settings: &InstanceSetting, input: &McpCallLogInput) -
     let response_captured = settings.mcp_log_level == McpLogLevel::Responses;
     let mcp = input.mcp.as_ref();
     McpCallLog {
+        team_id: input.access_token.team_id,
         access_token_id: Some(input.access_token.id),
         access_token_name: input.access_token.name.clone(),
         access_token_prefix: input.access_token.token_prefix.clone(),

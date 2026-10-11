@@ -655,7 +655,7 @@ async fn grants_access_on_an_explicit_approval_only() {
     assert!(CONSENT_APPROVAL.validate(form.get("decision")).is_ok());
     let code = gateway
         .oauth
-        .create_authorization_code(&request, admin.id)
+        .create_authorization_code(&request, admin.id, Team::ROOT_ID)
         .await
         .unwrap();
     assert_eq!(
@@ -687,6 +687,7 @@ async fn issue_code(gateway: &TestGateway, oauth_client: &OauthClient, admin: &U
                 resource: RESOURCE.to_owned(),
             },
             admin.id,
+            Team::ROOT_ID,
         )
         .await
         .unwrap()
@@ -707,6 +708,7 @@ async fn issue_grant(
             scopes: "mcp:tools",
             resource: RESOURCE,
             created_by: admin.id,
+            team_id: Team::ROOT_ID,
         },
     )
     .await

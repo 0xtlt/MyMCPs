@@ -351,7 +351,7 @@ async fn issues_refreshes_lists_and_revokes_an_oauth_connection() {
 
     let code = gateway
         .oauth
-        .create_authorization_code(&request, admin.id)
+        .create_authorization_code(&request, admin.id, Team::ROOT_ID)
         .await
         .unwrap();
     let callback = oauth_redirect(

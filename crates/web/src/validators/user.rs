@@ -1,5 +1,5 @@
-//! Accounts: sign-in, onboarding, invites, and the settings of a user.
-//! (`app/validators/user.ts`)
+//! Accounts and teams: sign-in, sign-up, onboarding, invites, members, and
+//! the settings of a user. (`app/validators/user.ts`)
 
 use std::sync::LazyLock;
 
@@ -63,10 +63,11 @@ pub static UPDATE_MCP_LOGGING_VALIDATOR: LazyLock<vine::Validator> = LazyLock::n
         // A switch submits "on" when checked, and nothing when unchecked.
         "mcpAutoUpdateEnabled" => vine::boolean().optional(),
         "mcpAutoUpdateCron" => vine::string().trim().max_length(64).optional().use_rule(five_field_cron()),
+        "registrationEnabled" => vine::boolean().optional(),
     })
 });
 
-/// First-run onboarding: create the instance admin.
+/// First-run onboarding: create the account that owns the Root Team.
 pub static ONBOARDING_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
     vine::global().create(vine::object! {
         "fullName" => vine::string().trim().min_length(1).max_length(120),
@@ -74,6 +75,45 @@ pub static ONBOARDING_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
         "password" => password().confirmed("passwordConfirmation"),
         "passwordConfirmation" => vine::string(),
     })
+});
+
+/// Create an account on the sign-up page, while the instance lets anyone
+/// register. The address must not belong to an account: the caller answers
+/// the `unique` check.
+pub static REGISTER_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global().create(vine::object! {
+        "fullName" => vine::string().trim().min_length(1).max_length(120),
+        "email" => email().use_rule(vine::lucid::unique()),
+        "password" => password().confirmed("passwordConfirmation"),
+        "passwordConfirmation" => vine::string(),
+    })
+});
+
+/// What a team is called, on the form that creates one and the form that
+/// renames it.
+pub static TEAM_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global().create(vine::object! {
+        "name" => vine::string().trim().min_length(1).max_length(120),
+        "description" => vine::string().trim().max_length(500).optional(),
+    })
+});
+
+/// The team to work in, from the team switcher.
+pub static SWITCH_TEAM_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global()
+        .create(vine::object! { "teamId" => vine::number().without_decimals().positive() })
+});
+
+/// What a member of a team becomes. Whether the person who asks may give
+/// that role is for the handler to say.
+pub static MEMBER_ROLE_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global().create(vine::object! { "role" => vine::enum_(["member", "admin", "owner"]) })
+});
+
+/// Delete an account, from the Users page of those who run the instance:
+/// the password of the person who deletes it, to confirm it is them.
+pub static DELETE_USER_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global().create(vine::object! { "currentPassword" => vine::string().min_length(1) })
 });
 
 /// Accept an invite and create a member account.
@@ -85,9 +125,14 @@ pub static ACCEPT_INVITE_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(||
     })
 });
 
-/// Admin creates an invite for an email address.
-pub static CREATE_INVITE_VALIDATOR: LazyLock<vine::Validator> =
-    LazyLock::new(|| vine::global().create(vine::object! { "email" => email() }));
+/// An administrator of a team invites an email address into it. Without a
+/// role the person joins as a member.
+pub static CREATE_INVITE_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global().create(vine::object! {
+        "email" => email(),
+        "role" => vine::enum_(["member", "admin", "owner"]).optional(),
+    })
+});
 
 /// Login credentials.
 pub static LOGIN_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {

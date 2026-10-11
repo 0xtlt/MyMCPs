@@ -20,6 +20,16 @@ pub static APPROVAL_RETURN_TO_VALIDATOR: LazyLock<vine::Validator> =
         ))
     });
 
+/// Where sign-in returns to when it interrupted someone opening an invite
+/// to a team for an address that already has an account. The app only ever
+/// stores the path of one invite.
+pub static INVITE_RETURN_TO_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global().create(
+        vine::string()
+            .regex(vine::js::regex(r"^\/invite\/[0-9a-f]{64}$", "").expect("a static pattern")),
+    )
+});
+
 /// The id of a record flashed for the next page, such as the MCP whose
 /// dialog should reopen.
 pub static FLASHED_RECORD_ID_VALIDATOR: LazyLock<vine::Validator> =

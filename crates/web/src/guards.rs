@@ -30,7 +30,7 @@ pub async fn needs_setup(State(core): State<Arc<Core>>, request: Request, next: 
     }
 }
 
-/// Onboarding is only available before the first admin exists. Afterwards,
+/// Onboarding is only available before the first account exists. Afterwards,
 /// send people to the app (or login).
 pub async fn setup_complete(
     State(core): State<Arc<Core>>,
@@ -79,13 +79,37 @@ pub async fn guest(request: Request, next: Next) -> Response {
     next.run(request).await
 }
 
-/// Ensures the authenticated user is an admin.
-pub async fn require_admin(request: Request, next: Next) -> Response {
-    if user_of(&request).is_some_and(User::is_admin) {
-        return next.run(request).await;
-    }
+/// Send someone home with a word on why they may not be here.
+fn refuse(request: &Request, message: &str) -> Response {
     if let Some(session) = request.extensions().get::<Session>() {
-        session.flash("error", "Admin access required");
+        session.flash("error", message);
     }
     redirect_to(&with_query("/", request.uri().query()))
+}
+
+/// Ensures the authenticated user is an owner or an administrator of the
+/// team they work in. A member reads what the team has, and changes nothing
+/// of it but their own access tokens.
+pub async fn require_admin(request: Request, next: Next) -> Response {
+    if request
+        .extensions()
+        .get::<Auth>()
+        .is_some_and(Auth::is_team_admin)
+    {
+        return next.run(request).await;
+    }
+    refuse(&request, "Admin access required")
+}
+
+/// Ensures the authenticated user runs the instance: an owner or an
+/// administrator of the Root Team.
+pub async fn require_instance_admin(request: Request, next: Next) -> Response {
+    if request
+        .extensions()
+        .get::<Auth>()
+        .is_some_and(Auth::is_instance_admin)
+    {
+        return next.run(request).await;
+    }
+    refuse(&request, "Instance admin access required")
 }

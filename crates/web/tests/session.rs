@@ -139,18 +139,24 @@ async fn allows_an_authenticated_user_to_reach_the_dashboard() {
     assert!(page.contains("Test User"));
     assert!(page.contains("<body class=\"app\">"));
     assert!(page.contains("aria-current=\"page\""));
-    // An administrator sees the whole navigation.
+    // An administrator of the Root Team sees the whole navigation, and
+    // the team they work in at the top of it.
     for entry in [
         "/mcps",
         "/tokens",
         "/approvals",
         "/logs",
         "/analytics",
-        "/invites",
+        "/team",
+        "/users",
         "/settings",
     ] {
         assert!(page.contains(&format!("href=\"{entry}\"")), "{entry}");
     }
+    assert!(page.contains(
+        "<button type=\"button\" class=\"nav-item\" popovertarget=\"team-menu\" aria-label=\"Team: Root Team. Switch team\">"
+    ));
+    assert!(page.contains("<span class=\"nav-user__role\">admin</span>"));
 
     // A signed-in person has no business on the login page.
     let login = app.get("/login").login_as(&admin).send().await;
@@ -421,7 +427,17 @@ async fn creates_the_first_user_as_an_admin() {
         .unwrap()
         .unwrap();
     assert_eq!(user.full_name.as_deref(), Some("First Admin"));
-    assert!(user.is_admin());
+    // The first account owns the Root Team, and so runs the instance.
+    assert_eq!(
+        mymcps_core::models::Team::role_of(
+            &*app.core.db,
+            mymcps_core::models::Team::ROOT_ID,
+            user.id
+        )
+        .await
+        .unwrap(),
+        Some(mymcps_core::models::TeamRole::Owner)
+    );
     assert!(user.verify_password("password123").await.unwrap());
     assert!(response.cookie(REMEMBER_COOKIE).is_some());
     assert_eq!(remember_tokens(&app, &user).await.len(), 1);

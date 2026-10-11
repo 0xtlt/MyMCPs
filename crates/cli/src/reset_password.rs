@@ -45,16 +45,20 @@ pub async fn reset(
 
 #[cfg(test)]
 mod tests {
-    use mymcps_core::models::UserRole;
+    use mymcps_core::models::{Team, TeamRole};
     use mymcps_core::{TestCore, Timestamp};
 
     use super::*;
 
-    async fn create_user(core: &Core, email: &str, role: UserRole) -> User {
-        let mut user = User::with_password(email, Some("Test User"), "password123", role)
+    /// An account of the Root Team, with this role in it.
+    async fn create_user(core: &Core, email: &str, role: TeamRole) -> User {
+        let mut user = User::with_password(email, Some("Test User"), "password123")
             .await
             .unwrap();
         user.insert(&*core.db).await.unwrap();
+        Team::attach(&*core.db, Team::ROOT_ID, user.id, role)
+            .await
+            .unwrap();
         user
     }
 
@@ -97,10 +101,10 @@ mod tests {
 
     #[tokio::test]
     async fn recovers_an_account_and_revokes_only_its_remember_me_tokens() {
-        for role in [UserRole::Admin, UserRole::Member] {
+        for role in [TeamRole::Admin, TeamRole::Member] {
             let core = TestCore::new().await;
             let user = create_user(&core, "lost@example.com", role).await;
-            let other = create_user(&core, "other@example.com", UserRole::Member).await;
+            let other = create_user(&core, "other@example.com", TeamRole::Member).await;
             remember(&core, &user).await;
             remember(&core, &user).await;
             remember(&core, &other).await;
@@ -123,7 +127,13 @@ mod tests {
             assert_ne!(reloaded.password, "new-password-123");
             assert!(reloaded.verify_password("new-password-123").await.unwrap());
             assert!(!reloaded.verify_password("password123").await.unwrap());
-            assert_eq!(reloaded.role, role);
+            // What the account is in its teams is left as it was.
+            assert_eq!(
+                Team::role_of(&*core.db, Team::ROOT_ID, user.id)
+                    .await
+                    .unwrap(),
+                Some(role)
+            );
             assert_eq!(reloaded.session_version, user.session_version + 1);
             assert_eq!(remembered(&core, &user).await, 0);
             assert_eq!(remembered(&core, &other).await, 1);
@@ -167,7 +177,7 @@ mod tests {
             ("new-password-123", "different-password"),
         ] {
             let core = TestCore::new().await;
-            let user = create_user(&core, "user@example.com", UserRole::Member).await;
+            let user = create_user(&core, "user@example.com", TeamRole::Member).await;
             remember(&core, &user).await;
 
             let mut asked = Vec::new();
@@ -193,7 +203,7 @@ mod tests {
     #[tokio::test]
     async fn rolls_back_the_password_when_remember_me_revocation_fails() {
         let core = TestCore::new().await;
-        let user = create_user(&core, "user@example.com", UserRole::Member).await;
+        let user = create_user(&core, "user@example.com", TeamRole::Member).await;
         remember(&core, &user).await;
         sqlx::query("CREATE TRIGGER fail_remember_token_delete BEFORE DELETE ON remember_me_tokens BEGIN SELECT RAISE(ABORT, 'simulated revocation failure'); END")
             .execute(&*core.db)

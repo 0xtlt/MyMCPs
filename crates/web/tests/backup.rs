@@ -263,7 +263,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
     assert_redirect(&refused, "/");
     assert_eq!(
         refused.flashed("error"),
-        Some(json!("Admin access required"))
+        Some(json!("Instance admin access required"))
     );
     assert!(refused.header("content-disposition").is_none());
 
@@ -283,7 +283,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
 
     let page = app.get("/settings").login_as(&admin).send().await.text();
     assert!(page.contains(
-        "<h2 class=\"section__title\" id=\"backup-title\">Backup <span class=\"badge badge--info badge--no-dot\">Admin only</span></h2>"
+        "<h2 class=\"section__title\" id=\"backup-title\">Backup <span class=\"badge badge--info badge--no-dot\">Instance admin</span></h2>"
     ));
     assert!(page.contains("Export everything this instance stores to one encrypted file. Import it on the setup screen of a new instance."));
     assert!(page.contains("<span class=\"detail-row__label\">Export backup</span>"));
@@ -805,11 +805,14 @@ async fn an_instance_is_set_up_from_the_backup_of_another_one() {
         let home = target.get("/").session(signed_in.session()).send().await;
         assert_eq!(home.status, StatusCode::OK, "{email}");
     }
-    let users: Vec<(i64, String, String)> =
-        sqlx::query_as("select `id`, `email`, `role` from `users` order by `id`")
-            .fetch_all(&*target.core.db)
-            .await
-            .unwrap();
+    let users: Vec<(i64, String, String)> = sqlx::query_as(
+        "select `users`.`id`, `users`.`email`, `team_user`.`role` from `users` \
+             inner join `team_user` on `team_user`.`user_id` = `users`.`id` \
+             where `team_user`.`team_id` = 1 order by `users`.`id`",
+    )
+    .fetch_all(&*target.core.db)
+    .await
+    .unwrap();
     assert_eq!(
         users,
         [
@@ -901,13 +904,17 @@ async fn older_database(
 
 #[tokio::test]
 async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
-    // Three migrations short: no session version on users, no tool
-    // approvals or settings on MCPs, no approval requests.
-    let older = MIGRATIONS.len() - 3;
-    assert_eq!(
-        MIGRATIONS[older].name,
-        "database/migrations/1791132214318_add_session_version_to_users_table"
-    );
+    // Short of the last migrations: no session version on users, no tool
+    // approvals or settings on MCPs, no approval requests, no teams.
+    let older = MIGRATIONS
+        .iter()
+        .position(|migration| {
+            migration
+                .name
+                .ends_with("add_session_version_to_users_table")
+        })
+        .unwrap();
+    assert_eq!(MIGRATIONS.len() - older, 4);
     let old_key = generate_app_key();
     let old_encryption = Encryption::new(&old_key);
     let dir = tempfile::tempdir().unwrap();
@@ -965,7 +972,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
         .await
         .unwrap()
         .unwrap();
-    assert!(user.is_admin());
+    assert!(user.is_instance_admin(&*target.core.db).await.unwrap());
     assert_eq!(user.session_version, 1);
     let signed_in = target
         .post("/login")
@@ -1003,15 +1010,25 @@ async fn refuses_a_database_that_does_not_count_its_ids() {
     // the ids it gave: no version made this database.
     let dir = tempfile::tempdir().unwrap();
     let mut database = older_database(&dir, MIGRATIONS.len(), |statement| {
+        // A database without counters has none to carry over either.
+        if statement.contains("`sqlite_sequence`") {
+            return "select 1".to_string();
+        }
         statement
             .replace(" autoincrement", "")
             .replace(" AUTOINCREMENT", "")
     })
     .await;
     sqlx::query(
-        "insert into `users` (`full_name`, `email`, `password`, `created_at`, `role`) values ('Admin', 'admin@example.com', ?, '2026-01-01 00:00:00', 'admin')",
+        "insert into `users` (`id`, `full_name`, `email`, `password`, `created_at`) values (1, 'Admin', 'admin@example.com', ?, '2026-01-01 00:00:00')",
     )
     .bind(hash_password(PASSWORD))
+    .execute(&mut database)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into `team_user` (`team_id`, `user_id`, `role`, `created_at`) values (1, 1, 'owner', '2026-01-01 00:00:00')",
+    )
     .execute(&mut database)
     .await
     .unwrap();
@@ -1285,7 +1302,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         (
             "a trigger",
             &[
-                "create trigger `promote` after insert on `users` begin update `users` set `role` = 'admin'; end",
+                "create trigger `promote` after insert on `users` begin update `team_user` set `role` = 'owner'; end",
             ],
             DAMAGED,
         ),
@@ -1303,7 +1320,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         ),
         (
             "no administrator",
-            &["update `users` set `role` = 'member'"],
+            &["update `team_user` set `role` = 'member'"],
             NO_ADMINISTRATOR,
         ),
         (
@@ -1362,7 +1379,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         (
             "a row that refers to a user who is not there",
             &[
-                "insert into `invites` (`token`, `email`, `role`, `created_by`, `expires_at`, `created_at`) values ('t', 'x@example.com', 'member', 999, '2030-01-01 00:00:00', '2026-01-01 00:00:00')",
+                "insert into `invites` (`token`, `email`, `role`, `created_by`, `expires_at`, `created_at`, `team_id`) values ('t', 'x@example.com', 'member', 999, '2030-01-01 00:00:00', '2026-01-01 00:00:00', 1)",
             ],
             DAMAGED,
         ),
@@ -1376,7 +1393,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
             &[
                 "create table `copy` as select * from `users`",
                 "drop table `users`",
-                "create table `users` (`id` integer not null primary key autoincrement, `full_name` varchar(255) null, `email` varchar(254) null, `password` varchar(255) not null, `created_at` datetime not null, `updated_at` datetime null, `role` varchar(32) not null default 'member', `session_version` integer not null default '1')",
+                "create table `users` (`id` integer not null primary key autoincrement, `full_name` varchar(255) null, `email` varchar(254) null, `password` varchar(255) not null, `created_at` datetime not null, `updated_at` datetime null, `session_version` integer not null default '1', `current_team_id` integer null references `teams`(`id`) on delete SET NULL)",
                 "insert into `users` select * from `copy`",
                 "drop table `copy`",
                 "update `users` set `email` = null",

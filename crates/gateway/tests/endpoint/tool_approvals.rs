@@ -1356,8 +1356,8 @@ async fn waiting_request(gateway: &TestMcpGateway, user: &User, id: i64) -> Appr
     gateway.approval_requests().await.pop().unwrap()
 }
 
-async fn visible_ids(gateway: &TestMcpGateway, user: &User, condition: &str) -> Vec<i64> {
-    let mut query = ApprovalService::visible_to(user);
+async fn visible_ids(gateway: &TestMcpGateway, scope: ApprovalScope, condition: &str) -> Vec<i64> {
+    let mut query = ApprovalService::visible_to(scope);
     query.push(condition);
     query
         .build_query_as::<ApprovalRequest>()
@@ -1397,7 +1397,47 @@ async fn shows_what_mymcps_read_in_the_call_and_the_exact_arguments() {
             request.public_id
         ))
     );
-    assert_eq!(gateway.approvals.pending_count(&admin).await.unwrap(), 1);
+    assert_eq!(
+        gateway
+            .approvals
+            .pending_count(admin_scope(&admin))
+            .await
+            .unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn keeps_the_calls_of_a_team_from_the_other_teams() {
+    let gateway = crm_gateway().await;
+    let db = gateway.db();
+    let admin = create_admin(db).await;
+    let request = waiting_request(&gateway, &admin, 42).await;
+    let other_team = create_team(db).await;
+
+    // The same person, in another team of theirs, whatever they are in it.
+    for admin_there in [true, false] {
+        let scope = ApprovalScope {
+            team_id: other_team.id,
+            user_id: admin.id,
+            admin: admin_there,
+        };
+        assert!(visible_ids(&gateway, scope, "").await.is_empty());
+        assert_eq!(gateway.approvals.pending_count(scope).await.unwrap(), 0);
+    }
+    assert_eq!(
+        visible_ids(&gateway, admin_scope(&admin), "").await,
+        [request.id]
+    );
+    // A link names its request, whose team the page takes the person to.
+    assert_eq!(
+        gateway.approvals.team_of(&request.public_id).await.unwrap(),
+        Some(Team::ROOT_ID)
+    );
+    assert_eq!(
+        gateway.approvals.team_of("no such request").await.unwrap(),
+        None
+    );
 }
 
 #[tokio::test]
@@ -1423,8 +1463,18 @@ async fn lets_a_member_decide_the_calls_of_their_own_access_tokens_and_records_i
     let admin = create_admin(db).await;
     let member = create_member(db).await;
     let mut request = waiting_request(&gateway, &member, 42).await;
-    assert_eq!(gateway.approvals.pending_count(&member).await.unwrap(), 1);
-    assert_eq!(visible_ids(&gateway, &member, "").await, [request.id]);
+    assert_eq!(
+        gateway
+            .approvals
+            .pending_count(member_scope(&member))
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        visible_ids(&gateway, member_scope(&member), "").await,
+        [request.id]
+    );
     // The person took their time: an hour is left to decide.
     request.expires_at = Timestamp::now() + Duration::hours(1);
     request.save(&**db).await.unwrap();
@@ -1447,9 +1497,26 @@ async fn lets_a_member_decide_the_calls_of_their_own_access_tokens_and_records_i
     assert!(decided.expires_at <= Timestamp::now() + Duration::hours(24));
 
     // An administrator reads every request.
-    assert_eq!(visible_ids(&gateway, &admin, "").await, [request.id]);
-    assert_eq!(gateway.approvals.pending_count(&admin).await.unwrap(), 0);
-    assert_eq!(gateway.approvals.pending_count(&member).await.unwrap(), 0);
+    assert_eq!(
+        visible_ids(&gateway, admin_scope(&admin), "").await,
+        [request.id]
+    );
+    assert_eq!(
+        gateway
+            .approvals
+            .pending_count(admin_scope(&admin))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        gateway
+            .approvals
+            .pending_count(member_scope(&member))
+            .await
+            .unwrap(),
+        0
+    );
 }
 
 #[tokio::test]
@@ -1462,12 +1529,37 @@ async fn keeps_the_calls_of_an_access_token_from_the_other_members() {
     let by_link = format!(" and `public_id` = '{}'", request.public_id);
 
     // The same answer as for a request that does not exist.
-    assert!(visible_ids(&gateway, &other, &by_link).await.is_empty());
-    assert!(visible_ids(&gateway, &other, "").await.is_empty());
-    assert_eq!(gateway.approvals.pending_count(&other).await.unwrap(), 0);
+    assert!(
+        visible_ids(&gateway, member_scope(&other), &by_link)
+            .await
+            .is_empty()
+    );
+    assert!(
+        visible_ids(&gateway, member_scope(&other), "")
+            .await
+            .is_empty()
+    );
+    assert_eq!(
+        gateway
+            .approvals
+            .pending_count(member_scope(&other))
+            .await
+            .unwrap(),
+        0
+    );
 
-    assert_eq!(visible_ids(&gateway, &admin, &by_link).await, [request.id]);
-    assert_eq!(gateway.approvals.pending_count(&admin).await.unwrap(), 1);
+    assert_eq!(
+        visible_ids(&gateway, admin_scope(&admin), &by_link).await,
+        [request.id]
+    );
+    assert_eq!(
+        gateway
+            .approvals
+            .pending_count(admin_scope(&admin))
+            .await
+            .unwrap(),
+        1
+    );
     assert_eq!(
         find_request(&gateway, request.id).await.status,
         ApprovalDecision::Pending
@@ -1524,13 +1616,13 @@ async fn lists_what_waits_apart_from_what_was_decided() {
 
     let waiting = visible_ids(
         &gateway,
-        &admin,
+        admin_scope(&admin),
         &format!(" and `status` = 'pending' and `expires_at` > '{now}' order by `created_at` desc"),
     )
     .await;
     let past = visible_ids(
         &gateway,
-        &admin,
+        admin_scope(&admin),
         &format!(
             " and (`status` <> 'pending' or `expires_at` <= '{now}') order by `created_at` desc limit 50"
         ),

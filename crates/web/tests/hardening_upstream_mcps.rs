@@ -21,7 +21,7 @@ use mymcps_web::AppState;
 use mymcps_web::routes::mcps::{AssignError, assign_mcp_from_payload};
 use mymcps_web::state::builtins;
 use mymcps_web::testing::TestApp;
-use mymcps_web::testing::factories::{create_admin, create_mcp, create_member};
+use mymcps_web::testing::factories::{create_admin, create_mcp};
 use mymcps_web::validators::mcp::{CREATE_MCP_VALIDATOR, McpPayload};
 use mymcps_web::views::mcps::McpView;
 use serde_json::{Value, json};
@@ -361,6 +361,7 @@ async fn encrypts_values_and_only_exposes_variable_names_to_the_page() {
     let mut mcp = Mcp {
         status: McpStatus::Draft,
         created_by: admin.id,
+        team_id: mymcps_core::models::Team::ROOT_ID,
         ..Default::default()
     };
 
@@ -538,6 +539,7 @@ async fn allows_endpoint_query_and_url_credentials_while_requiring_an_http_url()
     let mut mcp = Mcp {
         status: McpStatus::Draft,
         created_by: admin.id,
+        team_id: mymcps_core::models::Team::ROOT_ID,
         ..Default::default()
     };
     let http_url =
@@ -577,7 +579,7 @@ async fn does_not_send_a_saved_bearer_token_to_the_new_origin_when_probing_it() 
     // Records what the gateway sends upstream and answers like an MCP without tools.
     let (app, calls) = app_with_mcp_servers().await;
     let admin = create_admin(&app).await;
-    let member = create_member(&app).await;
+    let member = create_admin(&app).await;
     let token = encrypt(&app, "saved-bearer");
     let mcp = create_mcp(&app, admin.id, |mcp| {
         mcp.name = "Repointed MCP".into();
@@ -813,7 +815,7 @@ async fn the_sandbox_is_kept_across_a_version_change() {
 #[tokio::test]
 async fn never_starts_another_package_with_the_saved_environment_values() {
     let sandbox = Sandboxed::new().await;
-    let member = create_member(&sandbox.app).await;
+    let member = create_admin(&sandbox.app).await;
     let fields = with(
         &NPM_FORM,
         &[
@@ -867,7 +869,7 @@ async fn never_starts_another_package_with_the_saved_environment_values() {
 #[tokio::test]
 async fn refuses_variables_that_would_reconfigure_the_sandbox_with_a_reason() {
     let sandbox = Sandboxed::new().await;
-    let member = create_member(&sandbox.app).await;
+    let member = create_admin(&sandbox.app).await;
     let fields = with(
         &NPM_FORM,
         &[

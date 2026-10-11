@@ -35,6 +35,7 @@ async fn create_token(
             mcp_ids,
             expires_at: expires_at.map(Timestamp::from),
             created_by: user.id,
+            team_id: mymcps_core::models::Team::ROOT_ID,
         },
     )
     .await
@@ -70,6 +71,7 @@ async fn create_oauth_connection(app: &TestApp, user: &User, name: &str) -> Acce
             scopes: "mcp:tools",
             resource: "http://localhost:3333/mcp",
             created_by: user.id,
+            team_id: mymcps_core::models::Team::ROOT_ID,
         },
     )
     .await
@@ -740,11 +742,16 @@ async fn refuses_changes_without_a_csrf_token_and_requests_without_a_session() {
     assert_eq!(guest.location(), Some("/login"));
     assert!(find_by_name(&app, "Guest token").await.is_none());
 
-    // Tokens are not an administrator's matter only.
+    // Tokens are not an administrator's matter only: a member has the
+    // page too, with the tokens they made themselves and no one else's.
     let member = create_member(&app).await;
+    create_token(&app, &member, "Member token", &[], None).await;
     let page = app.get("/tokens").login_as(&member).send().await;
     assert_eq!(page.status, StatusCode::OK);
-    assert!(page.text().contains("Kept token"));
+    assert!(page.text().contains("Member token"));
+    assert!(!page.text().contains("Kept token"));
+    let page = app.get("/tokens").login_as(&admin).send().await.text();
+    assert!(page.contains("Member token") && page.contains("Kept token"));
 }
 
 // ---------------------------------------------------- access token cleanup

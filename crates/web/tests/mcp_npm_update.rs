@@ -15,7 +15,7 @@ use mymcps_upstream::{NpmUpdateRuntime, Upstream, UpstreamError};
 use mymcps_web::AppState;
 use mymcps_web::state::builtins;
 use mymcps_web::testing::TestApp;
-use mymcps_web::testing::factories::{create_admin, create_mcp, create_member};
+use mymcps_web::testing::factories::{create_admin, create_mcp};
 use serde_json::json;
 
 /// How the update of a test goes.
@@ -183,7 +183,7 @@ async fn refuses_pinned_npm_versions_without_changing_them() {
 async fn says_why_an_update_did_not_leave_the_mcp_ready() {
     // The package updates, then does not start.
     let (app, _reloaded) = app_updating(Outcome::Broken).await;
-    let member = create_member(&app).await;
+    let member = create_admin(&app).await;
     let mcp = create_mcp(&app, member.id, |mcp| {
         mcp.transport = McpTransport::Npm;
         mcp.npm_package = Some("@example/latest-mcp".into());

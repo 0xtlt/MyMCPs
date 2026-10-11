@@ -141,11 +141,9 @@ async fn shows_instance_settings_only_to_admins() {
     assert!(page.contains("<span class=\"detail-row__value\">admin@example.com</span>"));
     assert!(page.contains("data-dialog-open=\"#change-email\""));
     assert!(page.contains("data-dialog-open=\"#change-password\""));
-    assert!(
-        page.contains(
-            "My Instance <span class=\"badge badge--info badge--no-dot\">Admin only</span>"
-        )
-    );
+    assert!(page.contains(
+        "My Instance <span class=\"badge badge--info badge--no-dot\">Instance admin</span>"
+    ));
     assert!(page.contains(
         "<form class=\"card\" method=\"post\" action=\"/settings/mcp-logging?_method=PATCH\">"
     ));
@@ -161,9 +159,10 @@ async fn shows_instance_settings_only_to_admins() {
         page.matches("<form ").count(),
         page.matches("name=\"_csrf\"").count()
     );
-    // Sign out, the email and the password of the account, the settings of
-    // the instance, and the export of a backup.
-    assert_eq!(page.matches("<form ").count(), 5);
+    // Sign out, the team of the switcher and the form that creates one, the
+    // email and the password of the account, the settings of the instance,
+    // and the export of a backup.
+    assert_eq!(page.matches("<form ").count(), 7);
 
     assert_eq!(member_page.status, StatusCode::OK);
     let page = member_page.text();
@@ -172,7 +171,7 @@ async fn shows_instance_settings_only_to_admins() {
     assert!(page.contains("action=\"/settings/password?_method=PATCH\""));
     for admin_only in [
         "My Instance",
-        "Admin only",
+        "Instance admin",
         "/settings/mcp-logging",
         "gatewayToolMode",
         "mcpLogLevel",
@@ -183,7 +182,9 @@ async fn shows_instance_settings_only_to_admins() {
     ] {
         assert!(!page.contains(admin_only), "{admin_only}");
     }
-    assert_eq!(page.matches("<form ").count(), 3);
+    // Sign out, the team of the switcher and the form that creates one, the
+    // email and the password of the account.
+    assert_eq!(page.matches("<form ").count(), 5);
     // Reading the page as a member does not create the settings row.
     let rows: i64 = sqlx::query_scalar("select count(*) from `instance_settings`")
         .fetch_one(&*app.core.db)
@@ -896,7 +897,7 @@ async fn restricts_instance_settings_updates_to_admins() {
     assert_redirect(&response, "/");
     assert_eq!(
         response.flashed("error"),
-        Some(json!("Admin access required"))
+        Some(json!("Instance admin access required"))
     );
 
     let settings = InstanceSetting::current(&*app.core.db).await.unwrap();
@@ -917,6 +918,7 @@ async fn a_shorter_retention_deletes_the_older_call_logs_at_once() {
             access_token_prefix: "mmcp_test".into(),
             requested_tool_name: tool.into(),
             outcome: CallOutcome::Success,
+            team_id: mymcps_core::models::Team::ROOT_ID,
             ..Default::default()
         };
         log.insert(db).await.unwrap();

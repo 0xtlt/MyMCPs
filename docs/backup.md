@@ -4,8 +4,8 @@ A backup is one file that holds everything an instance stores, encrypted with a 
 
 ## What a backup holds
 
-- Users, with their password hashes, and pending invites.
-- MCPs, with their credentials: bearer tokens, header values, OAuth clients and connections, built-in MCP sign-ins and settings, and the environment of npm MCPs.
+- Users, with their password hashes, their teams and their roles, and pending invites.
+- The MCPs of every team, with their credentials: bearer tokens, header values, OAuth clients and connections, built-in MCP sign-ins and settings, and the environment of npm MCPs.
 - Access tokens and the OAuth connections of AI clients. Agents keep working with the tokens they already have.
 - Tool approval choices and requests, call logs, and the instance settings.
 
@@ -13,7 +13,7 @@ It does not hold the files MyMCPs can make again: the Deno cache and the sandbox
 
 ## Export a backup
 
-Only an administrator can export.
+Only an owner or an admin of the Root Team can export: a backup holds what every team stores.
 
 1. Open **Settings**. Under **Backup**, select **Export backup**.
 2. Choose a **Backup password** and type it again. Use one you do not use elsewhere, and store it in a password manager: the file cannot be opened without it, and nobody can recover it.

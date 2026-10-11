@@ -1,5 +1,5 @@
 //! The Settings page: the email and the password of the signed-in person,
-//! and the settings of the instance for administrators.
+//! and the settings of the instance for those who run it.
 //! (`settings_controller.ts`)
 
 use axum::Router;
@@ -44,7 +44,7 @@ pub fn routes() -> FeatureRoutes {
             .route("/settings", get(index))
             .route("/settings/email", patch(update_email))
             .route("/settings/password", patch(update_password)),
-        admin: Router::new().route("/settings/mcp-logging", patch(update_mcp_logging)),
+        instance_admin: Router::new().route("/settings/mcp-logging", patch(update_mcp_logging)),
         ..Default::default()
     }
 }
@@ -56,7 +56,7 @@ pub async fn index(
     session: Session,
     CurrentUser(user): CurrentUser,
 ) -> Result<Response, AppError> {
-    let instance = if user.is_admin() {
+    let instance = if context.instance_admin {
         Some(InstanceSetting::current(&*state.core.db).await?)
     } else {
         None
@@ -260,6 +260,7 @@ struct InstanceChange {
     mcp_log_retention_days: i64,
     mcp_auto_update_enabled: Option<bool>,
     mcp_auto_update_cron: Option<String>,
+    registration_enabled: Option<bool>,
 }
 
 /// `PATCH /settings/mcp-logging`
@@ -290,6 +291,8 @@ pub async fn update_mcp_logging(
     if let Some(cron) = payload.mcp_auto_update_cron.filter(|cron| !cron.is_empty()) {
         settings.mcp_auto_update_cron = cron;
     }
+    // A switch submits nothing when unchecked: registration is then closed.
+    settings.is_registration_enabled = payload.registration_enabled.unwrap_or(false);
     settings.updated_by = Some(user.id);
     settings.save(&**db).await?;
     // A shorter retention applies at once.

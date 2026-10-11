@@ -13,7 +13,17 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 - Records gateway activity and usage analytics.
 - Exports the whole instance to one encrypted backup file, and sets a new instance up from one.
 
-MyMCPs is self-hosted and invite-only. The first user becomes the administrator during onboarding.
+MyMCPs is self-hosted. The first user owns the instance, and nobody else gets in without an invite until that owner opens registration.
+
+## Teams, roles, and registration
+
+Accounts, teams, and permissions work as they do in Coolify.
+
+- **Teams.** MCPs, access tokens, approvals, call logs, and analytics belong to a team, and only its members see them. An access token reaches the MCPs of its own team and no other. Every account comes with a personal team, anyone can create more from the team switcher at the top of the navigation, and the switcher is how you go from one team to another.
+- **Roles.** In each team a person is a **member**, an **admin**, or an **owner**. A member sees the MCPs of the team, makes access tokens of their own, and decides the approvals those tokens ask for. An admin also adds and changes MCPs, sees every access token, the logs and the analytics, and manages members and invites up to their own rank. An owner also deletes the team and decides who else owns it.
+- **Root Team.** The first account owns the Root Team. Its owners and admins run the instance: they change the instance settings under **Settings → My Instance**, export backups, and delete accounts under **Users**, which asks for their own password.
+- **Invites.** An admin invites an email address into a team, with a role, from **Team → Create invite**. The link lets that person create their account, or join with the one they have. Invites work whether or not registration is open.
+- **Registration.** Off by default. An owner or admin of the Root Team turns **Allow registration** on under **Settings → My Instance**: anyone who reaches the instance can then create an account on `/signup`. A new account sees nothing of the other teams: it gets a personal team of its own, where it can add MCPs, including npm packages that run in a sandbox on your server. Open registration only on an instance you would let strangers use that way.
 
 ## Run locally
 
@@ -24,7 +34,7 @@ cp .env.example .env
 cargo run --bin mymcps
 ```
 
-The server creates its key and its SQLite database under `tmp/` and applies database migrations when it starts. Open [http://localhost:3333](http://localhost:3333) and create the admin account.
+The server creates its key and its SQLite database under `tmp/` and applies database migrations when it starts. Open [http://localhost:3333](http://localhost:3333) and create the first account, which owns the instance.
 
 ## Connect an AI client
 
@@ -39,7 +49,7 @@ OAuth clients connect to `https://your-domain.example/mcp` without a manually co
 For clients without OAuth support, create a manual token and send it as
 `Authorization: Bearer <token>` on every `/mcp` request.
 
-Tools use `{mcp-slug}__{tool-name}` names in eager mode. Administrators can choose the instance default under **Settings → My Instance**; existing instances default to eager mode. Clients can override that default per request with either `eager` or `lazy`:
+Tools use `{mcp-slug}__{tool-name}` names in eager mode. Owners and admins of the Root Team can choose the instance default under **Settings → My Instance**; existing instances default to eager mode. Clients can override that default per request with either `eager` or `lazy`:
 
 ```text
 X-MyMCPs-Tool-Mode: lazy
@@ -107,7 +117,7 @@ Run this on the server from the application directory, using the instance's usua
 mymcps user:reset-password user@example.com
 ```
 
-Enter and confirm the new password at the hidden prompts. Passwords must contain 8–32 characters and are never passed as command-line arguments. The command works for administrator and member accounts without the old password, and exits with a nonzero status if the account does not exist or validation fails.
+Enter and confirm the new password at the hidden prompts. Passwords must contain 8–32 characters and are never passed as command-line arguments. The command works for any account, whatever its teams and roles, without the old password, and exits with a nonzero status if the account does not exist or validation fails.
 
 For Docker Compose (including Coolify), run:
 

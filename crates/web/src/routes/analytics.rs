@@ -25,6 +25,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::sqlite::SqliteExecutor;
 
+use crate::auth::CurrentTeam;
 use crate::error::AppError;
 use crate::forms::{FormState, refusal};
 use crate::input::Input;
@@ -642,9 +643,11 @@ fn sql_time(time: &ZonedTime) -> Timestamp {
 
 const ERROR_COUNT_SQL: &str = "sum(case when `outcome` = 'error' then 1 else 0 end)";
 
-/// Calls, errors and average duration from `start` to `end`, excluded.
+/// Calls, errors and average duration of a team from `start` to `end`,
+/// excluded.
 pub async fn metrics<'e, E>(
     db: E,
+    team_id: i64,
     start: &ZonedTime,
     end: &ZonedTime,
 ) -> Result<Metrics, sqlx::Error>
@@ -653,8 +656,9 @@ where
 {
     let (total, errors, average): (i64, Option<i64>, Option<f64>) = sqlx::query_as(
         "select count(*), sum(case when `outcome` = 'error' then 1 else 0 end), avg(`duration_ms`) \
-         from `mcp_call_logs` where `created_at` >= ? and `created_at` < ?",
+         from `mcp_call_logs` where `team_id` = ? and `created_at` >= ? and `created_at` < ?",
     )
+    .bind(team_id)
     .bind(sql_time(start))
     .bind(sql_time(end))
     .fetch_one(db)
@@ -666,10 +670,11 @@ where
     })
 }
 
-/// Calls and errors of each bucket, in the order of the buckets. One
-/// statement sorts the calls of the whole period into them.
+/// Calls and errors of a team in each bucket, in the order of the buckets.
+/// One statement sorts the calls of the whole period into them.
 pub async fn timeline<'e, E>(
     db: E,
+    team_id: i64,
     config: &RangeConfig,
     buckets: &[Bucket],
 ) -> Result<Vec<LinePoint>, sqlx::Error>
@@ -689,7 +694,9 @@ where
         }
         query.push(" end as `bucket`, count(*), ");
         query.push(ERROR_COUNT_SQL);
-        query.push(" from `mcp_call_logs` where `created_at` >= ");
+        query.push(" from `mcp_call_logs` where `team_id` = ");
+        query.push_bind(team_id);
+        query.push(" and `created_at` >= ");
         query.push_bind(sql_time(&config.start));
         query.push(" and `created_at` < ");
         query.push_bind(sql_time(&config.end));
@@ -716,9 +723,10 @@ where
         .collect())
 }
 
-/// The five busiest values of a label over the period.
+/// The five busiest values of a label of a team over the period.
 async fn breakdown<'e, E>(
     db: E,
+    team_id: i64,
     label_sql: &'static str,
     config: &RangeConfig,
 ) -> Result<Vec<Breakdown>, sqlx::Error>
@@ -728,11 +736,12 @@ where
     // `label_sql` is one of the three expressions below, never input.
     let sql = format!(
         "select {label_sql} as `label`, count(*) as `total`, {ERROR_COUNT_SQL} as `errors`, avg(`duration_ms`) \
-         from `mcp_call_logs` where `created_at` >= ? and `created_at` < ? \
+         from `mcp_call_logs` where `team_id` = ? and `created_at` >= ? and `created_at` < ? \
          group by {label_sql} order by `total` desc, `label` asc limit 5"
     );
     let rows: Vec<(String, i64, Option<i64>, Option<f64>)> =
         sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .bind(team_id)
             .bind(sql_time(&config.start))
             .bind(sql_time(&config.end))
             .fetch_all(db)
@@ -918,6 +927,7 @@ pub async fn index(
     State(state): State<AppState>,
     context: PageContext,
     session: Session,
+    team: CurrentTeam,
     headers: HeaderMap,
     Input(input): Input,
 ) -> Result<Response, AppError> {
@@ -988,16 +998,23 @@ pub async fn index(
     let buckets = buckets(&config);
     let settings = state.gateway.call_log.settings().await?;
     let analytics = Analytics {
-        metrics: metrics(db, &config.start, &config.end).await?,
-        timeline: timeline(db, &config, &buckets).await?,
+        metrics: metrics(db, team.id(), &config.start, &config.end).await?,
+        timeline: timeline(db, team.id(), &config, &buckets).await?,
         top_mcps: breakdown(
             db,
+            team.id(),
             "coalesce(`mcp_name`, `mcp_slug`, 'Unknown MCP')",
             &config,
         )
         .await?,
-        top_tools: breakdown(db, "coalesce(`tool_name`, `requested_tool_name`)", &config).await?,
-        top_tokens: breakdown(db, "`access_token_name`", &config).await?,
+        top_tools: breakdown(
+            db,
+            team.id(),
+            "coalesce(`tool_name`, `requested_tool_name`)",
+            &config,
+        )
+        .await?,
+        top_tokens: breakdown(db, team.id(), "`access_token_name`", &config).await?,
         address: match config.range {
             Range::Custom => custom_range_address(&time_zone, &config.start, &config.end),
             preset => link(

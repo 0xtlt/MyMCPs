@@ -55,6 +55,8 @@ pub struct NewAccessToken<'a> {
     pub mcp_ids: &'a [i64],
     pub expires_at: Option<Timestamp>,
     pub created_by: i64,
+    /// The team whose MCPs the token reaches.
+    pub team_id: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,6 +68,8 @@ pub struct NewOauthGrant<'a> {
     pub scopes: &'a str,
     pub resource: &'a str,
     pub created_by: i64,
+    /// The team the user granted access to.
+    pub team_id: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -105,6 +109,7 @@ pub async fn create(
         scope_mode: params.scope_mode,
         expires_at: params.expires_at,
         created_by: params.created_by,
+        team_id: params.team_id,
         source: TokenSource::Manual,
         ..Default::default()
     };
@@ -136,6 +141,7 @@ where
         source: TokenSource::Oauth,
         expires_at: Some(Timestamp::now() + Duration::seconds(OAUTH_ACCESS_TOKEN_TTL_SECONDS)),
         created_by: params.created_by,
+        team_id: params.team_id,
         oauth_client_id: Some(params.client_id),
         oauth_scopes: Some(params.scopes.to_string()),
         oauth_resource: Some(params.resource.to_string()),
@@ -359,23 +365,30 @@ pub async fn touch_last_used(db: &Db, token: &mut AccessToken) -> Result<(), sql
     token.save(&**db).await
 }
 
-/// Resolve MCPs allowed for this token.
-/// scope_mode=all → every enabled MCP (including ones added after token creation).
+/// Resolve MCPs allowed for this token: MCPs of its team, and of no other.
+/// scope_mode=all → every enabled MCP of the team (including ones added
+/// after token creation).
 pub async fn resolve_allowed_mcps(db: &Db, token: &AccessToken) -> Result<Vec<Mcp>, sqlx::Error> {
     if token.scope_mode == ScopeMode::All {
-        return sqlx::query_as("select * from `mcps` where `enabled` = ? order by `name` asc")
-            .bind(true)
-            .fetch_all(&**db)
-            .await;
+        return sqlx::query_as(
+            "select * from `mcps` where `team_id` = ? and `enabled` = ? order by `name` asc",
+        )
+        .bind(token.team_id)
+        .bind(true)
+        .fetch_all(&**db)
+        .await;
     }
 
+    // The team is checked here too: a link to the MCP of another team, if
+    // one were ever stored, opens nothing.
     sqlx::query_as(
         "select `mcps`.* from `mcps` \
          inner join `access_token_mcps` on `mcps`.`id` = `access_token_mcps`.`mcp_id` \
-         where `access_token_mcps`.`access_token_id` = ? and `mcps`.`enabled` = ? \
+         where `access_token_mcps`.`access_token_id` = ? and `mcps`.`team_id` = ? and `mcps`.`enabled` = ? \
          order by `mcps`.`name` asc",
     )
     .bind(token.id)
+    .bind(token.team_id)
     .bind(true)
     .fetch_all(&**db)
     .await

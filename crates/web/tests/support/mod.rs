@@ -4,12 +4,12 @@
 #![allow(dead_code)]
 
 use mymcps_core::Timestamp;
-use mymcps_core::models::{AccessToken, CallOutcome, Mcp, McpCallLog, ScopeMode};
+use mymcps_core::models::{AccessToken, CallOutcome, Mcp, McpCallLog, ScopeMode, Team};
 use mymcps_web::testing::TestApp;
 use mymcps_web::testing::factories::next_value;
 
-/// A token row as the database holds it, without a secret anyone knows.
-/// Change it with `adjust`.
+/// A token row of the Root Team as the database holds it, without a secret
+/// anyone knows. Change it with `adjust`.
 pub async fn create_stored_access_token(
     app: &TestApp,
     created_by: i64,
@@ -22,6 +22,7 @@ pub async fn create_stored_access_token(
         token_prefix: "mcp_stored".into(),
         scope_mode: ScopeMode::All,
         created_by,
+        team_id: Team::ROOT_ID,
         ..Default::default()
     };
     adjust(&mut token);
@@ -48,6 +49,8 @@ pub async fn create_mcp_call_log(
         tool_name: Some("echo".into()),
         outcome: CallOutcome::Success,
         duration_ms: 25,
+        // A call belongs to the team of the token that made it.
+        team_id: token.team_id,
         ..Default::default()
     };
     adjust(&mut log);

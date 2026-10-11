@@ -37,6 +37,8 @@ model! {
         pub oauth_refresh_token_hash: Option<String>,
         pub oauth_refresh_token_prefix: Option<String>,
         pub oauth_refresh_expires_at: Option<Timestamp>,
+        /// The team whose MCPs the token reaches.
+        pub team_id: i64,
     }
 }
 

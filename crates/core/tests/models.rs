@@ -3,7 +3,7 @@ use std::time::Duration;
 use mymcps_core::limiter::{Limiter, LimiterError};
 use mymcps_core::models::{
     AccessToken, ApprovalDecision, ApprovalRequest, ApprovalState, InstanceSetting, Invite, Mcp,
-    McpLogLevel, McpStatus, McpTransport, OauthClient, User, UserRole,
+    McpLogLevel, McpStatus, McpTransport, OauthClient, Team, TeamRole, User,
 };
 use mymcps_core::{Config, Core, Db, Timestamp};
 
@@ -14,15 +14,13 @@ async fn core() -> (std::sync::Arc<Core>, tempfile::TempDir) {
 }
 
 async fn admin(db: &Db) -> User {
-    let mut user = User::with_password(
-        "admin@example.com",
-        Some("Ada Lovelace"),
-        "secret-password",
-        UserRole::Admin,
-    )
-    .await
-    .unwrap();
-    user.insert(&**db).await.unwrap();
+    let mut user =
+        User::with_password("admin@example.com", Some("Ada Lovelace"), "secret-password")
+            .await
+            .unwrap();
+    let mut transaction = db.begin().await.unwrap();
+    user.create_first(&mut transaction).await.unwrap();
+    transaction.commit().await.unwrap();
     user
 }
 
@@ -34,7 +32,7 @@ async fn users_sign_in_and_change_their_password() {
 
     let mut user = admin(db).await;
     assert!(user.id > 0);
-    assert!(user.is_admin());
+    assert!(user.is_instance_admin(&**db).await.unwrap());
     assert_eq!(user.initials(), "AL");
     assert_eq!(user.session_version, 1);
     assert!(User::setup_complete(&**db).await.unwrap());
@@ -103,6 +101,7 @@ async fn save_writes_only_the_columns_that_changed() {
         http_url: Some("https://mcp.notion.com/mcp".into()),
         enabled: true,
         created_by: user.id,
+        team_id: Team::ROOT_ID,
         ..Default::default()
     };
     mcp.insert(&**db).await.unwrap();
@@ -372,4 +371,240 @@ async fn limiters_count_per_window() {
     assert!(!brief.attempt("k").await.unwrap());
     tokio::time::sleep(Duration::from_millis(60)).await;
     assert!(brief.attempt("k").await.unwrap());
+}
+
+/// A later account, with its personal team.
+async fn account(db: &Db, email: &str, name: Option<&str>) -> (User, Team) {
+    let mut user = User::with_password(email, name, "secret-password")
+        .await
+        .unwrap();
+    let mut transaction = db.begin().await.unwrap();
+    let team = user.create(&mut transaction).await.unwrap();
+    transaction.commit().await.unwrap();
+    (user, team)
+}
+
+async fn mcp_of(db: &Db, team_id: i64, created_by: i64, name: &str) -> Mcp {
+    let mut mcp = Mcp {
+        name: name.into(),
+        slug: Mcp::slugify(name),
+        transport: McpTransport::Http,
+        created_by,
+        team_id,
+        ..Default::default()
+    };
+    mcp.insert(&**db).await.unwrap();
+    mcp
+}
+
+async fn token_of(db: &Db, team_id: i64, created_by: i64, name: &str) -> AccessToken {
+    let mut token = AccessToken {
+        name: name.into(),
+        token_prefix: "mcp_".into(),
+        token_hash: format!("hash-{team_id}-{created_by}-{name}"),
+        created_by,
+        team_id,
+        ..Default::default()
+    };
+    token.insert(&**db).await.unwrap();
+    token
+}
+
+async fn roles(db: &Db, team_id: i64) -> Vec<(i64, TeamRole)> {
+    sqlx::query_as("select `user_id`, `role` from `team_user` where `team_id` = ? order by `id`")
+        .bind(team_id)
+        .fetch_all(&**db)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn every_account_has_a_team_and_the_first_one_owns_the_root_team() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+
+    let first = admin(db).await;
+    assert_eq!(
+        roles(db, Team::ROOT_ID).await,
+        [(first.id, TeamRole::Owner)]
+    );
+    let teams = Team::memberships(&**db, first.id).await.unwrap();
+    assert_eq!(
+        teams.len(),
+        1,
+        "the Root Team is the team of the first account"
+    );
+    assert!(teams[0].team.is_root() && teams[0].team.personal_team);
+
+    let (grace, personal) = account(db, "grace@example.com", Some("Grace Hopper")).await;
+    assert_eq!(personal.name, "Grace Hopper's Team");
+    assert!(personal.personal_team && !personal.is_root());
+    assert_eq!(roles(db, personal.id).await, [(grace.id, TeamRole::Owner)]);
+    assert!(!grace.is_instance_admin(&**db).await.unwrap());
+    let (nameless, team) = account(db, "nameless@example.com", None).await;
+    assert_eq!(team.name, "nameless@example.com's Team");
+
+    // Who runs the instance is said by the Root Team, and by nothing else.
+    Team::attach(&**db, Team::ROOT_ID, grace.id, TeamRole::Admin)
+        .await
+        .unwrap();
+    Team::attach(&**db, Team::ROOT_ID, nameless.id, TeamRole::Member)
+        .await
+        .unwrap();
+    assert!(grace.is_instance_admin(&**db).await.unwrap());
+    assert!(!nameless.is_instance_admin(&**db).await.unwrap());
+    assert_eq!(Team::owner_count(&**db, Team::ROOT_ID).await.unwrap(), 1);
+    assert!(
+        Team::attach(&**db, Team::ROOT_ID, grace.id, TeamRole::Member)
+            .await
+            .is_err(),
+        "nobody is in a team twice"
+    );
+
+    // Teams in the order they were joined, each with what the person is there.
+    let teams: Vec<(i64, TeamRole)> = Team::memberships(&**db, grace.id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|membership| (membership.team.id, membership.role))
+        .collect();
+    assert_eq!(
+        teams,
+        [
+            (personal.id, TeamRole::Owner),
+            (Team::ROOT_ID, TeamRole::Admin)
+        ]
+    );
+    assert_eq!(
+        Team::membership(&**db, Team::ROOT_ID, grace.id)
+            .await
+            .unwrap()
+            .map(|membership| membership.role),
+        Some(TeamRole::Admin)
+    );
+    assert!(
+        Team::membership(&**db, personal.id, first.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn leaving_a_team_revokes_the_tokens_made_there_and_nothing_else() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let first = admin(db).await;
+    let (grace, personal) = account(db, "grace@example.com", Some("Grace Hopper")).await;
+    Team::attach(&**db, Team::ROOT_ID, grace.id, TeamRole::Member)
+        .await
+        .unwrap();
+    let shared = token_of(db, Team::ROOT_ID, grace.id, "shared").await;
+    let own = token_of(db, personal.id, grace.id, "own").await;
+    let other = token_of(db, Team::ROOT_ID, first.id, "other").await;
+    let mut grace = grace;
+    grace.remember_team(&**db, Team::ROOT_ID).await.unwrap();
+
+    let mut transaction = db.begin().await.unwrap();
+    Team::detach(&mut transaction, Team::ROOT_ID, grace.id)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+
+    assert_eq!(
+        roles(db, Team::ROOT_ID).await,
+        [(first.id, TeamRole::Owner)]
+    );
+    let revoked = |token: &AccessToken| {
+        let id = token.id;
+        async move {
+            AccessToken::find(&**db, id)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_revoked()
+        }
+    };
+    assert!(revoked(&shared).await);
+    assert!(!revoked(&own).await);
+    assert!(!revoked(&other).await);
+    let grace = User::find(&**db, grace.id).await.unwrap().unwrap();
+    assert_eq!(grace.current_team_id, None, "they no longer work there");
+}
+
+#[tokio::test]
+async fn deleting_an_account_settles_the_teams_it_was_in() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let first = admin(db).await;
+    let (grace, personal) = account(db, "grace@example.com", Some("Grace Hopper")).await;
+    let (linus, _) = account(db, "linus@example.com", Some("Linus T")).await;
+    let (margaret, _) = account(db, "margaret@example.com", Some("Margaret H")).await;
+
+    // A team Grace owns, with an administrator and a member who joined first.
+    let mut transaction = db.begin().await.unwrap();
+    let shared = Team::create_owned(&mut transaction, "Shared", None, &grace)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    Team::attach(&**db, shared.id, linus.id, TeamRole::Member)
+        .await
+        .unwrap();
+    Team::attach(&**db, shared.id, margaret.id, TeamRole::Admin)
+        .await
+        .unwrap();
+    let kept = mcp_of(db, shared.id, grace.id, "Kept").await;
+    let token = token_of(db, shared.id, grace.id, "agent").await;
+    let lost = mcp_of(db, personal.id, grace.id, "Lost").await;
+    // And a row she made in a team she has left since.
+    Team::attach(&**db, Team::ROOT_ID, grace.id, TeamRole::Member)
+        .await
+        .unwrap();
+    let orphan = mcp_of(db, Team::ROOT_ID, grace.id, "Orphan").await;
+    let mut transaction = db.begin().await.unwrap();
+    Team::detach(&mut transaction, Team::ROOT_ID, grace.id)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+
+    let mut transaction = db.begin().await.unwrap();
+    assert_eq!(
+        Team::delete_account(&mut transaction, grace.id)
+            .await
+            .unwrap(),
+        Ok(())
+    );
+    transaction.commit().await.unwrap();
+
+    assert!(User::find(&**db, grace.id).await.unwrap().is_none());
+    // Her personal team went with her, and what it had.
+    assert!(Team::find(&**db, personal.id).await.unwrap().is_none());
+    assert!(Mcp::find(&**db, lost.id).await.unwrap().is_none());
+    // The team she shared stays, owned by its administrator rather than by
+    // the member who joined before them.
+    assert_eq!(
+        roles(db, shared.id).await,
+        [(linus.id, TeamRole::Member), (margaret.id, TeamRole::Owner)]
+    );
+    let kept = Mcp::find(&**db, kept.id).await.unwrap().unwrap();
+    assert_eq!(kept.created_by, margaret.id);
+    let token = AccessToken::find(&**db, token.id).await.unwrap().unwrap();
+    assert!(
+        token.is_revoked(),
+        "a token acts for the person who made it"
+    );
+    assert_eq!(token.created_by, margaret.id);
+    let orphan = Mcp::find(&**db, orphan.id).await.unwrap().unwrap();
+    assert_eq!(orphan.created_by, first.id);
+
+    // The instance always keeps someone to run it.
+    let mut transaction = db.begin().await.unwrap();
+    assert_eq!(
+        Team::delete_account(&mut transaction, first.id)
+            .await
+            .unwrap(),
+        Err(mymcps_core::models::AccountRemovalRefusal::LastOfRootTeam)
+    );
+    transaction.rollback().await.unwrap();
+    assert!(User::find(&**db, first.id).await.unwrap().is_some());
 }

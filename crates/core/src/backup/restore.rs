@@ -26,7 +26,7 @@ use super::{
 use crate::context::Core;
 use crate::crypto::Encryption;
 use crate::db::migrations::MIGRATIONS;
-use crate::models::{InstanceSetting, User};
+use crate::models::{InstanceSetting, Team, User};
 
 /// The name of the decrypted database in its [`BackupDir`].
 const DATABASE_FILE: &str = "db.sqlite3";
@@ -157,9 +157,10 @@ fn quote(identifier: &str) -> String {
 /// 2. the body is decrypted to a file;
 /// 3. the metadata is parsed;
 /// 4. the database is checked: a SQLite file that passes `quick_check`,
-///    holds tables and indexes only, only migrations this version knows,
-///    and an administrator;
-/// 5. the migrations it lacks are run on it;
+///    holds tables and indexes only, and only migrations this version
+///    knows;
+/// 5. the migrations it lacks are run on it, and it must then hold someone
+///    who runs the instance: an owner or an administrator of the Root Team;
 /// 6. its secrets are encrypted with the key of this instance when the
 ///    backup was made with another;
 /// 7. its rows replace those of the instance, in one transaction that
@@ -303,10 +304,21 @@ async fn readable(connection: &mut SqliteConnection) -> Result<(), BackupError> 
         .fetch_all(&mut *connection)
         .await
         .map_err(blame)?;
-    sqlx::query_as::<_, User>("select * from `users` where `role` = 'admin'")
-        .fetch_all(&mut *connection)
-        .await
-        .map_err(blame)?;
+    // Read after the migrations, which is when every backup says who runs
+    // the instance the same way: the owners and administrators of the Root
+    // Team. Without one, nobody could change its settings.
+    let administrators = sqlx::query_as::<_, User>(
+        "select `users`.* from `users` \
+         inner join `team_user` on `team_user`.`user_id` = `users`.`id` \
+         where `team_user`.`team_id` = ? and `team_user`.`role` in ('owner', 'admin')",
+    )
+    .bind(Team::ROOT_ID)
+    .fetch_all(&mut *connection)
+    .await
+    .map_err(blame)?;
+    if administrators.is_empty() {
+        return Err(BackupError::NoAdministrator);
+    }
     Ok(())
 }
 
@@ -370,14 +382,6 @@ async fn check(connection: &mut SqliteConnection) -> Result<(), BackupError> {
         return Err(BackupError::Damaged);
     }
 
-    let administrators: i64 =
-        sqlx::query_scalar("select count(*) from `users` where `role` = 'admin'")
-            .fetch_one(&mut *connection)
-            .await
-            .map_err(blame)?;
-    if administrators == 0 {
-        return Err(BackupError::NoAdministrator);
-    }
     Ok(())
 }
 

@@ -2,6 +2,7 @@
 //! gives an MCP client, and the page that sends the browser back to it.
 
 use maud::{DOCTYPE, Markup, html};
+use mymcps_core::models::Membership;
 
 use crate::assets::asset_url;
 use crate::views::icon::{icon, logo};
@@ -15,6 +16,10 @@ pub struct Consent<'a> {
     pub is_loopback_redirect: bool,
     pub scope: &'a str,
     pub user_email: &'a str,
+    /// The teams of the person: the client gets the MCPs of one of them.
+    pub teams: &'a [Membership],
+    /// The one the screen proposes: the team they work in.
+    pub team_id: i64,
     pub client_id: &'a str,
     pub redirect_uri: &'a str,
     pub state: Option<&'a str>,
@@ -37,7 +42,7 @@ pub fn authorize_page(context: &PageContext, consent: &Consent<'_>) -> Markup {
             div class="well" {
                 h2 { "Allow access to MyMCPs?" }
                 p class="text-secondary" {
-                    "This client will be able to call every enabled MCP through your gateway. You can revoke the connection at any time from Access tokens."
+                    "This client will be able to call every enabled MCP of one team through your gateway. You can revoke the connection at any time from Access tokens."
                 }
                 div class="cluster cluster--between" {
                     p class="cluster" {
@@ -75,8 +80,29 @@ pub fn authorize_page(context: &PageContext, consent: &Consent<'_>) -> Markup {
                 }
             }
 
+            // The team the client reaches: chosen in the form that follows,
+            // which the select belongs to by its `form` attribute.
+            div class="field" {
+                label class="field__label" for="authorize-team" { "Team" }
+                @if let [only] = consent.teams {
+                    input type="hidden" name="team_id" value=(only.team.id) form="authorize-form";
+                    input class="input" id="authorize-team" type="text" value=(only.team.name) readonly;
+                } @else {
+                    div class="select" {
+                        select class="input" id="authorize-team" name="team_id" form="authorize-form" {
+                            @for membership in consent.teams {
+                                option value=(membership.team.id) selected[membership.team.id == consent.team_id] {
+                                    (membership.team.name)
+                                }
+                            }
+                        }
+                        (icon("chevron-down"))
+                    }
+                }
+            }
+
             // One form, two submits: the button pressed sends decision=deny or decision=approve.
-            form class="auth-card__actions" method="post" action="/authorize" data-async {
+            form class="auth-card__actions" id="authorize-form" method="post" action="/authorize" data-async {
                 (context.csrf_field())
                 input type="hidden" name="client_id" value=(consent.client_id);
                 input type="hidden" name="redirect_uri" value=(consent.redirect_uri);

@@ -89,6 +89,16 @@ pub struct GatedCall<'a> {
     pub args: Option<&'a Map<String, Value>>,
 }
 
+/// Whose requests someone reads and decides: those of one team, all of them
+/// for an administrator of it, their own for a member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApprovalScope {
+    pub team_id: i64,
+    pub user_id: i64,
+    /// An administrator or an owner of the team.
+    pub admin: bool,
+}
+
 /// What a person decides of a request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -561,42 +571,57 @@ impl ApprovalService {
         SAVED_APPROVAL_SUMMARY.validate_as(&parsed).ok()
     }
 
-    /// The requests a user may read and decide: an administrator all of them, a
-    /// member the ones their own access tokens made. A request shows the
-    /// arguments of a call, which the call log only shows to administrators.
+    /// The requests someone may read and decide in a team: an administrator
+    /// all of them, a member the ones their own access tokens made. A request
+    /// shows the arguments of a call, which the call log only shows to
+    /// administrators.
     ///
     /// The query selects the rows of `approval_requests` and ends inside its
     /// `where`: a caller narrows it with `.push(" and ...")`, then orders and
     /// limits it.
-    pub fn visible_to(user: &User) -> QueryBuilder<Sqlite> {
-        Self::visible_rows("select `approval_requests`.*", user)
+    pub fn visible_to(scope: ApprovalScope) -> QueryBuilder<Sqlite> {
+        Self::visible_rows("select `approval_requests`.*", scope)
     }
 
-    fn visible_rows(select: &str, user: &User) -> QueryBuilder<Sqlite> {
+    fn visible_rows(select: &str, scope: ApprovalScope) -> QueryBuilder<Sqlite> {
         let mut query = QueryBuilder::<Sqlite>::new(select);
-        query.push(" from `approval_requests` where ");
-        if user.is_admin() {
-            query.push("1 = 1");
-        } else {
+        // A request belongs to the team of the access token that made it.
+        query
+            .push(
+                " from `approval_requests` where exists (select 1 from `access_tokens` \
+                 where `access_tokens`.`id` = `approval_requests`.`access_token_id` \
+                 and `access_tokens`.`team_id` = ",
+            )
+            .push_bind(scope.team_id);
+        if !scope.admin {
             query
-                .push(
-                    "exists (select 1 from `access_tokens` \
-                     where `access_tokens`.`id` = `approval_requests`.`access_token_id` \
-                     and `access_tokens`.`created_by` = ",
-                )
-                .push_bind(user.id)
-                .push(")");
+                .push(" and `access_tokens`.`created_by` = ")
+                .push_bind(scope.user_id);
         }
+        query.push(")");
         query
     }
 
-    /// How many requests wait for a decision this user can make.
-    pub async fn pending_count(&self, user: &User) -> Result<i64, sqlx::Error> {
-        let mut query = Self::visible_rows("select count(*)", user);
+    /// How many requests wait for a decision this person can make in the team.
+    pub async fn pending_count(&self, scope: ApprovalScope) -> Result<i64, sqlx::Error> {
+        let mut query = Self::visible_rows("select count(*)", scope);
         query
             .push(" and `status` = 'pending' and `expires_at` > ")
             .push_bind(Timestamp::now());
         query.build_query_scalar().fetch_one(&*self.core().db).await
+    }
+
+    /// The team of the request a link names: the team of the access token
+    /// that made it. `None` when the link names no request.
+    pub async fn team_of(&self, public_id: &str) -> Result<Option<i64>, sqlx::Error> {
+        sqlx::query_scalar(
+            "select `access_tokens`.`team_id` from `approval_requests` \
+             inner join `access_tokens` on `access_tokens`.`id` = `approval_requests`.`access_token_id` \
+             where `approval_requests`.`public_id` = ? limit 1",
+        )
+        .bind(public_id)
+        .fetch_optional(&*self.core().db)
+        .await
     }
 
     /// Delete the requests nobody can act on any more, a month after they
