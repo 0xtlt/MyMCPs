@@ -1,0 +1,64 @@
+{
+ "key": "base64:btJw8RPglRbr2TIbpi4nR2AMmmpc/gO1Weadd2mSSaI=",
+ "encrypted": [
+  {
+   "value": "sk-live-123",
+   "purpose": null,
+   "ciphertext": "gcm.v1:dGPiev1qQukKOmCk3pbitxI5KY3X_SlDgg.YUBimcsIySEMacAq.nv1-KW5w1Loz0YwlxHiv-w"
+  },
+  {
+   "value": "",
+   "purpose": null,
+   "ciphertext": "gcm.v1:kV_Wvl259ZLhIOi2bQc.KtKvNzU61fYGiz9u.j5bugP8Qa7HkmHFvZ89LgA"
+  },
+  {
+   "value": "héllo wörld ✓ \"quotes\" \\ / <tag>",
+   "purpose": null,
+   "ciphertext": "gcm.v1:La7GluOE-_pVSRmvA9c4rGfX0g_h1FS-tDg3cYVwGAqophg_zBYUU1bn2Hum8nFfBWTKA0Y.SRB_gnlQvYHOtK5Z.6yCjSRkheI3b1Gmbfb_S6g"
+  },
+  {
+   "value": "with purpose",
+   "purpose": "builtin_file",
+   "ciphertext": "gcm.v1:E7vd6fy0v_EieHtxHBP5Jb8hZDgaH0zj6eg.NJAWSTDpNOTqNcSk.A1tWmW96VMUAmrSwrsU6jg"
+  },
+  {
+   "value": {
+    "a": 1,
+    "b": [
+     true,
+     null,
+     "x"
+    ]
+   },
+   "purpose": null,
+   "ciphertext": "gcm.v1:67wVImxC-2bcr6aVNNXZW8qJ5k_Jn7TwZYNrDFSOAsrMsltH2UF_.tE0AAHE6tRE_mQW_.Hly7jUfH3KaMJzcOpi2XQQ"
+  },
+  {
+   "value": 42,
+   "purpose": null,
+   "ciphertext": "gcm.v1:rRawpdeBXnYSG22r-CY.rvxe_k8gYXc-MvnV.i4vmfBsiWiuFEYAjOVDMlQ"
+  }
+ ],
+ "hashes": [
+  {
+   "password": "secret-password",
+   "hash": "$scrypt$n=16384,r=8,p=1$unhCAThKvwzqTKikmbtwTw$h0s/QkhJHBhgNK82G01Cq38YHVH/N3biBZCo1pwF+9f/6ql9cbNuuUXObMiovgH0kP4+3s6C65PTflx2E2fzsQ"
+  },
+  {
+   "password": "pässwörd 🔐",
+   "hash": "$scrypt$n=16384,r=8,p=1$XfjHSMk2emnNCpWNQ9q11Q$aj3Dpy8nHIACW5KfF4DUYXpTL1A7DRVhXZAl5FMcbIqpodi2flgw0/wptQZtiLsQZSH7nmCQf2coJIwj2VDNuw"
+  },
+  {
+   "password": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "hash": "$scrypt$n=16384,r=8,p=1$0yxAoBqxFP9RwZkADMrl3w$rtTwpMmK1yZTmBEB+8vVuNptT6i/1dyC7l7hkIc5Wro1nZM1mLXWrH7F0VZjFGsvBQ+JFld8y+zIO7Gjd8fa9Q"
+  }
+ ],
+ "expiring": {
+  "value": "soon",
+  "ciphertext": "gcm.v1:0gayjAruvlhEBrCpoIHCx7ok3sda7NHmIs2BQZNNp-HC9enWofplL8OTSOc0jLJt2yRh11wf-ko8ZA.X5dsuIQuxBpRDcmo.qo6qm6A-5hpB91xKadldOw"
+ },
+ "expired": {
+  "value": "gone",
+  "ciphertext": "gcm.v1:wM9dCxfv13GNifLsmp76MxslKVNm2hg1lUPsIrZoIS2V-BTL1ty-_jBNASMAErvhES4SFDyG4PG16g.Fa5R6xzKYe3st-oC.kk0g6Wysbmdh-JHCmm0bZQ"
+ }
+}

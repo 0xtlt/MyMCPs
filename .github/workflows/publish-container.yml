@@ -54,6 +54,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
           ref: refs/tags/${{ inputs.release_tag }}
 
       - name: Resolve image revision
@@ -70,13 +71,15 @@ jobs:
           fi
           echo "sha=$head_sha" >> "$GITHUB_OUTPUT"
 
+      # The Dockerfile compiles on the runner's own architecture for both
+      # platforms. QEMU runs the arm64 runtime stage, and the arm64 smoke test.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Build smoke-test image
+      - name: Build amd64 smoke-test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -86,7 +89,22 @@ jobs:
           push: false
           provenance: false
           sbom: false
-          tags: ${{ env.SMOKE_IMAGE }}
+          tags: ${{ env.SMOKE_IMAGE }}-amd64
+          cache-from: type=gha,scope=mymcps-release-image
+          cache-to: type=gha,mode=max,scope=mymcps-release-image
+
+      # The arm64 binary is cross-compiled, so it is started once as well.
+      - name: Build arm64 smoke-test image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          load: true
+          push: false
+          provenance: false
+          sbom: false
+          tags: ${{ env.SMOKE_IMAGE }}-arm64
           cache-from: type=gha,scope=mymcps-release-image
           cache-to: type=gha,mode=max,scope=mymcps-release-image
 
@@ -97,35 +115,65 @@ jobs:
 
           container_name="mymcps-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup() {
-            docker rm --force "$container_name" >/dev/null 2>&1 || true
+            docker rm --force --volumes "$container_name" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
-          cleanup
 
-          APP_KEY="base64:$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")"
-          export APP_KEY
-          docker run --detach \
-            --name "$container_name" \
-            --env APP_KEY \
-            --env APP_URL=http://localhost:3333 \
-            --env LOG_LEVEL=info \
-            --env SESSION_DRIVER=cookie \
-            "$SMOKE_IMAGE" >/dev/null
+          fail() {
+            docker logs "$container_name" || true
+            echo "$1" >&2
+            exit 1
+          }
 
-          for _ in {1..60}; do
-            status="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$container_name")"
-            if [[ "$status" == "healthy" ]]; then
-              exit 0
+          for arch in amd64 arm64; do
+            cleanup
+
+            # A first deploy: no APP_KEY, so the server generates and keeps
+            # one, with the restrictions docker-compose.yml applies.
+            docker run --detach \
+              --name "$container_name" \
+              --platform "linux/$arch" \
+              --cap-drop ALL \
+              --security-opt no-new-privileges:true \
+              --env APP_URL=http://localhost:3333 \
+              --env LOG_LEVEL=info \
+              "$SMOKE_IMAGE-$arch" >/dev/null
+
+            status="starting"
+            for _ in {1..90}; do
+              status="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "$container_name")"
+              if [[ "$status" != "starting" ]] || [[ "$(docker inspect --format='{{.State.Running}}' "$container_name")" != "true" ]]; then
+                break
+              fi
+              sleep 2
+            done
+            if [[ "$status" != "healthy" ]]; then
+              fail "The $arch container did not become healthy through /health on port 3333."
             fi
-            if [[ "$status" == "unhealthy" ]] || [[ "$(docker inspect --format='{{.State.Running}}' "$container_name")" != "true" ]]; then
-              break
+
+            # What an upgrade in place relies on: the server runs as uid and
+            # gid 1000, and everything it created in the volume is private.
+            docker exec "$container_name" sh -eu -c '
+              test "$(id -u):$(id -g)" = 1000:1000
+              test "$(stat -c "%a %u:%g" /app/tmp/app.key)" = "600 1000:1000"
+              test "$(stat -c "%a %u:%g" /app/tmp/db.sqlite3)" = "600 1000:1000"
+              test -z "$(find /app/tmp -perm /077)"
+            ' || fail "The $arch container does not keep its data private to uid 1000."
+
+            if [[ "$RELEASE_CHANNEL" == "stable" ]]; then
+              version="$(docker exec "$container_name" mymcps --version)"
+              if [[ "$version" != "mymcps ${RELEASE_TAG#v}" ]]; then
+                fail "The $arch binary reports \"$version\", not the version of $RELEASE_TAG."
+              fi
             fi
-            sleep 2
+
+            # Deno is not built here; the pinned binary is only started on the
+            # runner's own architecture.
+            if [[ "$arch" == "amd64" ]]; then
+              docker exec "$container_name" sh -eu -c '"$DENO_PATH" --version | grep -q "^deno $DENO_VERSION "' \
+                || fail "The image does not hold Deno at DENO_VERSION."
+            fi
           done
-
-          docker logs "$container_name"
-          echo "Container did not become healthy through /health on port 3333." >&2
-          exit 1
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

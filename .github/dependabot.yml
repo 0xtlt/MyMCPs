@@ -1,6 +1,6 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
@@ -16,9 +16,12 @@ updates:
       time: '03:17'
     open-pull-requests-limit: 10
 
-  # Base images in the Dockerfile: the Node runtime and the Deno binary that
-  # sandboxes npm MCP packages. A Deno bump also needs DENO_VERSION updated in
-  # the Dockerfile; `pnpm run test:release` fails until the two agree.
+  # Base images in the Dockerfile: the Rust toolchain that compiles the server,
+  # the Debian runtime, and the Deno binary that sandboxes npm MCP packages.
+  # A Rust bump also needs RUST_TOOLCHAIN updated in the workflows, and a
+  # Deno bump DENO_VERSION in the Dockerfile; `cargo test -p xtask` fails until
+  # they agree. The Debian release is chosen by hand: both the rust and the
+  # debian tag name it, and an update keeps that part of a tag.
   - package-ecosystem: docker
     directory: /
     schedule:
@@ -26,9 +29,3 @@ updates:
       day: monday
       time: '03:17'
     open-pull-requests-limit: 10
-    ignore:
-      # The Node major is chosen by hand (package.json engines and the
-      # workflows use 24); digest updates for the pinned tag still arrive.
-      - dependency-name: node
-        update-types:
-          - version-update:semver-major

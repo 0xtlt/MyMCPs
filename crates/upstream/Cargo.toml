@@ -1,0 +1,38 @@
+[package]
+name = "mymcps-upstream"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mymcps-core.workspace = true
+mymcps-vine.workspace = true
+mymcps-net.workspace = true
+mymcps-mcp.workspace = true
+mymcps-mcp-auth.workspace = true
+mymcps-builtin.workspace = true
+mymcps-deno.workspace = true
+tokio.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+http.workspace = true
+url.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite"] }
+
+[dev-dependencies]
+mymcps-core = { workspace = true, features = ["test-util"] }
+axum = "0.8"
+base64.workspace = true
+regex.workspace = true
+tempfile.workspace = true

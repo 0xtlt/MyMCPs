@@ -1,0 +1,11 @@
+[alias]
+xtask = "run -p xtask --"
+
+# How the bundled SQLite is compiled, wherever it is: here, in CI and in the
+# image. The crate that builds it turns on two options the server has no use
+# for, and each puts one lock around every connection of the process:
+# counting the memory SQLite allocates, and sharing one page cache so that
+# memory can be taken back on request. With them, the connections of the pool
+# wait on each other at every allocation and every page.
+[env]
+LIBSQLITE3_FLAGS = "-DSQLITE_DEFAULT_MEMSTATUS=0 -USQLITE_ENABLE_MEMORY_MANAGEMENT"

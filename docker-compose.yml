@@ -1,7 +1,8 @@
 # Coolify-compatible self-host layout. Coolify's proxy routes traffic to the
 # exposed container port; local host publishing lives in docker-compose.local.yml.
 #
-# Data (SQLite + Deno npm MCP sandboxes) lives in the named volume.
+# Data (SQLite, the generated key, Deno npm MCP sandboxes) lives in the named
+# volume.
 
 services:
   mymcps:
@@ -10,16 +11,13 @@ services:
       - '3333'
     environment:
       TZ: UTC
-      NODE_ENV: production
+      APP_ENV: production
       HOST: 0.0.0.0
       PORT: 3333
-      APP_NAME: ${APP_NAME:-MyMCPs}
-      VITE_APP_NAME: ${VITE_APP_NAME:-MyMCPs}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}
       APP_KEY: ${APP_KEY:-}
       APP_URL: ${APP_URL:-}
-      SESSION_DRIVER: cookie
       DENO_PATH: /usr/local/bin/deno
     volumes:
       - mymcps-data:/app/tmp

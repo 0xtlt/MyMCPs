@@ -1,0 +1,5 @@
+# Findings of the secret scan that are not secrets, by fingerprint.
+
+# A made-up value in a test of the Deno runner ("key-0123456789"), read as an
+# API key. The test now uses another value; this commit still holds the old one.
+f7303afbc083e302440832a06e4136d6434de2aa:crates/deno/tests/deno/hardening_upstream_deno.rs:generic-api-key:679

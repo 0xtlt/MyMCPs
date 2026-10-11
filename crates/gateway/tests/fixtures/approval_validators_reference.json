@@ -1,0 +1,1149 @@
+{
+ "UPDATE_TOOL_APPROVALS": [
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "list_contacts",
+      "mode": "ask"
+     },
+     {
+      "name": "delete_contact",
+      "mode": "auto",
+      "extra": 1
+     }
+    ],
+    "other": true
+   },
+   "output": {
+    "tools": [
+     {
+      "name": "list_contacts",
+      "mode": "ask"
+     },
+     {
+      "name": "delete_contact",
+      "mode": "auto"
+     }
+    ]
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "tools": []
+   },
+   "output": {
+    "tools": []
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "list_contacts",
+      "mode": "never"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.mode",
+     "rule": "enum",
+     "message": "tools must be one of: auto, ask"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "",
+      "mode": "ask"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.name",
+     "rule": "minLength",
+     "message": "The tools field must have at least 1 characters"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": " spaced ",
+      "mode": "ask"
+     }
+    ]
+   },
+   "output": {
+    "tools": [
+     {
+      "name": " spaced ",
+      "mode": "ask"
+     }
+    ]
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mode": "ask"
+     }
+    ]
+   },
+   "output": {
+    "tools": [
+     {
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mode": "ask"
+     }
+    ]
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mode": "ask"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.name",
+     "rule": "maxLength",
+     "message": "The tools field must not be greater than 254 characters"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": 5,
+      "mode": "ask"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.name",
+     "rule": "string",
+     "message": "The tools field must be a string"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "mode": "ask"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.name",
+     "rule": "required",
+     "message": "tools is required"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "a"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.mode",
+     "rule": "required",
+     "message": "tools is required"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     "a"
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0",
+     "rule": "object",
+     "message": "tools must be an object"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": "a"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools",
+     "rule": "array",
+     "message": "The tools field must be an array"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": null
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools",
+     "rule": "required",
+     "message": "tools is required"
+    }
+   ]
+  },
+  {
+   "input": {},
+   "output": null,
+   "errors": [
+    {
+     "field": "tools",
+     "rule": "required",
+     "message": "tools is required"
+    }
+   ]
+  },
+  {
+   "input": null,
+   "output": null,
+   "errors": [
+    {
+     "field": "",
+     "rule": "required",
+     "message": "arguments is required"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "a",
+      "mode": "ask"
+     },
+     {
+      "name": "b",
+      "mode": "sometimes"
+     },
+     {
+      "name": "",
+      "mode": "x"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.1.mode",
+     "rule": "enum",
+     "message": "tools must be one of: auto, ask"
+    },
+    {
+     "field": "tools.2.name",
+     "rule": "minLength",
+     "message": "The tools field must have at least 1 characters"
+    },
+    {
+     "field": "tools.2.mode",
+     "rule": "enum",
+     "message": "tools must be one of: auto, ask"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": {
+     "0": {
+      "name": "a",
+      "mode": "ask"
+     }
+    }
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools",
+     "rule": "array",
+     "message": "The tools field must be an array"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "a",
+      "mode": "ASK"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.mode",
+     "rule": "enum",
+     "message": "tools must be one of: auto, ask"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "a",
+      "mode": " ask"
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.mode",
+     "rule": "enum",
+     "message": "tools must be one of: auto, ask"
+    }
+   ]
+  },
+  {
+   "input": {
+    "tools": [
+     {
+      "name": "a",
+      "mode": null
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "tools.0.mode",
+     "rule": "required",
+     "message": "tools is required"
+    }
+   ]
+  }
+ ],
+ "APPROVAL_PARAMS": [
+  {
+   "input": {
+    "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "output": {
+    "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "id": "aZ09_-aZ09_-aZ09_-aZ09_-aZ09_-ab"
+   },
+   "output": {
+    "id": "aZ09_-aZ09_-aZ09_-aZ09_-aZ09_-ab"
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "id": "short"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "regex",
+     "message": "The id field format is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": "..%2Fsettings"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "regex",
+     "message": "The id field format is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "regex",
+     "message": "The id field format is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "regex",
+     "message": "The id field format is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "regex",
+     "message": "The id field format is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": " AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "regex",
+     "message": "The id field format is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": ""
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "required",
+     "message": "The id field must be defined"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": 5
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "string",
+     "message": "The id field must be a string"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": [
+     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "string",
+     "message": "The id field must be a string"
+    }
+   ]
+  },
+  {
+   "input": {},
+   "output": null,
+   "errors": [
+    {
+     "field": "id",
+     "rule": "required",
+     "message": "The id field must be defined"
+    }
+   ]
+  },
+  {
+   "input": {
+    "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "other": 1
+   },
+   "output": {
+    "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+   },
+   "errors": null
+  }
+ ],
+ "APPROVAL_DECISION": [
+  {
+   "input": {
+    "decision": "approve"
+   },
+   "output": {
+    "decision": "approve"
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "decision": "deny"
+   },
+   "output": {
+    "decision": "deny"
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "decision": "maybe"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "decision",
+     "rule": "enum",
+     "message": "The selected decision is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "decision": ""
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "decision",
+     "rule": "required",
+     "message": "The decision field must be defined"
+    }
+   ]
+  },
+  {
+   "input": {
+    "decision": "Approve"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "decision",
+     "rule": "enum",
+     "message": "The selected decision is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "decision": " approve"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "decision",
+     "rule": "enum",
+     "message": "The selected decision is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "decision": [
+     "approve"
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "decision",
+     "rule": "enum",
+     "message": "The selected decision is invalid"
+    }
+   ]
+  },
+  {
+   "input": {
+    "decision": null
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "decision",
+     "rule": "required",
+     "message": "The decision field must be defined"
+    }
+   ]
+  },
+  {
+   "input": {},
+   "output": null,
+   "errors": [
+    {
+     "field": "decision",
+     "rule": "required",
+     "message": "The decision field must be defined"
+    }
+   ]
+  },
+  {
+   "input": {
+    "decision": "approve",
+    "extra": "x"
+   },
+   "output": {
+    "decision": "approve"
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "decision": true
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "decision",
+     "rule": "enum",
+     "message": "The selected decision is invalid"
+    }
+   ]
+  }
+ ],
+ "SAVED_APPROVAL_SUMMARY": [
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null
+   },
+   "output": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": "Deletes.",
+    "warnings": [
+     "Careful"
+    ],
+    "extra": 1
+   },
+   "output": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "warnings": [
+     "Careful"
+    ],
+    "toolDescription": "Deletes."
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "interpreted": "false",
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "interpreted",
+     "rule": "boolean",
+     "message": "interpreted must be true or false"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": 0,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "interpreted",
+     "rule": "boolean",
+     "message": "interpreted must be true or false"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null
+   },
+   "output": {
+    "interpreted": false,
+    "title": "",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": 5,
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "title",
+     "rule": "string",
+     "message": "The title field must be a string"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [],
+    "toolDescription": null
+   },
+   "output": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [],
+    "toolDescription": null
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "a"
+     }
+    ],
+    "toolDescription": null
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "details.0.value",
+     "rule": "required",
+     "message": "details is required"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "a",
+      "value": 1
+     }
+    ],
+    "toolDescription": null
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "details.0.value",
+     "rule": "string",
+     "message": "The details field must be a string"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": "x",
+    "toolDescription": null
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "details",
+     "rule": "array",
+     "message": "The details field must be an array"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null,
+    "warnings": "x"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "warnings",
+     "rule": "array",
+     "message": "The warnings field must be an array"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null,
+    "warnings": [
+     1
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "warnings.0",
+     "rule": "string",
+     "message": "The warnings field must be a string"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null,
+    "warnings": null
+   },
+   "output": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": null
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": ""
+   },
+   "output": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": ""
+   },
+   "errors": null
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ]
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "toolDescription",
+     "rule": "required",
+     "message": "toolDescription is required"
+    }
+   ]
+  },
+  {
+   "input": {
+    "interpreted": false,
+    "title": "Run the tool \"delete_contact\" of CRM",
+    "details": [
+     {
+      "label": "id",
+      "value": "42"
+     },
+     {
+      "label": "note",
+      "value": "",
+      "before": ""
+     }
+    ],
+    "toolDescription": 5
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "toolDescription",
+     "rule": "string",
+     "message": "The toolDescription field must be a string"
+    }
+   ]
+  },
+  {
+   "input": {
+    "title": "x"
+   },
+   "output": null,
+   "errors": [
+    {
+     "field": "interpreted",
+     "rule": "required",
+     "message": "interpreted is required"
+    },
+    {
+     "field": "details",
+     "rule": "required",
+     "message": "details is required"
+    },
+    {
+     "field": "toolDescription",
+     "rule": "required",
+     "message": "toolDescription is required"
+    }
+   ]
+  },
+  {
+   "input": "text",
+   "output": null,
+   "errors": [
+    {
+     "field": "",
+     "rule": "object",
+     "message": "arguments must be an object"
+    }
+   ]
+  },
+  {
+   "input": null,
+   "output": null,
+   "errors": [
+    {
+     "field": "",
+     "rule": "required",
+     "message": "arguments is required"
+    }
+   ]
+  },
+  {
+   "input": [],
+   "output": null,
+   "errors": [
+    {
+     "field": "",
+     "rule": "object",
+     "message": "arguments must be an object"
+    }
+   ]
+  }
+ ]
+}

@@ -2,6 +2,55 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-11
+
+### Added
+
+- Added a dashboard as the home page: the gateway address with a shortcut to install it in a client, the MCPs, access tokens, and approvals that need attention, and for administrators the tool calls of the last 14 days with the most recent ones.
+- Added search, filters by status, transport, and authentication, pagination, and an on/off switch on each row to the **MCPs** page, with the number of tools each MCP listed since the server started.
+- Added **Active** and **Expired & revoked** views and pagination to **Access tokens**, and a choice of page size to **Logs**. A call opened in **Logs** links to its MCP and copies as JSON.
+- Added a dialog that shows the link of an invite right after it is created, on the page now named **Team**.
+- Added the `mymcps` command. `mymcps` alone serves the instance, and `mymcps user:reset-password`, `mymcps mcp:update`, `mymcps migration:run`, `mymcps generate:key`, and `mymcps healthcheck` replace the `node ace` commands.
+- Added `DATA_DIR` to choose where the database, the generated key, MCP sandboxes, and uploads are kept (`tmp` by default, `/app/tmp` in the image), and `APP_ENV` as the name of the environment. `NODE_ENV` is still read.
+
+### Changed
+
+- MyMCPs is now a single Rust program instead of a Node.js application, with the same features. It reads and writes the same SQLite database, the same `APP_KEY`, encrypted credentials, access tokens, and OAuth connections, the same environment variables, and the same `/app/tmp` volume: upgrading is replacing the image or the binary, browsers stay signed in, and an instance can return to the previous version on the same data.
+- The interface follows the new design and is rendered by the server: pages load one stylesheet and one small script instead of a React application. **Tool approvals**, **Update MCP**, and **Re-authorize** moved from the edit dialog of an MCP to the **⋯** menu of its row.
+- The image contains the `mymcps` binary and Deno, and no longer Node.js. The server creates its key and applies database migrations itself when it starts, where the entrypoint script did, and the container health check is `mymcps healthcheck`.
+- A server started without `APP_ENV` or `NODE_ENV` runs as production.
+- Building from source needs Rust and a C compiler instead of Node.js and pnpm: `cargo run --bin mymcps`, `cargo test --workspace`, `cargo build --release --bin mymcps`. The release workflows build, test, and audit with Cargo.
+- The iCloud Mail MCP converts to text the HTML messages it used to give up on, such as deeply nested or unclosed tags. The limits on time and memory of a conversion are unchanged.
+- The schedule of the npm auto-update is read by MyMCPs itself, with the same five fields. A date written out in place of a schedule is refused, and a schedule naming a day that February lacks, such as `0 3 1,31 * *`, also runs on 1 March.
+- The call log writes the records that wait together in one transaction, so a burst of tool calls no longer fills its queue of 1,000 records and loses the rest.
+- `/mcp` reads a message from the body of the request only. Parameters in the query string of a `POST` are ignored, where they used to replace the members of the message.
+- **Tool approvals** lists a tool whose name is blank or longer than 254 characters without a choice: it always asks, and the page saves the choices of the other tools.
+- The consent page of the OAuth server warns that a client chose its own name and shows where the authorization code is sent, also when the callback is not a local address.
+- A download link of a built-in MCP has 10 minutes to deliver its file.
+
+### Fixed
+
+- The server starts when the schedule of the npm auto-update cannot be read, and says so in its log.
+
+### Security
+
+- Pages are sent with `Cache-Control: no-store`, so a page with the data of an account, or a new access token, is not shown again from the cache of the browser after sign-out.
+- The Content-Security-Policy no longer allows inline styles (`style-src 'self'`).
+- A JSON document with many numeric keys, in the answer of a remote MCP or in a request to `/mcp`, no longer keeps a processor busy for minutes.
+- An email whose date is the last or the first minute a date can hold no longer makes the iCloud Mail MCP fail to list the mailbox it is in.
+- The package of an npm MCP can no longer write the files Deno reads in its sandbox before it starts (`.npmrc`, `deno.json`, `deno.jsonc`, `package.json`), with which it chose the registry its next start and its next update were fetched from. Files of these names are deleted from a sandbox at each start.
+- `SSLKEYLOGFILE` can no longer be set on an npm MCP: Deno appended TLS keys to the file it named, anywhere the server can write.
+- The OAuth endpoints a remote MCP names are connected to at public addresses only, also when their name resolves to another address between the check and the connection.
+- The import of a backup keeps at most 1 MB of its form in memory before the file starts, where a form without a file part was kept whole. It refuses a database with generated columns, expression defaults, or indexes on expressions or on some rows, evaluates no `CHECK` constraint of the file, stops after 20 minutes, and refuses settings or administrators the server could not read afterwards.
+- A stored password hash that asks for more than 16 times the work of the hashes MyMCPs writes, or more memory than Node allowed, is never computed.
+- Signing in or out gives the session a new CSRF secret.
+- The rate limits of the OAuth server count the addresses of one IPv6 /64 network together, as sign-in does.
+- `/mcps/oauth/callback` shows the error of a provider only when it answers an authorization the session started.
+
+### Removed
+
+- Removed the Node.js application and its toolchain: `package.json`, pnpm, the `node ace` commands, the Docker entrypoint script, and the browser test suite. `SESSION_DRIVER`, `APP_NAME`, and `VITE_APP_NAME` are no longer read and can be deleted from a deployment.
+
 ## 2026-10-08
 
 ### Added
@@ -20,7 +69,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Added
 
-- Added tool approvals for every MCP, built-in or connected. Under **Edit → Tool approvals**, each tool of an MCP either **Runs** or **Asks**. A call to a tool that asks is not run: the agent gets a link to an approval page, and the call runs once an administrator, or the member who created the access token, approved it and the agent makes it again with the same arguments. The page is written by MyMCPs from the call itself, never by the agent: a built-in tool says what would change beside the current value, and a tool of a connected MCP has its exact arguments listed beside the description its MCP gives. An approval covers one call, is used once, and expires after 24 hours. Open requests are listed on the new **Approvals** page, with a count in the navigation, and agents see which tools ask in their descriptions. Approval links require `APP_URL`; [docs/tool-approvals.md](docs/tool-approvals.md) has the details.
+- Added tool approvals for every MCP, built-in or connected. Under **Tool approvals** in the menu of an MCP, each tool of that MCP either **Runs** or **Asks**. A call to a tool that asks is not run: the agent gets a link to an approval page, and the call runs once an administrator, or the member who created the access token, approved it and the agent makes it again with the same arguments. The page is written by MyMCPs from the call itself, never by the agent: a built-in tool says what would change beside the current value, and a tool of a connected MCP has its exact arguments listed beside the description its MCP gives. An approval covers one call, is used once, and expires after 24 hours. Open requests are listed on the new **Approvals** page, with a count in the navigation, and agents see which tools ask in their descriptions. Approval links require `APP_URL`; [docs/tool-approvals.md](docs/tool-approvals.md) has the details.
 - Added a built-in Google Ads MCP on version 25 of the Google Ads API, signed in through an OAuth client from your own Google Cloud project. It has 13 read tools for accounts, campaigns, ad groups, ads, keywords, search terms, performance by day, device, or network, assets, the change history, locations, keyword ideas, and read-only GAQL queries. **Allow write access** adds 15 tools to create and change Search and Display campaigns, budgets, bidding, targeting, ad groups, keywords, responsive search ads, responsive display ads, and image assets. `create_campaign`, `update_campaign`, `update_campaign_budget`, and `set_campaign_status` ask for approval by default, and their approval page shows the campaign, the current and new amounts, and a warning when a budget is multiplied. Campaigns are created paused, and the MCP can be limited to the accounts you list. Google retired developer tokens in September 2026, so the setup asks for none; [docs/google-ads.md](docs/google-ads.md) has the full guide.
 - Added image uploads to the Google Ads MCP. `create_image_upload_link` returns a temporary signed link that takes one JPEG, PNG, or GIF file of up to 5 MB as the body of a `PUT` request, and `create_image_asset` adds the uploaded file to an account after checking its shape and size. A reverse proxy in front of the instance must accept 5 MB request bodies.
 - Added file attachments to the iCloud Mail MCP. `create_upload_link` returns a temporary signed link that takes one file of up to 20 MB as the body of a `PUT` request, for example with `curl -T`, and `send_message` and `create_draft` attach up to 10 uploaded files and 20 MB of them with `attachments`. The tool comes with **Save drafts** or **Send mail**. An uploaded file waits in `tmp/builtin-uploads` and can be attached for an hour, then it is deleted, as it is with its MCP. Upload links require `APP_URL`, and a reverse proxy in front of the instance must accept 20 MB request bodies; [docs/icloud-mail.md](docs/icloud-mail.md#sending-files) has the details.
@@ -188,18 +237,9 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ## 2026-08-12
 
-### Changed
-
-- Released version [0.1.3](https://github.com/0xtlt/MyMCPs/releases/tag/v0.1.3).
-
-### Fixed
-
-- Prevented stable release preparation from adding a blank line at the end of the changelog and failing generated-file validation.
-- Hid the inactive access-token bulk selector when no rows can be deleted and restored spacing between the gateway details and token table.
-
 ### Added
 
-- Access tokens page shows when each token was last used.
+- Added confirmed cleanup for selected or all expired and revoked access tokens, with a compact grouped mobile layout, neutral triggers, and a destructive final confirmation while preserving active tokens and historical activity labels.
 
 ## 2026-08-12
 

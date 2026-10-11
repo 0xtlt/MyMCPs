@@ -1,0 +1,33 @@
+[package]
+name = "mymcps-deno"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+mymcps-core.workspace = true
+mymcps-mcp.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# access(2) for the executable check of the binary lookup, and SIGTERM for a
+# cache reload that runs out of time: std and tokio offer neither.
+rustix = { version = "1.1", default-features = false, features = ["std", "fs", "process"] }
+
+[dev-dependencies]
+mymcps-core = { workspace = true, features = ["test-util"] }
+tempfile.workspace = true
+# The package the local npm registry of the tests serves, and its integrity.
+tar = { version = "0.4", default-features = false }
+flate2 = "1.1"
+sha2.workspace = true
+base64.workspace = true

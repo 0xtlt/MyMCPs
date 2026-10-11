@@ -1,0 +1,35 @@
+[package]
+name = "mymcps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Self-hosted MCP gateway"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mymcps"
+path = "src/main.rs"
+
+[dependencies]
+mymcps-core.workspace = true
+mymcps-web.workspace = true
+mymcps-upstream.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+hyper = { version = "1", default-features = false, features = ["http1", "server"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio", "server-graceful"] }
+tower = { version = "0.5", features = ["util"] }
+clap = { version = "4", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+rustix = { version = "1", features = ["process", "fs"] }
+rpassword = "7"
+serde_json.workspace = true
+
+[dev-dependencies]
+mymcps-core = { workspace = true, features = ["test-util"] }
+sqlx = { version = "0.9", default-features = false }

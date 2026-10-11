@@ -1,32 +1,30 @@
-# Dependencies / build output
-node_modules
-build
-dist
-tmp
-.pnpm-store
+# The image is compiled from the Cargo workspace and nothing else, so only
+# that enters the build context.
+*
+!Cargo.toml
+!Cargo.lock
+!.cargo
+!crates
+
+# Left out wherever they are, including under the paths allowed above.
 
 # Secrets & local env
 .env
 .env.*
-!.env.example
+**/.env
+**/.env.*
 
-# Git / IDE / CI / coding-agent state (local settings, worktrees, transcripts)
+# Git / coding-agent state (local settings, worktrees, transcripts)
 .git
-.github
 .claude
 .codex
 .cursor
-.vscode
-.idea
-.fleet
-*.md
-!README.md
+**/.git
+**/.claude
+**/.codex
+**/.cursor
 
-# Logs & caches
-*.log
-.cache
-coverage
-public/assets
-
-# OS junk
-.DS_Store
+# Build output, logs & OS junk
+**/target
+**/*.log
+**/.DS_Store

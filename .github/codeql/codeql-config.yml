@@ -1,0 +1,9 @@
+name: MyMCPs
+
+# Test code signs in with made-up passwords, keys and tokens, which the
+# analysis reports as hard-coded credentials and as secrets written to logs.
+# None of it is compiled into the server: it is left out of the analysis.
+paths-ignore:
+  - 'crates/*/tests/**'
+  # The fake servers and factories that the tests of other crates use.
+  - 'crates/*/src/testing.rs'

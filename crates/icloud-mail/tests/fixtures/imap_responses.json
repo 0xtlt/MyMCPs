@@ -1,0 +1,4479 @@
+[
+ {
+  "payload": "KiBPSyBbQ0FQQUJJTElUWSBJTUFQNHJldjEgU0FTTC1JUiBBVVRIPUFUT0tFTiBBVVRIPVBMQUlOXSBpQ2xvdWQgSU1BUCByZWFkeQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "CAPABILITY"
+      },
+      {
+       "t": "ATOM",
+       "v": "IMAP4rev1"
+      },
+      {
+       "t": "ATOM",
+       "v": "SASL-IR"
+      },
+      {
+       "t": "ATOM",
+       "v": "AUTH=ATOKEN"
+      },
+      {
+       "t": "ATOM",
+       "v": "AUTH=PLAIN"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "iCloud IMAP ready"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBpQ2xvdWQgcmVhZHk=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "iCloud ready"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBQUkVBVVRIIFtDQVBBQklMSVRZIElNQVA0cmV2MV0gTG9nZ2VkIGluIGFzIHRob21hcw==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "PREAUTH",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "CAPABILITY"
+      },
+      {
+       "t": "ATOM",
+       "v": "IMAP4rev1"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Logged in as thomas"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBCWUUgQXV0b2xvZ291dDsgaWRsZSBmb3IgdG9vIGxvbmc=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "BYE",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "Autologout; idle for too long"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "QTEgT0sgW0NBUEFCSUxJVFkgWEFQUExFUFVTSFNFUlZJQ0UgSU1BUDQgSU1BUDRyZXYxIEFDTCBRVU9UQSBMSVRFUkFMKyBOQU1FU1BBQ0UgVUlEUExVUyBDSElMRFJFTiBCSU5BUlkgVU5TRUxFQ1QgU09SVCBFU0VBUkNIIElEIE1PVkUgU1BFQ0lBTC1VU0UgTElTVC1TVEFUVVNdIHVzZXIgdGhvbWFzIGF1dGhlbnRpY2F0ZWQ=",
+  "literals": [],
+  "response": {
+   "tag": "A1",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "CAPABILITY"
+      },
+      {
+       "t": "ATOM",
+       "v": "XAPPLEPUSHSERVICE"
+      },
+      {
+       "t": "ATOM",
+       "v": "IMAP4"
+      },
+      {
+       "t": "ATOM",
+       "v": "IMAP4rev1"
+      },
+      {
+       "t": "ATOM",
+       "v": "ACL"
+      },
+      {
+       "t": "ATOM",
+       "v": "QUOTA"
+      },
+      {
+       "t": "ATOM",
+       "v": "LITERAL+"
+      },
+      {
+       "t": "ATOM",
+       "v": "NAMESPACE"
+      },
+      {
+       "t": "ATOM",
+       "v": "UIDPLUS"
+      },
+      {
+       "t": "ATOM",
+       "v": "CHILDREN"
+      },
+      {
+       "t": "ATOM",
+       "v": "BINARY"
+      },
+      {
+       "t": "ATOM",
+       "v": "UNSELECT"
+      },
+      {
+       "t": "ATOM",
+       "v": "SORT"
+      },
+      {
+       "t": "ATOM",
+       "v": "ESEARCH"
+      },
+      {
+       "t": "ATOM",
+       "v": "ID"
+      },
+      {
+       "t": "ATOM",
+       "v": "MOVE"
+      },
+      {
+       "t": "ATOM",
+       "v": "SPECIAL-USE"
+      },
+      {
+       "t": "ATOM",
+       "v": "LIST-STATUS"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "user thomas authenticated"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "QTIgTk8gW0FVVEhFTlRJQ0FUSU9ORkFJTEVEXSBBdXRoZW50aWNhdGlvbiBmYWlsZWQu",
+  "literals": [],
+  "response": {
+   "tag": "A2",
+   "command": "NO",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "AUTHENTICATIONFAILED"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Authentication failed."
+    }
+   ]
+  }
+ },
+ {
+  "payload": "QTMgQkFEIFBhcnNlIEVycm9yIChhdCA1dGggYXJndW1lbnQp",
+  "literals": [],
+  "response": {
+   "tag": "A3",
+   "command": "BAD",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "Parse Error (at 5th argument)"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "MyBOTyBbVFJZQ1JFQVRFXSBNYWlsYm94IGRvZXNuJ3QgZXhpc3Q6IE5vcGU=",
+  "literals": [],
+  "response": {
+   "tag": "3",
+   "command": "NO",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "TRYCREATE"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Mailbox doesn't exist: Nope"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "NCBPSyBbUkVBRC1PTkxZXSBFWEFNSU5FIGNvbXBsZXRlZA==",
+  "literals": [],
+  "response": {
+   "tag": "4",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "READ-ONLY"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "EXAMINE completed"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "NSBPSyBbQVBQRU5EVUlEIDE3MDAwMDAwMDAgMTAxXSBBUFBFTkQgY29tcGxldGVk",
+  "literals": [],
+  "response": {
+   "tag": "5",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "APPENDUID"
+      },
+      {
+       "t": "ATOM",
+       "v": "1700000000"
+      },
+      {
+       "t": "ATOM",
+       "v": "101"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "APPEND completed"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBbQ09QWVVJRCAxNzAwMDAwMDAwIDEyLDE0IDE6Ml0gTW92ZWQ=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "COPYUID"
+      },
+      {
+       "t": "ATOM",
+       "v": "1700000000"
+      },
+      {
+       "t": "SEQUENCE",
+       "v": "12,14"
+      },
+      {
+       "t": "SEQUENCE",
+       "v": "1:2"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Moved"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "NiBPSyBbQ09QWVVJRCA3IDM6NSAyMDoyMl0gRG9uZQ==",
+  "literals": [],
+  "response": {
+   "tag": "6",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "COPYUID"
+      },
+      {
+       "t": "ATOM",
+       "v": "7"
+      },
+      {
+       "t": "SEQUENCE",
+       "v": "3:5"
+      },
+      {
+       "t": "SEQUENCE",
+       "v": "20:22"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Done"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBbUEVSTUFORU5URkxBR1MgKFxBbnN3ZXJlZCBcRmxhZ2dlZCBcRGVsZXRlZCBcU2VlbiBcRHJhZnQgXCopXSBGbGFncyBwZXJtaXR0ZWQu",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "PERMANENTFLAGS"
+      },
+      [
+       {
+        "t": "ATOM",
+        "v": "\\Answered"
+       },
+       {
+        "t": "ATOM",
+        "v": "\\Flagged"
+       },
+       {
+        "t": "ATOM",
+        "v": "\\Deleted"
+       },
+       {
+        "t": "ATOM",
+        "v": "\\Seen"
+       },
+       {
+        "t": "ATOM",
+        "v": "\\Draft"
+       },
+       {
+        "t": "ATOM",
+        "v": "\\*"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Flags permitted."
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBbUEVSTUFORU5URkxBR1MgKCldIE5vIHBlcm1hbmVudCBmbGFncyBwZXJtaXR0ZWQu",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "PERMANENTFLAGS"
+      },
+      []
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "No permanent flags permitted."
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBbVUlEVkFMSURJVFkgMTcwMDAwMDAwMF0gVUlEcyB2YWxpZA==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "UIDVALIDITY"
+      },
+      {
+       "t": "ATOM",
+       "v": "1700000000"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "UIDs valid"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBbVU5TRUVOIDEyXSBNZXNzYWdlIDEyIGlzIGZpcnN0IHVuc2Vlbg==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "UNSEEN"
+      },
+      {
+       "t": "ATOM",
+       "v": "12"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Message 12 is first unseen"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBbQUxFUlRdIFN5c3RlbSBzaHV0ZG93biBpbiAxMCBtaW51dGVzIFtyZWFsbHld",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "ALERT"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "System shutdown in 10 minutes [really]"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBbUkVGRVJSQUwgaW1hcDovL3VzZXI7QVVUSD0qQFNFUlZFUjIvXSBSZW1vdGUgU2VydmVy",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "REFERRAL"
+      },
+      {
+       "t": "ATOM",
+       "v": "imap://user;AUTH=*@SERVER2/"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Remote Server"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "QTcgTk8gW09WRVJRVU9UQV0gUXVvdGEgZXhjZWVkZWQgKG1haWxib3ggZm9yIHVzZXIgaXMgZnVsbCk=",
+  "literals": [],
+  "response": {
+   "tag": "A7",
+   "command": "NO",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "",
+     "section": [
+      {
+       "t": "ATOM",
+       "v": "OVERQUOTA"
+      }
+     ]
+    },
+    {
+     "t": "TEXT",
+     "v": "Quota exceeded (mailbox for user is full)"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "QTggQkFEIFJlcXVlc3QgaXMgdGhyb3R0bGVkLiBTdWdnZXN0ZWQgQmFja29mZiBUaW1lOiA5MjQxNSBtaWxsaXNlY29uZHM=",
+  "literals": [],
+  "response": {
+   "tag": "A8",
+   "command": "BAD",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "Request is throttled. Suggested Backoff Time: 92415 milliseconds"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "QTkgTk8gU29tZSBvZiB0aGUgcmVxdWVzdGVkIG1lc3NhZ2VzIG5vIGxvbmdlciBleGlzdA==",
+  "literals": [],
+  "response": {
+   "tag": "A9",
+   "command": "NO",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "Some of the requested messages no longer exist"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KyBSZWFkeSBmb3IgbGl0ZXJhbCBkYXRh",
+  "literals": [],
+  "response": {
+   "tag": "+",
+   "command": "",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "Ready for literal data"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "Kw==",
+  "literals": [],
+  "response": {
+   "tag": "+",
+   "command": "",
+   "attributes": []
+  }
+ },
+ {
+  "payload": "KyBWWE5sY201aGJXVTY=",
+  "literals": [],
+  "response": {
+   "tag": "+",
+   "command": "",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "VXNlcm5hbWU6"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcSGFzTm9DaGlsZHJlbikgIi8iICJJTkJPWCI=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\HasNoChildren"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "STRING",
+     "v": "INBOX"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcSGFzTm9DaGlsZHJlbiBcU2VudCkgIi8iICJTZW50IE1lc3NhZ2VzIg==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\HasNoChildren"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Sent"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "STRING",
+     "v": "Sent Messages"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcTm9zZWxlY3QgXEhhc0NoaWxkcmVuKSAiLyIgIlByb2plY3RzIg==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\Noselect"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\HasChildren"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "STRING",
+     "v": "Projects"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcSGFzTm9DaGlsZHJlbiBcVHJhc2gpICIvIiAiRGVsZXRlZCBNZXNzYWdlcyI=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\HasNoChildren"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Trash"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "STRING",
+     "v": "Deleted Messages"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUICgpIE5JTCBJTkJPWA==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [],
+    null,
+    {
+     "t": "ATOM",
+     "v": "INBOX"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcSGFzTm9DaGlsZHJlbikgIi4iIElOQk9YLkVudHcmQVB3LXJmZQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\HasNoChildren"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "."
+    },
+    {
+     "t": "ATOM",
+     "v": "INBOX.Entw&APw-rfe"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcSGFzTm9DaGlsZHJlbikgIi8iICJBIFwicXVvdGVkXCIgbmFtZSBcXCB3aXRoIGEgYmFja3NsYXNoIg==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\HasNoChildren"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "STRING",
+     "v": "A \"quoted\" name \\ with a backslash"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcSGFzTm9DaGlsZHJlbikgIi8iIHsxMn0NCg==",
+  "literals": [
+   "bGl0ZXJhbCBuYW1l"
+  ],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\HasNoChildren"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "LITERAL",
+     "b64": "bGl0ZXJhbCBuYW1l"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcTm9uRXhpc3RlbnQgXFN1YnNjcmliZWQpICIvIiAiT2xkIg==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\NonExistent"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Subscribed"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "STRING",
+     "v": "Old"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBYTElTVCAoXEhhc05vQ2hpbGRyZW4gXEluYm94KSAiLyIgIlBvc3RlaW5nYW5nIg==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "XLIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\HasNoChildren"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Inbox"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "STRING",
+     "v": "Posteingang"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBTVEFUVVMgIlNlbnQgTWVzc2FnZXMiIChNRVNTQUdFUyAxIFVOU0VFTiAwKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "STATUS",
+   "attributes": [
+    {
+     "t": "STRING",
+     "v": "Sent Messages"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "MESSAGES"
+     },
+     {
+      "t": "ATOM",
+      "v": "1"
+     },
+     {
+      "t": "ATOM",
+      "v": "UNSEEN"
+     },
+     {
+      "t": "ATOM",
+      "v": "0"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "payload": "KiBTVEFUVVMgSU5CT1ggKE1FU1NBR0VTIDIzMSBVSURORVhUIDQ0MjkyIFVOU0VFTiAxNyk=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "STATUS",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "INBOX"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "MESSAGES"
+     },
+     {
+      "t": "ATOM",
+      "v": "231"
+     },
+     {
+      "t": "ATOM",
+      "v": "UIDNEXT"
+     },
+     {
+      "t": "ATOM",
+      "v": "44292"
+     },
+     {
+      "t": "ATOM",
+      "v": "UNSEEN"
+     },
+     {
+      "t": "ATOM",
+      "v": "17"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "payload": "KiBOQU1FU1BBQ0UgKCgiIiAiLyIpKSBOSUwgTklM",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "NAMESPACE",
+   "attributes": [
+    [
+     [
+      {
+       "t": "STRING",
+       "v": ""
+      },
+      {
+       "t": "STRING",
+       "v": "/"
+      }
+     ]
+    ],
+    null,
+    null
+   ]
+  }
+ },
+ {
+  "payload": "KiBOQU1FU1BBQ0UgKCgiSU5CT1guIiAiLiIpKSBOSUwgKCgiI3NoYXJlZC4iICIuIikoIiNwdWJsaWMiICIvIikp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "NAMESPACE",
+   "attributes": [
+    [
+     [
+      {
+       "t": "STRING",
+       "v": "INBOX."
+      },
+      {
+       "t": "STRING",
+       "v": "."
+      }
+     ]
+    ],
+    null,
+    [
+     [
+      {
+       "t": "STRING",
+       "v": "#shared."
+      },
+      {
+       "t": "STRING",
+       "v": "."
+      }
+     ],
+     [
+      {
+       "t": "STRING",
+       "v": "#public"
+      },
+      {
+       "t": "STRING",
+       "v": "/"
+      }
+     ]
+    ]
+   ]
+  }
+ },
+ {
+  "payload": "KiBDQVBBQklMSVRZIElNQVA0cmV2MSBMSVRFUkFMKyBTQVNMLUlSIExPR0lOLVJFRkVSUkFMUyBJRCBFTkFCTEUgSURMRSBBVVRIPVBMQUlO",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "CAPABILITY",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "IMAP4rev1"
+    },
+    {
+     "t": "ATOM",
+     "v": "LITERAL+"
+    },
+    {
+     "t": "ATOM",
+     "v": "SASL-IR"
+    },
+    {
+     "t": "ATOM",
+     "v": "LOGIN-REFERRALS"
+    },
+    {
+     "t": "ATOM",
+     "v": "ID"
+    },
+    {
+     "t": "ATOM",
+     "v": "ENABLE"
+    },
+    {
+     "t": "ATOM",
+     "v": "IDLE"
+    },
+    {
+     "t": "ATOM",
+     "v": "AUTH=PLAIN"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBGTEFHUyAoXEFuc3dlcmVkIFxGbGFnZ2VkIFxEZWxldGVkIFxTZWVuIFxEcmFmdCAkRm9yd2FyZGVkICRNRE5TZW50KQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "FLAGS",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\Answered"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Flagged"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Deleted"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Seen"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Draft"
+     },
+     {
+      "t": "ATOM",
+      "v": "$Forwarded"
+     },
+     {
+      "t": "ATOM",
+      "v": "$MDNSent"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "payload": "KiAzIEVYSVNUUw==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "3",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "EXISTS"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiAwIFJFQ0VOVA==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "0",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "RECENT"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiAyIEVYUFVOR0U=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "2",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "EXPUNGE"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBTRUFSQ0ggMTEgMTQ=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "SEARCH",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "11"
+    },
+    {
+     "t": "ATOM",
+     "v": "14"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBTRUFSQ0g=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "SEARCH",
+   "attributes": []
+  }
+ },
+ {
+  "payload": "KiBFU0VBUkNIIChUQUcgIkE1IikgVUlEIEFMTCAxOjMsNQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "ESEARCH",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "TAG"
+     },
+     {
+      "t": "STRING",
+      "v": "A5"
+     }
+    ],
+    {
+     "t": "ATOM",
+     "v": "UID"
+    },
+    {
+     "t": "ATOM",
+     "v": "ALL"
+    },
+    {
+     "t": "SEQUENCE",
+     "v": "1:3,5"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBFU0VBUkNIIChUQUcgIkE2IikgVUlEIENPVU5UIDA=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "ESEARCH",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "TAG"
+     },
+     {
+      "t": "STRING",
+      "v": "A6"
+     }
+    ],
+    {
+     "t": "ATOM",
+     "v": "UID"
+    },
+    {
+     "t": "ATOM",
+     "v": "COUNT"
+    },
+    {
+     "t": "ATOM",
+     "v": "0"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcU2VlblxGbGFnZ2VkKSAiLyIgeA==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "LIST",
+   "attributes": [
+    [
+     {
+      "t": "ATOM",
+      "v": "\\Seen"
+     },
+     {
+      "t": "ATOM",
+      "v": "\\Flagged"
+     }
+    ],
+    {
+     "t": "STRING",
+     "v": "/"
+    },
+    {
+     "t": "ATOM",
+     "v": "x"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBPSyBTdGlsbCBoZXJl",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "OK",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "Still here"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiBCQUQgQ291bGQgbm90IHBhcnNlIGNvbW1hbmQ=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "BAD",
+   "attributes": [
+    {
+     "t": "TEXT",
+     "v": "Could not parse command"
+    }
+   ]
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChGTEFHUyAoXFNlZW4pIFVJRCA1KQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "FLAGS"
+     },
+     [
+      {
+       "t": "ATOM",
+       "v": "\\Seen"
+      }
+     ],
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "5"
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 5,
+   "flags": [
+    "\\Seen"
+   ],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxMiBGRVRDSCAoVUlEIDE0IEZMQUdTIChcU2VlbiBcRmxhZ2dlZCAkSnVuaykp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "12",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "14"
+     },
+     {
+      "t": "ATOM",
+      "v": "FLAGS"
+     },
+     [
+      {
+       "t": "ATOM",
+       "v": "\\Seen"
+      },
+      {
+       "t": "ATOM",
+       "v": "\\Flagged"
+      },
+      {
+       "t": "ATOM",
+       "v": "$Junk"
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 14,
+   "flags": [
+    "$Junk",
+    "\\Flagged",
+    "\\Seen"
+   ],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgUkZDODIyLlNJWkUgNDA5NiBJTlRFUk5BTERBVEUgIjAxLU9jdC0yMDI2IDA5OjMxOjAwICswMDAwIik=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "RFC822.SIZE"
+     },
+     {
+      "t": "ATOM",
+      "v": "4096"
+     },
+     {
+      "t": "ATOM",
+      "v": "INTERNALDATE"
+     },
+     {
+      "t": "STRING",
+      "v": "01-Oct-2026 09:31:00 +0000"
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": 4096,
+   "internalDate": "2026-10-01T09:31:00.000Z",
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgSU5URVJOQUxEQVRFICIgMS1PY3QtMjAyNiAxMTozMTowMCArMDIwMCIp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "INTERNALDATE"
+     },
+     {
+      "t": "STRING",
+      "v": " 1-Oct-2026 11:31:00 +0200"
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": "2026-10-01T09:31:00.000Z",
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgRU5WRUxPUEUgKCJUaHUsIDAxIE9jdCAyMDI2IDA5OjMwOjAwICswMDAwIiAiTHVuY2ggb24gVGh1cnNkYXk/IiAoKCJBbGljZSBNYXJ0aW4iIE5JTCAiYWxpY2UiICJleGFtcGxlLmNvbSIpKSAoKCJBbGljZSBNYXJ0aW4iIE5JTCAiYWxpY2UiICJleGFtcGxlLmNvbSIpKSAoKCJBbGljZSBNYXJ0aW4iIE5JTCAiYWxpY2UiICJleGFtcGxlLmNvbSIpKSAoKCJUaG9tYXMiIE5JTCAidGhvbWFzIiAiaWNsb3VkLmNvbSIpKE5JTCBOSUwgImJvYiIgImV4YW1wbGUuY29tIikpICgoIkNhcm9sIiBOSUwgImNhcm9sIiAiZXhhbXBsZS5jb20iKSkgTklMICI8cm9vdEBleGFtcGxlLmNvbT4iICI8bHVuY2hAZXhhbXBsZS5jb20+Iikp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "ENVELOPE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "Thu, 01 Oct 2026 09:30:00 +0000"
+      },
+      {
+       "t": "STRING",
+       "v": "Lunch on Thursday?"
+      },
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "Alice Martin"
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "alice"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "Alice Martin"
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "alice"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "Alice Martin"
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "alice"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "Thomas"
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "thomas"
+        },
+        {
+         "t": "STRING",
+         "v": "icloud.com"
+        }
+       ],
+       [
+        null,
+        null,
+        {
+         "t": "STRING",
+         "v": "bob"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "Carol"
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "carol"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      null,
+      {
+       "t": "STRING",
+       "v": "<root@example.com>"
+      },
+      {
+       "t": "STRING",
+       "v": "<lunch@example.com>"
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": {
+    "date": "2026-10-01T09:30:00.000Z",
+    "subject": "Lunch on Thursday?",
+    "messageId": "<lunch@example.com>",
+    "inReplyTo": "<root@example.com>",
+    "from": [
+     {
+      "name": "Alice Martin",
+      "address": "alice@example.com"
+     }
+    ],
+    "sender": [
+     {
+      "name": "Alice Martin",
+      "address": "alice@example.com"
+     }
+    ],
+    "replyTo": [
+     {
+      "name": "Alice Martin",
+      "address": "alice@example.com"
+     }
+    ],
+    "to": [
+     {
+      "name": "Thomas",
+      "address": "thomas@icloud.com"
+     },
+     {
+      "name": "",
+      "address": "bob@example.com"
+     }
+    ],
+    "cc": [
+     {
+      "name": "Carol",
+      "address": "carol@example.com"
+     }
+    ],
+    "bcc": []
+   },
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAyIEZFVENIIChVSUQgMTIgRU5WRUxPUEUgKCJGcmksIDIgT2N0IDIwMjYgMDg6MDA6MDAgKzAyMDAgKENFU1QpIiAiPT9VVEYtOD9RP0Q9QzM9QTlqZXVuZXJfamV1ZGlfPTNGPz0iICgoIj0/VVRGLTg/Qj9RVzVrY3NPcElFMWhjblJwYmc9PT89IiBOSUwgImFuZHJlIiAiZXhhbXBsZS5jb20iKSkgTklMIE5JTCAoKE5JTCBOSUwgInRob21hcyIgImljbG91ZC5jb20iKSkgTklMIE5JTCBOSUwgIjxkZWpldW5lckBleGFtcGxlLmNvbT4iKSk=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "2",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "12"
+     },
+     {
+      "t": "ATOM",
+      "v": "ENVELOPE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "Fri, 2 Oct 2026 08:00:00 +0200 (CEST)"
+      },
+      {
+       "t": "STRING",
+       "v": "=?UTF-8?Q?D=C3=A9jeuner_jeudi_=3F?="
+      },
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "=?UTF-8?B?QW5kcsOpIE1hcnRpbg==?="
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "andre"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      null,
+      null,
+      [
+       [
+        null,
+        null,
+        {
+         "t": "STRING",
+         "v": "thomas"
+        },
+        {
+         "t": "STRING",
+         "v": "icloud.com"
+        }
+       ]
+      ],
+      null,
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": "<dejeuner@example.com>"
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 12,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": {
+    "date": "2026-10-02T06:00:00.000Z",
+    "subject": "Déjeuner jeudi ?",
+    "messageId": "<dejeuner@example.com>",
+    "inReplyTo": null,
+    "from": [
+     {
+      "name": "André Martin",
+      "address": "andre@example.com"
+     }
+    ],
+    "sender": [],
+    "replyTo": [],
+    "to": [
+     {
+      "name": "",
+      "address": "thomas@icloud.com"
+     }
+    ],
+    "cc": [],
+    "bcc": []
+   },
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAzIEZFVENIIChVSUQgMTMgRU5WRUxPUEUgKE5JTCBOSUwgTklMIE5JTCBOSUwgTklMIE5JTCBOSUwgTklMIE5JTCkp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "3",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "13"
+     },
+     {
+      "t": "ATOM",
+      "v": "ENVELOPE"
+     },
+     [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 13,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": {
+    "date": null,
+    "subject": null,
+    "messageId": null,
+    "inReplyTo": null,
+    "from": [],
+    "sender": [],
+    "replyTo": [],
+    "to": [],
+    "cc": [],
+    "bcc": []
+   },
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiA0IEZFVENIIChVSUQgMTQgRU5WRUxPUEUgKCJub3QgYSBkYXRlIiAiIiAoKE5JTCBOSUwgInVuZGlzY2xvc2VkLXJlY2lwaWVudHMiIE5JTCkoTklMIE5JTCBOSUwgTklMKSkgTklMIE5JTCAoKE5JTCBOSUwgImZyaWVuZHMiIE5JTCkoIkJvYiIgTklMICJib2IiICJleGFtcGxlLmNvbSIpKE5JTCBOSUwgTklMIE5JTCkpIE5JTCBOSUwgIiA8YUBiPiAiICIgIDxzcGFjZWRAZXhhbXBsZS5jb20+ICAiKSk=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "4",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "14"
+     },
+     {
+      "t": "ATOM",
+      "v": "ENVELOPE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "not a date"
+      },
+      {
+       "t": "STRING",
+       "v": ""
+      },
+      [
+       [
+        null,
+        null,
+        {
+         "t": "STRING",
+         "v": "undisclosed-recipients"
+        },
+        null
+       ],
+       [
+        null,
+        null,
+        null,
+        null
+       ]
+      ],
+      null,
+      null,
+      [
+       [
+        null,
+        null,
+        {
+         "t": "STRING",
+         "v": "friends"
+        },
+        null
+       ],
+       [
+        {
+         "t": "STRING",
+         "v": "Bob"
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "bob"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ],
+       [
+        null,
+        null,
+        null,
+        null
+       ]
+      ],
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": " <a@b> "
+      },
+      {
+       "t": "STRING",
+       "v": "  <spaced@example.com>  "
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 14,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": {
+    "date": null,
+    "subject": null,
+    "messageId": "<spaced@example.com>",
+    "inReplyTo": "<a@b>",
+    "from": [
+     {
+      "name": "undisclosed-recipients",
+      "address": ""
+     }
+    ],
+    "sender": [],
+    "replyTo": [],
+    "to": [
+     {
+      "name": "friends",
+      "address": ""
+     },
+     {
+      "name": "Bob",
+      "address": "bob@example.com"
+     }
+    ],
+    "cc": [],
+    "bcc": []
+   },
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiA1IEZFVENIIChVSUQgMTUgRU5WRUxPUEUgKCJTYXQsIDAzIE9jdCAyMDI2IDE1OjQ1OjAwIC0wNzAwIiB7MjF9DQooKCJcIlF1b3RlZCBOYW1lXCIiIE5JTCAicSIgImV4YW1wbGUuY29tIikoIj0/SVNPLTg4NTktMT9RP0FuZHI9RTk/PSA9P0lTTy04ODU5LTE/UT9fTWFydGluPz0iIE5JTCAiYW5kcmUiICJleGFtcGxlLmNvbSIpKSBOSUwgTklMIE5JTCBOSUwgTklMIE5JTCB7MTd9DQopKQ==",
+  "literals": [
+   "QSAicXVvdGVkIiBcIHN1YmplY3Qg",
+   "PGxpdEBleGFtcGxlLmNvbT4="
+  ],
+  "response": {
+   "tag": "*",
+   "command": "5",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "15"
+     },
+     {
+      "t": "ATOM",
+      "v": "ENVELOPE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "Sat, 03 Oct 2026 15:45:00 -0700"
+      },
+      {
+       "t": "LITERAL",
+       "b64": "QSAicXVvdGVkIiBcIHN1YmplY3Qg"
+      },
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "\"Quoted Name\""
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "q"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ],
+       [
+        {
+         "t": "STRING",
+         "v": "=?ISO-8859-1?Q?Andr=E9?= =?ISO-8859-1?Q?_Martin?="
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "andre"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+       "t": "LITERAL",
+       "b64": "PGxpdEBleGFtcGxlLmNvbT4="
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 15,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": {
+    "date": "2026-10-03T22:45:00.000Z",
+    "subject": "A \"quoted\" \\ subject ",
+    "messageId": "<lit@example.com>",
+    "inReplyTo": null,
+    "from": [
+     {
+      "name": "Quoted Name",
+      "address": "q@example.com"
+     },
+     {
+      "name": "André Martin",
+      "address": "andre@example.com"
+     }
+    ],
+    "sender": [],
+    "replyTo": [],
+    "to": [],
+    "cc": [],
+    "bcc": []
+   },
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiA2IEZFVENIIChVSUQgMTYgRU5WRUxPUEUgKCJTdW4sIDQgT2N0IDI2IDEwOjAwIEdNVCIgIj0/VVRGLTg/Qj84SitZZ0NCbGJXOXFhUT09Pz0gPT9VVEYtOD9CP0lHRnVaQ0J0YjNKbD89IiAoKCI9P3V0Zi04P3E/YT89ID0/aXNvLTg4NTktMT9xPz1FOT89IiBOSUwgImEiICJiLmMiKSkgTklMIE5JTCAoTklMICgib25seSIgTklMICJvbmUiICJleGFtcGxlLmNvbSIpKSBOSUwgTklMIE5JTCBOSUwpKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "6",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "16"
+     },
+     {
+      "t": "ATOM",
+      "v": "ENVELOPE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "Sun, 4 Oct 26 10:00 GMT"
+      },
+      {
+       "t": "STRING",
+       "v": "=?UTF-8?B?8J+YgCBlbW9qaQ==?= =?UTF-8?B?IGFuZCBtb3Jl?="
+      },
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "=?utf-8?q?a?= =?iso-8859-1?q?=E9?="
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "a"
+        },
+        {
+         "t": "STRING",
+         "v": "b.c"
+        }
+       ]
+      ],
+      null,
+      null,
+      [
+       null,
+       [
+        {
+         "t": "STRING",
+         "v": "only"
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "one"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      null,
+      null,
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 16,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": {
+    "date": "2026-10-04T10:00:00.000Z",
+    "subject": "😀 emoji and more",
+    "messageId": null,
+    "inReplyTo": null,
+    "from": [
+     {
+      "name": "aé",
+      "address": "a@b.c"
+     }
+    ],
+    "sender": [],
+    "replyTo": [],
+    "to": [
+     {
+      "name": "only",
+      "address": "one@example.com"
+     }
+    ],
+    "cc": [],
+    "bcc": []
+   },
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiA3IEZFVENIIChVSUQgMTcgRU5WRUxPUEUgKCJNb24sIDA1IE9jdCAyMDI2IDAwOjAwOjAwICswMDAwIiAiPT9zaGlmdF9qaXM/Qj9rL3FXZTR6cT89ID0/dW5rbm93bi04Yml0P1E/PUU5Pz0gPT91dGYtOD9RP2Jyb2tlbiIgKChOSUwgTklMICJuby1uYW1lIiAiZXhhbXBsZS5jb20iKSgiIiBOSUwgImVtcHR5LW5hbWUiICJleGFtcGxlLmNvbSIpKCJzYW1lQGV4YW1wbGUuY29tIiBOSUwgInNhbWUiICJleGFtcGxlLmNvbSIpKSBOSUwgTklMIE5JTCBOSUwgTklMIE5JTCBOSUwpKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "7",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "17"
+     },
+     {
+      "t": "ATOM",
+      "v": "ENVELOPE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "Mon, 05 Oct 2026 00:00:00 +0000"
+      },
+      {
+       "t": "STRING",
+       "v": "=?shift_jis?B?k/qWe4zq?= =?unknown-8bit?Q?=E9?= =?utf-8?Q?broken"
+      },
+      [
+       [
+        null,
+        null,
+        {
+         "t": "STRING",
+         "v": "no-name"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ],
+       [
+        {
+         "t": "STRING",
+         "v": ""
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "empty-name"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ],
+       [
+        {
+         "t": "STRING",
+         "v": "same@example.com"
+        },
+        null,
+        {
+         "t": "STRING",
+         "v": "same"
+        },
+        {
+         "t": "STRING",
+         "v": "example.com"
+        }
+       ]
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 17,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": {
+    "date": "2026-10-05T00:00:00.000Z",
+    "subject": "日本語� =?utf-8?Q?broken",
+    "messageId": null,
+    "inReplyTo": null,
+    "from": [
+     {
+      "name": "",
+      "address": "no-name@example.com"
+     },
+     {
+      "name": "",
+      "address": "empty-name@example.com"
+     },
+     {
+      "name": "same@example.com",
+      "address": "same@example.com"
+     }
+    ],
+    "sender": [],
+    "replyTo": [],
+    "to": [],
+    "cc": [],
+    "bcc": []
+   },
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoInRleHQiICJwbGFpbiIgKCJjaGFyc2V0IiAidXRmLTgiKSBOSUwgTklMICI3Yml0IiA0MDAwIDgyIE5JTCBOSUwgTklMIE5JTCkp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "text"
+      },
+      {
+       "t": "STRING",
+       "v": "plain"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "charset"
+       },
+       {
+        "t": "STRING",
+        "v": "utf-8"
+       }
+      ],
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": "7bit"
+      },
+      {
+       "t": "ATOM",
+       "v": "4000"
+      },
+      {
+       "t": "ATOM",
+       "v": "82"
+      },
+      null,
+      null,
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "text/plain",
+    "parameters": {
+     "charset": "utf-8"
+    },
+    "encoding": "7bit",
+    "size": 4000,
+    "disposition": null,
+    "dispositionParameters": {},
+    "childNodes": null
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoIlRFWFQiICJIVE1MIiAoIkNIQVJTRVQiICJVVEYtOCIpIE5JTCBOSUwgIlFVT1RFRC1QUklOVEFCTEUiIDQwOTYgOTEgTklMIE5JTCBOSUwgTklMKSk=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "TEXT"
+      },
+      {
+       "t": "STRING",
+       "v": "HTML"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "CHARSET"
+       },
+       {
+        "t": "STRING",
+        "v": "UTF-8"
+       }
+      ],
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": "QUOTED-PRINTABLE"
+      },
+      {
+       "t": "ATOM",
+       "v": "4096"
+      },
+      {
+       "t": "ATOM",
+       "v": "91"
+      },
+      null,
+      null,
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "text/html",
+    "parameters": {
+     "charset": "UTF-8"
+    },
+    "encoding": "quoted-printable",
+    "size": 4096,
+    "disposition": null,
+    "dispositionParameters": {},
+    "childNodes": null
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoInRleHQiICJwbGFpbiIgTklMIE5JTCBOSUwgIjdiaXQiIDEyIDEpKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "text"
+      },
+      {
+       "t": "STRING",
+       "v": "plain"
+      },
+      null,
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": "7bit"
+      },
+      {
+       "t": "ATOM",
+       "v": "12"
+      },
+      {
+       "t": "ATOM",
+       "v": "1"
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "text/plain",
+    "parameters": {},
+    "encoding": "7bit",
+    "size": 12,
+    "disposition": null,
+    "dispositionParameters": {},
+    "childNodes": null
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoInRleHQiICJodG1sIiAoImNoYXJzZXQiICJ1dGYtOCIpIE5JTCBOSUwgIjdiaXQiIDQwOTYgTklMICgiaW5saW5lIiBOSUwpIE5JTCBOSUwpKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "text"
+      },
+      {
+       "t": "STRING",
+       "v": "html"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "charset"
+       },
+       {
+        "t": "STRING",
+        "v": "utf-8"
+       }
+      ],
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": "7bit"
+      },
+      {
+       "t": "ATOM",
+       "v": "4096"
+      },
+      null,
+      [
+       {
+        "t": "STRING",
+        "v": "inline"
+       },
+       null
+      ],
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "text/html",
+    "parameters": {
+     "charset": "utf-8"
+    },
+    "encoding": "7bit",
+    "size": 4096,
+    "disposition": "inline",
+    "dispositionParameters": {},
+    "childNodes": null
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoKCgidGV4dCIgInBsYWluIiAoImNoYXJzZXQiICJ1dGYtOCIpIE5JTCBOSUwgInF1b3RlZC1wcmludGFibGUiIDUyIDMgTklMIE5JTCBOSUwgTklMKSgidGV4dCIgImh0bWwiICgiY2hhcnNldCIgInV0Zi04IikgTklMIE5JTCAicXVvdGVkLXByaW50YWJsZSIgMTIwIDQgTklMIE5JTCBOSUwgTklMKSAiYWx0ZXJuYXRpdmUiICgiYm91bmRhcnkiICJiMiIpIE5JTCBOSUwgTklMKSgiYXBwbGljYXRpb24iICJwZGYiICgibmFtZSIgIj0/VVRGLTg/UT9NZW51Xz1DMz1BOXQ9QzM9QTkucGRmPz0iKSBOSUwgTklMICJiYXNlNjQiIDc4MDAwIE5JTCAoImF0dGFjaG1lbnQiICgiZmlsZW5hbWUiICI9P1VURi04P1E/TWVudV89QzM9QTl0PUMzPUE5LnBkZj89IikpIE5JTCBOSUwpICJtaXhlZCIgKCJib3VuZGFyeSIgImIxIikgTklMIE5JTCBOSUwpKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      [
+       [
+        {
+         "t": "STRING",
+         "v": "text"
+        },
+        {
+         "t": "STRING",
+         "v": "plain"
+        },
+        [
+         {
+          "t": "STRING",
+          "v": "charset"
+         },
+         {
+          "t": "STRING",
+          "v": "utf-8"
+         }
+        ],
+        null,
+        null,
+        {
+         "t": "STRING",
+         "v": "quoted-printable"
+        },
+        {
+         "t": "ATOM",
+         "v": "52"
+        },
+        {
+         "t": "ATOM",
+         "v": "3"
+        },
+        null,
+        null,
+        null,
+        null
+       ],
+       [
+        {
+         "t": "STRING",
+         "v": "text"
+        },
+        {
+         "t": "STRING",
+         "v": "html"
+        },
+        [
+         {
+          "t": "STRING",
+          "v": "charset"
+         },
+         {
+          "t": "STRING",
+          "v": "utf-8"
+         }
+        ],
+        null,
+        null,
+        {
+         "t": "STRING",
+         "v": "quoted-printable"
+        },
+        {
+         "t": "ATOM",
+         "v": "120"
+        },
+        {
+         "t": "ATOM",
+         "v": "4"
+        },
+        null,
+        null,
+        null,
+        null
+       ],
+       {
+        "t": "STRING",
+        "v": "alternative"
+       },
+       [
+        {
+         "t": "STRING",
+         "v": "boundary"
+        },
+        {
+         "t": "STRING",
+         "v": "b2"
+        }
+       ],
+       null,
+       null,
+       null
+      ],
+      [
+       {
+        "t": "STRING",
+        "v": "application"
+       },
+       {
+        "t": "STRING",
+        "v": "pdf"
+       },
+       [
+        {
+         "t": "STRING",
+         "v": "name"
+        },
+        {
+         "t": "STRING",
+         "v": "=?UTF-8?Q?Menu_=C3=A9t=C3=A9.pdf?="
+        }
+       ],
+       null,
+       null,
+       {
+        "t": "STRING",
+        "v": "base64"
+       },
+       {
+        "t": "ATOM",
+        "v": "78000"
+       },
+       null,
+       [
+        {
+         "t": "STRING",
+         "v": "attachment"
+        },
+        [
+         {
+          "t": "STRING",
+          "v": "filename"
+         },
+         {
+          "t": "STRING",
+          "v": "=?UTF-8?Q?Menu_=C3=A9t=C3=A9.pdf?="
+         }
+        ]
+       ],
+       null,
+       null
+      ],
+      {
+       "t": "STRING",
+       "v": "mixed"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "boundary"
+       },
+       {
+        "t": "STRING",
+        "v": "b1"
+       }
+      ],
+      null,
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "multipart/mixed",
+    "parameters": {
+     "boundary": "b1"
+    },
+    "encoding": null,
+    "size": null,
+    "disposition": null,
+    "dispositionParameters": {},
+    "childNodes": [
+     {
+      "part": "1",
+      "type": "multipart/alternative",
+      "parameters": {
+       "boundary": "b2"
+      },
+      "encoding": null,
+      "size": null,
+      "disposition": null,
+      "dispositionParameters": {},
+      "childNodes": [
+       {
+        "part": "1.1",
+        "type": "text/plain",
+        "parameters": {
+         "charset": "utf-8"
+        },
+        "encoding": "quoted-printable",
+        "size": 52,
+        "disposition": null,
+        "dispositionParameters": {},
+        "childNodes": null
+       },
+       {
+        "part": "1.2",
+        "type": "text/html",
+        "parameters": {
+         "charset": "utf-8"
+        },
+        "encoding": "quoted-printable",
+        "size": 120,
+        "disposition": null,
+        "dispositionParameters": {},
+        "childNodes": null
+       }
+      ]
+     },
+     {
+      "part": "2",
+      "type": "application/pdf",
+      "parameters": {
+       "name": "Menu été.pdf"
+      },
+      "encoding": "base64",
+      "size": 78000,
+      "disposition": "attachment",
+      "dispositionParameters": {
+       "filename": "Menu été.pdf"
+      },
+      "childNodes": null
+     }
+    ]
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoKCJ0ZXh0IiAicGxhaW4iIE5JTCBOSUwgTklMICI3Yml0IiAxMCAxIE5JTCBOSUwgTklMIE5JTCkoImFwcGxpY2F0aW9uIiAicGRmIiBOSUwgTklMIE5JTCAiYmFzZTY0IiA3ODAgTklMICgiQVRUQUNITUVOVCIgKCJGSUxFTkFNRSoiICJ1dGYtOCcnRGV2aXMlMjAlQzMlQTl0JUMzJUE5LnBkZiIpKSBOSUwgTklMKSgiYXBwbGljYXRpb24iICJ6aXAiIE5JTCBOSUwgTklMICJiYXNlNjQiIDk5IE5JTCAoImF0dGFjaG1lbnQiICgiZmlsZW5hbWUqMCoiICJpc28tODg1OS0xJ2ZyJ2FyY2hpdmUlMjAiICJmaWxlbmFtZSoxKiIgIiVFOXQlRTkiICJmaWxlbmFtZSoyIiAiLnppcCIpKSBOSUwgTklMKSgiaW1hZ2UiICJwbmciICgibmFtZSowIiAibG9uZyBuYW1lICIgIm5hbWUqMSIgImluIHBpZWNlcy5wbmciKSAiPGNpZEB4PiIgIkEgcGljdHVyZSIgImJhc2U2NCIgMzAwMDAwIE5JTCAoImlubGluZSIgKCJmaWxlbmFtZSIgInV0Zi04JydtaXNwbGFjZWQlMjAlQzMlQTkucG5nIikpIE5JTCBOSUwpICJtaXhlZCIpKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      [
+       {
+        "t": "STRING",
+        "v": "text"
+       },
+       {
+        "t": "STRING",
+        "v": "plain"
+       },
+       null,
+       null,
+       null,
+       {
+        "t": "STRING",
+        "v": "7bit"
+       },
+       {
+        "t": "ATOM",
+        "v": "10"
+       },
+       {
+        "t": "ATOM",
+        "v": "1"
+       },
+       null,
+       null,
+       null,
+       null
+      ],
+      [
+       {
+        "t": "STRING",
+        "v": "application"
+       },
+       {
+        "t": "STRING",
+        "v": "pdf"
+       },
+       null,
+       null,
+       null,
+       {
+        "t": "STRING",
+        "v": "base64"
+       },
+       {
+        "t": "ATOM",
+        "v": "780"
+       },
+       null,
+       [
+        {
+         "t": "STRING",
+         "v": "ATTACHMENT"
+        },
+        [
+         {
+          "t": "STRING",
+          "v": "FILENAME*"
+         },
+         {
+          "t": "STRING",
+          "v": "utf-8''Devis%20%C3%A9t%C3%A9.pdf"
+         }
+        ]
+       ],
+       null,
+       null
+      ],
+      [
+       {
+        "t": "STRING",
+        "v": "application"
+       },
+       {
+        "t": "STRING",
+        "v": "zip"
+       },
+       null,
+       null,
+       null,
+       {
+        "t": "STRING",
+        "v": "base64"
+       },
+       {
+        "t": "ATOM",
+        "v": "99"
+       },
+       null,
+       [
+        {
+         "t": "STRING",
+         "v": "attachment"
+        },
+        [
+         {
+          "t": "STRING",
+          "v": "filename*0*"
+         },
+         {
+          "t": "STRING",
+          "v": "iso-8859-1'fr'archive%20"
+         },
+         {
+          "t": "STRING",
+          "v": "filename*1*"
+         },
+         {
+          "t": "STRING",
+          "v": "%E9t%E9"
+         },
+         {
+          "t": "STRING",
+          "v": "filename*2"
+         },
+         {
+          "t": "STRING",
+          "v": ".zip"
+         }
+        ]
+       ],
+       null,
+       null
+      ],
+      [
+       {
+        "t": "STRING",
+        "v": "image"
+       },
+       {
+        "t": "STRING",
+        "v": "png"
+       },
+       [
+        {
+         "t": "STRING",
+         "v": "name*0"
+        },
+        {
+         "t": "STRING",
+         "v": "long name "
+        },
+        {
+         "t": "STRING",
+         "v": "name*1"
+        },
+        {
+         "t": "STRING",
+         "v": "in pieces.png"
+        }
+       ],
+       {
+        "t": "STRING",
+        "v": "<cid@x>"
+       },
+       {
+        "t": "STRING",
+        "v": "A picture"
+       },
+       {
+        "t": "STRING",
+        "v": "base64"
+       },
+       {
+        "t": "ATOM",
+        "v": "300000"
+       },
+       null,
+       [
+        {
+         "t": "STRING",
+         "v": "inline"
+        },
+        [
+         {
+          "t": "STRING",
+          "v": "filename"
+         },
+         {
+          "t": "STRING",
+          "v": "utf-8''misplaced%20%C3%A9.png"
+         }
+        ]
+       ],
+       null,
+       null
+      ],
+      {
+       "t": "STRING",
+       "v": "mixed"
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "multipart/mixed",
+    "parameters": {},
+    "encoding": null,
+    "size": null,
+    "disposition": null,
+    "dispositionParameters": {},
+    "childNodes": [
+     {
+      "part": "1",
+      "type": "text/plain",
+      "parameters": {},
+      "encoding": "7bit",
+      "size": 10,
+      "disposition": null,
+      "dispositionParameters": {},
+      "childNodes": null
+     },
+     {
+      "part": "2",
+      "type": "application/pdf",
+      "parameters": {},
+      "encoding": "base64",
+      "size": 780,
+      "disposition": "attachment",
+      "dispositionParameters": {
+       "filename": "Devis été.pdf"
+      },
+      "childNodes": null
+     },
+     {
+      "part": "3",
+      "type": "application/zip",
+      "parameters": {},
+      "encoding": "base64",
+      "size": 99,
+      "disposition": "attachment",
+      "dispositionParameters": {
+       "filename": "archive été.zip"
+      },
+      "childNodes": null
+     },
+     {
+      "part": "4",
+      "type": "image/png",
+      "parameters": {
+       "name": "long name in pieces.png"
+      },
+      "encoding": "base64",
+      "size": 300000,
+      "disposition": "inline",
+      "dispositionParameters": {
+       "filename": "misplaced é.png"
+      },
+      "childNodes": null
+     }
+    ]
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoKCJ0ZXh0IiAicGxhaW4iIE5JTCBOSUwgTklMICI3Yml0IiAxMCAxKSgibWVzc2FnZSIgInJmYzgyMiIgKCJuYW1lIiAiRndkLmVtbCIpIE5JTCBOSUwgIjdiaXQiIDkwMDAgKCJUaHUsIDAxIE9jdCAyMDI2IDA5OjMwOjAwICswMDAwIiAiRndkIiAoKCJBIiBOSUwgImEiICJiLmMiKSkgTklMIE5JTCBOSUwgTklMIE5JTCBOSUwgIjxmQGIuYz4iKSAoKCJ0ZXh0IiAicGxhaW4iIE5JTCBOSUwgTklMICI3Yml0IiA1MDAgMTApKCJpbWFnZSIgImpwZWciIE5JTCBOSUwgTklMICJiYXNlNjQiIDEwMCkgIm1peGVkIikgMjAwIE5JTCAoImF0dGFjaG1lbnQiIE5JTCkgTklMIE5JTCkoImFwcGxpY2F0aW9uIiAib2N0ZXQtc3RyZWFtIiBOSUwgTklMIE5JTCAiYmFzZTY0IiA1KSAibWl4ZWQiICgiYm91bmRhcnkiICJ4IikgTklMICgiZW4iICJmciIpICJsb2NhdGlvbiIpKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      [
+       {
+        "t": "STRING",
+        "v": "text"
+       },
+       {
+        "t": "STRING",
+        "v": "plain"
+       },
+       null,
+       null,
+       null,
+       {
+        "t": "STRING",
+        "v": "7bit"
+       },
+       {
+        "t": "ATOM",
+        "v": "10"
+       },
+       {
+        "t": "ATOM",
+        "v": "1"
+       }
+      ],
+      [
+       {
+        "t": "STRING",
+        "v": "message"
+       },
+       {
+        "t": "STRING",
+        "v": "rfc822"
+       },
+       [
+        {
+         "t": "STRING",
+         "v": "name"
+        },
+        {
+         "t": "STRING",
+         "v": "Fwd.eml"
+        }
+       ],
+       null,
+       null,
+       {
+        "t": "STRING",
+        "v": "7bit"
+       },
+       {
+        "t": "ATOM",
+        "v": "9000"
+       },
+       [
+        {
+         "t": "STRING",
+         "v": "Thu, 01 Oct 2026 09:30:00 +0000"
+        },
+        {
+         "t": "STRING",
+         "v": "Fwd"
+        },
+        [
+         [
+          {
+           "t": "STRING",
+           "v": "A"
+          },
+          null,
+          {
+           "t": "STRING",
+           "v": "a"
+          },
+          {
+           "t": "STRING",
+           "v": "b.c"
+          }
+         ]
+        ],
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        {
+         "t": "STRING",
+         "v": "<f@b.c>"
+        }
+       ],
+       [
+        [
+         {
+          "t": "STRING",
+          "v": "text"
+         },
+         {
+          "t": "STRING",
+          "v": "plain"
+         },
+         null,
+         null,
+         null,
+         {
+          "t": "STRING",
+          "v": "7bit"
+         },
+         {
+          "t": "ATOM",
+          "v": "500"
+         },
+         {
+          "t": "ATOM",
+          "v": "10"
+         }
+        ],
+        [
+         {
+          "t": "STRING",
+          "v": "image"
+         },
+         {
+          "t": "STRING",
+          "v": "jpeg"
+         },
+         null,
+         null,
+         null,
+         {
+          "t": "STRING",
+          "v": "base64"
+         },
+         {
+          "t": "ATOM",
+          "v": "100"
+         }
+        ],
+        {
+         "t": "STRING",
+         "v": "mixed"
+        }
+       ],
+       {
+        "t": "ATOM",
+        "v": "200"
+       },
+       null,
+       [
+        {
+         "t": "STRING",
+         "v": "attachment"
+        },
+        null
+       ],
+       null,
+       null
+      ],
+      [
+       {
+        "t": "STRING",
+        "v": "application"
+       },
+       {
+        "t": "STRING",
+        "v": "octet-stream"
+       },
+       null,
+       null,
+       null,
+       {
+        "t": "STRING",
+        "v": "base64"
+       },
+       {
+        "t": "ATOM",
+        "v": "5"
+       }
+      ],
+      {
+       "t": "STRING",
+       "v": "mixed"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "boundary"
+       },
+       {
+        "t": "STRING",
+        "v": "x"
+       }
+      ],
+      null,
+      [
+       {
+        "t": "STRING",
+        "v": "en"
+       },
+       {
+        "t": "STRING",
+        "v": "fr"
+       }
+      ],
+      {
+       "t": "STRING",
+       "v": "location"
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "multipart/mixed",
+    "parameters": {
+     "boundary": "x"
+    },
+    "encoding": null,
+    "size": null,
+    "disposition": null,
+    "dispositionParameters": {},
+    "childNodes": [
+     {
+      "part": "1",
+      "type": "text/plain",
+      "parameters": {},
+      "encoding": "7bit",
+      "size": 10,
+      "disposition": null,
+      "dispositionParameters": {},
+      "childNodes": null
+     },
+     {
+      "part": "2",
+      "type": "message/rfc822",
+      "parameters": {
+       "name": "Fwd.eml"
+      },
+      "encoding": "7bit",
+      "size": 9000,
+      "disposition": "attachment",
+      "dispositionParameters": {},
+      "childNodes": [
+       {
+        "part": "2",
+        "type": "multipart/mixed",
+        "parameters": {},
+        "encoding": null,
+        "size": null,
+        "disposition": null,
+        "dispositionParameters": {},
+        "childNodes": [
+         {
+          "part": "2.1",
+          "type": "text/plain",
+          "parameters": {},
+          "encoding": "7bit",
+          "size": 500,
+          "disposition": null,
+          "dispositionParameters": {},
+          "childNodes": null
+         },
+         {
+          "part": "2.2",
+          "type": "image/jpeg",
+          "parameters": {},
+          "encoding": "base64",
+          "size": 100,
+          "disposition": null,
+          "dispositionParameters": {},
+          "childNodes": null
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "part": "3",
+      "type": "application/octet-stream",
+      "parameters": {},
+      "encoding": "base64",
+      "size": 5,
+      "disposition": null,
+      "dispositionParameters": {},
+      "childNodes": null
+     }
+    ]
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoImFwcGxpY2F0aW9uIiAib2N0ZXQtc3RyZWFtIiAoIm5hbWUiICJhIGIuYmluIiAieC11bml4LW1vZGUiICIwNjQ0IikgTklMIE5JTCAiQkFTRTY0IiAxMCAibWQ1bWQ1IiAoImF0dGFjaG1lbnQiICgiZmlsZW5hbWUiICJhIGIuYmluIiAic2l6ZSIgIjEwIiAiY3JlYXRpb24tZGF0ZSIgIlRodSwgMDEgT2N0IDIwMjYgMDk6MzA6MDAgR01UIikpICJlbiIgTklMKSk=",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "application"
+      },
+      {
+       "t": "STRING",
+       "v": "octet-stream"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "name"
+       },
+       {
+        "t": "STRING",
+        "v": "a b.bin"
+       },
+       {
+        "t": "STRING",
+        "v": "x-unix-mode"
+       },
+       {
+        "t": "STRING",
+        "v": "0644"
+       }
+      ],
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": "BASE64"
+      },
+      {
+       "t": "ATOM",
+       "v": "10"
+      },
+      {
+       "t": "STRING",
+       "v": "md5md5"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "attachment"
+       },
+       [
+        {
+         "t": "STRING",
+         "v": "filename"
+        },
+        {
+         "t": "STRING",
+         "v": "a b.bin"
+        },
+        {
+         "t": "STRING",
+         "v": "size"
+        },
+        {
+         "t": "STRING",
+         "v": "10"
+        },
+        {
+         "t": "STRING",
+         "v": "creation-date"
+        },
+        {
+         "t": "STRING",
+         "v": "Thu, 01 Oct 2026 09:30:00 GMT"
+        }
+       ]
+      ],
+      {
+       "t": "STRING",
+       "v": "en"
+      },
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "application/octet-stream",
+    "parameters": {
+     "name": "a b.bin",
+     "x-unix-mode": "0644"
+    },
+    "encoding": "base64",
+    "size": 10,
+    "disposition": "attachment",
+    "dispositionParameters": {
+     "filename": "a b.bin",
+     "size": "10",
+     "creation-date": "Thu, 01 Oct 2026 09:30:00 GMT"
+    },
+    "childNodes": null
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoKE5JTCBOSUwgTklMIE5JTCBOSUwgTklMIDAgMCkgIm1peGVkIikp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       {
+        "t": "ATOM",
+        "v": "0"
+       },
+       {
+        "t": "ATOM",
+        "v": "0"
+       }
+      ],
+      {
+       "t": "STRING",
+       "v": "mixed"
+      }
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "multipart/mixed",
+    "parameters": {},
+    "encoding": null,
+    "size": null,
+    "disposition": null,
+    "dispositionParameters": {},
+    "childNodes": [
+     {
+      "part": "1",
+      "type": "/",
+      "parameters": {},
+      "encoding": null,
+      "size": 0,
+      "disposition": null,
+      "dispositionParameters": {},
+      "childNodes": null
+     }
+    ]
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoInRleHQiICJjYWxlbmRhciIgKCJtZXRob2QiICJSRVFVRVNUIiAiY2hhcnNldCIgInV0Zi04IiAibmFtZSIgImludml0ZS5pY3MiKSBOSUwgTklMICI4Yml0IiAyMDQ4IDQwIE5JTCAoImF0dGFjaG1lbnQiICgiZmlsZW5hbWUiICIiKSkgTklMIE5JTCkp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "text"
+      },
+      {
+       "t": "STRING",
+       "v": "calendar"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "method"
+       },
+       {
+        "t": "STRING",
+        "v": "REQUEST"
+       },
+       {
+        "t": "STRING",
+        "v": "charset"
+       },
+       {
+        "t": "STRING",
+        "v": "utf-8"
+       },
+       {
+        "t": "STRING",
+        "v": "name"
+       },
+       {
+        "t": "STRING",
+        "v": "invite.ics"
+       }
+      ],
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": "8bit"
+      },
+      {
+       "t": "ATOM",
+       "v": "2048"
+      },
+      {
+       "t": "ATOM",
+       "v": "40"
+      },
+      null,
+      [
+       {
+        "t": "STRING",
+        "v": "attachment"
+       },
+       [
+        {
+         "t": "STRING",
+         "v": "filename"
+        },
+        {
+         "t": "STRING",
+         "v": ""
+        }
+       ]
+      ],
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "text/calendar",
+    "parameters": {
+     "method": "REQUEST",
+     "charset": "utf-8",
+     "name": "invite.ics"
+    },
+    "encoding": "8bit",
+    "size": 2048,
+    "disposition": "attachment",
+    "dispositionParameters": {
+     "filename": ""
+    },
+    "childNodes": null
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSAoImFwcGxpY2F0aW9uIiAicGRmIiAoIm5hbWUiIHsxMX0NCikgTklMIE5JTCAiYmFzZTY0IiAxMCBOSUwgTklMIE5JTCBOSUwpKQ==",
+  "literals": [
+   "bGl0ZXJhbC5wZGY="
+  ],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     [
+      {
+       "t": "STRING",
+       "v": "application"
+      },
+      {
+       "t": "STRING",
+       "v": "pdf"
+      },
+      [
+       {
+        "t": "STRING",
+        "v": "name"
+       },
+       {
+        "t": "LITERAL",
+        "b64": "bGl0ZXJhbC5wZGY="
+       }
+      ],
+      null,
+      null,
+      {
+       "t": "STRING",
+       "v": "base64"
+      },
+      {
+       "t": "ATOM",
+       "v": "10"
+      },
+      null,
+      null,
+      null,
+      null
+     ]
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": {
+    "part": null,
+    "type": "application/pdf",
+    "parameters": {
+     "name": "literal.pdf"
+    },
+    "encoding": "base64",
+    "size": 10,
+    "disposition": null,
+    "dispositionParameters": {},
+    "childNodes": null
+   },
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVNUUlVDVFVSRSBOSUwgRU5WRUxPUEUgTklMKQ==",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODYSTRUCTURE"
+     },
+     null,
+     {
+      "t": "ATOM",
+      "v": "ENVELOPE"
+     },
+     null
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVtIRUFERVIuRklFTERTIChSZWZlcmVuY2VzKV0gezM0fQ0KKQ==",
+  "literals": [
+   "UmVmZXJlbmNlczogPHJvb3RAZXhhbXBsZS5jb20+DQoNCg=="
+  ],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": [
+       {
+        "t": "ATOM",
+        "v": "HEADER.FIELDS"
+       },
+       [
+        {
+         "t": "ATOM",
+         "v": "References"
+        }
+       ]
+      ]
+     },
+     {
+      "t": "LITERAL",
+      "b64": "UmVmZXJlbmNlczogPHJvb3RAZXhhbXBsZS5jb20+DQoNCg=="
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": "UmVmZXJlbmNlczogPHJvb3RAZXhhbXBsZS5jb20+DQoNCg==",
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVtIRUFERVIuRklFTERTIChSRUZFUkVOQ0VTKV0gezJ9DQop",
+  "literals": [
+   "DQo="
+  ],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": [
+       {
+        "t": "ATOM",
+        "v": "HEADER.FIELDS"
+       },
+       [
+        {
+         "t": "ATOM",
+         "v": "REFERENCES"
+        }
+       ]
+      ]
+     },
+     {
+      "t": "LITERAL",
+      "b64": "DQo="
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": "DQo=",
+   "bodyParts": {}
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgUkZDODIyLlNJWkUgOTAwMCBCT0RZWzEuMi5NSU1FXSB7MzF9DQpZWzEuMl08MD4gezV9DQop",
+  "literals": [
+   "Q29udGVudC1UeXBlOiB0ZXh0L2h0bWwNCg0KIEJPRA==",
+   "aGVsbG8="
+  ],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "RFC822.SIZE"
+     },
+     {
+      "t": "ATOM",
+      "v": "9000"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": [
+       {
+        "t": "ATOM",
+        "v": "1.2.MIME"
+       }
+      ]
+     },
+     {
+      "t": "LITERAL",
+      "b64": "Q29udGVudC1UeXBlOiB0ZXh0L2h0bWwNCg0KIEJPRA=="
+     },
+     {
+      "t": "ATOM",
+      "v": "Y[1.2]<0>"
+     },
+     {
+      "t": "LITERAL",
+      "b64": "aGVsbG8="
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": 9000,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {
+    "1.2.mime": "Q29udGVudC1UeXBlOiB0ZXh0L2h0bWwNCg0KIEJPRA=="
+   }
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVtURVhUXTw2NTUzNj4gezN9DQogQk9EWVtIRUFERVJdIHs0fQ0KKQ==",
+  "literals": [
+   "YWJj",
+   "QTogYg=="
+  ],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": [
+       {
+        "t": "ATOM",
+        "v": "TEXT"
+       }
+      ],
+      "partial": [
+       65536
+      ]
+     },
+     {
+      "t": "LITERAL",
+      "b64": "YWJj"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": [
+       {
+        "t": "ATOM",
+        "v": "HEADER"
+       }
+      ]
+     },
+     {
+      "t": "LITERAL",
+      "b64": "QTogYg=="
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": "QTogYg==",
+   "bodyParts": {
+    "text": "YWJj"
+   }
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVsyXSBOSUwp",
+  "literals": [],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": [
+       {
+        "t": "ATOM",
+        "v": "2"
+       }
+      ]
+     },
+     null
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {
+    "2": null
+   }
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVsxXSAicXVvdGVkIGJvZHkiIEJPRFlbXSB7MH0NCik=",
+  "literals": [
+   ""
+  ],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": [
+       {
+        "t": "ATOM",
+        "v": "1"
+       }
+      ]
+     },
+     {
+      "t": "STRING",
+      "v": "quoted body"
+     },
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": []
+     },
+     {
+      "t": "LITERAL",
+      "b64": ""
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {
+    "1": "cXVvdGVkIGJvZHk="
+   }
+  }
+ },
+ {
+  "payload": "KiAxIEZFVENIIChCT0RZWzFdPDA+IHs0fQ0KIFVJRCAxMSk=",
+  "literals": [
+   "//4NCg=="
+  ],
+  "response": {
+   "tag": "*",
+   "command": "1",
+   "attributes": [
+    {
+     "t": "ATOM",
+     "v": "FETCH"
+    },
+    [
+     {
+      "t": "ATOM",
+      "v": "BODY",
+      "section": [
+       {
+        "t": "ATOM",
+        "v": "1"
+       }
+      ],
+      "partial": [
+       0
+      ]
+     },
+     {
+      "t": "LITERAL",
+      "b64": "//4NCg=="
+     },
+     {
+      "t": "ATOM",
+      "v": "UID"
+     },
+     {
+      "t": "ATOM",
+      "v": "11"
+     }
+    ]
+   ]
+  },
+  "message": {
+   "uid": 11,
+   "flags": [],
+   "size": null,
+   "internalDate": null,
+   "envelope": null,
+   "bodyStructure": null,
+   "headers": null,
+   "bodyParts": {
+    "1": "//4NCg=="
+   }
+  }
+ },
+ {
+  "payload": "KiBMSVNUIChcU2VudCAiLyIgeA==",
+  "literals": [],
+  "error": "ParserError9"
+ },
+ {
+  "payload": "KiBMSVNUICkgeA==",
+  "literals": [],
+  "error": "ParserError10"
+ },
+ {
+  "payload": "KiBTRUFSQ0ggInVudGVybWluYXRlZA==",
+  "literals": [],
+  "error": "ParserError9"
+ },
+ {
+  "payload": "KiAxIEZFVENIIChVSUQgMTEgQk9EWVsxXSB7NX0NCg==",
+  "literals": [
+   "YWJjKQ=="
+  ],
+  "error": "ParserError9"
+ },
+ {
+  "payload": "QTEgT0sgW3g=",
+  "literals": [],
+  "error": "ParserError9"
+ },
+ {
+  "payload": "KiBYICgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCg=",
+  "literals": [],
+  "error": "MAX_IMAP_NESTING_REACHED"
+ }
+]
