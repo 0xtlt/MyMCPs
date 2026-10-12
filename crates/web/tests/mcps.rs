@@ -14,7 +14,7 @@ use http::StatusCode;
 use mcps_support::*;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
 use mymcps_core::secrets::{EnvironmentInput, merge_environment};
-use mymcps_deno::{DenoRunner, DenoRuntime, HostEnvironment};
+use mymcps_node::{NodeRunner, NodeRuntime};
 use mymcps_upstream::Upstream;
 use mymcps_web::AppState;
 use mymcps_web::state::builtins;
@@ -1334,19 +1334,19 @@ async fn updates_an_mcp_and_tests_it_again() {
 
 // --- the environment of an npm MCP (tests/browser/mcp_environment.spec.ts) ---
 
-/// The app around an upstream whose Deno is never found: saving probes the
-/// MCP, and these tests are about what happens before Deno starts.
-async fn app_without_deno() -> TestApp {
+/// The app around an upstream whose Node.js is never found: saving probes the
+/// MCP, and these tests are about what happens before Node.js starts.
+async fn app_without_node() -> TestApp {
     TestApp::with_state(
         |_| {},
         |core| {
-            let runtime = DenoRuntime::new(&core.config).binary(|| {
-                Err(mymcps_deno::DenoError::Other(
-                    "Deno is not started in this test".into(),
+            let runtime = NodeRuntime::new(&core.config).binary(|| {
+                Err(mymcps_node::NodeError::Other(
+                    "Node.js is not started in this test".into(),
                 ))
             });
             let upstream = Upstream::builder(core.clone(), builtins())
-                .deno(DenoRunner::with_runtime(core.clone(), runtime))
+                .node(NodeRunner::with_runtime(core.clone(), runtime))
                 .build();
             AppState::with_upstream(core, upstream)
         },
@@ -1375,7 +1375,7 @@ fn npm_form<'a>(fields: &[(&'a str, &'a str)]) -> Vec<(&'a str, &'a str)> {
 
 #[tokio::test]
 async fn saves_the_environment_rows_of_the_form() {
-    let app = app_without_deno().await;
+    let app = app_without_node().await;
     let admin = create_admin(&app).await;
 
     // The rows the page script adds are numbered from a template.
@@ -1432,7 +1432,7 @@ async fn saves_the_environment_rows_of_the_form() {
             ("REGION".to_string(), "eu-west-3".to_string()),
         ]
     );
-    // Deno could not start: the MCP is saved, in error.
+    // Node.js could not start: the MCP is saved, in error.
     assert_eq!(mcp.status, McpStatus::Error);
 
     // The registry and the edit dialog name the variables and never show a value.
@@ -1448,7 +1448,7 @@ async fn saves_the_environment_rows_of_the_form() {
 
 #[tokio::test]
 async fn refuses_environment_rows_the_form_cannot_save() {
-    let app = app_without_deno().await;
+    let app = app_without_node().await;
     let admin = create_admin(&app).await;
     let refused = async |fields: &[(&str, &str)]| {
         let response = from_script(app.post("/mcps"))
@@ -1618,7 +1618,7 @@ async fn offers_to_keep_a_saved_header_value_the_same_way() {
 
 #[tokio::test]
 async fn asks_for_environment_values_again_once_the_package_changes() {
-    let app = app_without_deno().await;
+    let app = app_without_node().await;
     let admin = create_admin(&app).await;
     let saved = environment_of(&app, &[("API_KEY", "saved-api-key")]);
     let mcp = create_mcp(&app, admin.id, |mcp| {
@@ -1684,32 +1684,8 @@ async fn asks_for_environment_values_again_once_the_package_changes() {
 // --- the edit dialog of an npm MCP (tests/browser/mcp_edit_modal_ux.spec.ts) ---
 
 #[tokio::test]
-async fn shows_the_version_deno_has_cached_and_offers_the_update() {
-    let directory = tempfile::tempdir().unwrap();
-    let deno_dir = directory.path().join("deno-dir");
-    let package = deno_dir.join("npm/registry.npmjs.org/@shopify/dev-mcp");
-    std::fs::create_dir_all(package.join("1.14.4")).unwrap();
-    std::fs::write(
-        package.join("registry.json"),
-        json!({ "dist-tags": { "latest": "1.14.4" } }).to_string(),
-    )
-    .unwrap();
-
-    let host = HostEnvironment {
-        deno_dir: Some(deno_dir.display().to_string()),
-        ..HostEnvironment::from_process()
-    };
-    let app = TestApp::with_state(
-        |_| {},
-        |core| {
-            let runtime = DenoRuntime::with_host(None, host);
-            let upstream = Upstream::builder(core.clone(), builtins())
-                .deno(DenoRunner::with_runtime(core.clone(), runtime))
-                .build();
-            AppState::with_upstream(core, upstream)
-        },
-    )
-    .await;
+async fn shows_the_version_that_is_installed_and_offers_the_update() {
+    let app = app_without_node().await;
     let admin = create_admin(&app).await;
     let latest = create_mcp(&app, admin.id, |mcp| {
         mcp.name = "Shopify Dev".into();
@@ -1726,16 +1702,34 @@ async fn shows_the_version_deno_has_cached_and_offers_the_update() {
     })
     .await;
 
+    // What an install of `latest` leaves for the MCP that tracks it.
+    let packages = app.state.upstream.node().packages_root_for(latest.id);
+    let entry = "node_modules/@shopify/dev-mcp/dist/index.js";
+    std::fs::create_dir_all(packages.join("install").join(entry).parent().unwrap()).unwrap();
+    std::fs::write(packages.join("install").join(entry), "").unwrap();
+    std::fs::write(
+        packages.join("current.json"),
+        json!({
+            "install": "install",
+            "package": "@shopify/dev-mcp",
+            "requested": "latest",
+            "version": "1.14.4",
+            "entry": entry,
+        })
+        .to_string(),
+    )
+    .unwrap();
+
     let page = page_of(&app, &admin, &format!("/mcps/{}/edit", latest.id)).await;
     let rows = table_rows(&page);
-    assert!(rows[1].contains("<span class=\"cell-code\">@shopify/dev-mcp</span><span class=\"cell-sub\">cached 1.14.4</span>"));
-    // The pinned version is not the one in the cache.
-    assert!(!rows[0].contains("cached"));
+    assert!(rows[1].contains("<span class=\"cell-code\">@shopify/dev-mcp</span><span class=\"cell-sub\">installed 1.14.4</span>"));
+    // Nothing is installed for the pinned one yet.
+    assert!(!rows[0].contains("installed"));
 
     let dialog = between(&page, "id=\"edit-mcp\"", "</dialog>");
-    // Version and extra args sit side by side, the cached version under the first.
+    // Version and extra args sit side by side, the installed version under the first.
     assert!(dialog.contains("<div class=\"grid grid--2\"><div class=\"field\"><label class=\"field__label\" for=\"edit-mcp-npm-version\">"));
-    assert!(dialog.contains("name=\"npmVersion\" type=\"text\" value=\"latest\" placeholder=\"latest\" autocomplete=\"off\" autocapitalize=\"off\" spellcheck=\"false\" aria-describedby=\"edit-mcp-npm-version-help\"><p class=\"field__help\" id=\"edit-mcp-npm-version-help\">Cached in Deno: 1.14.4</p>"));
+    assert!(dialog.contains("name=\"npmVersion\" type=\"text\" value=\"latest\" placeholder=\"latest\" autocomplete=\"off\" autocapitalize=\"off\" spellcheck=\"false\" aria-describedby=\"edit-mcp-npm-version-help\"><p class=\"field__help\" id=\"edit-mcp-npm-version-help\">Installed: 1.14.4</p>"));
     assert!(dialog.contains("form=\"edit-mcp-update\">"));
     assert!(dialog.contains("Update MCP"));
     assert!(dialog.contains(&format!(
@@ -1747,7 +1741,7 @@ async fn shows_the_version_deno_has_cached_and_offers_the_update() {
     let page = page_of(&app, &admin, &format!("/mcps/{}/edit", pinned.id)).await;
     let dialog = between(&page, "id=\"edit-mcp\"", "</dialog>");
     assert!(!dialog.contains("Update MCP"));
-    assert!(!dialog.contains("Cached in Deno"));
+    assert!(!dialog.contains("Installed:"));
 }
 
 // --- OAuth through a pasted callback (tests/browser/mcp_oauth_pasted_callback.spec.ts) ---

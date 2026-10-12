@@ -29,9 +29,9 @@ impl NpmUpdateRuntime for Runtime {
         self.reloaded.lock().unwrap().push(mcp.id);
         if mcp.npm_package.as_deref() == self.failing_package {
             let environment = mcp.npm_environment(&self.core.encryption).unwrap();
-            return Err(mymcps_deno::DenoError::CacheReload {
+            return Err(mymcps_node::NodeError::Install {
                 package: mcp.npm_package.clone().unwrap(),
-                detail: format!("error: registry refused the token {}", environment[0].1),
+                detail: format!("npm error registry refused the token {}", environment[0].1),
             }
             .into());
         }
@@ -100,7 +100,7 @@ async fn refuses_http_mcps_and_pinned_npm_versions_without_calling_reload() {
         .await
         .unwrap_err();
     assert!(refusal.is_npm_update_error());
-    assert_eq!(refusal.to_string(), "Only Deno npm MCPs can be updated");
+    assert_eq!(refusal.to_string(), "Only npm MCPs can be updated");
     let refusal = upstream
         .update_mcp_to_latest(&mut pinned)
         .await
@@ -176,7 +176,7 @@ async fn a_batch_goes_on_past_an_mcp_that_fails_and_reports_it_without_its_secre
             McpNpmUpdateFailure {
                 id: broken.id,
                 slug: "broken-mcp".into(),
-                error: "Failed to reload Deno cache for \"@example/broken-mcp\". error: registry refused the token [REDACTED]".into(),
+                error: "Failed to install npm package \"@example/broken-mcp\". npm error registry refused the token [REDACTED]".into(),
             },
             McpNpmUpdateFailure {
                 id: unnamed.id,

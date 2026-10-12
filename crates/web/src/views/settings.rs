@@ -445,8 +445,8 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
 
                     label class="setting-row" {
                         span class="setting-row__text" {
-                            span class="setting-row__title" { "Auto-update Deno npm MCPs" }
-                            span class="setting-row__description" { "Reloads the Deno cache for npm MCPs that already track latest. Pinned versions are never changed." }
+                            span class="setting-row__title" { "Auto-update npm MCPs" }
+                            span class="setting-row__description" { "Installs the latest version of npm MCPs that already track latest. Pinned versions are never changed." }
                         }
                         input type="checkbox" class="switch" role="switch" name="mcpAutoUpdateEnabled" checked[values.auto_update]
                             autofocus[focused("mcpAutoUpdateEnabled")] aria-invalid=[auto_update.invalid()] aria-describedby=[auto_update.described_by(None)];

@@ -1,8 +1,12 @@
 # Coolify-compatible self-host layout. Coolify's proxy routes traffic to the
 # exposed container port; local host publishing lives in docker-compose.local.yml.
 #
-# Data (SQLite, the generated key, Deno npm MCP sandboxes) lives in the named
-# volume.
+# Data (SQLite, the generated key, the sandboxes and packages of npm MCPs)
+# lives in the named volume.
+#
+# npm MCPs run in a sandbox of the kernel (Landlock and seccomp) that needs no
+# capability and works under no-new-privileges. It needs Linux 5.13 or later
+# on the host; the server says in its log what it found when it starts.
 
 services:
   mymcps:
@@ -18,7 +22,6 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}
       APP_KEY: ${APP_KEY:-}
       APP_URL: ${APP_URL:-}
-      DENO_PATH: /usr/local/bin/deno
     volumes:
       - mymcps-data:/app/tmp
     security_opt:

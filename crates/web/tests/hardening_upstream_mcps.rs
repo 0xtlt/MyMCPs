@@ -14,8 +14,8 @@ use http::{Method, StatusCode};
 use mcps_support::*;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, User};
 use mymcps_core::secrets::{EnvironmentInput, merge_environment};
-use mymcps_deno::{DenoError, DenoRunner, DenoRuntime};
 use mymcps_net::CannedResponse;
+use mymcps_node::{NodeError, NodeRunner, NodeRuntime};
 use mymcps_upstream::Upstream;
 use mymcps_web::AppState;
 use mymcps_web::routes::mcps::{AssignError, assign_mcp_from_payload};
@@ -657,9 +657,9 @@ async fn still_sends_it_after_a_path_change_within_the_same_origin() {
 
 // --- Sandbox of an npm MCP ---
 
-/// An app whose Deno is never started, and counts how often one was asked
+/// An app whose Node.js is never started, and counts how often one was asked
 /// for: saving probes the MCP, and these tests are about what happens before
-/// Deno starts.
+/// Node.js starts.
 struct Sandboxed {
     app: TestApp,
     starts: Arc<AtomicUsize>,
@@ -676,12 +676,14 @@ impl Sandboxed {
             |_| {},
             |core| {
                 let starts = starts.clone();
-                let runtime = DenoRuntime::new(&core.config).binary(move || {
+                let runtime = NodeRuntime::new(&core.config).binary(move || {
                     starts.fetch_add(1, Ordering::SeqCst);
-                    Err(DenoError::Other("Deno is not started in this test".into()))
+                    Err(NodeError::Other(
+                        "Node.js is not started in this test".into(),
+                    ))
                 });
                 let upstream = Upstream::builder(core.clone(), builtins())
-                    .deno(DenoRunner::with_runtime(core.clone(), runtime))
+                    .node(NodeRunner::with_runtime(core.clone(), runtime))
                     .build();
                 AppState::with_upstream(core, upstream)
             },
@@ -698,7 +700,7 @@ impl Sandboxed {
             mcp.npm_env = environment;
         })
         .await;
-        let root = app.state.upstream.deno().sandbox_root_for(mcp.id);
+        let root = app.state.upstream.node().sandbox_root_for(mcp.id);
         std::fs::create_dir_all(root.join(".config")).unwrap();
         let state = root.join(".config").join("session.json");
         std::fs::write(&state, "{\"token\":\"left by the previous package\"}").unwrap();
@@ -712,7 +714,7 @@ impl Sandboxed {
     }
 
     fn root(&self) -> PathBuf {
-        self.app.state.upstream.deno().sandbox_root_for(self.mcp.id)
+        self.app.state.upstream.node().sandbox_root_for(self.mcp.id)
     }
 
     fn starts(&self) -> usize {

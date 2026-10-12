@@ -33,7 +33,7 @@ string_enum! {
 
 model! {
     /// An MCP server the gateway exposes: reached over HTTP, run from an npm
-    /// package in a Deno sandbox, or implemented by MyMCPs itself. Columns
+    /// package by Node.js in a sandbox, or implemented by MyMCPs itself. Columns
     /// marked encrypted hold ciphertext: see [`crate::secrets`].
     table = "mcps", created_at = true, updated_at = true;
     pub struct Mcp {

@@ -563,7 +563,7 @@ fn terminate(_child: &Child) {
     // Without signals, only the kill that follows ends the child.
 }
 
-/// The name Node gives a spawn failure, as in `spawn deno ENOENT`.
+/// The name Node gives a spawn failure, as in `spawn node ENOENT`.
 fn errno_name(error: &std::io::Error) -> String {
     use std::io::ErrorKind;
     let name = match error.kind() {

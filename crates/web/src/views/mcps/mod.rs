@@ -100,7 +100,7 @@ pub struct McpView {
     pub builtin_write_granted: bool,
     pub oauth_required: bool,
     pub oauth_pasted_callback: bool,
-    pub npm_cached_version: Option<String>,
+    pub npm_installed_version: Option<String>,
     /// How many tools it listed the last time it was asked, when it was.
     pub tool_count: Option<usize>,
     pub icon: &'static str,
@@ -144,10 +144,8 @@ impl McpView {
                 && upstream.builtin_write_granted(mcp).unwrap_or(false),
             oauth_required: mcp.oauth_required,
             oauth_pasted_callback: upstream.uses_pasted_oauth_callback(mcp),
-            npm_cached_version: match (mcp.transport, mcp.npm_package.as_deref()) {
-                (McpTransport::Npm, Some(package)) => {
-                    upstream.cached_npm_package_version(package, mcp.npm_version.as_deref())
-                }
+            npm_installed_version: match mcp.transport {
+                McpTransport::Npm => upstream.installed_npm_package_version(mcp),
                 _ => None,
             },
             tool_count,

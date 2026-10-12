@@ -1,4 +1,4 @@
-//! In-process job for instance-wide Deno npm MCP auto-updates.
+//! In-process job for instance-wide npm MCP auto-updates.
 //!
 //! MyMCPs is a single process with SQLite, so this runs inside the web
 //! server rather than a separate worker. The server starts it on boot and

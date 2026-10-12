@@ -1,5 +1,5 @@
 [package]
-name = "mymcps-deno"
+name = "mymcps-node"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,15 +12,17 @@ workspace = true
 [dependencies]
 mymcps-core.workspace = true
 mymcps-mcp.workspace = true
+mymcps-sandbox.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 regex.workspace = true
+uuid.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-# access(2) for the executable check of the binary lookup, and SIGTERM for a
-# cache reload that runs out of time: std and tokio offer neither.
+# access(2) for the executable check of the binary lookup, and SIGTERM for an
+# install that runs out of time: std and tokio offer neither.
 rustix = { version = "1.1", default-features = false, features = ["std", "fs", "process"] }
 
 [dev-dependencies]

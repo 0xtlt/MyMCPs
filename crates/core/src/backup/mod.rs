@@ -2,7 +2,7 @@
 //!
 //! A backup is a consistent copy of the SQLite database and the `APP_KEY`
 //! its secrets were encrypted with, sealed with a password. It holds no
-//! file of the data directory: MCP sandboxes, the Deno cache and uploads
+//! file of the data directory: MCP sandboxes, installed npm packages and uploads
 //! are caches or short-lived.
 //!
 //! - [`container`] is the file format, shared with the Node app.

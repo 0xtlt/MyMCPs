@@ -37,7 +37,7 @@ pub struct McpNpmUpdateFailure {
 
 /// The two steps of an update, for a test to replace them
 /// ([`crate::UpstreamBuilder::npm_update_runtime`]). The server reloads the
-/// Deno cache of the package, then tests the MCP and saves its status.
+/// package again, then tests the MCP and saves its status.
 #[async_trait]
 pub trait NpmUpdateRuntime: Send + Sync + 'static {
     async fn reload(&self, mcp: &Mcp) -> Result<(), UpstreamError>;
@@ -59,7 +59,10 @@ impl Upstream {
     async fn reload_npm_package(&self, mcp: &Mcp) -> Result<(), UpstreamError> {
         match &self.npm_update_runtime {
             Some(runtime) => runtime.reload(mcp).await,
-            None => Ok(self.deno.reload_npm_package_cache(mcp).await?),
+            None => {
+                self.node.install_npm_package(mcp).await?;
+                Ok(())
+            }
         }
     }
 
@@ -70,11 +73,11 @@ impl Upstream {
         }
     }
 
-    /// Reload the Deno cache of an npm MCP that tracks `latest`, then test it
+    /// Install again the package of an npm MCP that tracks `latest`, then test it
     /// and save its status. The version saved for the MCP is not changed.
     pub async fn update_mcp_to_latest(&self, mcp: &mut Mcp) -> Result<(), UpstreamError> {
         if mcp.transport != McpTransport::Npm {
-            return Err(refusal("Only Deno npm MCPs can be updated"));
+            return Err(refusal("Only npm MCPs can be updated"));
         }
         if !is_tracking_latest(mcp.transport, mcp.npm_version.as_deref()) {
             return Err(refusal("Pinned npm versions are not updated"));
@@ -128,7 +131,7 @@ impl Upstream {
         Ok(result)
     }
 
-    /// Reload Deno caches for npm MCPs that already track `latest`. Pinned versions are skipped.
+    /// Install again the packages of npm MCPs that already track `latest`. Pinned versions are skipped.
     ///
     /// One run at a time: a call made while a run is under way waits for
     /// that run and returns its result. The run goes on to its end even if

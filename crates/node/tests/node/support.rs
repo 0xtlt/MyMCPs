@@ -4,22 +4,36 @@ use std::path::{Path, PathBuf};
 use mymcps_core::TestCore;
 use mymcps_core::models::{Mcp, McpTransport};
 use mymcps_core::secrets::{EnvironmentInput, merge_environment};
-use mymcps_deno::{DenoRunner, DenoRuntime, HostEnvironment};
+use mymcps_node::{HostEnvironment, NodeRunner, NodeRuntime};
 
-/// Stands in for the `deno` binary, which a test cannot rely on. As `deno run`
-/// it is a minimal MCP stdio server; as `deno cache` it exits at once. Both
-/// record the process they run in, in files of their working directory.
-pub const FAKE_DENO: &str = r#"#!/bin/sh
-if [ "$1" = cache ]; then record=reload; else record=started; fi
+/// Stands in for the `node` binary, which a test cannot rely on. Given npm's
+/// `install` it writes the files of the package where npm would; given
+/// anything else it is a minimal MCP stdio server. Both record the process
+/// they run in, in files of their working directory.
+pub const FAKE_NODE: &str = r#"#!/bin/sh
+if [ "$2" = install ]; then record=install; else record=started; fi
 for argument in "$@"; do printf '%s\n' "$argument"; done > "$record.argv"
 env > "$record.env"
 pwd > "$record.cwd"
 echo $$ > "$record.pid"
-if [ "$1" = cache ]; then
+if [ "$2" = install ]; then
+  if [ -n "$FAKE_INSTALLS" ]; then echo installed >> "$FAKE_INSTALLS"; fi
   if [ "$FAKE_BEHAVIOUR" = registry-down ]; then
-    echo '  error: could not reach the registry of '"$API_KEY" >&2
+    echo '  npm error could not reach the registry of '"$API_KEY" >&2
     exit 1
   fi
+  if [ "$FAKE_BEHAVIOUR" = slow-install ]; then sleep 1; fi
+  prefix=
+  while [ $# -gt 1 ]; do
+    if [ "$1" = --prefix ]; then prefix=$2; fi
+    shift
+  done
+  package=${1%@*}
+  mkdir -p "$prefix/node_modules/$package" "$HOME/cache"
+  echo 'console.log("the real node would run this")' > "$prefix/node_modules/$package/server.js"
+  if [ "$FAKE_BEHAVIOUR" = library ]; then bin=; else bin=',"bin":{"fake-mcp":"./server.js"}'; fi
+  printf '{"name":"%s","version":"%s"%s}\n' "$package" "${FAKE_VERSION:-1.0.0}" "$bin" \
+    > "$prefix/node_modules/$package/package.json"
   exit 0
 fi
 case "$FAKE_BEHAVIOUR" in
@@ -37,7 +51,7 @@ while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*)
       version=$(printf '%s\n' "$line" | sed -n 's/.*"protocolVersion":"\([^"]*\)".*/\1/p')
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":{"tools":{}},"serverInfo":{"name":"fake-deno","version":"1.0.0"}}}\n' "$id" "$version" ;;
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":{"tools":{}},"serverInfo":{"name":"fake-node","version":"1.0.0"}}}\n' "$id" "$version" ;;
     *'"method":"tools/list"'*)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"snapshot","title":"Snapshot","description":"Describes the process it runs in","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}},{"name":"bare","inputSchema":{"type":"object","properties":{"q":{"type":"string"}}}}]}}\n' "$id" ;;
     *'"method":"tools/call"'*)
@@ -52,6 +66,17 @@ while IFS= read -r line; do
       esac ;;
   esac
 done
+"#;
+
+/// Stands in for the launcher of the sandbox, `mymcps sandbox:exec <policy>
+/// <program> <argument>...`: it records the policy it was given in the
+/// working directory and becomes the program, held by nothing.
+pub const FAKE_LAUNCHER: &str = r#"#!/bin/sh
+if [ "$1" != sandbox:exec ]; then echo "not the launcher command: $1" >&2; exit 2; fi
+if [ $# -eq 2 ]; then echo 'a pretended sandbox'; exit 0; fi
+printf '%s\n' "$2" > launch.policy
+shift 2
+exec "$@"
 "#;
 
 /// What a shell adds to the environment it was started with.
@@ -85,7 +110,7 @@ pub fn environment_inputs(environment: &[(&str, &str)]) -> Vec<EnvironmentInput>
         .collect()
 }
 
-/// What the fake Deno recorded about one of its runs.
+/// What the fake Node recorded about one of its runs.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Snapshot {
     pub argv: Vec<String>,
@@ -96,10 +121,10 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// `record` is `started` for `deno run` and `reload` for `deno cache`.
-    pub fn read(sandbox: &Path, record: &str) -> Self {
+    /// `record` is `started` for the package and `install` for npm.
+    pub fn read(directory: &Path, record: &str) -> Self {
         let read = |kind: &str| {
-            let path = sandbox.join(format!("{record}.{kind}"));
+            let path = directory.join(format!("{record}.{kind}"));
             std::fs::read_to_string(&path)
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
         };
@@ -122,10 +147,11 @@ impl Snapshot {
 }
 
 /// A server of its own for one test: a database and data directory, an
-/// application directory, a Deno cache directory and a fake Deno.
+/// application directory, and a fake Node with its npm.
 pub struct Sandbox {
     pub core: TestCore,
     pub fake: PathBuf,
+    pub npm_cli: PathBuf,
     root: PathBuf,
     _directory: tempfile::TempDir,
 }
@@ -133,14 +159,16 @@ pub struct Sandbox {
 impl Sandbox {
     pub async fn new() -> Self {
         let directory = tempfile::Builder::new()
-            .prefix("mymcps-deno-sandbox-")
+            .prefix("mymcps-node-sandbox-")
             .tempdir()
             .unwrap();
-        // Without links on the way, as a deployment is laid out: Deno checks
-        // what a package reads against where the files really are, and the
+        // Without links on the way, as a deployment is laid out: the
         // temporary directory of macOS is reached through a link.
         let root = directory.path().canonicalize().unwrap();
-        let fake = executable(&root.join("bin"), "deno", FAKE_DENO);
+        let fake = executable(&root.join("bin"), "node", FAKE_NODE);
+        let npm_cli = root.join("npm").join("bin").join("npm-cli.js");
+        std::fs::create_dir_all(npm_cli.parent().unwrap()).unwrap();
+        std::fs::write(&npm_cli, "").unwrap();
         std::fs::create_dir_all(root.join("app")).unwrap();
         let core = TestCore::with_config(|config| {
             config.data_dir = config.data_dir.canonicalize().unwrap();
@@ -149,6 +177,7 @@ impl Sandbox {
         Self {
             core,
             fake,
+            npm_cli,
             root,
             _directory: directory,
         }
@@ -159,12 +188,8 @@ impl Sandbox {
         &self.root
     }
 
-    pub fn deno_dir(&self) -> PathBuf {
-        self.path().join("deno-dir")
-    }
-
     /// The `PATH` of the server in these tests: not the one of the test
-    /// process, and enough for the fake Deno to find `env` and `sed`.
+    /// process, and enough for the fake Node to find `env` and `sed`.
     pub fn server_path(&self) -> String {
         format!("{}:/usr/bin:/bin", self.path().join("server-bin").display())
     }
@@ -172,28 +197,27 @@ impl Sandbox {
     pub fn host(&self) -> HostEnvironment {
         HostEnvironment {
             path: Some(self.server_path()),
-            deno_dir: Some(self.deno_dir().display().to_string()),
-            xdg_cache_home: None,
-            local_app_data: None,
-            home_dir: self.path().join("home"),
-            // The Deno of this machine, if it has one, is never found by accident.
-            known_deno_locations: Vec::new(),
+            // The Node.js of this machine, if it has one, is never found by accident.
+            known_node_locations: Vec::new(),
             current_dir: self.path().join("app"),
         }
     }
 
-    /// A runner whose Deno is the fake one.
-    pub fn runner(&self) -> DenoRunner {
-        self.runner_with(|_| {})
+    /// The runtime of these tests: the fake Node and its npm, and no sandbox.
+    pub fn runtime(&self) -> NodeRuntime {
+        NodeRuntime::with_host(None, self.host())
+            .binary_path(&self.fake)
+            .npm_cli(&self.npm_cli)
+            .unsandboxed()
     }
 
-    pub fn runner_with(&self, adjust: impl FnOnce(&mut HostEnvironment)) -> DenoRunner {
-        let mut host = self.host();
-        adjust(&mut host);
-        DenoRunner::with_runtime(
-            self.core.core.clone(),
-            DenoRuntime::with_host(None, host).binary_path(&self.fake),
-        )
+    /// A runner whose Node is the fake one.
+    pub fn runner(&self) -> NodeRunner {
+        self.runner_with(self.runtime())
+    }
+
+    pub fn runner_with(&self, runtime: NodeRuntime) -> NodeRunner {
+        NodeRunner::with_runtime(self.core.core.clone(), runtime)
     }
 
     pub fn npm_mcp(&self, environment: &[(&str, &str)]) -> Mcp {
@@ -210,6 +234,16 @@ impl Sandbox {
             ),
             ..Default::default()
         }
+    }
+
+    /// The directory of the install in use for `mcp`, as `current.json` names it.
+    pub fn install_dir(&self, runner: &NodeRunner, mcp: &Mcp) -> PathBuf {
+        let packages_dir = runner.packages_root_for(mcp.id);
+        let current: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(packages_dir.join("current.json")).expect("a package is installed"),
+        )
+        .unwrap();
+        packages_dir.join(current["install"].as_str().unwrap())
     }
 }
 

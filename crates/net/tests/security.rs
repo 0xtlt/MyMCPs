@@ -1,5 +1,5 @@
 //! Port of the cases of `tests/unit/security.spec.ts` that concern the URL
-//! check and the fetch. The others (CORS, redaction, Deno) are tested with the
+//! check and the fetch. The others (CORS, redaction, npm MCPs) are tested with the
 //! code they cover.
 
 mod support;

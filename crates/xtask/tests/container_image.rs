@@ -107,7 +107,7 @@ fn every_base_image_is_pinned_by_tag_and_digest_in_its_from_line() {
     }
 
     assert!(is_pinned(
-        "denoland/deno:bin-2.9.7@sha256:bc5aa4466e21b6d3021226a85ba2e1911f7c386254d97b9d797903ab74edace2"
+        "node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66"
     ));
     for image in [
         "debian:trixie-slim",
@@ -233,18 +233,21 @@ fn the_workflows_install_the_rust_toolchain_the_image_is_compiled_with() {
 }
 
 #[test]
-fn deno_version_matches_the_pinned_deno_image() {
+fn node_version_matches_the_pinned_node_image() {
     let dockerfile = read_repository_file("Dockerfile");
 
     let image = dockerfile
         .lines()
-        .find_map(|line| {
-            line.strip_prefix("FROM denoland/deno:bin-")?
-                .strip_suffix(" AS deno")
-        })
-        .expect("a denoland/deno:bin-<version> stage called deno");
-    assert!(is_pinned(&format!("denoland/deno:bin-{image}")));
-    let version = &image[..image.find('@').unwrap()];
+        .find_map(|line| line.strip_prefix("FROM node:")?.strip_suffix(" AS node"))
+        .expect("a node:<version>-<debian release>-slim stage called node");
+    assert!(is_pinned(&format!("node:{image}")));
+    let tag = &image[..image.find('@').unwrap()];
+    // The image of the Debian release the runtime stage runs on, whose C++
+    // library the binary copied from it loads.
+    let version = tag
+        .strip_suffix("-trixie-slim")
+        .expect("the slim Node.js image of Debian trixie");
+    assert!(runtime_stage(&dockerfile).starts_with("FROM debian:trixie-slim@sha256:"));
     assert!(
         version.split('.').count() == 3
             && version
@@ -255,19 +258,23 @@ fn deno_version_matches_the_pinned_deno_image() {
 
     let variable = dockerfile
         .lines()
-        .find_map(|line| line.trim_start().strip_prefix("DENO_VERSION="))
+        .find_map(|line| line.trim_start().strip_prefix("NODE_VERSION="))
         .and_then(|value| value.split_whitespace().next())
-        .expect("the runtime stage to set DENO_VERSION");
+        .expect("the runtime stage to set NODE_VERSION");
 
     assert_eq!(
         variable, version,
-        "DENO_VERSION must be updated together with the denoland/deno image tag"
+        "NODE_VERSION must be updated together with the node image tag"
     );
 
-    // And the binary is where DENO_PATH says.
+    // And the binary is where NODE_BINARY says, with its npm where the
+    // server looks for it: beside the binary, in lib/node_modules.
     let runtime = runtime_stage(&dockerfile);
-    assert!(runtime.contains("\nCOPY --from=deno /deno /usr/local/bin/deno\n"));
-    assert!(runtime.contains("  DENO_PATH=/usr/local/bin/deno \\\n"));
+    assert!(runtime.contains("\nCOPY --from=node /usr/local/bin/node /usr/local/bin/node\n"));
+    assert!(runtime.contains(
+        "\nCOPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm\n"
+    ));
+    assert!(runtime.contains("  NODE_BINARY=/usr/local/bin/node \\\n"));
 }
 
 #[test]
@@ -352,10 +359,9 @@ fn the_image_runs_the_server_as_the_user_and_in_the_paths_of_earlier_images() {
     assert!(has("WORKDIR /app\n"));
     assert!(has("VOLUME [\"/app/tmp\"]\n"));
     assert!(runtime.contains("  DATA_DIR=/app/tmp \\\n"));
-    assert!(runtime.contains("  DENO_DIR=/app/tmp/deno-cache \\\n"));
     // A new volume starts from this directory: private to the server.
     assert!(runtime.contains(
-        "  && install -d -o 1000 -g 1000 -m 0700 /app/tmp /app/tmp/mcp-sandboxes /app/tmp/deno-cache\n"
+        "  && install -d -o 1000 -g 1000 -m 0700 /app/tmp /app/tmp/mcp-sandboxes /app/tmp/mcp-packages\n"
     ));
 
     assert!(has("EXPOSE 3333\n"));
@@ -366,7 +372,7 @@ fn the_image_runs_the_server_as_the_user_and_in_the_paths_of_earlier_images() {
     ));
     assert!(runtime.contains(" ca-certificates dumb-init \\\n"));
 
-    // An init that reaps the Deno children, then the server itself: there is
+    // An init that reaps the processes of npm MCPs, then the server itself: there is
     // no entrypoint script. The server sets its umask, reads or creates its
     // key and migrates the database (crates/cli); the smoke test of
     // publish-container.yml checks the result in the built image.
@@ -376,11 +382,25 @@ fn the_image_runs_the_server_as_the_user_and_in_the_paths_of_earlier_images() {
     assert!(!repository_root().join("docker-entrypoint.sh").exists());
     assert!(!dockerfile.contains("entrypoint.sh"));
 
-    // Nothing of the Node image is left in the instructions.
-    for word in words(&without_comments(&dockerfile)) {
+    // Node.js is copied into the image to run npm MCPs. Nothing is built
+    // with it, and nothing else of its image comes along.
+    let instructions = without_comments(&dockerfile);
+    for word in words(&instructions) {
         assert!(
-            !["node", "pnpm", "npm", "corepack"].contains(&word.to_ascii_lowercase().as_str()),
+            !["pnpm", "corepack", "yarn", "npx"].contains(&word.to_ascii_lowercase().as_str()),
             "the Dockerfile mentions {word}"
+        );
+    }
+    // A RUN instruction may span lines: none of them starts either.
+    let runs: String = instructions
+        .split("\nRUN ")
+        .skip(1)
+        .map(|run| run.split("\n\n").next().unwrap_or_default())
+        .collect();
+    for word in words(&runs) {
+        assert!(
+            !["node", "npm"].contains(&word.to_ascii_lowercase().as_str()),
+            "the Dockerfile runs {word} to build the image"
         );
     }
 }
@@ -398,7 +418,9 @@ fn the_deployment_files_keep_the_container_restricted_and_the_checks_of_earlier_
     assert!(compose.contains("      TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}\n"));
     assert!(compose.contains("      APP_KEY: ${APP_KEY:-}\n"));
     assert!(compose.contains("      APP_URL: ${APP_URL:-}\n"));
-    assert!(compose.contains("      DENO_PATH: /usr/local/bin/deno\n"));
+    // Where Node.js is, and whether npm MCPs are sandboxed, is the image's to say.
+    assert!(!compose.contains("NODE_BINARY"));
+    assert!(!compose.contains("NPM_SANDBOX"));
 
     let local = read_repository_file("docker-compose.local.yml");
     assert!(local.contains("      - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-3333}:3333'\n"));

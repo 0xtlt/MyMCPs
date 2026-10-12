@@ -66,12 +66,12 @@ pub struct Config {
     /// `tmp` under the working directory, as in the Node app (`/app/tmp` in
     /// the container image).
     pub data_dir: PathBuf,
-    /// Path to the Deno binary used to sandbox npm MCPs.
-    pub deno_path: Option<String>,
-    /// What the `.env` file sets that the process environment does not. The
-    /// Node app copied the file into its environment, where the Deno runner
-    /// read `DENO_DIR` and `XDG_CACHE_HOME`.
-    pub dotenv: HashMap<String, String>,
+    /// `NODE_BINARY`: path to the Node.js binary that runs npm MCPs, when it
+    /// is not the `node` of the `PATH`.
+    pub node_binary: Option<String>,
+    /// `NPM_SANDBOX`: whether npm MCPs run in the sandbox of the kernel. On
+    /// unless it is `off`; a server that cannot enforce it then starts none.
+    pub npm_sandbox: bool,
 }
 
 impl Config {
@@ -79,18 +79,12 @@ impl Config {
     /// directory if there is one. Variables already set win over the file.
     pub fn from_env() -> Result<Self> {
         let mut vars: HashMap<String, String> = std::env::vars().collect();
-        let mut dotenv = HashMap::new();
         if let Ok(file) = fs::read_to_string(".env") {
             for (name, value) in parse_dotenv(&file, &vars) {
-                if let std::collections::hash_map::Entry::Vacant(unset) = vars.entry(name.clone()) {
-                    unset.insert(value.clone());
-                    dotenv.insert(name, value);
-                }
+                vars.entry(name).or_insert(value);
             }
         }
-        let mut config = Self::from_vars(&vars)?;
-        config.dotenv = dotenv;
-        Ok(config)
+        Self::from_vars(&vars)
     }
 
     pub fn from_vars(vars: &HashMap<String, String>) -> Result<Self> {
@@ -113,6 +107,15 @@ impl Config {
         };
         let data_dir = PathBuf::from(get("DATA_DIR").unwrap_or("tmp"));
         let trust_proxy = TrustProxy::parse(get("TRUST_PROXY")).map_err(Error::Config)?;
+        let npm_sandbox = match get("NPM_SANDBOX").map(str::to_ascii_lowercase).as_deref() {
+            None | Some("on") => true,
+            Some("off") => false,
+            Some(other) => {
+                return Err(Error::Config(format!(
+                    "NPM_SANDBOX must be on or off, not \"{other}\""
+                )));
+            }
+        };
 
         let app_key = match get("APP_KEY") {
             Some(value) => value.to_string(),
@@ -136,8 +139,8 @@ impl Config {
             app_key,
             app_url: get("APP_URL").map(str::to_string),
             data_dir,
-            deno_path: get("DENO_PATH").map(str::to_string),
-            dotenv: HashMap::new(),
+            node_binary: get("NODE_BINARY").map(str::to_string),
+            npm_sandbox,
         })
     }
 
@@ -153,8 +156,8 @@ impl Config {
             app_key: TEST_APP_KEY.into(),
             app_url: Some("http://localhost:3333".into()),
             data_dir: data_dir.into(),
-            deno_path: None,
-            dotenv: HashMap::new(),
+            node_binary: None,
+            npm_sandbox: true,
         }
     }
 
@@ -350,6 +353,29 @@ mod tests {
                 ("NAME".to_string(), "a b".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn sandboxes_npm_mcps_unless_told_not_to() {
+        let config = |sandbox: Option<&str>| {
+            let mut pairs = vec![("NODE_ENV", "test"), ("APP_KEY", TEST_APP_KEY)];
+            pairs.extend(sandbox.map(|value| ("NPM_SANDBOX", value)));
+            Config::from_vars(&vars(&pairs))
+        };
+        for on in [None, Some(""), Some("on"), Some(" ON ")] {
+            assert!(config(on).unwrap().npm_sandbox, "{on:?}");
+        }
+        for off in ["off", "OFF"] {
+            assert!(!config(Some(off)).unwrap().npm_sandbox);
+        }
+        // A value that could be read either way is not guessed at.
+        for unclear in ["false", "0", "no", "disabled"] {
+            assert_eq!(
+                config(Some(unclear)).unwrap_err().to_string(),
+                format!("NPM_SANDBOX must be on or off, not \"{unclear}\"")
+            );
+        }
+        assert!(Config::for_tests("tmp").npm_sandbox);
     }
 
     #[test]

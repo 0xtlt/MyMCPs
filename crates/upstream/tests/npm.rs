@@ -1,5 +1,5 @@
 //! npm MCPs through the upstream, with a shell script standing in for the
-//! `deno` binary: listing, calling, testing and updating one, and what an
+//! `node` binary: listing, calling, testing and updating one, and what an
 //! administrator reads when it does not start.
 #![cfg(unix)]
 
@@ -11,16 +11,27 @@ use std::sync::Arc;
 use mymcps_core::TestCore;
 use mymcps_core::models::{Mcp, McpStatus, McpTransport};
 use mymcps_core::secrets::{EnvironmentInput, merge_environment};
-use mymcps_deno::{DenoRunner, DenoRuntime, HostEnvironment};
+use mymcps_node::{HostEnvironment, NodeRunner, NodeRuntime};
 use mymcps_upstream::Upstream;
 use serde_json::json;
 use support::*;
 
-/// As `deno run` it is a minimal MCP stdio server; as `deno cache` it records
-/// its arguments in its working directory and exits.
-const FAKE_DENO: &str = r#"#!/bin/sh
-if [ "$1" = cache ]; then
-  for argument in "$@"; do printf '%s\n' "$argument"; done > reload.argv
+/// Given npm's `install` it records its arguments and writes the files of
+/// the package where npm would; given anything else it is a minimal MCP
+/// stdio server.
+const FAKE_NODE: &str = r#"#!/bin/sh
+if [ "$2" = install ]; then
+  for argument in "$@"; do printf '%s\n' "$argument"; done > install.argv
+  prefix=
+  while [ $# -gt 1 ]; do
+    if [ "$1" = --prefix ]; then prefix=$2; fi
+    shift
+  done
+  package=${1%@*}
+  mkdir -p "$prefix/node_modules/$package"
+  echo '' > "$prefix/node_modules/$package/server.js"
+  printf '{"name":"%s","version":"%s","bin":"server.js"}\n' "$package" "${FAKE_VERSION:-1.0.0}" \
+    > "$prefix/node_modules/$package/package.json"
   exit 0
 fi
 if [ "$FAKE_BEHAVIOUR" = refuse-key ]; then
@@ -32,7 +43,7 @@ while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*)
       version=$(printf '%s\n' "$line" | sed -n 's/.*"protocolVersion":"\([^"]*\)".*/\1/p')
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":{"tools":{}},"serverInfo":{"name":"fake-deno","version":"1.0.0"}}}\n' "$id" "$version" ;;
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"%s","capabilities":{"tools":{}},"serverInfo":{"name":"fake-node","version":"1.0.0"}}}\n' "$id" "$version" ;;
     *'"method":"tools/list"'*)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"snapshot","title":"Snapshot","description":"Describes the process it runs in","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}},{"name":"bare","inputSchema":{"type":"object","properties":{"q":{"type":"string"}}}}]}}\n' "$id" ;;
     *'"method":"tools/call"'*)
@@ -59,7 +70,7 @@ impl Server {
         let root = directory.path().canonicalize().unwrap();
         let bin = root.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        let fake = bin.join("deno");
+        let fake = bin.join("node");
         // Written by a child process, never by this one: a test on another
         // thread that starts a command while a script is open for writing
         // here would hand that descriptor to its child for a moment, and
@@ -70,7 +81,7 @@ impl Server {
             .stdin(std::process::Stdio::piped())
             .spawn()
             .unwrap();
-        std::io::Write::write_all(&mut writer.stdin.take().unwrap(), FAKE_DENO.as_bytes()).unwrap();
+        std::io::Write::write_all(&mut writer.stdin.take().unwrap(), FAKE_NODE.as_bytes()).unwrap();
         assert!(writer.wait().unwrap().success());
         std::fs::create_dir_all(root.join("app")).unwrap();
 
@@ -80,20 +91,20 @@ impl Server {
         .await;
         let host = HostEnvironment {
             path: Some("/usr/bin:/bin".to_owned()),
-            deno_dir: Some(root.join("deno-dir").display().to_string()),
-            xdg_cache_home: None,
-            local_app_data: None,
-            home_dir: root.join("home"),
-            // The Deno of this machine, if it has one, is never found by accident.
-            known_deno_locations: Vec::new(),
+            // The Node.js of this machine, if it has one, is never found by accident.
+            known_node_locations: Vec::new(),
             current_dir: root.join("app"),
         };
-        let deno = DenoRunner::with_runtime(
+        let node = NodeRunner::with_runtime(
             core.core.clone(),
-            DenoRuntime::with_host(None, host).binary_path(fake),
+            NodeRuntime::with_host(None, host)
+                .binary_path(fake)
+                .npm_cli(root.join("npm-cli.js"))
+                // What the kernel enforces is tested with the real launcher.
+                .unsandboxed(),
         );
         let upstream = Upstream::builder(core.core.clone(), Default::default())
-            .deno(deno)
+            .node(node)
             .build();
         Self {
             core,
@@ -122,7 +133,15 @@ impl Server {
     }
 
     fn sandbox(&self, mcp: &Mcp) -> PathBuf {
-        self.upstream.deno().sandbox_root_for(mcp.id)
+        self.upstream.node().sandbox_root_for(mcp.id)
+    }
+
+    /// The directory of the install in use for `mcp`.
+    fn install(&self, mcp: &Mcp) -> PathBuf {
+        let packages = self.upstream.node().packages_root_for(mcp.id);
+        let current: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(packages.join("current.json")).unwrap()).unwrap();
+        packages.join(current["install"].as_str().unwrap())
     }
 }
 
@@ -193,26 +212,46 @@ async fn lists_and_calls_the_tools_of_an_npm_mcp() {
 }
 
 #[tokio::test]
-async fn updates_a_latest_tracking_npm_mcp_by_reloading_its_cache_then_testing_it() {
+async fn updates_a_latest_tracking_npm_mcp_by_installing_it_again_then_testing_it() {
     let server = Server::new().await;
-    let mut mcp = server.npm_mcp(&[]).await;
+    let mut mcp = server.npm_mcp(&[("FAKE_VERSION", "1.0.0")]).await;
+    server.upstream.probe(&mut mcp).await.unwrap();
+    let before = server.install(&mcp);
+    assert_eq!(
+        server
+            .upstream
+            .installed_npm_package_version(&mcp)
+            .as_deref(),
+        Some("1.0.0")
+    );
 
+    // The registry has a newer version by now.
+    mcp.npm_env = merge_environment(
+        &server.core.encryption,
+        None,
+        &[EnvironmentInput {
+            name: "FAKE_VERSION".to_owned(),
+            value: Some("1.1.0".to_owned()),
+        }],
+    );
     server
         .upstream
         .update_mcp_to_latest(&mut mcp)
         .await
         .unwrap();
 
+    let after = server.install(&mcp);
+    assert_ne!(before, after);
     assert_eq!(
-        lines(&server.sandbox(&mcp).join("reload.argv")),
-        [
-            "cache",
-            "--reload",
-            "--quiet",
-            "--node-modules-dir=none",
-            "--no-lock",
-            "npm:@example/fake-mcp@latest"
-        ]
+        lines(&after.join("install.argv")).last().unwrap(),
+        "@example/fake-mcp@latest"
+    );
+    assert_eq!(
+        server
+            .upstream
+            .installed_npm_package_version(&mcp)
+            .as_deref(),
+        Some("1.1.0")
     );
     assert_eq!(mcp.status, McpStatus::Ready);
     let saved = find_mcp(&server.core, mcp.id).await;
@@ -223,6 +262,11 @@ async fn updates_a_latest_tracking_npm_mcp_by_reloading_its_cache_then_testing_i
     let result = server.upstream.update_latest_tracking_mcps().await.unwrap();
     assert_eq!((result.updated, result.skipped), (1, 0));
     assert!(result.failed.is_empty());
+
+    // Deleting the MCP's files takes its installs with its sandbox.
+    server.upstream.remove_mcp_sandbox(mcp.id).await.unwrap();
+    assert!(!server.sandbox(&mcp).exists());
+    assert_eq!(server.upstream.installed_npm_package_version(&mcp), None);
 }
 
 // From `tests/unit/security.spec.ts`: redacts long npm environment secrets
@@ -245,7 +289,7 @@ async fn saves_why_an_npm_mcp_did_not_start_without_the_secrets_it_echoed() {
     assert!(!mcp.oauth_required);
     let last_error = mcp.last_error.clone().unwrap();
     assert!(
-        last_error.starts_with("Failed to start Deno npm MCP \"@example/fake-mcp\"."),
+        last_error.starts_with("Failed to start npm MCP \"@example/fake-mcp\"."),
         "{last_error}"
     );
     assert!(last_error.contains("[REDACTED]"), "{last_error}");
