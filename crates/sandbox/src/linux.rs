@@ -7,7 +7,7 @@ use landlock::{
     ABI, Access, AccessFs, BitFlags, LandlockStatus, PathBeneath, PathFd, PathFdError, Ruleset,
     RulesetAttr, RulesetCreated, RulesetCreatedAttr, RulesetStatus, Scope,
 };
-use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
+use rustix::process::{Resource, Rlimit, getrlimit, setrlimit, setsid};
 
 use crate::{Enforcement, Limits, Policy, SandboxError, seccomp};
 
@@ -65,6 +65,7 @@ const DEVICES: &[&str] = &[
 
 pub(crate) fn enforce(policy: &Policy) -> Result<Enforcement, SandboxError> {
     refuse_inherited_files()?;
+    leave_the_session()?;
     limit_resources(&policy.limits)?;
     // Compiled before the files are closed off, installed after: Landlock
     // itself needs system calls the filter has no reason to refuse, but the
@@ -103,6 +104,16 @@ fn refuse_inherited_files() -> Result<(), SandboxError> {
         }
     }
     Ok(())
+}
+
+/// A session and a process group of its own: what is sent to the group of
+/// the server, or typed into its terminal, is not the program's to send.
+fn leave_the_session() -> Result<(), SandboxError> {
+    match setsid() {
+        // Refused to the leader of a group, which is in the server's no more.
+        Ok(_) | Err(rustix::io::Errno::PERM) => Ok(()),
+        Err(error) => Err(SandboxError::Session(error.into())),
+    }
 }
 
 fn limit_resources(limits: &Limits) -> Result<(), SandboxError> {

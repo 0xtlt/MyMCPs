@@ -4,7 +4,7 @@
 //! Such a process is started through a launcher, `mymcps sandbox:exec
 //! <policy> <program> <argument>...`. The launcher applies the [`Policy`] to
 //! itself and then becomes the program, so the program never runs a single
-//! instruction outside the sandbox. Three features of the Linux kernel hold
+//! instruction outside the sandbox. Four features of the Linux kernel hold
 //! it, none of which needs a privilege, so they work for an unprivileged user
 //! in a container without capabilities:
 //!
@@ -17,9 +17,12 @@
 //!   Unix sockets inside the sandbox.
 //! - **seccomp** refuses the system calls Landlock does not cover and that
 //!   are no use to a package: starting another process, signalling a process
-//!   other than itself, changing the mode or the owner of a file by its path,
-//!   Unix and raw sockets, tracing, mounting, namespaces, and the rest of
-//!   what administers a machine.
+//!   other than itself, by a call or through a file that signals its owner,
+//!   changing the mode or the owner of a file by its path, Unix and raw
+//!   sockets, tracing, mounting, namespaces, and the rest of what
+//!   administers a machine.
+//! - **a session of its own** takes it out of the process group and off the
+//!   terminal of the server.
 //! - **resource limits** cap its memory, its threads and its open files.
 //!
 //! The network stays open: a package reaches whatever the server reaches.
@@ -186,6 +189,9 @@ pub enum SandboxError {
         .0.display()
     )]
     InheritedFile(PathBuf),
+
+    #[error("the program cannot leave the session of the server: {0}")]
+    Session(#[source] std::io::Error),
 
     #[error("the seccomp filter cannot be installed: {0}")]
     Seccomp(String),

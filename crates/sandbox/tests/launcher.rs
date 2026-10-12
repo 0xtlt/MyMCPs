@@ -1,7 +1,8 @@
 //! The launcher, started as the server starts it, and what the kernel then
 //! lets the program it became do. The program is a shell whose own commands
 //! (`read`, `echo`, `kill`, `ulimit`) need no other process, or a tool the
-//! shell becomes with `exec`.
+//! shell becomes with `exec`: Perl, for the system calls a shell has no
+//! command for.
 
 use std::process::{Command, Output};
 
@@ -286,6 +287,93 @@ mod on_linux {
                 stderr(&refused)
             );
         }
+    }
+
+    /// The ways to a signal that are not a call named after one.
+    #[test]
+    fn signals_no_process_through_a_file_or_a_descriptor_of_itself() {
+        const SCRIPT: &str = r#"
+            use Socket;
+            my $server = getppid();
+            sub refused {
+                my ($what, $result) = @_;
+                die "$what was let through\n" if defined $result && $result != -1;
+                die "$what: $!\n" unless $!{EPERM};
+            }
+            # F_SETOWN, F_SETOWN_EX (a process), FIOSETOWN and SIOCSPGRP.
+            refused("F_SETOWN", fcntl(STDIN, 8, $server));
+            refused("F_SETOWN of its group", fcntl(STDIN, 8, -$server));
+            refused("F_SETOWN_EX", fcntl(STDIN, 15, pack("i i", 1, $server)));
+            refused("FIOSETOWN", ioctl(STDIN, 0x8901, pack("i", $server)));
+            refused("SIOCSPGRP", ioctl(STDIN, 0x8902, pack("i", $server)));
+            # pidfd_open, then pidfd_send_signal: itself, then its group.
+            my $itself = syscall(434, $$ + 0, 0);
+            die "pidfd_open of itself: $!\n" if $itself < 0;
+            refused("pidfd_send_signal", syscall(424, $itself, 0, 0, 0));
+            refused("pidfd_send_signal to its group", syscall(424, $itself, 0, 0, 4));
+            refused("pidfd_open of the server", syscall(434, $server, 0));
+            # A pair of Unix sockets is a stream or nothing.
+            socketpair(my $one, my $other, AF_UNIX, SOCK_STREAM, 0) or die "a stream pair: $!\n";
+            for my $kind (SOCK_DGRAM, SOCK_DGRAM | SOCK_CLOEXEC, SOCK_SEQPACKET) {
+                refused("a pair of type $kind", socketpair(my $a, my $b, AF_UNIX, $kind, 0) ? 0 : undef);
+            }
+            print "refused\n";
+        "#;
+        let machine = Machine::new();
+
+        let output = launch(&machine.policy, "/usr/bin/perl", &["-e", SCRIPT]);
+
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "refused\n",
+            "{}",
+            stderr(&output)
+        );
+    }
+
+    /// What is sent to the process group of the server does not come from a
+    /// program that is in another.
+    #[test]
+    fn leaves_the_session_and_the_process_group_of_the_server() {
+        use std::io::{BufRead, BufReader};
+        use std::process::Stdio;
+
+        let machine = Machine::new();
+        let mut program = Command::new(LAUNCHER)
+            .args(
+                machine
+                    .policy
+                    .launch_arguments("/bin/sh", ["-c", "echo started; read line"])
+                    .unwrap(),
+            )
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut started = String::new();
+        BufReader::new(program.stdout.take().unwrap())
+            .read_line(&mut started)
+            .unwrap();
+        assert_eq!(started, "started\n");
+
+        // After the name of the program: its state, its parent, its process
+        // group and its session.
+        let identifiers = |pid: u32| {
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+            let after_name = stat.rsplit_once(") ").unwrap().1;
+            let mut fields = after_name.split(' ').skip(2);
+            let group: u32 = fields.next().unwrap().parse().unwrap();
+            let session: u32 = fields.next().unwrap().parse().unwrap();
+            (group, session)
+        };
+        let of_the_program = identifiers(program.id());
+        let of_the_server = identifiers(std::process::id());
+        drop(program.stdin.take());
+        program.wait().unwrap();
+
+        assert_eq!(of_the_program, (program.id(), program.id()));
+        assert_ne!(of_the_program.0, of_the_server.0);
+        assert_ne!(of_the_program.1, of_the_server.1);
     }
 
     #[test]

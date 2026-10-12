@@ -25,6 +25,14 @@ type Rules = BTreeMap<i64, Vec<SeccompRule>>;
 // Calls every architecture numbers alike, newer than some C libraries name.
 const SYS_FCHMODAT2: c_long = 452;
 
+// Commands of `fcntl` and `ioctl` that name the process a file signals, the
+// same on the two architectures the filter is compiled for.
+const F_SETOWN_EX: u64 = 15;
+const FIOSETOWN: u64 = 0x8901;
+const SIOCSPGRP: u64 = 0x8902;
+// The bits of the type of a socket that are not flags.
+const SOCK_TYPE_MASK: u64 = 0xf;
+
 fn seccomp_error(error: impl std::fmt::Display) -> SandboxError {
     SandboxError::Seccomp(error.to_string())
 }
@@ -40,6 +48,9 @@ fn refused_calls() -> Vec<c_long> {
         libc::SYS_process_madvise,
         libc::SYS_process_mrelease,
         libc::SYS_pidfd_getfd,
+        // A signal through a descriptor of the process itself, the only one
+        // it opens, also reaches its process group since Linux 6.9.
+        libc::SYS_pidfd_send_signal,
         libc::SYS_kcmp,
         // A thread id cannot be told from the one of another process.
         libc::SYS_tkill,
@@ -202,6 +213,19 @@ fn refusals(own_pid: u32) -> Result<Rules, SandboxError> {
         rules.insert(call, vec![another_process()?]);
     }
 
+    // A file also signals: the process named its owner when it can be read
+    // or written, with the signal of the owner's choice. A package's files
+    // signal the package, which they do when they are given no owner.
+    let command = |value: u64| rule(vec![condition(1, Dword, Eq, value)?]);
+    rules.insert(
+        libc::SYS_fcntl,
+        vec![command(libc::F_SETOWN as u64)?, command(F_SETOWN_EX)?],
+    );
+    rules.insert(
+        libc::SYS_ioctl,
+        vec![command(FIOSETOWN)?, command(SIOCSPGRP)?],
+    );
+
     // The Internet, and the kernel's answers about the network interfaces
     // and routes (netlink), which a resolver asks for. Not Unix sockets,
     // which reach the services of the machine by a path Landlock does not
@@ -222,11 +246,19 @@ fn refusals(own_pid: u32) -> Result<Rules, SandboxError> {
         ],
     );
     // A pair of connected sockets, which is how a runtime talks to itself,
-    // is of the Unix family and reaches nothing.
-    rules.insert(
-        libc::SYS_socketpair,
-        vec![rule(vec![condition(0, Dword, Ne, libc::AF_UNIX as u64)?])?],
-    );
+    // is of the Unix family and reaches nothing as long as it is a stream:
+    // a datagram socket of a pair still sends to the socket of a service
+    // that has a path.
+    let mut socketpair = vec![rule(vec![condition(0, Dword, Ne, libc::AF_UNIX as u64)?])?];
+    for kind in (0..=SOCK_TYPE_MASK).filter(|kind| *kind != libc::SOCK_STREAM as u64) {
+        socketpair.push(rule(vec![condition(
+            1,
+            Dword,
+            MaskedEq(SOCK_TYPE_MASK),
+            kind,
+        )?])?);
+    }
+    rules.insert(libc::SYS_socketpair, socketpair);
 
     Ok(rules)
 }
@@ -312,7 +344,12 @@ mod tests {
         let rules = refusals(4242).unwrap();
         // One rule for a clone that is not a thread, one for each namespace.
         assert_eq!(rules[&libc::SYS_clone].len(), 9);
-        for call in [libc::SYS_ptrace, libc::SYS_fchmodat, libc::SYS_truncate] {
+        for call in [
+            libc::SYS_ptrace,
+            libc::SYS_fchmodat,
+            libc::SYS_truncate,
+            libc::SYS_pidfd_send_signal,
+        ] {
             assert!(
                 rules[&call].is_empty(),
                 "{call} is refused whatever it is asked"
@@ -320,6 +357,11 @@ mod tests {
         }
         // Sockets: a family that is not allowed, or netlink for more than routes.
         assert_eq!(rules[&libc::SYS_socket].len(), 2);
+        // Pairs: another family, or any type that is not a stream.
+        assert_eq!(rules[&libc::SYS_socketpair].len(), 16);
+        // The two commands that name the process a file signals.
+        assert_eq!(rules[&libc::SYS_fcntl].len(), 2);
+        assert_eq!(rules[&libc::SYS_ioctl].len(), 2);
         assert!(!rules.contains_key(&libc::SYS_execve));
         assert!(!rules.contains_key(&libc::SYS_connect));
     }
