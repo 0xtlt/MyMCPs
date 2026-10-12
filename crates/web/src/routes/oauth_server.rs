@@ -4,6 +4,9 @@
 //!
 //! The server itself is `mymcps_gateway::oauth`. These handlers read the
 //! request, hold it to its rate limit, and write the answer.
+//!
+//! One document is of the other side: the one that names this instance as
+//! a client to the OAuth provider of an MCP.
 
 use axum::Router;
 use axum::extract::State;
@@ -23,6 +26,7 @@ use mymcps_gateway::oauth::{
 };
 use mymcps_gateway::validators::gateway_oauth::CONSENT_APPROVAL;
 use mymcps_gateway::{Error as OauthError, GatewayOauthError};
+use mymcps_upstream::{OAUTH_CLIENT_METADATA_PATH, oauth_client_metadata};
 use serde_json::{Value, json};
 use url::Url;
 
@@ -58,7 +62,8 @@ pub fn routes() -> FeatureRoutes {
             )
             .route("/register", post(register))
             .route("/token", post(token))
-            .route("/revoke", post(revoke)),
+            .route("/revoke", post(revoke))
+            .route(OAUTH_CLIENT_METADATA_PATH, get(client_metadata_document)),
         // The consent screen is a page: it has a session and a CSRF token,
         // and looks at who is signed in itself.
         open: Router::new().route("/authorize", get(authorize).post(authorize)),
@@ -163,6 +168,12 @@ pub async fn authorization_metadata(State(state): State<AppState>) -> Response {
 /// `GET /.well-known/oauth-protected-resource` and `.../mcp`
 pub async fn protected_resource_metadata_document(State(state): State<AppState>) -> Response {
     metadata_response(protected_resource_metadata(&state.core.config))
+}
+
+/// `GET /oauth/client-metadata.json`: the client an OAuth provider without
+/// dynamic registration reads when an MCP is connected.
+pub async fn client_metadata_document(State(state): State<AppState>) -> Response {
+    metadata_response(oauth_client_metadata(&state.core.config))
 }
 
 /// `POST /register`

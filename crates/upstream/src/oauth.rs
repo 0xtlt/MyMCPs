@@ -1,6 +1,6 @@
 //! OAuth with the provider of an upstream MCP: discovery, dynamic client
-//! registration, the authorization redirect with PKCE, the exchange of the
-//! code, and the renewal of the tokens.
+//! registration or the client metadata document, the authorization redirect
+//! with PKCE, the exchange of the code, and the renewal of the tokens.
 
 use std::sync::PoisonError;
 
@@ -10,9 +10,10 @@ use mymcps_builtin::oauth::{
     BuiltinOauthTokens, builtin_authorization_url, exchange_builtin_authorization_code,
     parse_oauth_scopes, refresh_builtin_tokens, requested_builtin_scopes,
 };
-use mymcps_core::Timestamp;
 use mymcps_core::crypto::random_base64url;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::public_url::PublicUrlError;
+use mymcps_core::{Config, Timestamp};
 use mymcps_mcp_auth::{
     AuthorizationServerMetadata, AuthorizationServerMetadataOptions, ExchangeAuthorizationOptions,
     HttpFetch, HttpFetchError, HttpRequest, HttpResponse, OAuthClientInformationMixed,
@@ -31,7 +32,8 @@ use url::Url;
 
 use crate::Upstream;
 use crate::allowlisted_client::{
-    allowlisted_upstream_client, registration_client_name, upstream_identity_headers,
+    DEFAULT_OAUTH_CLIENT_NAME, allowlisted_upstream_client, registration_client_name,
+    upstream_identity_headers,
 };
 use crate::error::UpstreamError;
 use crate::session::{OauthSession, OauthSessionStore, OauthStart, start_oauth_session};
@@ -49,6 +51,38 @@ const DEFAULT_ACCESS_TOKEN_LIFETIME_SECONDS: f64 = 60.0 * 60.0;
 /// longer one, or one that is not a number of seconds at all, must not be
 /// able to store a date the database cannot give back.
 const MAX_ACCESS_TOKEN_LIFETIME_SECONDS: f64 = 100.0 * 365.0 * 24.0 * 60.0 * 60.0;
+
+/// Where the instance serves its Client ID Metadata Document.
+pub const OAUTH_CLIENT_METADATA_PATH: &str = "/oauth/client-metadata.json";
+
+const OAUTH_CALLBACK_PATH: &str = "/mcps/oauth/callback";
+
+/// The URL of the document that names this instance to a provider, which is
+/// also its client ID there. A provider fetches it, and only over HTTPS: the
+/// loopback origin of development has none.
+fn oauth_client_metadata_url(config: &Config) -> Result<String, PublicUrlError> {
+    let origin = config.require_public_app_url()?;
+    if !origin.starts_with("https://") {
+        return Err(PublicUrlError::NotAnOrigin);
+    }
+    Ok(format!("{origin}{OAUTH_CLIENT_METADATA_PATH}"))
+}
+
+/// The Client ID Metadata Document of the instance: the public client a
+/// provider without dynamic registration reads in place of a registration.
+pub fn oauth_client_metadata(config: &Config) -> Result<Value, PublicUrlError> {
+    let client_id = oauth_client_metadata_url(config)?;
+    let origin = config.require_public_app_url()?;
+    Ok(json!({
+        "client_id": client_id,
+        "client_name": DEFAULT_OAUTH_CLIENT_NAME,
+        "client_uri": origin,
+        "redirect_uris": [format!("{origin}{OAUTH_CALLBACK_PATH}")],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+    }))
+}
 
 /// What an OAuth flow found out about the provider of an MCP.
 struct OAuthContext {
@@ -410,7 +444,7 @@ impl Upstream {
     /// Where the provider sends the browser back to once the admin decided.
     pub fn oauth_callback_url(&self) -> Result<String, UpstreamError> {
         Ok(format!(
-            "{}/mcps/oauth/callback",
+            "{}{OAUTH_CALLBACK_PATH}",
             self.core.config.require_public_app_url()?
         ))
     }
@@ -430,6 +464,30 @@ impl Upstream {
             client_id: client_id.to_owned(),
             client_secret: self.core.decrypt_secret(mcp.oauth_client_secret.as_deref()),
             token_endpoint_auth_method: present(&mcp.oauth_client_auth_method).map(str::to_owned),
+        })
+    }
+
+    /// The client a provider reads from the document of the instance. The
+    /// document names the callback of the app and no other redirect.
+    fn metadata_document_client(
+        &self,
+        redirect_uri: &str,
+    ) -> Result<OAuthClientInformationMixed, UpstreamError> {
+        let client_id = oauth_client_metadata_url(&self.core.config)
+            .ok()
+            .filter(|_| {
+                self.oauth_callback_url()
+                    .is_ok_and(|callback| callback == redirect_uri)
+            });
+        let Some(client_id) = client_id else {
+            return Err(UpstreamError::other(
+                "This OAuth provider reads the client from APP_URL, which must be a public HTTPS origin it can reach",
+            ));
+        };
+        Ok(OAuthClientInformationMixed {
+            client_id,
+            client_secret: None,
+            token_endpoint_auth_method: Some("none".to_owned()),
         })
     }
 
@@ -710,8 +768,9 @@ impl Upstream {
         )?)
     }
 
-    /// Discover an upstream's OAuth provider, register a public client when needed,
-    /// and create the browser authorization redirect.
+    /// Discover an upstream's OAuth provider, register a public client when needed
+    /// or name the one of the instance's metadata document, and create the browser
+    /// authorization redirect.
     ///
     /// Returns the URL to send the browser to. The pending authorization is
     /// kept in `session` until the callback.
@@ -736,6 +795,17 @@ impl Upstream {
 
         let (client, registered) = match existing_client {
             Some(client) if can_reuse_existing => (client, false),
+            // A provider that registers clients keeps doing so: that needs
+            // nothing of it but an answer, where the document has to be
+            // fetched from this instance.
+            _ if context
+                .metadata
+                .registration_endpoint()
+                .is_none_or(str::is_empty)
+                && context.metadata.client_id_metadata_document_supported() == Some(true) =>
+            {
+                (self.metadata_document_client(&redirect_uri)?, true)
+            }
             existing_client => {
                 if context
                     .metadata

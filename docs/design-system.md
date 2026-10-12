@@ -210,23 +210,24 @@ The logo is two paths so it follows the theme:
 ```
 
 Icon list (Figma name `icon/<name>` = file `icons/<name>.svg`): activity, arrow-left,
-arrow-right, arrow-up-right, bike, blocks, book-open, bot, braces, bug, cable, calendar,
-chart-column, check, chevron-down, chevron-left, chevron-right, chevrons-up-down, circle-alert,
+arrow-right, arrow-up-right, audio-lines, bike, blocks, book-open, bot, braces, bug, cable,
+calendar, chart-column, check, chevron-down, chevron-left, chevron-right, chevrons-up-down, circle-alert,
 circle-check, circle-x, clock, cloud, copy, database, download, ellipsis, external-link, eye,
 eye-off, file-text, flame, gauge, git-branch, globe, hash, house, info, key, key-round, layers,
 link, list-filter, loader-circle, lock, log-out, mail, menu, minus, moon, notebook-text, package,
 panel-left, pencil, play, plug, plus, power, refresh-cw, rotate-cw, scroll-text, search, send,
 server, settings, shield-check, shopping-bag, sparkles, square-terminal, sun, ticket, timer,
 trash, triangle-alert, unplug, user, user-plus, users, wrench, x, zap. Added for what the Figma
-file does not draw: ban, credit-card, megaphone. The Figma `icon/trash` is the Lucide `trash`
-of the bundled version (the bin with two lines, formerly `trash-2`).
+file does not draw: audio-lines, ban, credit-card, megaphone. The Figma `icon/trash` is the
+Lucide `trash` of the bundled version (the bin with two lines, formerly `trash-2`).
 
 Template icons (the Figma gallery uses Lucide icons, not brand logos): Notion `notebook-text`,
 Shopify Dev `shopping-bag`, GitHub `git-branch`, Linear `layers`, Strava `bike`, iCloud Mail
 `mail`, Atlassian Rovo `ticket`, Postman `send`, Sentry `bug`, Context7 `braces`; chosen for the
 templates Figma does not draw: Microsoft Learn `book-open`, Google Ads `megaphone`, Stripe
 `credit-card`, Supabase `zap`, Cloudflare Docs `cloud`, Firebase `flame`, MongoDB `database`,
-Neon `server`, Hugging Face `bot`. An MCP that matches no template takes `plug`.
+Neon `server`, Hugging Face `bot`, ElevenLabs `audio-lines`. An MCP that matches no template
+takes `plug`.
 
 ## Components
 

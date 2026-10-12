@@ -18,6 +18,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Added two ways back in for someone who lost their app, their passkeys and their codes: a super admin removes the protection of the account under **Users**, and `mymcps user:reset-protection <email>` does it from the server.
 - Added a role to invites, and invites for people who already have an account: they sign in and join the team with one button. An invite works whether or not registration is open. An admin sees and removes the invites up to their own rank: the invite of an owner, with its link, is for owners.
 - Added a choice of team to the consent page of the OAuth server, for someone who is in several: the client reaches the MCPs of that team.
+- Added OAuth with MCP providers that register no client and read a Client ID Metadata Document instead, such as ElevenLabs (`https://api.us.elevenlabs.io/v1/mcp`): **Connect** no longer answers `This OAuth provider does not support automatic client registration` there. The instance serves its document at `/oauth/client-metadata.json`, and the provider fetches it: `APP_URL` has to be an HTTPS address the provider can reach. A provider that registers clients is connected as before.
+- Added an **ElevenLabs** template to the gallery of **Add MCP**.
 
 ### Changed
 
