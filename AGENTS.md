@@ -20,19 +20,19 @@ The server renders its own pages: `maud` templates in `crates/web/src/views`, on
 
 ## Cursor Cloud specific instructions
 
-Single Rust binary, `mymcps` (Cargo workspace in `crates/`, entry point `crates/cli`): an HTTP server that renders its own pages. No Redis or external DB — SQLite at `tmp/db.sqlite3`. Production packaging: `Dockerfile` (+ `docker-compose.yml`) compiles the binary and bundles Deno for npm MCP sandboxes; persist `/app/tmp`.
+Single Rust binary, `mymcps` (Cargo workspace in `crates/`, entry point `crates/cli`): an HTTP server that renders its own pages. No Redis or external DB — SQLite at `tmp/db.sqlite3`. Production packaging: `Dockerfile` (+ `docker-compose.yml`) compiles the binary and bundles Node.js with npm for npm MCPs; persist `/app/tmp`.
 
 ### Runtime
 - **Rust** through rustup, and a C compiler: SQLite and the TLS library are compiled from C. The project toolchain is the version in the `rust:` image tag of the `Dockerfile`, which the workflows install as `RUST_TOOLCHAIN`. There is no Node or pnpm.
 - Standard commands: see `README.md` (`cargo run --bin mymcps`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --release --bin mymcps`).
 - Dev server: `cargo run --bin mymcps` reads `.env` and listens on **PORT 3333**. For cloud VMs bind with `HOST=0.0.0.0` in `.env` while keeping `APP_URL=http://localhost:3333` for redirects/cookies.
 - One-time: copy `.env.example` → `.env`. The server generates its key (`tmp/app.key`) when `APP_KEY` is empty and migrates the database every time it starts; `mymcps generate:key` and `mymcps migration:run` do each step on its own. Do not commit `.env`.
-- Deno is only needed to run npm MCPs: `deno` on `PATH`, or `DENO_PATH`.
+- Node.js with its npm is only needed to run npm MCPs: `node` on `PATH`, or `NODE_BINARY`. They run in a kernel sandbox (`crates/sandbox`: Landlock, seccomp, resource limits) that needs Linux; elsewhere they do not start unless `NPM_SANDBOX=off` is in `.env`. The tests of what the sandbox refuses (`crates/sandbox/tests`, `crates/cli/tests/npm_sandbox.rs`) only run on Linux: on another system, run them in a Linux container before changing `crates/sandbox` or how `crates/node` starts a process.
 
 ### Cargo gotchas
 - CI passes `--locked` to every Cargo command, and so does the image build: commit `Cargo.lock` with any dependency change.
 - `crates/xtask` is the release tooling, run as `cargo xtask <command>` (`version`, `nightly-version`, `prepare-release`). It must keep having no dependencies: the stable release compiles it in the job that holds the write token.
-- A Rust bump changes the `rust:` tag in the `Dockerfile` and `RUST_TOOLCHAIN` in the workflows together; a Deno bump changes the `denoland/deno` tag and `DENO_VERSION` together. `cargo test -p xtask` fails until they agree.
+- A Rust bump changes the `rust:` tag in the `Dockerfile` and `RUST_TOOLCHAIN` in the workflows together; a Node.js bump changes the `node` tag and `NODE_VERSION` together. `cargo test -p xtask` fails until they agree.
 
 ### Lint / test today
 - `cargo test --workspace` runs the tests of every crate. Those of `crates/xtask` read the workflows, the `Dockerfile`, `.dockerignore`, and the Compose files, and fail when one of the guarantees of the release process or of the image is lost: run `cargo test -p xtask` after changing any of these files.

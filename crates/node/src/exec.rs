@@ -1,8 +1,8 @@
-//! Run a command to its end, as the Node app did with `child_process.execFile`:
-//! a time limit, a limit on what it may print, and an error that reads as
-//! Node's.
+//! Run a command to its end, as Node's `child_process.execFile` does: a time
+//! limit, a limit on what it may print, and an error that reads as Node's.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -16,10 +16,14 @@ use crate::paths::spawn_error_name;
 use crate::text::{js_trim, utf16_prefix};
 
 /// How long a command that was told to stop gets before it is killed. Node
-/// waits without limit; Deno ends at once on SIGTERM.
+/// waits without limit; npm ends at once on SIGTERM.
 const TERMINATE_GRACE: Duration = Duration::from_millis(2000);
 
 pub(crate) struct ExecOptions<'a> {
+    /// What the command is called in the error of a failure that wrote
+    /// nothing: the command line itself may start with the launcher of the
+    /// sandbox and its policy.
+    pub name: &'a str,
     pub cwd: &'a Path,
     /// The whole environment of the command: nothing is inherited.
     pub env: &'a HashMap<String, String>,
@@ -121,7 +125,7 @@ fn terminate(child: &mut Child) {
 /// `execFile(file, args, { cwd, env, timeout, maxBuffer, encoding: 'utf8' })`.
 pub(crate) async fn exec_file(
     file: &Path,
-    args: &[String],
+    args: &[OsString],
     options: ExecOptions<'_>,
 ) -> Result<(), ExecError> {
     let mut command = Command::new(file);
@@ -198,14 +202,7 @@ pub(crate) async fn exec_file(
     let message = match (too_much, status) {
         (Some(stream), _) => format!("{stream} maxBuffer length exceeded"),
         (None, Err(error)) => error.to_string(),
-        (None, Ok(_)) => {
-            let mut command = file.display().to_string();
-            for argument in args {
-                command.push(' ');
-                command.push_str(argument);
-            }
-            format!("Command failed: {command}\n{stderr}")
-        }
+        (None, Ok(_)) => format!("Command failed: {}\n{stderr}", options.name),
     };
     Err(ExecError { message, stderr })
 }
@@ -247,8 +244,9 @@ mod tests {
         let env = HashMap::from([("PATH".to_owned(), "/usr/bin:/bin".to_owned())]);
         exec_file(
             &file,
-            &["cache".to_owned(), "--reload".to_owned()],
+            &[OsString::from("install"), OsString::from("--prefix")],
             ExecOptions {
+                name: "npm install fake-mcp@latest",
                 cwd: directory,
                 env: &env,
                 timeout,
@@ -282,14 +280,10 @@ mod tests {
         .await
         .unwrap_err();
 
-        let command = directory.path().join("command");
         assert_eq!(error.stderr, "  error: no such package  \n");
         assert_eq!(
             error.message,
-            format!(
-                "Command failed: {} cache --reload\n  error: no such package  \n",
-                command.display()
-            )
+            "Command failed: npm install fake-mcp@latest\n  error: no such package  \n"
         );
         assert_eq!(error.detail(), "error: no such package");
     }
@@ -302,10 +296,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             error.detail(),
-            format!(
-                "Command failed: {} cache --reload",
-                directory.path().join("command").display()
-            )
+            "Command failed: npm install fake-mcp@latest"
         );
     }
 
@@ -405,11 +396,12 @@ mod tests {
     #[tokio::test]
     async fn reads_as_node_when_the_command_cannot_be_started() {
         let directory = tempfile::tempdir().unwrap();
-        let missing = directory.path().join("missing").join("deno");
+        let missing = directory.path().join("missing").join("node");
         let error = exec_file(
             &missing,
             &[],
             ExecOptions {
+                name: "npm install fake-mcp@latest",
                 cwd: directory.path(),
                 env: &HashMap::new(),
                 timeout: MINUTE,
@@ -427,10 +419,10 @@ mod tests {
     #[test]
     fn falls_back_when_there_is_nothing_to_show() {
         let blank = ExecError {
-            message: "Command failed: deno".to_owned(),
+            message: "Command failed: npm install".to_owned(),
             stderr: " \n".to_owned(),
         };
-        // As in the Node app: stderr that is only white space hides the message.
+        // As for Node: stderr that is only white space hides the message.
         assert_eq!(blank.detail(), "Unknown error");
         let empty = ExecError {
             message: String::new(),

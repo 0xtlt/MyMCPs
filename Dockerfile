@@ -1,7 +1,9 @@
 # Production image for self-hosted MyMCPs.
 #
-# Holds the `mymcps` server binary and Deno, so npm-transport MCP sandboxes
-# work out of the box (see crates/deno).
+# Holds the `mymcps` server binary, and Node.js with its npm, so npm-transport
+# MCPs work out of the box (see crates/node). The server runs them in a
+# sandbox of the kernel (crates/sandbox) that needs no privilege: the
+# container can drop every capability, as docker-compose.yml does.
 #
 # Build:  docker build -t mymcps .
 # Run:    docker run --rm -p 3333:3333 \
@@ -11,8 +13,10 @@
 # Base images are pinned by tag and multi-arch index digest, both written out
 # in each FROM line (not behind an ARG) so Dependabot can update them.
 
-# Official Deno binary only (multi-arch).
-FROM denoland/deno:bin-2.9.7@sha256:bc5aa4466e21b6d3021226a85ba2e1911f7c386254d97b9d797903ab74edace2 AS deno
+# Official Node.js image (multi-arch), for its `node` binary and its npm. It is
+# built on the Debian release of the runtime stage, whose C++ library the
+# binary loads.
+FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS node
 
 # ---------------------------------------------------------------------------
 # Compile the server
@@ -76,15 +80,14 @@ RUN --mount=type=cache,id=mymcps-cargo-registry,target=/usr/local/cargo/registry
 # ---------------------------------------------------------------------------
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
 
-# DENO_VERSION must name the version in the denoland/deno tag above; Dependabot
-# only edits the FROM line (crates/xtask/tests/container_image.rs checks it).
+# NODE_VERSION must name the version in the node tag above; Dependabot only
+# edits the FROM line (crates/xtask/tests/container_image.rs checks it).
 ENV APP_ENV=production \
   HOST=0.0.0.0 \
   PORT=3333 \
   DATA_DIR=/app/tmp \
-  DENO_PATH=/usr/local/bin/deno \
-  DENO_DIR=/app/tmp/deno-cache \
-  DENO_VERSION=2.9.7
+  NODE_BINARY=/usr/local/bin/node \
+  NODE_VERSION=24.21.0
 
 # ca-certificates: the server verifies upstream MCPs and OAuth providers
 # against the system trust store. dumb-init: see ENTRYPOINT.
@@ -98,9 +101,12 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 1000 mymcps \
   && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin mymcps \
-  && install -d -o 1000 -g 1000 -m 0700 /app/tmp /app/tmp/mcp-sandboxes /app/tmp/deno-cache
+  && install -d -o 1000 -g 1000 -m 0700 /app/tmp /app/tmp/mcp-sandboxes /app/tmp/mcp-packages
 
-COPY --from=deno /deno /usr/local/bin/deno
+# The binary, and the npm it runs to install a package: nothing else of the
+# image, which also holds yarn and corepack.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 COPY --from=build /out/mymcps /usr/local/bin/mymcps
 
 WORKDIR /app
@@ -113,11 +119,11 @@ EXPOSE 3333
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["mymcps", "healthcheck"]
 
-# Persist SQLite (tmp/db.sqlite3), the generated key and the Deno MCP
-# sandboxes across restarts.
+# Persist SQLite (tmp/db.sqlite3), the generated key, and the sandboxes and
+# installed packages of npm MCPs across restarts.
 VOLUME ["/app/tmp"]
 
-# dumb-init reaps Deno MCP child processes. There is no entrypoint script: the
+# dumb-init reaps the processes of npm MCPs. There is no entrypoint script: the
 # server sets its own umask, creates or reads its key, and migrates the
 # database when it starts.
 ENTRYPOINT ["dumb-init", "--"]

@@ -7,30 +7,44 @@ use mymcps_mcp::client::ClientError;
 
 use crate::paths::file_system_message;
 
-/// Why an npm MCP could not be reached. Each variant reads as the message of
-/// the error the Node app threw in its place: callers redact it
+/// Why an npm MCP could not be reached. Callers redact the message
 /// (`sanitize_mcp_diagnostic`) and show it to administrators.
 #[derive(Debug, thiserror::Error)]
-pub enum DenoError {
+pub enum NodeError {
     #[error("npm MCP is missing a package name")]
     MissingPackage,
 
+    #[error("\"{0}\" is not the name of a package of the npm registry")]
+    InvalidPackage(String),
+
+    #[error("\"{0}\" is not a version, a range of versions or a tag of an npm package")]
+    InvalidVersion(String),
+
     #[error(
-        "Deno was not found. Install Deno, or set DENO_PATH to the absolute path of the deno binary."
+        "Node.js was not found. Install Node.js, or set NODE_BINARY to the absolute path of the node binary."
     )]
     BinaryNotFound,
 
     #[error(
-        "The Deno cache directory \"{}\" must not contain the application or lie inside an MCP sandbox. Set DENO_DIR to a dedicated directory.",
+        "npm was not found beside the Node.js binary \"{}\". Set NODE_BINARY to the node binary of an installation that has npm.",
         .0.display()
     )]
-    UnsafeCacheDirectory(PathBuf),
+    NpmNotFound(PathBuf),
+
+    #[error(
+        "\"{}\" is inside \"{system_path}\", which every npm MCP can read in its sandbox. Keep the application and its data directory (DATA_DIR) out of the directories of the system.",
+        .directory.display()
+    )]
+    ExposedDirectory {
+        directory: PathBuf,
+        system_path: &'static str,
+    },
 
     /// The saved environment of the MCP cannot be read.
     #[error(transparent)]
     Environment(#[from] EnvironmentError),
 
-    /// Deno or the package did not get through the MCP handshake. The message
+    /// Node or the package did not get through the MCP handshake. The message
     /// is redacted already, and says what the process wrote to stderr.
     #[error("{0}")]
     Startup(String),
@@ -41,9 +55,10 @@ pub enum DenoError {
     #[error(transparent)]
     Client(#[from] ClientError),
 
-    /// `detail` is the start of what `deno cache` wrote to stderr, as written.
-    #[error("Failed to reload Deno cache for \"{package}\". {detail}")]
-    CacheReload { package: String, detail: String },
+    /// `detail` is the start of what `npm install` wrote to stderr, as
+    /// written, or what is wrong with the package it installed.
+    #[error("Failed to install npm package \"{package}\". {detail}")]
+    Install { package: String, detail: String },
 
     #[error("{}", file_system_message(.source, .operation, .path))]
     FileSystem {
@@ -58,7 +73,7 @@ pub enum DenoError {
     Other(String),
 }
 
-impl DenoError {
+impl NodeError {
     /// The error of the protocol, when the started package answered with one
     /// or the request timed out or lost its connection.
     pub fn mcp_error(&self) -> Option<&McpError> {
@@ -68,12 +83,12 @@ impl DenoError {
         }
     }
 
-    /// The JSON-RPC error code of [`DenoError::mcp_error`].
+    /// The JSON-RPC error code of [`NodeError::mcp_error`].
     pub fn mcp_code(&self) -> Option<i64> {
         self.mcp_error().map(|error| error.code)
     }
 
-    /// Deno was started and the MCP handshake with the package failed.
+    /// Node was started and the MCP handshake with the package failed.
     pub fn is_startup_failure(&self) -> bool {
         matches!(self, Self::Startup(_))
     }
@@ -87,6 +102,13 @@ impl DenoError {
             operation,
             path: path.into(),
             source,
+        }
+    }
+
+    pub(crate) fn install(package: &str, detail: impl Into<String>) -> Self {
+        Self::Install {
+            package: package.to_owned(),
+            detail: detail.into(),
         }
     }
 }

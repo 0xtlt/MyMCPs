@@ -29,12 +29,14 @@ Accounts, teams, and permissions work as they do in Coolify, with one difference
 
 ## Run locally
 
-You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Deno](https://deno.com/) if you want to run npm-based MCPs.
+You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Node.js](https://nodejs.org/) with its npm if you want to run npm-based MCPs.
 
 ```bash
 cp .env.example .env
 cargo run --bin mymcps
 ```
+
+npm-based MCPs run in a sandbox that needs Linux: see [npm MCPs and their sandbox](#npm-mcps-and-their-sandbox). On macOS or Windows, set `NPM_SANDBOX=off` in `.env` to run them without one while you develop.
 
 The server creates its key and its SQLite database under `tmp/` and applies database migrations when it starts. Open [http://localhost:3333](http://localhost:3333) and create the first account, which owns the instance.
 
@@ -93,7 +95,7 @@ This repository includes a production Docker image, a Compose service, and a `co
 4. Add a domain to the `mymcps` service and set `APP_URL` to the same HTTPS origin, for example `https://mcp.example.com`.
 5. Deploy, open the domain, and complete onboarding.
 
-The deployment exposes port `3333` and checks `/health`, and the server applies database migrations when it starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and Deno sandbox data under `/app/tmp`. Files the server creates in the volume are readable only by the user it runs as, uid 1000. Coolify builds the image from source: the first deployment compiles the server and takes longer than the next ones, which reuse the build cache of the Docker host.
+The deployment exposes port `3333` and checks `/health`, and the server applies database migrations when it starts. The `mymcps-data` volume persists SQLite, encrypted secrets, the generated app key, and the sandboxes and installed packages of npm MCPs under `/app/tmp`. Files the server creates in the volume are readable only by the user it runs as, uid 1000. Coolify builds the image from source: the first deployment compiles the server and takes longer than the next ones, which reuse the build cache of the Docker host.
 
 You do not need to create `APP_KEY` in Coolify. On the first start, the server generates a valid key, saves it to `/app/tmp/app.key`, and reuses it on every deploy. Back up the `mymcps-data` volume and do not rotate the key, or existing encrypted MCP credentials will become unreadable. To keep a copy of an instance without its volume, or to move it to another server, export an encrypted backup under **Settings** and import it on the setup screen of a new instance, whatever its key: see [docs/backup.md](docs/backup.md). In production the server refuses to start with a key published in this repository: the key the tests use, or the placeholder that images of earlier versions were built with.
 
@@ -157,7 +159,7 @@ Each published release also produces a public OCI image for `linux/amd64` and `l
 - Stable releases: `ghcr.io/0xtlt/mymcps:stable` and the exact release tag, such as `ghcr.io/0xtlt/mymcps:v0.1.2`.
 - Nightly releases: `ghcr.io/0xtlt/mymcps:nightly` and the exact prerelease tag, such as `ghcr.io/0xtlt/mymcps:v0.1.2-nightly.20260809.gabcdef0`.
 
-Pull a channel image and preserve `/app/tmp`, which contains SQLite data, encrypted secrets, the generated app key, and Deno sandbox data:
+Pull a channel image and preserve `/app/tmp`, which contains SQLite data, encrypted secrets, the generated app key, and the sandboxes and installed packages of npm MCPs:
 
 ```bash
 docker pull ghcr.io/0xtlt/mymcps:stable
@@ -175,9 +177,26 @@ Use `ghcr.io/0xtlt/mymcps:nightly` in the same commands to test the nightly chan
 
 After the first image publication, verify the package is anonymously pullable. If GHCR did not inherit the public repository visibility, open the package on GitHub, choose **Package settings → Change package visibility → Public**, and confirm the one-time change. No repository secret is required.
 
+## npm MCPs and their sandbox
+
+An npm MCP is a package of the npm registry that speaks MCP on its standard input and output. MyMCPs installs it with `npm` the first time it is used, in a directory of its own under the data directory, and starts it with [Node.js](https://nodejs.org/) for each request. The image holds both; a server run from source uses the `node` of its `PATH`, or the binary `NODE_BINARY` names, with the npm installed beside it.
+
+A package is code written by someone else, and on an instance with open registration by anyone. The server therefore starts `npm` and the package in a sandbox of the Linux kernel, made of [Landlock](https://docs.kernel.org/userspace-api/landlock.html), seccomp and resource limits:
+
+- A package reads the files it was installed with and the system's, and reads and writes one directory of its own. The database, the key, `.env` and the files of other MCPs are refused, whoever owns them.
+- It starts no other process, sends a signal to none but itself, opens no Unix socket, and changes the mode or the owner of no file by its path.
+- A process holds at most 2 GiB of memory and 4,096 open files, and cannot take the user the server runs as past 4,096 threads on the host.
+- `npm` installs a package under the same sandbox, runs none of its scripts, and can write nothing but the directory it installs into.
+
+Every sandboxed process reads the directories of the system, such as `/usr`. Keep the application and its data directory (`DATA_DIR`) out of them, as the image does with `/app`: a server installed under one starts no npm MCP and says why.
+
+The network stays open: a package reaches whatever the server reaches, the server itself and its private network included. Restrict that at the level of the network when you let strangers add packages.
+
+The sandbox needs no privilege and works in a container without capabilities. It needs Linux 5.13 or later with Landlock enabled, which the kernels of current distributions are (Ubuntu 22.04, Debian 12 and later). The server says what it found when it starts: `npm MCPs run in a sandbox`, with the version of Landlock in use, or `npm MCPs cannot start` and the reason. A server that cannot sandbox a package does not start it. `NPM_SANDBOX=off` starts npm MCPs without a sandbox, with every right of the server: that is for development on another system than Linux, not for an instance other people use.
+
 ## Stack
 
-MyMCPs is one Rust binary: an [axum](https://github.com/tokio-rs/axum) server that renders its pages with [maud](https://maud.lambda.xyz/), stores its data in SQLite, speaks MCP with its own implementation of the protocol, and runs npm-based MCPs in [Deno](https://deno.com/) sandboxes. Its pages need no JavaScript build. See [SECURITY.md](SECURITY.md) for the deployment security baseline and vulnerability reporting process.
+MyMCPs is one Rust binary: an [axum](https://github.com/tokio-rs/axum) server that renders its pages with [maud](https://maud.lambda.xyz/), stores its data in SQLite, speaks MCP with its own implementation of the protocol, and runs npm-based MCPs with [Node.js](https://nodejs.org/) in a sandbox of the kernel. Its pages need no JavaScript build. See [SECURITY.md](SECURITY.md) for the deployment security baseline and vulnerability reporting process.
 
 ## License
 

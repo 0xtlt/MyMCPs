@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use mymcps_core::{Config, Core, Db};
+use mymcps_node::SandboxStatus;
 use mymcps_upstream::Upstream;
 use mymcps_web::AppState;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -48,7 +49,7 @@ enum Command {
         /// Email address of the account to recover
         email: String,
     },
-    /// Reload the Deno cache for npm MCPs that track latest
+    /// Install the latest version of the npm MCPs that track latest
     #[command(name = "mcp:update")]
     McpUpdate,
     /// Exit successfully when the server on this machine answers its health check
@@ -56,6 +57,18 @@ enum Command {
 }
 
 fn main() -> ExitCode {
+    // The launcher of the sandbox of npm MCPs, `mymcps sandbox:exec`, which
+    // the server starts and no operator does. It comes before everything
+    // else: the sandbox is applied to a process that has one thread and has
+    // read nothing, which then becomes the program to hold.
+    let mut arguments = std::env::args_os().skip(1);
+    if arguments
+        .next()
+        .is_some_and(|command| command == mymcps_sandbox::LAUNCH_COMMAND)
+    {
+        return mymcps_sandbox::launch(arguments);
+    }
+
     let cli = Cli::parse();
     restrict_new_files();
 
@@ -95,7 +108,7 @@ fn main() -> ExitCode {
 
 /// Everything written from here on is private to the user the server runs
 /// as: the generated key, the SQLite database with its encrypted secrets,
-/// and the MCP sandboxes. The Deno children inherit this.
+/// and the MCP sandboxes. The processes of npm MCPs inherit this.
 fn restrict_new_files() {
     #[cfg(unix)]
     rustix::process::umask(rustix::fs::Mode::from_raw_mode(0o077));
@@ -129,14 +142,47 @@ type CommandResult = Result<ExitCode, Box<dyn std::error::Error + Send + Sync>>;
 /// expiry.
 const UPLOAD_SWEEP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
-/// The directories npm MCPs run in and Deno caches packages in. The server
-/// creates them before the first npm MCP needs one, so that a volume
+/// The directories npm MCPs run in and their packages are installed in. The
+/// server creates them before the first npm MCP needs one, so that a volume
 /// mounted empty has them with the server's own permissions.
 async fn create_data_directories(config: &Config) -> std::io::Result<()> {
-    for name in ["mcp-sandboxes", "deno-cache"] {
+    for name in ["mcp-sandboxes", "mcp-packages"] {
         tokio::fs::create_dir_all(config.data_dir.join(name)).await?;
     }
     Ok(())
+}
+
+/// The cache of the versions that ran npm MCPs with Deno, which the server
+/// kept in its data directory. Nothing reads it any more.
+async fn remove_deno_cache(config: &Config) {
+    let cache = config.data_dir.join("deno-cache");
+    match tokio::fs::remove_dir_all(&cache).await {
+        Ok(()) => {
+            tracing::info!(path = %cache.display(), "deleted the Deno cache of earlier versions")
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            tracing::warn!(path = %cache.display(), %error, "could not delete the Deno cache of earlier versions");
+        }
+    }
+}
+
+/// Say, once, what holds the packages of npm MCPs on this machine. A server
+/// that cannot sandbox them starts none: the reason belongs in the log of
+/// its start, not only in the error of the first MCP.
+async fn report_npm_sandbox(upstream: &Upstream) {
+    match upstream.node().sandbox_status().await {
+        SandboxStatus::Enforced(enforced) => {
+            tracing::info!(%enforced, "npm MCPs run in a sandbox");
+        }
+        SandboxStatus::Unavailable(reason) => tracing::error!(
+            %reason,
+            "npm MCPs cannot start: their sandbox is not available. NPM_SANDBOX=off runs them without one, with every right of the server"
+        ),
+        SandboxStatus::Off => tracing::warn!(
+            "NPM_SANDBOX is off: npm MCPs run without a sandbox, with every right of the server"
+        ),
+    }
 }
 
 async fn serve() -> CommandResult {
@@ -152,7 +198,9 @@ async fn serve() -> CommandResult {
     // middle of one, left behind is a copy of the database.
     mymcps_core::backup::clear_temporary_files(&core.config)
         .map_err(|error| format!("Cannot delete the temporary files of backups: {error}"))?;
+    remove_deno_cache(&core.config).await;
     let state = AppState::new(core.clone());
+    report_npm_sandbox(&state.upstream).await;
     // Deletes the expired uploads, including the ones a previous run left.
     let upload_sweeper =
         Arc::new(state.upstream.builtin_env().uploads.clone()).start_sweeper(UPLOAD_SWEEP_INTERVAL);
@@ -243,7 +291,7 @@ async fn user_reset_protection(email: &str) -> CommandResult {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Reload the packages of the npm MCPs that follow `latest`, test each one,
+/// Install again the packages of the npm MCPs that follow `latest`, test each one,
 /// and fail when one could not be updated.
 async fn mcp_update() -> CommandResult {
     let config = Config::from_env()?;

@@ -1,0 +1,34 @@
+[package]
+name = "mymcps-sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The launcher alone, for the tests of this crate. The server is its own
+# launcher: `mymcps sandbox:exec`.
+[[bin]]
+name = "mymcps-sandbox-exec"
+path = "src/bin/mymcps-sandbox-exec.rs"
+test = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The three kernel interfaces of the sandbox, each behind a safe API: this
+# crate has no unsafe code of its own.
+landlock = "0.4.7"
+seccompiler = "0.5"
+rustix = { version = "1.1", default-features = false, features = ["std", "process"] }
+# Syscall numbers and flag values for the seccomp filter.
+libc = "0.2"
+
+[dev-dependencies]
+tempfile.workspace = true

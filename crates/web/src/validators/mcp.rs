@@ -6,14 +6,16 @@ use std::sync::LazyLock;
 
 use mymcps_builtin::keys::BUILTIN_MCP_KEYS;
 use mymcps_core::models::{McpAuthType, McpStatus, McpTransport};
-use mymcps_deno::reserved_environment_name_reason;
 use mymcps_net::parse_http_url;
+use mymcps_node::{
+    NodeError, is_registry_package_name, is_version_request, reserved_environment_name_reason,
+};
 use mymcps_vine as vine;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use vine::Operator;
 
-/// Refuse names that would configure the Deno sandbox instead of the package.
+/// Refuse names that would configure Node.js or its sandbox instead of the package.
 fn npm_environment_name() -> vine::Rule {
     vine::rule(|value, field| {
         let Some(name) = value.as_str() else {
@@ -21,6 +23,44 @@ fn npm_environment_name() -> vine::Rule {
         };
         if let Some(reason) = reserved_environment_name_reason(name) {
             field.report(&reason, "npmEnvironmentName");
+        }
+    })
+}
+
+/// The package of an npm MCP is a name of the npm registry: not a path, a
+/// URL, a git repository or an alias, which `npm install` would also take.
+/// Checked for the npm transport only: other transports ignore the field.
+fn npm_package_name() -> vine::Rule {
+    vine::rule(|value, field| {
+        let Some(name) = value.as_str() else {
+            return;
+        };
+        if field.parent_get("transport").and_then(Value::as_str) != Some("npm") {
+            return;
+        }
+        if !is_registry_package_name(name) {
+            field.report(
+                &NodeError::InvalidPackage(name.to_owned()).to_string(),
+                "npmPackageName",
+            );
+        }
+    })
+}
+
+/// The version of an npm MCP is a version, a range of versions or a tag.
+fn npm_version_request() -> vine::Rule {
+    vine::rule(|value, field| {
+        let Some(request) = value.as_str().filter(|request| !request.is_empty()) else {
+            return;
+        };
+        if field.parent_get("transport").and_then(Value::as_str) != Some("npm") {
+            return;
+        }
+        if !is_version_request(request) {
+            field.report(
+                &NodeError::InvalidVersion(request.to_owned()).to_string(),
+                "npmVersionRequest",
+            );
         }
     })
 }
@@ -92,9 +132,14 @@ fn mcp_payload() -> vine::VineObject {
         "npmPackage" => vine::string()
             .trim()
             .max_length(254)
+            .use_rule(npm_package_name())
             .optional()
             .required_when("transport", Operator::Eq, "npm"),
-        "npmVersion" => vine::string().trim().max_length(64).optional(),
+        "npmVersion" => vine::string()
+            .trim()
+            .max_length(64)
+            .use_rule(npm_version_request())
+            .optional(),
         "npmArgs" => vine::string()
             .trim()
             .max_length(1000)
@@ -462,6 +507,79 @@ mod tests {
         assert_eq!(blank.builtin_aliases, Some(Vec::new()));
         assert_eq!(blank.npm_env, None);
         assert_eq!(blank.enabled, None);
+    }
+
+    #[test]
+    fn takes_a_package_of_the_registry_at_a_version_a_range_or_a_tag() {
+        let npm = |package: &str, version: Value| {
+            CREATE_MCP_VALIDATOR.validate(&json!({
+                "name": "Package",
+                "transport": "npm",
+                "npmPackage": package,
+                "npmVersion": version,
+                "authType": "auto",
+            }))
+        };
+        for (package, version) in [
+            ("@shopify/dev-mcp", json!("latest")),
+            ("  mongodb-mcp-server  ", json!(" 2.0.0 ")),
+            ("a", json!("^1.2.3")),
+            ("a", json!(">=1.2 <2")),
+            ("a", Value::Null),
+            ("a", json!("")),
+        ] {
+            assert!(npm(package, version.clone()).is_ok(), "{package} {version}");
+        }
+
+        for package in [
+            "file:../outside",
+            "../outside",
+            "git+https://example.test/package.git",
+            "github:user/repo",
+            "https://example.test/package.tgz",
+            "alias@npm:other",
+            "name@1.0.0",
+            "--registry=http://example.test",
+        ] {
+            assert_eq!(
+                messages(&npm(package, json!("latest")).unwrap_err()),
+                [(
+                    "npmPackage",
+                    format!("\"{package}\" is not the name of a package of the npm registry")
+                        .as_str(),
+                    "npmPackageName"
+                )],
+                "{package}"
+            );
+        }
+        for version in ["npm:other@1", "file:../x", "--tag", "1.0.0/../.."] {
+            assert_eq!(
+                messages(&npm("a", json!(version)).unwrap_err()),
+                [(
+                    "npmVersion",
+                    format!(
+                        "\"{version}\" is not a version, a range of versions or a tag of an npm package"
+                    )
+                    .as_str(),
+                    "npmVersionRequest"
+                )],
+                "{version}"
+            );
+        }
+
+        // Another transport does not read these fields.
+        assert!(
+            CREATE_MCP_VALIDATOR
+                .validate(&json!({
+                    "name": "Remote",
+                    "transport": "http",
+                    "httpUrl": "https://example.test/mcp",
+                    "npmPackage": "../left/over",
+                    "npmVersion": "file:x",
+                    "authType": "auto",
+                }))
+                .is_ok()
+        );
     }
 
     #[test]

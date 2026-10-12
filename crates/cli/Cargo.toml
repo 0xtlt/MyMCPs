@@ -18,6 +18,8 @@ path = "src/main.rs"
 mymcps-core.workspace = true
 mymcps-web.workspace = true
 mymcps-upstream.workspace = true
+mymcps-node.workspace = true
+mymcps-sandbox.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
@@ -33,3 +35,10 @@ serde_json.workspace = true
 [dev-dependencies]
 mymcps-core = { workspace = true, features = ["test-util"] }
 sqlx = { version = "0.9", default-features = false }
+tempfile.workspace = true
+# The package the local npm registry of the sandbox test serves, and its
+# integrity (crates/node/tests/node/registry.rs).
+tar = { version = "0.4", default-features = false }
+flate2 = "1.1"
+sha2.workspace = true
+base64.workspace = true

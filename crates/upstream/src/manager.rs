@@ -73,7 +73,7 @@ impl Upstream {
         match mcp.transport {
             McpTransport::Http => self.list_http_tools(mcp).await,
             McpTransport::Npm => Ok(self
-                .deno
+                .node
                 .list_tools(mcp)
                 .await?
                 .iter()
@@ -146,7 +146,7 @@ impl Upstream {
                 Ok(result?)
             }
             McpTransport::Npm => Ok(self
-                .deno
+                .node
                 .call_tool(mcp, tool_name, arguments.unwrap_or_default())
                 .await?),
         }

@@ -467,7 +467,10 @@ fn container_workflow_validates_before_publishing_exact_multi_platform_channel_t
     assert!(smoke_test.contains("/app/tmp/app.key)\" = \"600 1000:1000\"\n"));
     assert!(smoke_test.contains("/app/tmp/db.sqlite3)\" = \"600 1000:1000\"\n"));
     assert!(smoke_test.contains("\"$version\" != \"mymcps ${RELEASE_TAG#v}\""));
-    assert!(smoke_test.contains("grep -q \"^deno $DENO_VERSION \""));
+    assert!(smoke_test.contains("grep -q \"^v$NODE_VERSION$\""));
+    // The sandbox of npm MCPs is enforced in a container without capabilities:
+    // the server says so in its log, which is JSON in the image.
+    assert!(smoke_test.contains("grep -q '\"enforced\":\"Landlock ABI '"));
 }
 
 #[test]

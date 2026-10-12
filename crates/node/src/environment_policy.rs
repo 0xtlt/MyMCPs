@@ -1,11 +1,12 @@
 //! Environment variable names an operator may not set on an npm MCP.
 //!
-//! The variables of an npm MCP are handed to the `deno` process, not only to
-//! the package it runs. These names are read by the binary lookup, the dynamic
-//! loader, libc or the Deno runtime before or outside Deno's permission
-//! checks, so they would steer the sandbox itself. Ordinary application
-//! settings (API keys, `*_URL`, `NODE_ENV`, proxies, `NPM_CONFIG_REGISTRY`)
-//! stay allowed.
+//! The variables of an npm MCP are handed to the `node` process, and to the
+//! `npm` that installs its package, not only to the package. These names are
+//! read by the dynamic loader, libc or Node itself before the package runs,
+//! or are what MyMCPs sets for it. The sandbox holds whatever a variable
+//! makes the process do; refusing these keeps a package starting the way
+//! MyMCPs started it. Ordinary application settings (API keys, `*_URL`,
+//! `NODE_ENV`, proxies, `NPM_CONFIG_REGISTRY`) stay allowed.
 
 struct ReservedNames {
     names: &'static [&'static str],
@@ -21,17 +22,24 @@ const RESERVED: &[ReservedNames] = &[
         reason: |name| format!("\"{name}\" is set by MyMCPs for the sandbox and cannot be changed"),
     },
     ReservedNames {
-        // DENO_DIR, DENO_V8_FLAGS, DENO_CERT, DENO_TLS_CA_STORE, DENO_AUTH_TOKENS...
-        prefixes: &["DENO_"],
-        // Deno does not act on the two NODE names today, but they address the
-        // runtime rather than the package and Node compatibility keeps growing.
-        // SSLKEYLOGFILE names a file the runtime appends the keys of every TLS
-        // session to, without asking its own write permission: any file the
-        // server can write, the database among them.
-        names: &["NODE_OPTIONS", "NODE_PATH", "SSLKEYLOGFILE"],
+        prefixes: &[],
+        // Flags of Node itself and where it looks modules up, code it loads
+        // before the package (an OpenSSL configuration names libraries), and
+        // files it writes on its own: the keys of every TLS session, coverage
+        // reports, compiled code it would run the next time.
+        names: &[
+            "NODE_OPTIONS",
+            "NODE_PATH",
+            "NODE_COMPILE_CACHE",
+            "NODE_V8_COVERAGE",
+            "NODE_REPL_EXTERNAL_MODULE",
+            "OPENSSL_CONF",
+            "OPENSSL_MODULES",
+            "SSLKEYLOGFILE",
+        ],
         reason: |name| {
             format!(
-                "\"{name}\" configures the runtime that sandboxes the package, not the package, and cannot be set"
+                "\"{name}\" configures the runtime that runs the package, not the package, and cannot be set"
             )
         },
     },
@@ -93,7 +101,7 @@ mod tests {
     // `npmEnvironmentName`) belongs to the crate that ports `validators/mcp.ts`.
 
     #[test]
-    fn refuses_names_that_steer_the_binary_lookup_the_loader_or_the_deno_runtime() {
+    fn refuses_names_that_steer_the_binary_lookup_the_loader_or_the_node_runtime() {
         let refused = [
             "PATH",
             "Path",
@@ -106,12 +114,12 @@ mod tests {
             "ld_audit",
             "DYLD_INSERT_LIBRARIES",
             "DYLD_LIBRARY_PATH",
-            "DENO_DIR",
-            "DENO_V8_FLAGS",
-            "DENO_CERT",
-            "deno_auth_tokens",
             "NODE_OPTIONS",
+            "node_options",
             "NODE_PATH",
+            "NODE_COMPILE_CACHE",
+            "NODE_V8_COVERAGE",
+            "OPENSSL_CONF",
             "SSLKEYLOGFILE",
             "sslkeylogfile",
             "GLIBC_TUNABLES",
@@ -148,7 +156,9 @@ mod tests {
             "PATH_PREFIX",
             "HOMEPAGE_URL",
             "LDAP_URL",
-            "DENOMINATION",
+            "NODE_OPTIONS_EXTRA",
+            // Reserved while Deno ran the packages.
+            "DENO_DIR",
             "DYLDX",
         ];
         for name in allowed {
@@ -164,15 +174,9 @@ mod tests {
             Some("\"Home\" is set by MyMCPs for the sandbox and cannot be changed")
         );
         assert_eq!(
-            reserved_environment_name_reason("DENO_TLS_CA_STORE").as_deref(),
-            Some(
-                "\"DENO_TLS_CA_STORE\" configures the runtime that sandboxes the package, not the package, and cannot be set"
-            )
-        );
-        assert_eq!(
             reserved_environment_name_reason("NODE_PATH").as_deref(),
             Some(
-                "\"NODE_PATH\" configures the runtime that sandboxes the package, not the package, and cannot be set"
+                "\"NODE_PATH\" configures the runtime that runs the package, not the package, and cannot be set"
             )
         );
         assert_eq!(

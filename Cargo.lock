@@ -700,6 +700,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "enumflags2"
+version = "0.7.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1027f7680c853e056ebcec683615fb6fbbc07dbaa13b4d5d9442b146ded4ecef"
+dependencies = [
+ "enumflags2_derive",
+]
+
+[[package]]
+name = "enumflags2_derive"
+version = "0.7.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67c78a4d8fdf9953a5c9d458f9efe940fd97a0cab0941c075a813ac594733827"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1412,6 +1432,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "landlock"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cca98e95f35b29d469dade6724c6f96cec9236640f745a0e99b0334ec320ab1"
+dependencies = [
+ "enumflags2",
+ "libc",
+ "thiserror",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1587,16 +1618,23 @@ name = "mymcps"
 version = "0.4.1"
 dependencies = [
  "axum",
+ "base64 0.23.1",
  "clap",
+ "flate2",
  "hyper",
  "hyper-util",
  "mymcps-core",
+ "mymcps-node",
+ "mymcps-sandbox",
  "mymcps-upstream",
  "mymcps-web",
  "rpassword",
  "rustix",
  "serde_json",
+ "sha2 0.11.0",
  "sqlx",
+ "tar",
+ "tempfile",
  "tokio",
  "tower",
  "tracing",
@@ -1653,25 +1691,6 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "mymcps-deno"
-version = "0.4.1"
-dependencies = [
- "base64 0.23.1",
- "flate2",
- "mymcps-core",
- "mymcps-mcp",
- "regex",
- "rustix",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tar",
- "tempfile",
- "thiserror",
- "tokio",
 ]
 
 [[package]]
@@ -1812,6 +1831,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "mymcps-node"
+version = "0.4.1"
+dependencies = [
+ "base64 0.23.1",
+ "flate2",
+ "mymcps-core",
+ "mymcps-mcp",
+ "mymcps-sandbox",
+ "regex",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "mymcps-sandbox"
+version = "0.4.1"
+dependencies = [
+ "landlock",
+ "libc",
+ "rustix",
+ "seccompiler",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "mymcps-strava"
 version = "0.4.1"
 dependencies = [
@@ -1840,10 +1894,10 @@ dependencies = [
  "http",
  "mymcps-builtin",
  "mymcps-core",
- "mymcps-deno",
  "mymcps-mcp",
  "mymcps-mcp-auth",
  "mymcps-net",
+ "mymcps-node",
  "mymcps-vine",
  "regex",
  "serde",
@@ -1883,11 +1937,11 @@ dependencies = [
  "multer",
  "mymcps-builtin",
  "mymcps-core",
- "mymcps-deno",
  "mymcps-gateway",
  "mymcps-google-ads",
  "mymcps-icloud-mail",
  "mymcps-net",
+ "mymcps-node",
  "mymcps-strava",
  "mymcps-upstream",
  "mymcps-vine",
@@ -2473,6 +2527,15 @@ dependencies = [
  "pbkdf2",
  "salsa20",
  "sha2 0.11.0",
+]
+
+[[package]]
+name = "seccompiler"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ae55de56877481d112a559bbc12667635fdaf5e005712fd4e2b2fa50ffc884"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

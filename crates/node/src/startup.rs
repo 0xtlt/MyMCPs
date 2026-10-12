@@ -1,4 +1,4 @@
-//! Why an npm MCP did not start: what Deno wrote to stderr, redacted.
+//! Why an npm MCP did not start: what its process wrote to stderr, redacted.
 
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -9,7 +9,7 @@ use mymcps_core::redaction::sanitize_mcp_diagnostic_with;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
 
-use crate::error::DenoError;
+use crate::error::NodeError;
 use crate::text::{collapse_whitespace, strip_vt_control_characters, utf16_len, utf16_suffix};
 
 /// stderr kept while an npm MCP starts, to explain a failed start.
@@ -138,27 +138,27 @@ fn startup_output(
 }
 
 /// The error of a failed start. `error` is the message of what the MCP client
-/// failed with (`spawn /usr/local/bin/deno ENOENT`, `MCP error -32000:
+/// failed with (`spawn /usr/local/bin/node ENOENT`, `MCP error -32000:
 /// Connection closed`...); `stderr` is what the process wrote, when it ran.
 pub(crate) fn create_startup_error(
     encryption: &Encryption,
     mcp: &Mcp,
     error: &str,
     stderr: Option<&StartupStderr>,
-) -> DenoError {
-    // An MCP without a package never gets this far; `null` is what the Node app printed.
+) -> NodeError {
+    // An MCP without a package never gets this far.
     let package = mcp.npm_package.as_deref().unwrap_or("null");
     let Some(output) = startup_output(encryption, mcp, stderr) else {
         let detail = sanitize_mcp_diagnostic_with(encryption, error, mcp, 300, []);
-        return DenoError::Startup(format!(
-            "Failed to start Deno npm MCP \"{package}\". Is Deno installed? {detail}"
+        return NodeError::Startup(format!(
+            "Failed to start npm MCP \"{package}\". Is Node.js installed? {detail}"
         ));
     };
 
-    // Deno ran and said why, so its output gets the room.
+    // The process ran and said why, so its output gets the room.
     let detail = sanitize_mcp_diagnostic_with(encryption, error, mcp, 80, []);
-    DenoError::Startup(format!(
-        "Failed to start Deno npm MCP \"{package}\". {detail}. {output}"
+    NodeError::Startup(format!(
+        "Failed to start npm MCP \"{package}\". {detail}. {output}"
     ))
 }
 
@@ -196,7 +196,6 @@ mod tests {
         }
     }
 
-    // tests/unit/security.spec.ts
     #[test]
     fn redacts_long_npm_environment_secrets_before_truncating_startup_errors() {
         let encryption = encryption();
@@ -213,12 +212,12 @@ mod tests {
         assert!(error.is_startup_failure());
         assert_eq!(
             message,
-            "Failed to start Deno npm MCP \"@example/failing-mcp\". Is Deno installed? startup echoed [REDACTED]"
+            "Failed to start npm MCP \"@example/failing-mcp\". Is Node.js installed? startup echoed [REDACTED]"
         );
     }
 
     #[test]
-    fn asks_whether_deno_is_installed_only_when_deno_said_nothing() {
+    fn asks_whether_node_is_installed_only_when_the_process_said_nothing() {
         let encryption = encryption();
         let mcp = npm_mcp(&encryption, &[]);
 
@@ -227,11 +226,11 @@ mod tests {
                 create_startup_error(
                     &encryption,
                     &mcp,
-                    "spawn /usr/local/bin/deno ENOENT",
+                    "spawn /usr/local/bin/node ENOENT",
                     silent.as_ref()
                 )
                 .to_string(),
-                "Failed to start Deno npm MCP \"@example/failing-mcp\". Is Deno installed? spawn /usr/local/bin/deno ENOENT"
+                "Failed to start npm MCP \"@example/failing-mcp\". Is Node.js installed? spawn /usr/local/bin/node ENOENT"
             );
         }
 
@@ -245,12 +244,12 @@ mod tests {
                 ))
             )
             .to_string(),
-            "Failed to start Deno npm MCP \"@example/failing-mcp\". MCP error -32000: Connection closed. Output: error: npm package '@example/failing-mcp' does not exist."
+            "Failed to start npm MCP \"@example/failing-mcp\". MCP error -32000: Connection closed. Output: error: npm package '@example/failing-mcp' does not exist."
         );
     }
 
     #[test]
-    fn gives_the_room_to_the_end_of_what_deno_wrote() {
+    fn gives_the_room_to_the_end_of_what_the_process_wrote() {
         let encryption = encryption();
         let mcp = npm_mcp(
             &encryption,
@@ -270,7 +269,7 @@ mod tests {
         assert_eq!(
             head,
             format!(
-                "Failed to start Deno npm MCP \"@example/failing-mcp\". {}",
+                "Failed to start npm MCP \"@example/failing-mcp\". {}",
                 &long_error[..80]
             )
         );
@@ -281,7 +280,7 @@ mod tests {
         );
         assert!(!message.contains("super-secret-api-key"));
         assert!(!message.contains("second-line-of-key"));
-        assert!(!message.contains("Is Deno installed?"));
+        assert!(!message.contains("Is Node.js installed?"));
     }
 
     #[test]
@@ -300,7 +299,7 @@ mod tests {
                 Some(&incomplete)
             )
             .to_string(),
-            "Failed to start Deno npm MCP \"@example/failing-mcp\". MCP error -32000: Connection closed. Output exceeded 32 KiB and is not shown."
+            "Failed to start npm MCP \"@example/failing-mcp\". MCP error -32000: Connection closed. Output exceeded 32 KiB and is not shown."
         );
     }
 

@@ -67,7 +67,7 @@
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let transport = StdioClientTransport::new(
-//!     StdioServerParameters::new("/usr/local/bin/deno")
+//!     StdioServerParameters::new("/usr/local/bin/node")
 //!         .args(["run", "--quiet", "npm:@example/mcp@latest"])
 //!         .env([("PATH", "/usr/bin:/bin"), ("HOME", "/app/tmp/mcp-sandboxes/7")])
 //!         .cwd("/app/tmp/mcp-sandboxes/7")

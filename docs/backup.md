@@ -9,7 +9,7 @@ A backup is one file that holds everything an instance stores, encrypted with a 
 - Access tokens and the OAuth connections of AI clients. Agents keep working with the tokens they already have.
 - Tool approval choices and requests, call logs, and the instance settings.
 
-It does not hold the files MyMCPs can make again: the Deno cache and the sandboxes of npm MCPs, and files waiting in `builtin-uploads`. It does not hold your environment variables either: set `APP_URL`, `TRUST_PROXY` and the others on the new instance yourself.
+It does not hold the files MyMCPs can make again: the installed packages and the sandboxes of npm MCPs, and files waiting in `builtin-uploads`. It does not hold your environment variables either: set `APP_URL`, `TRUST_PROXY` and the others on the new instance yourself.
 
 ## Export a backup
 

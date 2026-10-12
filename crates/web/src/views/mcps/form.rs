@@ -695,13 +695,13 @@ fn env_row(
 fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup {
     let values = &form.values;
     let http = values.transport == McpTransport::Http;
-    let cached = saved.and_then(|saved| saved.mcp.npm_cached_version.as_deref());
+    let installed = saved.and_then(|saved| saved.mcp.npm_installed_version.as_deref());
     html! {
         fieldset class="field-group" {
             legend class="field-group__label" { "Transport" }
             div class="option-cards" {
                 (option_card("transport", "http", http, "HTTP", "Remote Streamable HTTP URL"))
-                (option_card("transport", "npm", !http, "npm package", "Runs in a Deno sandbox"))
+                (option_card("transport", "npm", !http, "npm package", "Runs in a Node.js sandbox"))
             }
         }
 
@@ -727,8 +727,8 @@ fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup 
                     .placeholder("latest")
                     .verbatim()
                     .error(form.error("npmVersion"));
-                @match cached {
-                    Some(cached) => { (version.help(html! { "Cached in Deno: " (cached) }).render()) }
+                @match installed {
+                    Some(installed) => { (version.help(html! { "Installed: " (installed) }).render()) }
                     None => { (version.render()) }
                 }
                 (Field::new(format!("{prefix}-npm-args"), "npmArgs", html! { "Extra args " (optional_mark()) })

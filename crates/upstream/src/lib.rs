@@ -1,10 +1,10 @@
 //! How the gateway talks to the MCP servers behind it: HTTP MCPs (with
-//! bearer, header or OAuth authentication), npm MCPs run in a Deno sandbox,
+//! bearer, header or OAuth authentication), npm MCPs run by Node.js in a sandbox,
 //! and the MCPs MyMCPs implements itself.
 //!
 //! One [`Upstream`] is built at startup and shared. Nothing is global: the
 //! token renewals under way, the HTTP client, the name resolution behind the
-//! address check and the Deno runner all belong to that value, so each test
+//! address check and the Node.js runner all belong to that value, so each test
 //! builds its own.
 //!
 //! Functions take the row of the MCP as `&mut Mcp`: renewing an OAuth access
@@ -121,7 +121,7 @@
 //! # }
 //! ```
 //!
-//! The builder also takes a [`DenoRunner`] whose Deno binary is a stand-in,
+//! The builder also takes a [`NodeRunner`] whose Node.js binary is a stand-in,
 //! a `BuiltinEnv` with the seams of the providers, and an
 //! [`NpmUpdateRuntime`] in place of the two steps of an npm update.
 
@@ -142,8 +142,8 @@ use std::sync::{Arc, Mutex};
 
 use mymcps_builtin::{BuiltinEnv, BuiltinRegistry};
 use mymcps_core::Core;
-use mymcps_deno::DenoRunner;
 use mymcps_net::{AddressGuard, Fetcher};
+use mymcps_node::NodeRunner;
 
 pub use error::UpstreamError;
 pub use http_client::{ConnectedHttpUpstream, UpstreamTool};
@@ -171,7 +171,7 @@ pub struct Upstream {
     addresses: AddressGuard,
     builtin_env: BuiltinEnv,
     builtins: BuiltinRegistry,
-    deno: DenoRunner,
+    node: NodeRunner,
     /// The renewal of the OAuth tokens of an MCP that is under way, by MCP id.
     pending_refreshes: Arc<Mutex<HashMap<i64, oauth::PendingRefresh>>>,
     /// How many tools each MCP listed the last time, by MCP id.
@@ -183,7 +183,7 @@ pub struct Upstream {
 
 impl Upstream {
     /// The upstream of the server: requests go over the network, names are
-    /// resolved by the system, and npm MCPs run with the Deno of the machine.
+    /// resolved by the system, and npm MCPs run with the Node.js of the machine, in its sandbox.
     pub fn new(core: Arc<Core>, builtins: BuiltinRegistry) -> Arc<Self> {
         Self::builder(core, builtins).build()
     }
@@ -197,7 +197,7 @@ impl Upstream {
             fetcher: None,
             addresses: None,
             builtin_env: None,
-            deno: None,
+            node: None,
             npm_update_runtime: None,
         }
     }
@@ -212,25 +212,20 @@ impl Upstream {
     }
 
     /// The runner of npm MCPs.
-    pub fn deno(&self) -> &DenoRunner {
-        &self.deno
+    pub fn node(&self) -> &NodeRunner {
+        &self.node
     }
 
-    /// Semver currently present in the Deno npm cache for this package: see
-    /// [`DenoRunner::cached_npm_package_version`].
-    pub fn cached_npm_package_version(
-        &self,
-        npm_package: &str,
-        npm_version: Option<&str>,
-    ) -> Option<String> {
-        self.deno
-            .cached_npm_package_version(npm_package, npm_version)
+    /// The version of its package that is installed for an npm MCP: see
+    /// [`NodeRunner::installed_npm_package_version`].
+    pub fn installed_npm_package_version(&self, mcp: &mymcps_core::models::Mcp) -> Option<String> {
+        self.node.installed_npm_package_version(mcp)
     }
 
-    /// Delete what an npm MCP wrote to its sandbox, when the MCP is deleted
-    /// or runs another package.
+    /// Delete what an npm MCP wrote to its sandbox and the installs of its
+    /// package, when the MCP is deleted or runs another package.
     pub async fn remove_mcp_sandbox(&self, mcp_id: i64) -> Result<(), UpstreamError> {
-        Ok(self.deno.remove_sandbox(mcp_id).await?)
+        Ok(self.node.remove_sandbox(mcp_id).await?)
     }
 
     /// [`uses_pasted_oauth_callback`].
@@ -269,7 +264,7 @@ pub struct UpstreamBuilder {
     fetcher: Option<Fetcher>,
     addresses: Option<AddressGuard>,
     builtin_env: Option<BuiltinEnv>,
-    deno: Option<DenoRunner>,
+    node: Option<NodeRunner>,
     npm_update_runtime: Option<Arc<dyn NpmUpdateRuntime>>,
 }
 
@@ -295,8 +290,8 @@ impl UpstreamBuilder {
         self
     }
 
-    pub fn deno(mut self, deno: DenoRunner) -> Self {
-        self.deno = Some(deno);
+    pub fn node(mut self, node: NodeRunner) -> Self {
+        self.node = Some(node);
         self
     }
 
@@ -311,16 +306,16 @@ impl UpstreamBuilder {
         let builtin_env = self.builtin_env.unwrap_or_else(|| {
             BuiltinEnv::new(Arc::clone(&self.core)).with_fetcher(fetcher.clone())
         });
-        let deno = self
-            .deno
-            .unwrap_or_else(|| DenoRunner::new(Arc::clone(&self.core)));
+        let node = self
+            .node
+            .unwrap_or_else(|| NodeRunner::new(Arc::clone(&self.core)));
         Arc::new(Upstream {
             core: self.core,
             fetcher,
             addresses: self.addresses.unwrap_or_default(),
             builtin_env,
             builtins: self.builtins,
-            deno,
+            node,
             pending_refreshes: Arc::default(),
             known_tool_counts: Arc::default(),
             pending_npm_updates: Arc::default(),

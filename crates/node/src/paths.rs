@@ -41,11 +41,6 @@ pub(crate) fn resolve(current_dir: &Path, path: impl AsRef<Path>) -> PathBuf {
     }
 }
 
-/// Whether `path` is `directory` or lies below it. Both are absolute and normalized.
-pub(crate) fn is_within(path: &Path, directory: &Path) -> bool {
-    path.starts_with(directory)
-}
-
 /// A regular file the server may execute, links followed.
 pub(crate) fn is_executable_file(path: &Path) -> bool {
     #[cfg(unix)]
@@ -107,7 +102,7 @@ pub(crate) fn file_system_message(error: &io::Error, operation: &str, path: &Pat
     }
 }
 
-/// The name Node gives a spawn failure, as in `spawn /usr/local/bin/deno ENOENT`.
+/// The name Node gives a spawn failure, as in `spawn /usr/local/bin/node ENOENT`.
 pub(crate) fn spawn_error_name(error: &io::Error) -> String {
     use io::ErrorKind;
     let name = match error.kind() {
@@ -134,8 +129,8 @@ mod tests {
         let cwd = Path::new("/srv/app");
         let resolved = |path: &str| resolve(cwd, path);
         assert_eq!(
-            resolved("relative/deno-cache"),
-            Path::new("/srv/app/relative/deno-cache")
+            resolved("relative/packages"),
+            Path::new("/srv/app/relative/packages")
         );
         assert_eq!(
             resolved("/var/cache/server/"),
@@ -146,24 +141,10 @@ mod tests {
         assert_eq!(resolved("../../../.."), Path::new("/"));
         assert_eq!(resolved("/a/../../b"), Path::new("/b"));
         assert_eq!(
-            resolved("//usr//bin/../bin/deno"),
-            Path::new("/usr/bin/deno")
+            resolved("//usr//bin/../bin/node"),
+            Path::new("/usr/bin/node")
         );
         assert_eq!(normalize(Path::new("a/../../b")), Path::new("../b"));
-    }
-
-    #[test]
-    fn tells_a_directory_and_what_lies_below_it_from_its_neighbours() {
-        let within = |path: &str, directory: &str| is_within(Path::new(path), Path::new(directory));
-        assert!(within("/app", "/app"));
-        assert!(within("/app/tmp/mcp-sandboxes/7", "/app/tmp/mcp-sandboxes"));
-        assert!(within("/app", "/"));
-        assert!(!within(
-            "/app/tmp/mcp-sandboxes-old",
-            "/app/tmp/mcp-sandboxes"
-        ));
-        assert!(!within("/app/tmp", "/app/tmp/mcp-sandboxes"));
-        assert!(!within("/application", "/app"));
     }
 
     #[test]

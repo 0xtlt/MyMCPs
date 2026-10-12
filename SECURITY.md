@@ -35,17 +35,26 @@ permissions.
   `X-Forwarded-For`; otherwise clients choose the address that rate limits and
   call logs record.
 - Persist `/app/tmp`; losing it also loses the SQLite database, encrypted MCP
-  secrets, generated key, and Deno sandbox cache. The server creates its files
+  secrets, generated key, and the installed packages of npm MCPs. The server creates its files
   there with `umask 077`; a volume created by an earlier version keeps its
   existing modes until you run `chmod -R go-rwx /app/tmp` in the container.
 - Put the application behind a TLS-terminating reverse proxy rather than exposing
   the container directly to the public internet.
-- Treat configured npm MCP packages as executable third-party code. Pin versions
-  and use a separate, restricted deployment boundary for untrusted packages.
+- Treat configured npm MCP packages as executable third-party code, and pin
+  their versions. The server holds each one in a sandbox of the kernel (see
+  below), which does not restrict the network: a package reaches whatever the
+  server reaches, the server's own port and its private network included.
+  Where strangers can add packages, restrict the outbound network of the
+  deployment and keep nothing unauthenticated on its network.
+- Check the log of the first start after an upgrade for `npm MCPs run in a
+  sandbox`. The sandbox needs Linux 5.13 or later with Landlock enabled on
+  the host; a server that cannot enforce it starts no npm MCP and says why.
+  Do not set `NPM_SANDBOX=off` on an instance other people use: it starts
+  packages with every right of the server.
 - Keep registration closed unless strangers may use the instance: it is off by
   default, and a super admin turns it on under
   **Settings → My Instance**. An account that registers gets a team of its own,
-  where it can add MCPs, npm packages included: those run in a Deno sandbox on
+  where it can add MCPs, npm packages included: those run in a sandbox on
   your server.
 - Invite only trusted people as owners or admins of a team: they manage its MCP
   registry, with the credentials it holds, and every access token of the team.
@@ -93,12 +102,24 @@ permissions.
 - Authenticated upstream requests and OAuth token requests follow redirects only
   within the same origin. Upstream responses are limited to 32 MiB, and error
   responses to 64 KiB.
-- npm MCP packages run in a Deno sandbox that can read and write only its own
-  directory, less the files Deno itself reads there when it starts (`.npmrc`,
-  `deno.json`, `deno.jsonc`, `package.json`). Environment variables that would
-  configure the sandbox itself, such as `PATH`, `SSLKEYLOGFILE` and loader or
-  Deno runtime variables, are refused. All npm MCPs share one Deno cache that
-  packages can read but not write.
+- npm MCP packages are run by Node.js in a sandbox the Linux kernel enforces,
+  which no setting of a package and no flaw of the runtime lifts. With
+  Landlock, a package reads the files it was installed with and the system's,
+  and reads and writes one directory of its own: the database, the key,
+  `.env` and the files of other MCPs are refused. With seccomp, it starts no
+  other process, signals none but itself, opens no Unix socket, changes the
+  mode or the owner of no file by its path, and is refused tracing, mounts,
+  namespaces and the other calls that administer a machine. A process holds
+  at most 2 GiB of memory. The sandbox needs no privilege, and a server that
+  cannot enforce it starts no package.
+- `npm` installs a package inside the same sandbox, where it writes nothing
+  but the directory it installs into, and runs none of the scripts of the
+  package or of what it depends on. A package cannot write its own code, and
+  each MCP has an install of its own.
+- Only a name of the npm registry is installed, at a version, a range or a
+  tag: not a path, a URL, a git repository or an alias. Environment variables
+  that would configure Node.js or the loader instead of the package, such as
+  `PATH`, `NODE_OPTIONS`, `SSLKEYLOGFILE` and `LD_PRELOAD`, are refused.
 - A saved bearer token, header value, or environment value is not carried over
   when an MCP is pointed at another origin, transport, or npm package.
 - An MCP on a public address cannot send the instance to OAuth endpoints on
@@ -129,15 +150,16 @@ permissions.
 ## Build and release safeguards
 
 - The container image builds from base images pinned by digest: the Rust
-  toolchain that compiles the server, the Debian runtime, and the Deno binary
-  that sandboxes npm MCP packages. The build refuses a `Cargo.lock` that does
+  toolchain that compiles the server, the Debian runtime, and the Node.js that
+  runs npm MCP packages. The build refuses a `Cargo.lock` that does
   not match the manifests. Dependabot proposes updates for the images, for
   Cargo dependencies, and for GitHub Actions.
 - The image runs the server as an unprivileged user, uid 1000, under an init
-  that reaps the Deno child processes. Before an image is published, a
+  that reaps the processes of npm MCPs. Before an image is published, a
   container of each architecture is started without capabilities and checked:
-  it must answer `/health`, run as uid 1000, and leave nothing in its data
-  directory that another user can read.
+  it must answer `/health`, run as uid 1000, leave nothing in its data
+  directory that another user can read, and report that the sandbox of npm
+  MCPs is enforced.
 - Release workflows compile and run dependency code with a read-only token.
   Only a separate job can push the tag and create the release, and it publishes
   the exact commit that was validated. That job restores no cache, and the only

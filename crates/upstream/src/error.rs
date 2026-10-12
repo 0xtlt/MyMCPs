@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use mymcps_builtin::BuiltinError;
 use mymcps_core::public_url::PublicUrlError;
-use mymcps_deno::DenoError;
 use mymcps_mcp::client::ClientError;
 use mymcps_net::{HttpUrlError, RestrictedEndpointError};
+use mymcps_node::NodeError;
 
 use crate::npm_update::McpNpmUpdateError;
 
@@ -31,9 +31,9 @@ pub enum UpstreamError {
     #[error(transparent)]
     Client(Arc<ClientError>),
 
-    /// An npm MCP could not be started in its Deno sandbox, or failed once started.
+    /// An npm MCP could not be installed or started in its sandbox, or failed once started.
     #[error(transparent)]
-    Deno(Arc<DenoError>),
+    Node(Arc<NodeError>),
 
     /// A document served by the MCP or by its OAuth provider names an
     /// endpoint inside a network the MCP is not part of.
@@ -142,9 +142,9 @@ impl From<ClientError> for UpstreamError {
     }
 }
 
-impl From<DenoError> for UpstreamError {
-    fn from(error: DenoError) -> Self {
-        Self::Deno(Arc::new(error))
+impl From<NodeError> for UpstreamError {
+    fn from(error: NodeError) -> Self {
+        Self::Node(Arc::new(error))
     }
 }
 

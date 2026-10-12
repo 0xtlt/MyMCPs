@@ -170,7 +170,7 @@ fn edit_href(mcp: &McpView, query: &McpListQuery) -> String {
 }
 
 /// The second line of the endpoint: why the last connection failed, else
-/// the version of the package Deno has cached.
+/// the version of the package that is installed.
 fn endpoint_note(mcp: &McpView) -> Markup {
     let error = mcp
         .last_error
@@ -179,8 +179,8 @@ fn endpoint_note(mcp: &McpView) -> Markup {
     html! {
         @if let Some(error) = error {
             span class="cell-sub cell-sub--critical" title=(error) { (error) }
-        } @else if let (McpTransport::Npm, Some(cached)) = (mcp.transport, &mcp.npm_cached_version) {
-            span class="cell-sub" { "cached " (cached) }
+        } @else if let (McpTransport::Npm, Some(installed)) = (mcp.transport, &mcp.npm_installed_version) {
+            span class="cell-sub" { "installed " (installed) }
         }
     }
 }

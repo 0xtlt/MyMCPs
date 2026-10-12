@@ -6,6 +6,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Added
 
+- Added `NPM_SANDBOX`. npm MCPs run in a sandbox of the Linux kernel and do not start where it cannot be enforced; `NPM_SANDBOX=off` starts them without one, with every right of the server, to develop on macOS or Windows. The server says at its start what it found: `npm MCPs run in a sandbox`, or `npm MCPs cannot start` and the reason.
+- Added `NODE_BINARY`, the path of the Node.js binary that runs npm MCPs when it is not the `node` of the `PATH`. It replaces `DENO_PATH`.
 - Added teams, with the roles and rules of Coolify. MCPs, access tokens, approvals, call logs, and analytics belong to a team and are only shown to its members, and an access token reaches the MCPs of its own team only. Every account has a personal team, anyone can create more, and a team switcher at the top of the navigation goes from one to another. On upgrade, everything an instance had goes to the **Root Team**: its first administrator becomes the owner, the other administrators stay admins, members stay members, and each of them also gets a personal team.
 - Added the **owner**, **admin**, and **member** roles of a team. A member reads the MCPs of the team and makes access tokens of their own. An admin also manages MCPs, every access token, members, and invites, and reads the logs and the analytics. An owner also deletes the team and decides who else owns it. Nobody changes or removes someone ranked above them, nor gives a role above their own.
 - Added **super admins**, who run the instance: they change the instance settings, export backups, and manage accounts. It is said of the account, apart from any team: owning or administering a team, the Root Team included, gives no right over the instance. The first account is a super admin, and on upgrade every administrator an instance had becomes one.
@@ -27,6 +29,21 @@ Notable project changes are recorded here in English. Sections are organized by 
 - A backup holds the sign-in protection of each account. The secret of an authenticator app is encrypted again for the instance that imports it; passkeys only keep answering when that instance has the same `APP_URL`.
 - A backup must hold a super admin to be imported, where it had to hold an administrator. A backup made by an earlier version still imports: its administrators become super admins.
 - The database migration that adds teams runs when the server starts and cannot be undone by installing an earlier version, which no longer reads the database afterwards. Export a backup under **Settings → Backup** before you upgrade.
+- npm MCPs are run by Node.js instead of Deno. The package of an MCP is installed with `npm` the first time the MCP is used, in a directory of its own under `mcp-packages` in the data directory, then started with `node` for each request. Every package is downloaded again once after the upgrade, and the first request of an MCP waits for its install. **Update MCP** and the scheduled updates install the latest version beside the one in use, which the requests under way finish on. The MCP list and the edit dialog show the version that is installed.
+- A package that is used by several MCPs is installed once for each: nothing is shared between two MCPs any more.
+- An npm MCP names a package of the npm registry, at a version, a range of versions or a tag. A path, a URL, a git repository or an alias is refused by the form, and when an MCP saved earlier starts.
+- The image contains Node.js 24 with its npm instead of Deno. Running from source needs Node.js with npm instead of Deno to run npm MCPs. `DENO_PATH` and `DENO_DIR` are no longer read and can be deleted from a deployment, and the server deletes the `deno-cache` directory of its data directory when it starts.
+- The environment of an npm MCP no longer takes `NODE_COMPILE_CACHE`, `NODE_V8_COVERAGE`, `NODE_REPL_EXTERNAL_MODULE`, `OPENSSL_CONF` and `OPENSSL_MODULES`, which configure Node.js rather than the package. Names that start with `DENO_` are ordinary variables again.
+
+### Security
+
+- npm MCPs run in a sandbox the Linux kernel enforces, where the permissions of Deno were enforced by the runtime that ran the package. With Landlock, a package reads the files it was installed with and the system's, and reads and writes one directory of its own: the database, the key, `.env` and the files of other MCPs are refused. With seccomp, it starts no other process, sends a signal to none but itself, opens no Unix socket, changes the mode or the owner of no file by its path, and is refused tracing, mounts and namespaces. The sandbox needs no privilege and works in a container without capabilities; it needs Linux 5.13 or later with Landlock enabled on the host. The network of a package stays open, as it was. A server whose application or data directory lies in a directory of the system, such as `/usr`, which every sandboxed process reads, starts no npm MCP and says why.
+- A process of an npm MCP holds at most 2 GiB of memory, 4,096 open files, and cannot push the server's user past 4,096 threads.
+- `npm` installs a package inside the same sandbox, where it writes nothing but the directory it installs into, and runs none of the scripts of the package or of its dependencies. A package cannot write its own code.
+
+### Removed
+
+- Removed Deno from the image and from the requirements of a server run from source.
 
 ## 2026-10-11
 

@@ -25,11 +25,11 @@ enum Outcome {
     Ready,
     /// The cache reloads, and the MCP then fails to start.
     Broken,
-    /// Deno cannot reload the cache.
+    /// npm cannot install the package.
     ReloadFails,
 }
 
-/// The two steps of an update, in place of Deno.
+/// The two steps of an update, in place of npm and Node.js.
 struct Updates {
     core: Arc<Core>,
     outcome: Outcome,
@@ -42,7 +42,7 @@ impl NpmUpdateRuntime for Updates {
         self.reloaded.lock().unwrap().push(mcp.id);
         if self.outcome == Outcome::ReloadFails {
             let secret = self.core.decrypt_secret(mcp.auth_bearer.as_deref());
-            return Err(mymcps_deno::DenoError::CacheReload {
+            return Err(mymcps_node::NodeError::Install {
                 package: mcp.npm_package.clone().unwrap_or_default(),
                 detail: format!("registry said no to {}", secret.unwrap_or_default()),
             }
@@ -145,7 +145,7 @@ async fn refuses_http_mcps() {
     assert_eq!(response.status, StatusCode::FOUND);
     assert_eq!(
         response.flashed("error"),
-        Some(json!("Only Deno npm MCPs can be updated"))
+        Some(json!("Only npm MCPs can be updated"))
     );
     assert!(reloaded.lock().unwrap().is_empty());
 }
@@ -204,7 +204,7 @@ async fn says_why_an_update_did_not_leave_the_mcp_ready() {
     assert_eq!(response.flashed("success"), None);
     assert_eq!(response.flashed("editingMcpId"), Some(json!(mcp.id)));
 
-    // Deno cannot reload the cache: the reason is shown without the secrets of the MCP.
+    // npm cannot install the package: the reason is shown without the secrets of the MCP.
     let (app, _reloaded) = app_updating(Outcome::ReloadFails).await;
     let admin = create_admin(&app).await;
     let token = encrypt(&app, "registry-token-value");
@@ -224,7 +224,7 @@ async fn says_why_an_update_did_not_leave_the_mcp_ready() {
     assert_eq!(
         response.flashed("error"),
         Some(json!(
-            "Failed to reload Deno cache for \"@example/latest-mcp\". registry said no to [REDACTED]"
+            "Failed to install npm package \"@example/latest-mcp\". registry said no to [REDACTED]"
         ))
     );
     assert_eq!(response.flashed("editingMcpId"), Some(json!(mcp.id)));
