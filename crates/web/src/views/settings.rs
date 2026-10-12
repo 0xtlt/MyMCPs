@@ -1,6 +1,5 @@
 //! The Settings page: the account of the signed-in person and, for those
-//! who run the instance (the owners and administrators of the Root Team),
-//! its settings.
+//! who run the instance (the super admins), its settings.
 
 use maud::{Markup, html};
 use mymcps_core::models::{DEFAULT_MCP_AUTO_UPDATE_CRON, InstanceSetting, McpLogLevel, User};
@@ -258,7 +257,7 @@ fn backup_section() -> Markup {
     html! {
         section class="section" aria-labelledby="backup-title" {
             div class="section__intro" {
-                h2 class="section__title" id="backup-title" { "Backup " span class="badge badge--info badge--no-dot" { "Instance admin" } }
+                h2 class="section__title" id="backup-title" { "Backup " span class="badge badge--info badge--no-dot" { "Super admin" } }
                 p class="section__description" { "Export everything this instance stores to one encrypted file. Import it on the setup screen of a new instance." }
             }
             div class="card" {
@@ -367,7 +366,7 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
     html! {
         section class="section" aria-labelledby="instance-title" {
             div class="section__intro" {
-                h2 class="section__title" id="instance-title" { "My Instance " span class="badge badge--info badge--no-dot" { "Instance admin" } }
+                h2 class="section__title" id="instance-title" { "My Instance " span class="badge badge--info badge--no-dot" { "Super admin" } }
                 p class="section__description" { "Configure settings that apply to everyone using this MyMCPs instance." }
             }
             form class="card" method="post" action="/settings/mcp-logging?_method=PATCH" {

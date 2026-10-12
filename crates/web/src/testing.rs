@@ -463,9 +463,10 @@ impl TestResponse {
 /// has the password `password123`.
 ///
 /// Users, MCPs and invites go to the Root Team unless a test says otherwise:
-/// an administrator of it runs the instance, a member of it only reads its
-/// MCPs. A user made here has no personal team: the Root Team is the one
-/// they work in.
+/// an administrator of it changes it, a member of it only reads its MCPs.
+/// Neither runs the instance: `create_super_admin` makes someone who does.
+/// A user made here has no personal team: the Root Team is the one they
+/// work in.
 pub mod factories {
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -515,6 +516,25 @@ pub mod factories {
         Team::attach(&*app.core.db, team_id, user.id, role)
             .await
             .expect("a new member");
+    }
+
+    /// Someone who runs the instance, as its first account does: a super
+    /// admin, who owns the Root Team.
+    pub async fn create_super_admin(app: &TestApp) -> User {
+        let mut user = create_owner(app).await;
+        make_super_admin(app, &mut user).await;
+        user
+    }
+
+    pub async fn create_super_admin_with(app: &TestApp, email: &str) -> User {
+        let mut user = create_user(app, Some(email), TeamRole::Owner).await;
+        make_super_admin(app, &mut user).await;
+        user
+    }
+
+    pub async fn make_super_admin(app: &TestApp, user: &mut User) {
+        user.is_super_admin = true;
+        user.save(&*app.core.db).await.expect("a super admin");
     }
 
     pub async fn create_owner(app: &TestApp) -> User {

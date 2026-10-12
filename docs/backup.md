@@ -13,7 +13,7 @@ It does not hold the files MyMCPs can make again: the Deno cache and the sandbox
 
 ## Export a backup
 
-Only an owner or an admin of the Root Team can export: a backup holds what every team stores.
+Only a super admin can export: a backup holds what every team stores.
 
 1. Open **Settings**. Under **Backup**, select **Export backup**.
 2. Choose a **Backup password** and type it again. Use one you do not use elsewhere, and store it in a password manager: the file cannot be opened without it, and nobody can recover it.

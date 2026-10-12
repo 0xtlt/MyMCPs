@@ -42,9 +42,9 @@ pub struct FeatureRoutes {
     /// Pages of an owner or an administrator of the team the person works
     /// in. Anyone else is sent home with a message.
     pub admin: Router<AppState>,
-    /// Pages of those who run the instance: the owners and administrators
-    /// of the Root Team. Anyone else is sent home with a message.
-    pub instance_admin: Router<AppState>,
+    /// Pages of those who run the instance: the super admins, whatever
+    /// they are in a team. Anyone else is sent home with a message.
+    pub super_admin: Router<AppState>,
     /// First-run pages, gone once the first account exists.
     pub first_run: Router<AppState>,
     /// First-run pages that read their body themselves: a session and who
@@ -62,7 +62,7 @@ impl FeatureRoutes {
         self.guest = self.guest.merge(other.guest);
         self.signed_in = self.signed_in.merge(other.signed_in);
         self.admin = self.admin.merge(other.admin);
-        self.instance_admin = self.instance_admin.merge(other.instance_admin);
+        self.super_admin = self.super_admin.merge(other.super_admin);
         self.first_run = self.first_run.merge(other.first_run);
         self.first_run_raw = self.first_run_raw.merge(other.first_run_raw);
         self

@@ -5,7 +5,9 @@
 use http::StatusCode;
 use mymcps_core::models::User;
 use mymcps_web::auth::{REMEMBER_COOKIE, SESSION_STAMP_KEY, SessionStamp};
-use mymcps_web::testing::factories::{create_admin, create_admin_with, create_member_with};
+use mymcps_web::testing::factories::{
+    create_admin, create_admin_with, create_member_with, create_super_admin_with,
+};
 use mymcps_web::testing::{TestApp, TestResponse};
 use serde_json::{Map, json};
 
@@ -139,8 +141,9 @@ async fn allows_an_authenticated_user_to_reach_the_dashboard() {
     assert!(page.contains("Test User"));
     assert!(page.contains("<body class=\"app\">"));
     assert!(page.contains("aria-current=\"page\""));
-    // An administrator of the Root Team sees the whole navigation, and
-    // the team they work in at the top of it.
+    // An administrator of a team sees everything of that team, and the
+    // team they work in at the top of the navigation. The accounts of the
+    // instance are for those who run it.
     for entry in [
         "/mcps",
         "/tokens",
@@ -148,11 +151,15 @@ async fn allows_an_authenticated_user_to_reach_the_dashboard() {
         "/logs",
         "/analytics",
         "/team",
-        "/users",
         "/settings",
     ] {
         assert!(page.contains(&format!("href=\"{entry}\"")), "{entry}");
     }
+    assert!(!page.contains("href=\"/users\""));
+    let super_admin = create_super_admin_with(&app, "super@example.com").await;
+    let page = app.get("/").login_as(&super_admin).send().await.text();
+    assert!(page.contains("href=\"/users\""));
+    let page = app.get("/").login_as(&admin).send().await.text();
     assert!(page.contains(
         "<button type=\"button\" class=\"nav-item\" popovertarget=\"team-menu\" aria-label=\"Team: Root Team. Switch team\">"
     ));
@@ -173,7 +180,7 @@ async fn a_member_does_not_see_the_administration_entries() {
     for entry in ["/mcps", "/tokens", "/approvals", "/settings"] {
         assert!(page.contains(&format!("href=\"{entry}\"")), "{entry}");
     }
-    for entry in ["/logs", "/analytics", "/invites"] {
+    for entry in ["/logs", "/analytics", "/invites", "/users"] {
         assert!(!page.contains(&format!("href=\"{entry}\"")), "{entry}");
     }
     assert!(page.contains("<span class=\"nav-user__role\">member</span>"));
@@ -427,7 +434,8 @@ async fn creates_the_first_user_as_an_admin() {
         .unwrap()
         .unwrap();
     assert_eq!(user.full_name.as_deref(), Some("First Admin"));
-    // The first account owns the Root Team, and so runs the instance.
+    // The first account runs the instance, and owns the Root Team.
+    assert!(user.is_super_admin);
     assert_eq!(
         mymcps_core::models::Team::role_of(
             &*app.core.db,

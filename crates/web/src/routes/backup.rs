@@ -73,7 +73,7 @@ const WHOLE_UPLOAD: Duration = Duration::from_secs(30 * 60);
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
-        instance_admin: Router::new().route("/settings/backup", post(export)),
+        super_admin: Router::new().route("/settings/backup", post(export)),
         first_run_raw: Router::new().route(IMPORT_PATH, get(show_import).post(import)),
         ..Default::default()
     }

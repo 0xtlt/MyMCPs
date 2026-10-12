@@ -26,7 +26,7 @@ use super::{
 use crate::context::Core;
 use crate::crypto::Encryption;
 use crate::db::migrations::MIGRATIONS;
-use crate::models::{InstanceSetting, Team, User};
+use crate::models::{InstanceSetting, User};
 
 /// The name of the decrypted database in its [`BackupDir`].
 const DATABASE_FILE: &str = "db.sqlite3";
@@ -160,7 +160,7 @@ fn quote(identifier: &str) -> String {
 ///    holds tables and indexes only, and only migrations this version
 ///    knows;
 /// 5. the migrations it lacks are run on it, and it must then hold someone
-///    who runs the instance: an owner or an administrator of the Root Team;
+///    who runs the instance: a super admin;
 /// 6. its secrets are encrypted with the key of this instance when the
 ///    backup was made with another;
 /// 7. its rows replace those of the instance, in one transaction that
@@ -305,18 +305,14 @@ async fn readable(connection: &mut SqliteConnection) -> Result<(), BackupError> 
         .await
         .map_err(blame)?;
     // Read after the migrations, which is when every backup says who runs
-    // the instance the same way: the owners and administrators of the Root
-    // Team. Without one, nobody could change its settings.
-    let administrators = sqlx::query_as::<_, User>(
-        "select `users`.* from `users` \
-         inner join `team_user` on `team_user`.`user_id` = `users`.`id` \
-         where `team_user`.`team_id` = ? and `team_user`.`role` in ('owner', 'admin')",
-    )
-    .bind(Team::ROOT_ID)
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(blame)?;
-    if administrators.is_empty() {
+    // the instance the same way: its super admins. Without one, nobody
+    // could change its settings.
+    let super_admins =
+        sqlx::query_as::<_, User>("select * from `users` where `is_super_admin` = 1")
+            .fetch_all(&mut *connection)
+            .await
+            .map_err(blame)?;
+    if super_admins.is_empty() {
         return Err(BackupError::NoAdministrator);
     }
     Ok(())

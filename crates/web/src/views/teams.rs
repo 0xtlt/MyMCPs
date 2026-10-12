@@ -257,7 +257,7 @@ fn general(context: &PageContext, team: &TeamPage) -> Markup {
 fn danger_zone(context: &PageContext, team: &TeamPage) -> Markup {
     let current = &team.team.team;
     let reason = if current.is_root() {
-        Some("The Root Team runs this instance and cannot be deleted.")
+        Some("The Root Team is the first team of this instance and cannot be deleted.")
     } else if current.personal_team {
         Some("This is your personal team. It stays as long as your account does.")
     } else if team.mcps > 0 {
@@ -411,33 +411,64 @@ pub struct UserRow {
     pub user: User,
     /// The name of each team, and what the account is in it.
     pub teams: Vec<(String, TeamRole)>,
-    /// What the account is in the Root Team, if it is in it.
-    pub root_role: Option<TeamRole>,
+}
+
+/// A dialog of the Users page. It acts on one account, and asks the person
+/// for their own password.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UserDialog {
+    /// Make the account a super admin, or an account like any other.
+    SuperAdmin,
+    Delete,
+}
+
+impl UserDialog {
+    pub const ALL: [Self; 2] = [Self::SuperAdmin, Self::Delete];
+
+    /// The id of the `<dialog>`, which is also the fragment the page script
+    /// asks for.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::SuperAdmin => "super-admin",
+            Self::Delete => "delete-user",
+        }
+    }
+
+    /// Where the dialog of an account is drawn open: the address a row
+    /// links to.
+    pub fn href(self, account: &User) -> String {
+        match self {
+            Self::SuperAdmin => format!("/users/{}/super-admin", account.id),
+            Self::Delete => format!("/users/{}/delete", account.id),
+        }
+    }
+
+    /// The form of the dialog: what its `[data-fragment]` holds, and what a
+    /// refused submission of the page's script gets back.
+    pub fn form(self, context: &PageContext, account: &User, form: &FormState) -> Markup {
+        match self {
+            Self::SuperAdmin => super_admin_form(context, account, form),
+            Self::Delete => delete_user_form(context, account, form),
+        }
+    }
+}
+
+/// The dialog the Users page shows open, on which account, with what was
+/// refused when its form was posted without the page's script.
+#[derive(Clone, Copy)]
+pub struct OpenUserDialog<'a> {
+    pub dialog: UserDialog,
+    pub account: &'a User,
+    pub form: &'a FormState,
 }
 
 /// What the Users page shows.
 pub struct UsersPage<'a> {
     /// Oldest first.
     pub users: &'a [UserRow],
-    /// The signed-in person, who cannot delete their own account.
+    /// The signed-in person, who changes nothing of their own account here.
     pub current_user_id: i64,
-    /// What they are in the Root Team: they delete nobody ranked above them.
-    pub current_root_role: Option<TeamRole>,
-    /// The account the page shows the "Delete user" dialog open on, with
-    /// what was refused when its form was posted without the page's script.
-    pub deleting: Option<(&'a User, &'a FormState)>,
-}
-
-impl UsersPage<'_> {
-    fn may_delete(&self, row: &UserRow) -> bool {
-        row.user.id != self.current_user_id
-            && self
-                .current_root_role
-                .is_some_and(|own| match row.root_role {
-                    Some(theirs) => own.may_manage(theirs),
-                    None => own.is_admin(),
-                })
-    }
+    pub open: Option<OpenUserDialog<'a>>,
 }
 
 fn team_names(row: &UserRow) -> String {
@@ -448,29 +479,94 @@ fn team_names(row: &UserRow) -> String {
         .join(", ")
 }
 
-/// What the account is for the instance: its role in the Root Team, when
-/// that role runs it.
+/// What the account is for the instance: one of those who run it, or not.
 fn instance_badge(row: &UserRow) -> Markup {
     html! {
-        @match row.root_role {
-            Some(role) if role.is_admin() => { span class="badge badge--info" { "Instance " (role.as_str()) } }
-            _ => { span class="badge" { "User" } }
+        @if row.user.is_super_admin {
+            span class="badge badge--info" { "Super admin" }
+        } @else {
+            span class="badge" { "User" }
         }
     }
 }
 
-/// The dialog that deletes an account. The page script loads its form for
-/// the row that was chosen; `/users/{id}/delete` draws it open.
-pub const DELETE_USER_DIALOG_ID: &str = "delete-user";
-
-/// Where the dialog of an account is: the address a row links to.
-fn delete_user_href(row: &UserRow) -> String {
-    format!("/users/{}/delete", row.user.id)
+/// The menu of an account: whether it runs the instance, and the way out of
+/// it. Each entry opens a dialog, which the page script loads for the row
+/// that was chosen.
+fn user_menu(row: &UserRow, id: &str) -> Markup {
+    let account = &row.user;
+    html! {
+        button type="button" class="icon-button" popovertarget=(id)
+            aria-label=(format!("Actions for {}", account.display_name())) { (icon("ellipsis")) }
+        div class="menu" id=(id) popover role="menu" {
+            a class="menu__item" role="menuitem" href=(UserDialog::SuperAdmin.href(account))
+                data-dialog-open="#super-admin" data-dialog-fetch {
+                @if account.is_super_admin {
+                    (icon("user")) "Remove super admin"
+                } @else {
+                    (icon("shield-check")) "Make super admin"
+                }
+            }
+            div class="menu__separator" {}
+            a class="menu__item menu__item--critical" role="menuitem" href=(UserDialog::Delete.href(account))
+                data-dialog-open="#delete-user" data-dialog-fetch { (icon("trash")) "Delete user" }
+        }
+    }
 }
 
-/// The form of the "Delete user" dialog: what its `[data-fragment]` holds,
-/// and what a refused submission of the page's script gets back. Deleting
-/// an account cannot be undone, so the person types their own password.
+/// The form of the "Super admin" dialog. It says what the account becomes,
+/// so that it does the same whatever the account has become meanwhile. It
+/// hands over the instance, so the person types their own password.
+pub fn super_admin_form(context: &PageContext, account: &User, form: &FormState) -> Markup {
+    let name = account.display_name();
+    let grant = !account.is_super_admin;
+    html! {
+        form method="post" action=(format!("/users/{}/super-admin?_method=PATCH", account.id)) data-async {
+            (context.csrf_field())
+            input type="hidden" name="superAdmin" value=(if grant { "true" } else { "false" });
+            div class="dialog__header" {
+                div class="dialog__heading" {
+                    h2 class="dialog__title" id="super-admin-title" {
+                        @if grant { "Make " (name) " a super admin?" } @else { "Remove " (name) " from the super admins?" }
+                    }
+                    p class="dialog__subtitle" { (account.email) }
+                }
+                button type="button" class="icon-button" data-dialog-close aria-label="Close" { (icon("x")) }
+            }
+            div class="dialog__body" {
+                div class="stack" {
+                    p class="text-secondary" {
+                        @if grant {
+                            (name) " will run this instance as you do: change its settings, export backups of what every team stores, delete accounts, and decide who else is a super admin. Their teams stay as they are."
+                        } @else {
+                            (name) " keeps their account and their teams, and no longer changes the instance settings, exports backups, or manages accounts."
+                        }
+                    }
+                    (password_field_with_help(
+                        form,
+                        "super-admin-password",
+                        "currentPassword",
+                        "Your password",
+                        "current-password",
+                        !form.has_errors(),
+                        Some("Your account password, to confirm it is you."),
+                    ))
+                }
+            }
+            div class="dialog__footer" {
+                button type="button" class="button button--secondary" data-dialog-close { "Cancel" }
+                @if grant {
+                    button type="submit" class="button button--primary" { "Make super admin" }
+                } @else {
+                    button type="submit" class="button button--critical" { "Remove super admin" }
+                }
+            }
+        }
+    }
+}
+
+/// The form of the "Delete user" dialog. Deleting an account cannot be
+/// undone, so the person types their own password.
 pub fn delete_user_form(context: &PageContext, account: &User, form: &FormState) -> Markup {
     let name = account.display_name();
     html! {
@@ -518,7 +614,7 @@ pub fn users_page(context: &PageContext, page: &UsersPage) -> Markup {
             div class="page-header__text" {
                 h1 class="page-header__title" { "Users" }
                 p class="page-header__subtitle" {
-                    "Every account of this instance, whichever team it works in. Owners and admins of the Root Team run the instance."
+                    "Every account of this instance, whichever team it works in. Super admins run the instance: its settings, its backups, and its accounts."
                 }
             }
             div class="page-header__actions" {
@@ -550,14 +646,12 @@ pub fn users_page(context: &PageContext, page: &UsersPage) -> Markup {
                                 td class="cell-secondary" { (time_minute(row.user.created_at)) }
                                 @if row.user.id == page.current_user_id {
                                     td class="cell-end cell-tertiary" { "You" }
-                                } @else if page.may_delete(row) {
+                                } @else {
                                     td class="cell-end" {
                                         span class="row-actions" {
-                                            a class="button" href=(delete_user_href(row)) data-dialog-open="#delete-user" data-dialog-fetch { "Delete" }
+                                            (user_menu(row, &format!("user-{}-menu", row.user.id)))
                                         }
                                     }
-                                } @else {
-                                    td class="cell-end" {}
                                 }
                             }
                         }
@@ -579,14 +673,8 @@ pub fn users_page(context: &PageContext, page: &UsersPage) -> Markup {
                         (instance_badge(row))
                         @if row.user.id == page.current_user_id {
                             span class="list-row__meta list-row__meta--slot" { "You" }
-                        } @else if page.may_delete(row) {
-                            @let menu = format!("user-{}-menu", row.user.id);
-                            button type="button" class="icon-button" popovertarget=(menu)
-                                aria-label=(format!("Actions for {}", row.user.display_name())) { (icon("ellipsis")) }
-                            div class="menu" id=(menu) popover role="menu" {
-                                a class="menu__item menu__item--critical" role="menuitem" href=(delete_user_href(row))
-                                    data-dialog-open="#delete-user" data-dialog-fetch { (icon("trash")) "Delete user" }
-                            }
+                        } @else {
+                            (user_menu(row, &format!("user-{}-list-menu", row.user.id)))
                         }
                     }
                 }
@@ -595,18 +683,21 @@ pub fn users_page(context: &PageContext, page: &UsersPage) -> Markup {
     };
     // What the open dialog already says under its field is not said again in a toast.
     let mut context = context.clone();
-    if let Some((_, form)) = page.deleting
-        && form.has_errors()
-        && context.flash_error.as_deref() == form.first_error()
+    if let Some(open) = page.open
+        && open.form.has_errors()
+        && context.flash_error.as_deref() == open.form.first_error()
     {
         context.flash_error = None;
     }
     let context = &context;
     let overlays = html! {
-        dialog class="dialog dialog--sm" id=(DELETE_USER_DIALOG_ID) aria-labelledby="delete-user-title" data-dialog-reset
-            data-dialog-return="/users" data-open[page.deleting.is_some()] {
-            div data-fragment {
-                @if let Some((account, form)) = page.deleting { (delete_user_form(context, account, form)) }
+        @for dialog in UserDialog::ALL {
+            @let open = page.open.filter(|open| open.dialog == dialog);
+            dialog class="dialog dialog--sm" id=(dialog.id()) aria-labelledby=(format!("{}-title", dialog.id())) data-dialog-reset
+                data-dialog-return="/users" data-open[open.is_some()] {
+                div data-fragment {
+                    @if let Some(open) = open { (dialog.form(context, open.account, open.form)) }
+                }
             }
         }
     };

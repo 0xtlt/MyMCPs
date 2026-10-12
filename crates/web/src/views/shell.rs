@@ -34,9 +34,8 @@ pub struct PageContext {
     pub team: Option<Membership>,
     /// Their teams, in the order they joined them, for the team switcher.
     pub teams: Vec<Membership>,
-    /// Whether they run the instance: an owner or an administrator of the
-    /// Root Team.
-    pub instance_admin: bool,
+    /// Whether they run the instance, whatever they are in their teams.
+    pub super_admin: bool,
     /// Whether a visitor may create an account. Only read for a visitor.
     pub registration_open: bool,
     /// The path of the request, to mark the current navigation entry.
@@ -107,7 +106,7 @@ where
             .cloned()
             .unwrap_or_default();
         let auth = parts.extensions.get::<Auth>().cloned().unwrap_or_default();
-        let instance_admin = auth.is_instance_admin();
+        let super_admin = auth.is_super_admin();
         let Auth { user, teams, team } = auth;
         let cookies = parts
             .extensions
@@ -136,7 +135,7 @@ where
             user,
             team,
             teams,
-            instance_admin,
+            super_admin,
             registration_open,
             path: parts.uri.path().to_string(),
             csrf: csrf_token(&session),
@@ -294,7 +293,7 @@ fn sidebar(context: &PageContext, user: &User) -> Markup {
                 }
                 p class="nav-section" { "Instance" }
                 (nav_item(context, "/team", "users", "Team"))
-                @if context.instance_admin { (nav_item(context, "/users", "user", "Users")) }
+                @if context.super_admin { (nav_item(context, "/users", "user", "Users")) }
                 (nav_item(context, "/settings", "settings", "Settings"))
             }
             @if let (Some(gateway_url), true) = (context.gateway_url(), context.app_url_configured) {

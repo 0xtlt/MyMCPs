@@ -23,7 +23,7 @@ fn error_page(nonce: String, status: StatusCode) -> Markup {
         user: None,
         team: None,
         teams: Vec::new(),
-        instance_admin: false,
+        super_admin: false,
         registration_open: false,
         path: String::new(),
         csrf: String::new(),

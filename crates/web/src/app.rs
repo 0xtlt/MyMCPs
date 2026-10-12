@@ -60,8 +60,8 @@ pub fn router(state: AppState) -> axum::routing::RouterIntoService<axum::body::B
         )
         .merge(
             features
-                .instance_admin
-                .layer(from_fn(guards::require_instance_admin))
+                .super_admin
+                .layer(from_fn(guards::require_super_admin))
                 .layer(from_fn(guards::require_auth)),
         )
         .layer(from_fn_with_state(core.clone(), guards::needs_setup));

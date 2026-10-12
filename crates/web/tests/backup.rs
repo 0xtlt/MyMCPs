@@ -23,7 +23,7 @@ use mymcps_web::csrf::csrf_token;
 use mymcps_web::routes::backup::BackupWork;
 use mymcps_web::session::Session;
 use mymcps_web::testing::factories::{
-    PASSWORD, create_admin, create_admin_with, create_mcp, create_member,
+    PASSWORD, create_mcp, create_member, create_super_admin, create_super_admin_with,
 };
 use mymcps_web::testing::{TestApp, TestRequest, TestResponse, multipart_form};
 use serde_json::{Map, Value, json};
@@ -234,7 +234,7 @@ async fn snapshot(app: &TestApp, tamper: &[&'static str]) -> Vec<u8> {
 /// An instance with one administrator, to take copies of.
 async fn instance_with_admin() -> (TestApp, User) {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "ada@example.com").await;
+    let admin = create_super_admin_with(&app, "ada@example.com").await;
     (app, admin)
 }
 
@@ -243,7 +243,7 @@ async fn instance_with_admin() -> (TestApp, User) {
 #[tokio::test]
 async fn only_an_administrator_is_offered_and_given_a_backup() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let member = create_member(&app).await;
     let fields = [
         ("password", BACKUP_PASSWORD),
@@ -263,7 +263,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
     assert_redirect(&refused, "/");
     assert_eq!(
         refused.flashed("error"),
-        Some(json!("Instance admin access required"))
+        Some(json!("Super admin access required"))
     );
     assert!(refused.header("content-disposition").is_none());
 
@@ -283,7 +283,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
 
     let page = app.get("/settings").login_as(&admin).send().await.text();
     assert!(page.contains(
-        "<h2 class=\"section__title\" id=\"backup-title\">Backup <span class=\"badge badge--info badge--no-dot\">Instance admin</span></h2>"
+        "<h2 class=\"section__title\" id=\"backup-title\">Backup <span class=\"badge badge--info badge--no-dot\">Super admin</span></h2>"
     ));
     assert!(page.contains("Export everything this instance stores to one encrypted file. Import it on the setup screen of a new instance."));
     assert!(page.contains("<span class=\"detail-row__label\">Export backup</span>"));
@@ -328,7 +328,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
 #[tokio::test]
 async fn refuses_an_export_without_the_account_password_and_counts_the_guesses() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let guess = async |current: &str| {
         export(
             &app,
@@ -397,7 +397,7 @@ async fn refuses_an_export_without_the_account_password_and_counts_the_guesses()
 #[tokio::test]
 async fn refuses_a_backup_password_that_is_short_or_typed_two_ways() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     let short = export_with(&app, &admin, "7 chars").await;
     assert_redirect(&short, "/settings");
@@ -469,7 +469,7 @@ async fn refuses_a_backup_password_that_is_short_or_typed_two_ways() {
 #[tokio::test]
 async fn exports_the_instance_as_one_encrypted_file() {
     let app = fresh_instance().await;
-    let admin = create_admin_with(&app, "ada@example.com").await;
+    let admin = create_super_admin_with(&app, "ada@example.com").await;
     let mcp = create_mcp(&app, admin.id, |mcp| {
         mcp.name = "Notes".into();
         mcp.slug = "notes".into();
@@ -725,7 +725,7 @@ async fn assert_secrets(app: &TestApp, secrets: &Secrets, stranger: &Encryption)
 async fn an_instance_is_set_up_from_the_backup_of_another_one() {
     // The instance that is backed up.
     let source = fresh_instance().await;
-    let admin = create_admin_with(&source, "ada@example.com").await;
+    let admin = create_super_admin_with(&source, "ada@example.com").await;
     let member = create_member(&source).await;
     let secrets = populate_secrets(&source, &admin).await;
     assert_secrets(&source, &secrets, &Encryption::new(&generate_app_key())).await;
@@ -805,8 +805,8 @@ async fn an_instance_is_set_up_from_the_backup_of_another_one() {
         let home = target.get("/").session(signed_in.session()).send().await;
         assert_eq!(home.status, StatusCode::OK, "{email}");
     }
-    let users: Vec<(i64, String, String)> = sqlx::query_as(
-        "select `users`.`id`, `users`.`email`, `team_user`.`role` from `users` \
+    let users: Vec<(i64, String, String, bool)> = sqlx::query_as(
+        "select `users`.`id`, `users`.`email`, `team_user`.`role`, `users`.`is_super_admin` from `users` \
              inner join `team_user` on `team_user`.`user_id` = `users`.`id` \
              where `team_user`.`team_id` = 1 order by `users`.`id`",
     )
@@ -816,8 +816,13 @@ async fn an_instance_is_set_up_from_the_backup_of_another_one() {
     assert_eq!(
         users,
         [
-            (admin.id, "ada@example.com".to_string(), "admin".to_string()),
-            (member.id, member.email.clone(), "member".to_string()),
+            (
+                admin.id,
+                "ada@example.com".to_string(),
+                "owner".to_string(),
+                true
+            ),
+            (member.id, member.email.clone(), "member".to_string(), false),
         ]
     );
 
@@ -972,7 +977,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
         .await
         .unwrap()
         .unwrap();
-    assert!(user.is_instance_admin(&*target.core.db).await.unwrap());
+    assert!(user.is_super_admin);
     assert_eq!(user.session_version, 1);
     let signed_in = target
         .post("/login")
@@ -1020,7 +1025,7 @@ async fn refuses_a_database_that_does_not_count_its_ids() {
     })
     .await;
     sqlx::query(
-        "insert into `users` (`id`, `full_name`, `email`, `password`, `created_at`) values (1, 'Admin', 'admin@example.com', ?, '2026-01-01 00:00:00')",
+        "insert into `users` (`id`, `full_name`, `email`, `password`, `created_at`, `is_super_admin`) values (1, 'Admin', 'admin@example.com', ?, '2026-01-01 00:00:00', 1)",
     )
     .bind(hash_password(PASSWORD))
     .execute(&mut database)
@@ -1052,7 +1057,7 @@ async fn the_import_is_gone_once_the_instance_is_set_up() {
     let file = seal(&snapshot(&source, &[]).await);
 
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "existing@example.com").await;
+    let admin = create_super_admin_with(&app, "existing@example.com").await;
 
     assert_redirect(&app.get(IMPORT).send().await, "/login");
     assert_redirect(&app.get(IMPORT).login_as(&admin).send().await, "/");
@@ -1088,7 +1093,7 @@ async fn an_import_stops_when_the_instance_was_set_up_while_it_ran() {
     // The first account was created between the check of the route and the
     // moment the rows are replaced.
     let app = TestApp::new().await;
-    create_admin_with(&app, "first@example.com").await;
+    create_super_admin_with(&app, "first@example.com").await;
     let dir = BackupDir::create(&app.core.config).unwrap();
     let upload = dir.path().join("upload.mymcps");
     std::fs::write(&upload, &file).unwrap();
@@ -1302,7 +1307,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         (
             "a trigger",
             &[
-                "create trigger `promote` after insert on `users` begin update `team_user` set `role` = 'owner'; end",
+                "create trigger `promote` after insert on `users` begin update `users` set `is_super_admin` = 1; end",
             ],
             DAMAGED,
         ),
@@ -1320,7 +1325,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         ),
         (
             "no administrator",
-            &["update `team_user` set `role` = 'member'"],
+            &["update `users` set `is_super_admin` = 0"],
             NO_ADMINISTRATOR,
         ),
         (
@@ -1393,7 +1398,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
             &[
                 "create table `copy` as select * from `users`",
                 "drop table `users`",
-                "create table `users` (`id` integer not null primary key autoincrement, `full_name` varchar(255) null, `email` varchar(254) null, `password` varchar(255) not null, `created_at` datetime not null, `updated_at` datetime null, `session_version` integer not null default '1', `current_team_id` integer null references `teams`(`id`) on delete SET NULL)",
+                "create table `users` (`id` integer not null primary key autoincrement, `full_name` varchar(255) null, `email` varchar(254) null, `password` varchar(255) not null, `created_at` datetime not null, `updated_at` datetime null, `session_version` integer not null default '1', `current_team_id` integer null references `teams`(`id`) on delete SET NULL, `is_super_admin` boolean not null default '0')",
                 "insert into `users` select * from `copy`",
                 "drop table `copy`",
                 "update `users` set `email` = null",

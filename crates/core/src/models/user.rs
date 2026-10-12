@@ -19,6 +19,10 @@ model! {
         pub session_version: i64,
         /// The team this person last worked in, shown when they sign in.
         pub current_team_id: Option<i64>,
+        /// Whether this person runs the instance: its settings, its backups,
+        /// its accounts. It belongs to the account, not to a role in a team:
+        /// running a team, the Root Team included, gives none of it.
+        pub is_super_admin: bool,
     }
 }
 
@@ -61,11 +65,13 @@ impl User {
             .unwrap_or(&self.email)
     }
 
-    /// Store the first account of an instance, which owns the Root Team.
+    /// Store the first account of an instance: its first super admin, who
+    /// owns the Root Team.
     pub async fn create_first(
         &mut self,
         transaction: &mut Transaction<'_, Sqlite>,
     ) -> Result<(), sqlx::Error> {
+        self.is_super_admin = true;
         self.insert(&mut **transaction).await?;
         Team::attach(&mut **transaction, Team::ROOT_ID, self.id, TeamRole::Owner).await
     }
@@ -79,15 +85,42 @@ impl User {
         Team::create_personal(transaction, self).await
     }
 
-    /// Whether this person runs the instance: an owner or an administrator
-    /// of the Root Team, whichever team they are working in.
-    pub async fn is_instance_admin<'e, E>(&self, db: E) -> Result<bool, sqlx::Error>
+    /// How many accounts run the instance.
+    pub async fn super_admin_count<'e, E>(db: E) -> Result<i64, sqlx::Error>
     where
         E: SqliteExecutor<'e>,
     {
-        Ok(Team::role_of(db, Team::ROOT_ID, self.id)
-            .await?
-            .is_some_and(TeamRole::is_admin))
+        sqlx::query_scalar("select count(*) from `users` where `is_super_admin` = 1")
+            .fetch_one(db)
+            .await
+    }
+
+    /// Make this account a super admin, or an account like any other, as
+    /// the write of one transaction. Nothing is written, and `false` is
+    /// returned, when that would leave the instance with nobody to run it.
+    pub async fn set_super_admin(
+        transaction: &mut Transaction<'_, Sqlite>,
+        user_id: i64,
+        super_admin: bool,
+    ) -> Result<bool, sqlx::Error> {
+        if !super_admin {
+            let others: i64 = sqlx::query_scalar(
+                "select count(*) from `users` where `is_super_admin` = 1 and `id` <> ?",
+            )
+            .bind(user_id)
+            .fetch_one(&mut **transaction)
+            .await?;
+            if others == 0 {
+                return Ok(false);
+            }
+        }
+        sqlx::query("update `users` set `is_super_admin` = ?, `updated_at` = ? where `id` = ?")
+            .bind(super_admin)
+            .bind(Timestamp::now())
+            .bind(user_id)
+            .execute(&mut **transaction)
+            .await?;
+        Ok(true)
     }
 
     /// Remember the team this person works in.
@@ -124,7 +157,7 @@ impl User {
             .await
     }
 
-    /// Whether the first account, which owns the Root Team, exists.
+    /// Whether the first account, which runs the instance, exists.
     pub async fn setup_complete<'e, E>(db: E) -> Result<bool, sqlx::Error>
     where
         E: SqliteExecutor<'e>,

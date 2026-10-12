@@ -32,7 +32,7 @@ async fn users_sign_in_and_change_their_password() {
 
     let mut user = admin(db).await;
     assert!(user.id > 0);
-    assert!(user.is_instance_admin(&**db).await.unwrap());
+    assert!(user.is_super_admin, "the first account runs the instance");
     assert_eq!(user.initials(), "AL");
     assert_eq!(user.session_version, 1);
     assert!(User::setup_complete(&**db).await.unwrap());
@@ -440,19 +440,23 @@ async fn every_account_has_a_team_and_the_first_one_owns_the_root_team() {
     assert_eq!(personal.name, "Grace Hopper's Team");
     assert!(personal.personal_team && !personal.is_root());
     assert_eq!(roles(db, personal.id).await, [(grace.id, TeamRole::Owner)]);
-    assert!(!grace.is_instance_admin(&**db).await.unwrap());
+    assert!(!grace.is_super_admin);
     let (nameless, team) = account(db, "nameless@example.com", None).await;
     assert_eq!(team.name, "nameless@example.com's Team");
 
-    // Who runs the instance is said by the Root Team, and by nothing else.
+    // Who runs the instance is said by the account, and by no team: an
+    // administrator of the Root Team runs that team only.
     Team::attach(&**db, Team::ROOT_ID, grace.id, TeamRole::Admin)
         .await
         .unwrap();
     Team::attach(&**db, Team::ROOT_ID, nameless.id, TeamRole::Member)
         .await
         .unwrap();
-    assert!(grace.is_instance_admin(&**db).await.unwrap());
-    assert!(!nameless.is_instance_admin(&**db).await.unwrap());
+    for account in [&grace, &nameless] {
+        let account = User::find(&**db, account.id).await.unwrap().unwrap();
+        assert!(!account.is_super_admin);
+    }
+    assert_eq!(User::super_admin_count(&**db).await.unwrap(), 1);
     assert_eq!(Team::owner_count(&**db, Team::ROOT_ID).await.unwrap(), 1);
     assert!(
         Team::attach(&**db, Team::ROOT_ID, grace.id, TeamRole::Member)
@@ -603,8 +607,83 @@ async fn deleting_an_account_settles_the_teams_it_was_in() {
         Team::delete_account(&mut transaction, first.id)
             .await
             .unwrap(),
-        Err(mymcps_core::models::AccountRemovalRefusal::LastOfRootTeam)
+        Err(mymcps_core::models::AccountRemovalRefusal::LastSuperAdmin)
     );
     transaction.rollback().await.unwrap();
     assert!(User::find(&**db, first.id).await.unwrap().is_some());
+
+    // Once someone else runs it, the first account goes as any other does,
+    // and the Root Team it was alone in goes with it.
+    let mut transaction = db.begin().await.unwrap();
+    assert!(
+        User::set_super_admin(&mut transaction, margaret.id, true)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        Team::delete_account(&mut transaction, first.id)
+            .await
+            .unwrap(),
+        Ok(())
+    );
+    transaction.commit().await.unwrap();
+    assert!(User::find(&**db, first.id).await.unwrap().is_none());
+    assert!(Team::find(&**db, Team::ROOT_ID).await.unwrap().is_none());
+    assert!(Mcp::find(&**db, orphan.id).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn the_instance_always_keeps_a_super_admin() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let first = admin(db).await;
+    let (grace, _) = account(db, "grace@example.com", Some("Grace Hopper")).await;
+    let is_super_admin = async |id: i64| {
+        let user = User::find(&**db, id).await.unwrap().unwrap();
+        user.is_super_admin
+    };
+
+    // The only one stays one.
+    let mut transaction = db.begin().await.unwrap();
+    assert!(
+        !User::set_super_admin(&mut transaction, first.id, false)
+            .await
+            .unwrap()
+    );
+    transaction.commit().await.unwrap();
+    assert!(is_super_admin(first.id).await);
+
+    // With a second one, either can stop being one, and what they are in
+    // their teams does not change.
+    let mut transaction = db.begin().await.unwrap();
+    assert!(
+        User::set_super_admin(&mut transaction, grace.id, true)
+            .await
+            .unwrap()
+    );
+    assert!(
+        User::set_super_admin(&mut transaction, first.id, false)
+            .await
+            .unwrap()
+    );
+    transaction.commit().await.unwrap();
+    assert!(is_super_admin(grace.id).await && !is_super_admin(first.id).await);
+    assert_eq!(User::super_admin_count(&**db).await.unwrap(), 1);
+    assert_eq!(
+        Team::role_of(&**db, Team::ROOT_ID, first.id).await.unwrap(),
+        Some(TeamRole::Owner)
+    );
+    assert_eq!(
+        Team::role_of(&**db, Team::ROOT_ID, grace.id).await.unwrap(),
+        None
+    );
+
+    let mut transaction = db.begin().await.unwrap();
+    assert!(
+        !User::set_super_admin(&mut transaction, grace.id, false)
+            .await
+            .unwrap()
+    );
+    transaction.commit().await.unwrap();
+    assert!(is_super_admin(grace.id).await);
 }

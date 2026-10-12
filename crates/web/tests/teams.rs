@@ -1,7 +1,8 @@
 //! Teams, roles and registration, as Coolify has them: what belongs to a
-//! team is only shown to its members, what someone may do there follows
-//! their role, and the owners and administrators of the Root Team run the
-//! instance. `invites.rs` has the invites of the Root Team.
+//! team is only shown to its members, and what someone may do there follows
+//! their role. Unlike Coolify, no team runs the instance: its super admins
+//! do, and that is said of their account. `invites.rs` has the invites of
+//! the Root Team.
 
 mod mcps_support;
 mod support;
@@ -15,14 +16,14 @@ use mymcps_gateway::access_token::{self, NewAccessToken};
 use mymcps_web::auth::REMEMBER_COOKIE;
 use mymcps_web::testing::factories::{
     PASSWORD, create_account, create_admin, create_invite, create_mcp, create_member, create_owner,
-    create_team, create_user, join_team,
+    create_super_admin, create_team, create_user, join_team, make_super_admin,
 };
 use mymcps_web::testing::{TestApp, TestRequest, TestResponse};
 use serde_json::json;
 use support::*;
 
 const ADMIN_ONLY: &str = "Admin access required";
-const INSTANCE_ADMIN_ONLY: &str = "Instance admin access required";
+const SUPER_ADMIN_ONLY: &str = "Super admin access required";
 
 /// What the instance form posts besides the switch of registration.
 const INSTANCE_FIELDS: [(&str, &str); 3] = [
@@ -140,9 +141,11 @@ async fn page(app: &TestApp, user: &User, team_id: i64, path: &str) -> String {
 #[tokio::test]
 async fn registration_is_closed_until_someone_who_runs_the_instance_opens_it() {
     let app = TestApp::new().await;
-    let owner = create_owner(&app).await;
+    let owner = create_super_admin(&app).await;
     let member = create_member(&app).await;
-    // An owner of another team runs that team, not the instance.
+    // An owner of a team runs that team, not the instance: of the Root Team
+    // no more than of another.
+    let root_owner = create_owner(&app).await;
     let (_, outsider) = team_with_owner(&app, "Elsewhere").await;
 
     assert!(!registration_open(&app).await);
@@ -158,16 +161,13 @@ async fn registration_is_closed_until_someone_who_runs_the_instance_opens_it() {
         Some("Registration is disabled on this instance")
     );
     assert!(refused.cookie(REMEMBER_COOKIE).is_none());
-    assert_eq!(count(&app, "select count(*) from `users`").await, 3);
+    assert_eq!(count(&app, "select count(*) from `users`").await, 4);
 
-    // Opening it is for the owners and administrators of the Root Team.
-    for user in [&member, &outsider] {
+    // Opening it is for the super admins.
+    for user in [&member, &root_owner, &outsider] {
         let response = set_registration(&app, user, true).await;
         assert_redirect(&response, "/");
-        assert_eq!(
-            flash(&response, "error").as_deref(),
-            Some(INSTANCE_ADMIN_ONLY)
-        );
+        assert_eq!(flash(&response, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
         let settings = app.get("/settings").login_as(user).send().await.text();
         assert!(!settings.contains("registrationEnabled"));
         assert!(!settings.contains("My Instance"));
@@ -213,7 +213,7 @@ async fn registration_is_closed_until_someone_who_runs_the_instance_opens_it() {
 #[tokio::test]
 async fn a_new_account_gets_a_team_of_its_own_and_nothing_of_the_others() {
     let app = TestApp::new().await;
-    let owner = create_owner(&app).await;
+    let owner = create_super_admin(&app).await;
     create_mcp(&app, owner.id, |mcp| mcp.name = "Secret MCP".into()).await;
     token_in(&app, Team::ROOT_ID, &owner, "Secret token").await;
     set_registration(&app, &owner, true).await;
@@ -239,7 +239,7 @@ async fn a_new_account_gets_a_team_of_its_own_and_nothing_of_the_others() {
     assert_eq!(personal.team.name, "Nina New's Team");
     assert!(personal.team.personal_team && !personal.team.is_root());
     assert_eq!(personal.role, TeamRole::Owner);
-    assert!(!nina.is_instance_admin(&*app.core.db).await.unwrap());
+    assert!(!nina.is_super_admin);
 
     // She is signed in, in her team, where she may add MCPs.
     let session = created.session();
@@ -275,10 +275,7 @@ async fn a_new_account_gets_a_team_of_its_own_and_nothing_of_the_others() {
         };
         let response = request.session(session.clone()).send().await;
         assert_redirect(&response, "/");
-        assert_eq!(
-            flash(&response, "error").as_deref(),
-            Some(INSTANCE_ADMIN_ONLY)
-        );
+        assert_eq!(flash(&response, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
     }
     let home = app.get("/").session(session.clone()).send().await.text();
     assert!(!home.contains("href=\"/users\""));
@@ -319,7 +316,7 @@ async fn a_new_account_gets_a_team_of_its_own_and_nothing_of_the_others() {
 #[tokio::test]
 async fn limits_the_accounts_one_address_can_ask_for() {
     let app = TestApp::new().await;
-    let owner = create_owner(&app).await;
+    let owner = create_super_admin(&app).await;
     set_registration(&app, &owner, true).await;
 
     // Counted before anything is checked or hashed.
@@ -1146,7 +1143,10 @@ async fn an_invite_carries_a_role_and_nobody_invites_above_their_own() {
         .await
         .text();
     assert!(home.contains("<h1 class=\"page-header__title\">Root Team</h1>"));
-    assert!(ada.is_instance_admin(&*app.core.db).await.unwrap());
+    // An administrator of the Root Team runs that team, not the instance.
+    assert!(!ada.is_super_admin);
+    let users = app.get("/users").session(accepted.session()).send().await;
+    assert_eq!(flash(&users, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
 }
 
 #[tokio::test]
@@ -1180,7 +1180,9 @@ async fn an_invite_lets_someone_in_while_registration_is_closed() {
 #[tokio::test]
 async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     let app = TestApp::new().await;
-    let owner = create_user(&app, Some("owner@example.com"), TeamRole::Owner).await;
+    let mut owner = create_user(&app, Some("owner@example.com"), TeamRole::Owner).await;
+    make_super_admin(&app, &mut owner).await;
+    // An administrator of the Root Team, who runs that team and no more.
     let admin = create_user(&app, Some("admin@example.com"), TeamRole::Admin).await;
     let member = create_user(&app, Some("member@example.com"), TeamRole::Member).await;
     // Someone who registered: a team of their own, with an MCP and a token.
@@ -1192,26 +1194,20 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     let shared = create_mcp(&app, outsider.id, |mcp| mcp.name = "Shared".into()).await;
     let shared_token = token_in(&app, Team::ROOT_ID, &outsider, "Shared token").await;
 
-    for user in [&member, &outsider] {
+    for user in [&admin, &member, &outsider] {
         let response = app.get("/users").login_as(user).send().await;
         assert_redirect(&response, "/");
-        assert_eq!(
-            flash(&response, "error").as_deref(),
-            Some(INSTANCE_ADMIN_ONLY)
-        );
+        assert_eq!(flash(&response, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
         let response = app
-            .delete(&format!("/users/{}", admin.id))
+            .delete(&format!("/users/{}", owner.id))
             .login_as(user)
             .csrf()
             .send()
             .await;
-        assert_eq!(
-            flash(&response, "error").as_deref(),
-            Some(INSTANCE_ADMIN_ONLY)
-        );
+        assert_eq!(flash(&response, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
     }
 
-    let listed = page(&app, &admin, Team::ROOT_ID, "/users").await;
+    let listed = page(&app, &owner, Team::ROOT_ID, "/users").await;
     assert!(listed.contains("<h1 class=\"page-header__title\">Users</h1>"));
     assert!(listed.contains("4 accounts can sign in to this instance"));
     for email in [
@@ -1221,19 +1217,25 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     ] {
         assert!(listed.contains(email), "{email}");
     }
-    assert!(listed.contains("<span class=\"badge badge--info\">Instance owner</span>"));
-    assert!(listed.contains("<span class=\"badge badge--info\">Instance admin</span>"));
+    // One of them runs the instance, whatever the others are in the Root
+    // Team: said once in the table, once in the list of a narrow screen.
+    let badge = "<span class=\"badge badge--info\">Super admin</span>";
+    assert_eq!(listed.matches(badge).count(), 2);
+    assert_eq!(
+        listed.matches("<span class=\"badge\">User</span>").count(),
+        6
+    );
     assert!(listed.contains("<td class=\"cell-secondary\">Their Team, Root Team</td>"));
-    // An administrator deletes members and administrators, never an owner,
-    // and nobody their own account. A row leads to the dialog that asks
-    // for their password: a link, which the page script opens in place.
+    // A super admin deletes any account but their own. A row leads to the
+    // dialog that asks for their password: a link, which the page script
+    // opens in place.
     let offered = |id: i64| {
         listed.contains(&format!(
             "href=\"/users/{id}/delete\" data-dialog-open=\"#delete-user\" data-dialog-fetch"
         ))
     };
-    assert!(offered(member.id) && offered(outsider.id));
-    assert!(!offered(owner.id) && !offered(admin.id));
+    assert!(offered(admin.id) && offered(member.id) && offered(outsider.id));
+    assert!(!offered(owner.id));
     assert!(listed.contains("<dialog class=\"dialog dialog--sm\" id=\"delete-user\" aria-labelledby=\"delete-user-title\" data-dialog-reset data-dialog-return=\"/users\"><div data-fragment></div></dialog>"));
     assert!(!listed.contains("_method=DELETE"));
 
@@ -1250,7 +1252,7 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     // The dialog of an account: the page with it open, or its form alone
     // for the page script.
     let confirm_path = format!("/users/{}/delete", outsider.id);
-    let confirm = page(&app, &admin, Team::ROOT_ID, &confirm_path).await;
+    let confirm = page(&app, &owner, Team::ROOT_ID, &confirm_path).await;
     assert!(confirm.contains("data-dialog-return=\"/users\" data-open>"));
     assert!(confirm.contains(&format!(
         "<form method=\"post\" action=\"/users/{}?_method=DELETE\" data-async>",
@@ -1267,7 +1269,7 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     ));
     let fragment = from_script(app.get(&confirm_path))
         .header("x-fragment", "delete-user")
-        .login_as(&admin)
+        .login_as(&owner)
         .send()
         .await;
     assert_eq!(fragment.status, StatusCode::OK);
@@ -1276,22 +1278,23 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
         "<form method=\"post\" action=\"/users/{}?_method=DELETE\" data-async>",
         outsider.id
     )));
-    // No dialog for an account that is not theirs to delete.
-    for id in [owner.id, admin.id] {
-        let response = app
-            .get(&format!("/users/{id}/delete"))
-            .login_as(&admin)
-            .send()
-            .await;
-        assert_redirect(&response, "/users");
-        assert!(response.flashed("error").is_some());
-    }
+    // No dialog for their own account.
+    let response = app
+        .get(&format!("/users/{}/delete", owner.id))
+        .login_as(&owner)
+        .send()
+        .await;
+    assert_redirect(&response, "/users");
+    assert_eq!(
+        flash(&response, "error").as_deref(),
+        Some("You cannot delete your own account")
+    );
 
     // A signed-in browser is no proof that it is them: without their own
     // password, or with a wrong one, nothing is deleted.
     let missing = app
         .post(&format!("/users/{}?_method=DELETE", outsider.id))
-        .login_as(&admin)
+        .login_as(&owner)
         .csrf()
         .send()
         .await;
@@ -1300,7 +1303,7 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
         missing.flashed("errors"),
         Some(json!({ "currentPassword": "The currentPassword field must be defined" }))
     );
-    let wrong = delete_with(&admin, outsider.id.to_string(), "not-the-password").await;
+    let wrong = delete_with(&owner, outsider.id.to_string(), "not-the-password").await;
     assert_redirect(&wrong, &confirm_path);
     assert_eq!(
         wrong.flashed("errors"),
@@ -1318,7 +1321,7 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     ));
     assert!(!reopened.contains("not-the-password"));
     let scripted = from_script(app.post(&format!("/users/{}?_method=DELETE", outsider.id)))
-        .login_as(&admin)
+        .login_as(&owner)
         .csrf()
         .form(&[("currentPassword", "not-the-password")])
         .send()
@@ -1337,21 +1340,17 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     );
     assert_eq!(count(&app, "select count(*) from `users`").await, 4);
     for (id, message) in [
-        (
-            owner.id.to_string(),
-            "Only an owner of the Root Team can delete an owner of it",
-        ),
-        (admin.id.to_string(), "You cannot delete your own account"),
+        (owner.id.to_string(), "You cannot delete your own account"),
         ("999999".to_string(), "User not found"),
         ("abc".to_string(), "User not found"),
     ] {
-        let response = delete(&admin, id.clone()).await;
+        let response = delete(&owner, id.clone()).await;
         assert_redirect(&response, "/users");
         assert_eq!(flash(&response, "error").as_deref(), Some(message), "{id}");
     }
     assert_eq!(count(&app, "select count(*) from `users`").await, 4);
 
-    let deleted = delete(&admin, outsider.id.to_string()).await;
+    let deleted = delete(&owner, outsider.id.to_string()).await;
     assert_redirect(&deleted, "/users");
     assert_eq!(flash(&deleted, "success").as_deref(), Some("User deleted"));
     let db = &*app.core.db;
@@ -1370,25 +1369,234 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     // Their session is worth nothing.
     assert_redirect(&app.get("/").login_as(&outsider).send().await, "/login");
 
-    // An owner deletes an administrator.
+    // What an account is in the Root Team protects it from nothing.
     let deleted = delete(&owner, admin.id.to_string()).await;
     assert_eq!(flash(&deleted, "success").as_deref(), Some("User deleted"));
     assert_eq!(count(&app, "select count(*) from `users`").await, 2);
 }
 
 #[tokio::test]
-async fn an_admin_of_another_team_does_not_run_the_instance() {
+async fn a_super_admin_decides_who_else_runs_the_instance() {
     let app = TestApp::new().await;
-    let owner = create_owner(&app).await;
+    let mut owner = create_user(&app, Some("owner@example.com"), TeamRole::Owner).await;
+    make_super_admin(&app, &mut owner).await;
+    let admin = create_user(&app, Some("admin@example.com"), TeamRole::Admin).await;
+    // Someone who is in no team of the super admin.
+    let (team, outsider) = team_with_owner(&app, "Their Team").await;
+    let is_super_admin = async |user: &User| {
+        let user = User::find(&*app.core.db, user.id).await.unwrap().unwrap();
+        user.is_super_admin
+    };
+    let path = |user: &User| format!("/users/{}/super-admin", user.id);
+    let change_with = async |actor: &User, account: &User, fields: &[(&str, &str)]| {
+        app.post(&format!("{}?_method=PATCH", path(account)))
+            .login_as(actor)
+            .csrf()
+            .form(fields)
+            .send()
+            .await
+    };
+    let change = async |actor: &User, account: &User, super_admin: &str| {
+        let fields = [("superAdmin", super_admin), ("currentPassword", PASSWORD)];
+        change_with(actor, account, &fields).await
+    };
+
+    // An administrator of the Root Team decides nothing of it.
+    let response = app.get(&path(&outsider)).login_as(&admin).send().await;
+    assert_eq!(flash(&response, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
+    let response = change(&admin, &admin, "true").await;
+    assert_redirect(&response, "/");
+    assert_eq!(flash(&response, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
+    assert!(!is_super_admin(&admin).await);
+
+    // A row leads to the dialog, which says what the account becomes.
+    let listed = page(&app, &owner, Team::ROOT_ID, "/users").await;
+    let offered = |user: &User| {
+        listed.contains(&format!(
+            "href=\"{}\" data-dialog-open=\"#super-admin\" data-dialog-fetch",
+            path(user)
+        ))
+    };
+    assert!(offered(&admin) && offered(&outsider) && !offered(&owner));
+    assert!(listed.contains("Make super admin") && !listed.contains("Remove super admin"));
+    assert!(listed.contains("<dialog class=\"dialog dialog--sm\" id=\"super-admin\" aria-labelledby=\"super-admin-title\" data-dialog-reset data-dialog-return=\"/users\"><div data-fragment></div></dialog>"));
+    let form = format!(
+        "<form method=\"post\" action=\"{}?_method=PATCH\" data-async>",
+        path(&outsider)
+    );
+    let confirm = page(&app, &owner, Team::ROOT_ID, &path(&outsider)).await;
+    assert!(confirm.contains("id=\"super-admin\" aria-labelledby=\"super-admin-title\" data-dialog-reset data-dialog-return=\"/users\" data-open>"));
+    assert!(confirm.contains(&form));
+    assert!(confirm.contains(
+        "<h2 class=\"dialog__title\" id=\"super-admin-title\">Make Test User a super admin?</h2>"
+    ));
+    assert!(confirm.contains("<input type=\"hidden\" name=\"superAdmin\" value=\"true\">"));
+    assert!(confirm.contains("id=\"super-admin-password\" name=\"currentPassword\" type=\"password\" autocomplete=\"current-password\" required"));
+    assert!(confirm.contains(
+        "<button type=\"submit\" class=\"button button--primary\">Make super admin</button>"
+    ));
+    let fragment = from_script(app.get(&path(&outsider)))
+        .header("x-fragment", "super-admin")
+        .login_as(&owner)
+        .send()
+        .await;
+    assert_eq!(fragment.status, StatusCode::OK);
+    assert_eq!(fragment.header("cache-control"), Some("no-store"));
+    assert!(fragment.text().starts_with(&form));
+
+    // Nobody decides it of their own account, nor of one that is not there.
+    let response = app.get(&path(&owner)).login_as(&owner).send().await;
+    assert_redirect(&response, "/users");
+    for (account, message) in [
+        (
+            owner.id.to_string(),
+            "You cannot change your own super admin access",
+        ),
+        ("999999".to_string(), "User not found"),
+    ] {
+        let response = app
+            .post(&format!("/users/{account}/super-admin?_method=PATCH"))
+            .login_as(&owner)
+            .csrf()
+            .form(&[("superAdmin", "false"), ("currentPassword", PASSWORD)])
+            .send()
+            .await;
+        assert_redirect(&response, "/users");
+        assert_eq!(flash(&response, "error").as_deref(), Some(message));
+    }
+    assert!(is_super_admin(&owner).await);
+
+    // A signed-in browser is no proof that it is them: without their own
+    // password, or with a wrong one, nothing changes.
+    let missing = change_with(&owner, &outsider, &[("superAdmin", "true")]).await;
+    assert_redirect(&missing, &path(&outsider));
+    assert_eq!(
+        missing.flashed("errors"),
+        Some(json!({ "currentPassword": "The currentPassword field must be defined" }))
+    );
+    let wrong = change_with(
+        &owner,
+        &outsider,
+        &[
+            ("superAdmin", "true"),
+            ("currentPassword", "not-the-password"),
+        ],
+    )
+    .await;
+    assert_redirect(&wrong, &path(&outsider));
+    let reopened = app
+        .get(&path(&outsider))
+        .session(wrong.session())
+        .send()
+        .await
+        .text();
+    assert!(reopened.contains("data-open>"));
+    assert!(reopened.contains(
+        "<p class=\"field__error\" id=\"super-admin-password-error\">The current password is incorrect</p>"
+    ));
+    let scripted = from_script(app.post(&format!("{}?_method=PATCH", path(&outsider))))
+        .login_as(&owner)
+        .csrf()
+        .form(&[
+            ("superAdmin", "true"),
+            ("currentPassword", "not-the-password"),
+        ])
+        .send()
+        .await;
+    assert_eq!(scripted.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(scripted.text().starts_with(&form));
+    // And the form says what the account becomes.
+    let unsaid = change_with(&owner, &outsider, &[("currentPassword", PASSWORD)]).await;
+    assert_redirect(&unsaid, &path(&outsider));
+    assert!(!is_super_admin(&outsider).await);
+
+    let made = change(&owner, &outsider, "true").await;
+    assert_redirect(&made, "/users");
+    assert_eq!(
+        flash(&made, "success").as_deref(),
+        Some("Test User is now a super admin")
+    );
+    assert!(is_super_admin(&outsider).await);
+    // They run the instance from the team they work in, and are in no more
+    // teams than before: the Root Team stays closed to them.
+    let memberships = Team::memberships(&*app.core.db, outsider.id).await.unwrap();
+    assert_eq!(memberships.len(), 1);
+    assert_eq!(memberships[0].team.id, team.id);
+    let users = page(&app, &outsider, team.id, "/users").await;
+    assert_eq!(
+        users
+            .matches("<span class=\"badge badge--info\">Super admin</span>")
+            .count(),
+        4
+    );
+    let settings = page(&app, &outsider, team.id, "/settings").await;
+    assert!(settings.contains("My Instance") && settings.contains("registrationEnabled"));
+    let switched = app
+        .post("/teams/switch")
+        .login_as(&outsider)
+        .csrf()
+        .form(&[("teamId", "1")])
+        .send()
+        .await;
+    assert!(switched.flashed("error").is_some());
+
+    // The dialog of a super admin takes it from them.
+    let confirm = page(&app, &outsider, team.id, &path(&owner)).await;
+    assert!(confirm.contains(
+        "<h2 class=\"dialog__title\" id=\"super-admin-title\">Remove Test User from the super admins?</h2>"
+    ));
+    assert!(confirm.contains("<input type=\"hidden\" name=\"superAdmin\" value=\"false\">"));
+    assert!(confirm.contains(
+        "<button type=\"submit\" class=\"button button--critical\">Remove super admin</button>"
+    ));
+    let removed = change(&outsider, &owner, "false").await;
+    assert_redirect(&removed, "/users");
+    assert_eq!(
+        flash(&removed, "success").as_deref(),
+        Some("Test User is no longer a super admin")
+    );
+    assert!(!is_super_admin(&owner).await);
+    // The first account keeps the Root Team it owns, and no longer runs
+    // the instance.
+    assert_eq!(
+        role_of(&app, Team::ROOT_ID, &owner).await,
+        Some(TeamRole::Owner)
+    );
+    let response = app.get("/users").login_as(&owner).send().await;
+    assert_eq!(flash(&response, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
+    let team_page = page(&app, &owner, Team::ROOT_ID, "/team").await;
+    assert!(team_page.contains("<h1 class=\"page-header__title\">Root Team</h1>"));
+    // The only super admin left stays one: they cannot take it from
+    // themselves, and nobody else can.
+    let response = change(&outsider, &outsider, "false").await;
+    assert_eq!(
+        flash(&response, "error").as_deref(),
+        Some("You cannot change your own super admin access")
+    );
+    assert!(is_super_admin(&outsider).await);
+}
+
+#[tokio::test]
+async fn a_role_in_a_team_gives_no_right_over_the_instance() {
+    let app = TestApp::new().await;
+    let owner = create_super_admin(&app).await;
     let (team, outsider) = team_with_owner(&app, "Elsewhere").await;
     // Also a plain member of the Root Team: what they own elsewhere gives
     // them nothing here.
     join_team(&app, Team::ROOT_ID, &outsider, TeamRole::Member).await;
+    // And an owner of the Root Team, who runs that team and no more.
+    let root_owner = create_owner(&app).await;
 
-    for team_id in [team.id, Team::ROOT_ID] {
+    for (user, team_id) in [
+        (&outsider, team.id),
+        (&outsider, Team::ROOT_ID),
+        (&root_owner, Team::ROOT_ID),
+    ] {
         for (method, path) in [
             ("get", "/users"),
             ("delete", "/users/1"),
+            ("get", "/users/1/super-admin"),
+            ("patch", "/users/1/super-admin"),
             ("patch", "/settings/mcp-logging"),
             ("post", "/settings/backup"),
         ] {
@@ -1398,21 +1606,26 @@ async fn an_admin_of_another_team_does_not_run_the_instance() {
                 "post" => app.post(path),
                 _ => app.delete(path),
             };
-            let response = request
-                .login_as(&outsider)
-                .in_team(team_id)
-                .csrf()
-                .send()
-                .await;
+            let response = request.login_as(user).in_team(team_id).csrf().send().await;
             assert_redirect(&response, "/");
             assert_eq!(
                 flash(&response, "error").as_deref(),
-                Some(INSTANCE_ADMIN_ONLY),
+                Some(SUPER_ADMIN_ONLY),
                 "{method} {path} in team {team_id}"
             );
         }
     }
-    // In the Root Team they are a member: no logs, no MCP to change.
+    // The owner of the Root Team does run it: its logs, its members.
+    let logs = app
+        .get("/logs")
+        .login_as(&root_owner)
+        .in_team(Team::ROOT_ID)
+        .send()
+        .await;
+    assert_eq!(logs.status, StatusCode::OK);
+    let navigation = logs.text();
+    assert!(!navigation.contains("href=\"/users\""));
+    // The other is a member of the Root Team: no logs, no MCP to change.
     let logs = app
         .get("/logs")
         .login_as(&outsider)

@@ -67,7 +67,7 @@ pub static UPDATE_MCP_LOGGING_VALIDATOR: LazyLock<vine::Validator> = LazyLock::n
     })
 });
 
-/// First-run onboarding: create the account that owns the Root Team.
+/// First-run onboarding: create the first super admin, who owns the Root Team.
 pub static ONBOARDING_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
     vine::global().create(vine::object! {
         "fullName" => vine::string().trim().min_length(1).max_length(120),
@@ -114,6 +114,15 @@ pub static MEMBER_ROLE_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
 /// the password of the person who deletes it, to confirm it is them.
 pub static DELETE_USER_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
     vine::global().create(vine::object! { "currentPassword" => vine::string().min_length(1) })
+});
+
+/// Make an account a super admin or take that from it, from the Users page:
+/// what it becomes, and the password of the person who decides.
+pub static SUPER_ADMIN_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global().create(vine::object! {
+        "superAdmin" => vine::boolean(),
+        "currentPassword" => vine::string().min_length(1),
+    })
 });
 
 /// Accept an invite and create a member account.

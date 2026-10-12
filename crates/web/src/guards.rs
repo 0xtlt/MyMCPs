@@ -101,15 +101,18 @@ pub async fn require_admin(request: Request, next: Next) -> Response {
     refuse(&request, "Admin access required")
 }
 
-/// Ensures the authenticated user runs the instance: an owner or an
-/// administrator of the Root Team.
-pub async fn require_instance_admin(request: Request, next: Next) -> Response {
+/// What someone who does not run the instance is told.
+pub const SUPER_ADMIN_REQUIRED: &str = "Super admin access required";
+
+/// Ensures the authenticated user runs the instance: a super admin, whatever
+/// they are in the team they work in.
+pub async fn require_super_admin(request: Request, next: Next) -> Response {
     if request
         .extensions()
         .get::<Auth>()
-        .is_some_and(Auth::is_instance_admin)
+        .is_some_and(Auth::is_super_admin)
     {
         return next.run(request).await;
     }
-    refuse(&request, "Instance admin access required")
+    refuse(&request, SUPER_ADMIN_REQUIRED)
 }

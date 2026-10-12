@@ -277,6 +277,14 @@ async fn an_instance_from_before_teams_goes_to_the_root_team_whole() {
         role_columns, 0,
         "what someone may do is said by their teams"
     );
+    // Whoever ran the instance still does: every administrator it had is a
+    // super admin, whatever they became in the Root Team.
+    let super_admins: Vec<i64> =
+        sqlx::query_scalar("select `id` from `users` where `is_super_admin` = 1 order by `id`")
+            .fetch_all(&*db)
+            .await
+            .unwrap();
+    assert_eq!(super_admins, [1, 3]);
 
     // Every row the instance had belongs to the Root Team, and the rows
     // that point at a rebuilt table still do.

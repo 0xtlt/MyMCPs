@@ -118,7 +118,7 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
       <a class="nav-item" href="/analytics">ICON chart-column<span class="nav-item__label">Analytics</span></a>
       <p class="nav-section">Instance</p>
       <a class="nav-item" href="/team">ICON users<span class="nav-item__label">Team</span></a>
-      <a class="nav-item" href="/users">ICON user<span class="nav-item__label">Users</span></a>   <!-- owners and admins of the Root Team only -->
+      <a class="nav-item" href="/users">ICON user<span class="nav-item__label">Users</span></a>   <!-- super admins only -->
       <a class="nav-item" href="/settings">ICON settings<span class="nav-item__label">Settings</span></a>
     </nav>
     <div class="gateway-card">
@@ -156,8 +156,8 @@ The team switcher is the first entry of the navigation: a `button.nav-item` that
 the person's teams. Each team is a form of its own, so switching works without the script; the
 current one is `aria-checked="true"`. What a page shows belongs to that team. A control that
 changes something of the team (an MCP, a member, an invite) is only drawn for its owners and
-admins (`PageContext::is_team_admin`), and what belongs to the instance only for the owners and
-admins of the Root Team (`PageContext::instance_admin`): a member gets the same page without it.
+admins (`PageContext::is_team_admin`), and what belongs to the instance only for its super
+admins (`PageContext::super_admin`), whatever they are in the team: anyone else gets the same page without it.
 On desktop the panel scrolls and the frame stays put; on mobile the document scrolls under a
 sticky top bar.
 

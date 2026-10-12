@@ -957,19 +957,12 @@ async fn an_admin_can_remove_another_admin() {
         None
     );
 
-    // The account they keep had no other team: it gets its personal one,
-    // and no longer runs the instance.
+    // The account they keep had no other team: it gets its personal one.
     let page = app.get("/team").login_as(&other).send().await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(
         page.text()
             .contains("<h1 class=\"page-header__title\">Test User's Team</h1>")
-    );
-    let settings = app.get("/users").login_as(&other).send().await;
-    assert_redirect(&settings, "/");
-    assert_eq!(
-        settings.flashed("error"),
-        Some(json!("Instance admin access required"))
     );
 }
 

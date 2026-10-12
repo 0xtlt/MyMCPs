@@ -17,13 +17,14 @@ MyMCPs is self-hosted. The first user owns the instance, and nobody else gets in
 
 ## Teams, roles, and registration
 
-Accounts, teams, and permissions work as they do in Coolify.
+Accounts, teams, and permissions work as they do in Coolify, with one difference: who runs the instance is said of the account, not of a team.
 
 - **Teams.** MCPs, access tokens, approvals, call logs, and analytics belong to a team, and only its members see them. An access token reaches the MCPs of its own team and no other. Every account comes with a personal team, anyone can create more from the team switcher at the top of the navigation, and the switcher is how you go from one team to another.
 - **Roles.** In each team a person is a **member**, an **admin**, or an **owner**. A member sees the MCPs of the team, makes access tokens of their own, and decides the approvals those tokens ask for. An admin also adds and changes MCPs, sees every access token, the logs and the analytics, and manages members and invites up to their own rank. An owner also deletes the team and decides who else owns it.
-- **Root Team.** The first account owns the Root Team. Its owners and admins run the instance: they change the instance settings under **Settings → My Instance**, export backups, and delete accounts under **Users**, which asks for their own password.
+- **Super admins.** A super admin runs the instance: they change the instance settings under **Settings → My Instance**, export backups, and manage accounts under **Users**. The first account is one, and makes others from **Users**, which asks for their own password; the instance always keeps one. It gives no access to the teams of other people, and a role in a team gives no right over the instance: an owner of a team runs that team only.
+- **Root Team.** The first team of an instance, which the first account owns. It is a team like the others. An instance that upgrades finds everything it had there.
 - **Invites.** An admin invites an email address into a team, with a role, from **Team → Create invite**. The link lets that person create their account, or join with the one they have. Invites work whether or not registration is open.
-- **Registration.** Off by default. An owner or admin of the Root Team turns **Allow registration** on under **Settings → My Instance**: anyone who reaches the instance can then create an account on `/signup`. A new account sees nothing of the other teams: it gets a personal team of its own, where it can add MCPs, including npm packages that run in a sandbox on your server. Open registration only on an instance you would let strangers use that way.
+- **Registration.** Off by default. A super admin turns **Allow registration** on under **Settings → My Instance**: anyone who reaches the instance can then create an account on `/signup`. A new account sees nothing of the other teams: it gets a personal team of its own, where it can add MCPs, including npm packages that run in a sandbox on your server. Open registration only on an instance you would let strangers use that way.
 
 ## Run locally
 
@@ -49,7 +50,7 @@ OAuth clients connect to `https://your-domain.example/mcp` without a manually co
 For clients without OAuth support, create a manual token and send it as
 `Authorization: Bearer <token>` on every `/mcp` request.
 
-Tools use `{mcp-slug}__{tool-name}` names in eager mode. Owners and admins of the Root Team can choose the instance default under **Settings → My Instance**; existing instances default to eager mode. Clients can override that default per request with either `eager` or `lazy`:
+Tools use `{mcp-slug}__{tool-name}` names in eager mode. Super admins can choose the instance default under **Settings → My Instance**; existing instances default to eager mode. Clients can override that default per request with either `eager` or `lazy`:
 
 ```text
 X-MyMCPs-Tool-Mode: lazy

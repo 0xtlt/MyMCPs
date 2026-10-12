@@ -44,7 +44,7 @@ pub fn routes() -> FeatureRoutes {
             .route("/settings", get(index))
             .route("/settings/email", patch(update_email))
             .route("/settings/password", patch(update_password)),
-        instance_admin: Router::new().route("/settings/mcp-logging", patch(update_mcp_logging)),
+        super_admin: Router::new().route("/settings/mcp-logging", patch(update_mcp_logging)),
         ..Default::default()
     }
 }
@@ -56,7 +56,7 @@ pub async fn index(
     session: Session,
     CurrentUser(user): CurrentUser,
 ) -> Result<Response, AppError> {
-    let instance = if context.instance_admin {
+    let instance = if context.super_admin {
         Some(InstanceSetting::current(&*state.core.db).await?)
     } else {
         None

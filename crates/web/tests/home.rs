@@ -597,7 +597,7 @@ async fn context_of(app: &TestApp, user: &User, pending_approvals: i64) -> PageC
     let team = root_membership(app, user).await;
     PageContext {
         user: Some(user.clone()),
-        instance_admin: team.role.is_admin(),
+        super_admin: user.is_super_admin,
         teams: vec![team.clone()],
         team: Some(team),
         registration_open: false,

@@ -315,8 +315,8 @@ pub async fn onboarding(
     let mut user =
         User::with_password(&payload.email, Some(&payload.full_name), &payload.password).await?;
     // The first user only: two visitors finishing the form at once must not
-    // both own the Root Team. Nobody else registers until its owner says so:
-    // the setting is off from the start.
+    // both run the instance. Nobody else registers until its super admin
+    // says so: the setting is off from the start.
     let mut transaction = db.begin().await?;
     if User::setup_complete(&mut *transaction).await? {
         return Ok(redirect_to(&home));

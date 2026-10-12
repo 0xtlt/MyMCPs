@@ -122,12 +122,10 @@ pub struct Auth {
 }
 
 impl Auth {
-    /// Whether the person runs the instance: an owner or an administrator
-    /// of the Root Team, whichever team they work in.
-    pub fn is_instance_admin(&self) -> bool {
-        self.teams
-            .iter()
-            .any(|membership| membership.team.is_root() && membership.role.is_admin())
+    /// Whether the person runs the instance. It is said of their account:
+    /// what they are in a team, the Root Team included, changes nothing.
+    pub fn is_super_admin(&self) -> bool {
+        self.user.as_ref().is_some_and(|user| user.is_super_admin)
     }
 
     /// The person and the team they work in, for a handler behind

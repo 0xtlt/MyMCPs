@@ -1,6 +1,6 @@
 //! Teams: the page of the team someone works in (its name, its members, its
-//! invites), the switch from one team to another, and, for those who run the
-//! instance, its accounts.
+//! invites), the switch from one team to another, and, for the super admins
+//! who run the instance, its accounts.
 //!
 //! What someone may do in a team follows their role there, least first:
 //! a member reads it, an administrator changes it and its members up to
@@ -21,6 +21,7 @@ use sqlx::sqlite::SqliteRow;
 use crate::auth::{Auth, CurrentTeam, CurrentUser, switch_team};
 use crate::error::{AppError, is_fetch};
 use crate::forms::{FormState, refusal};
+use crate::guards::SUPER_ADMIN_REQUIRED;
 use crate::input::Input;
 use crate::redirect::{redirect_back, redirect_to};
 use crate::respond::{fragment, invalid_form, navigate, page};
@@ -32,12 +33,13 @@ use crate::session::Session;
 use crate::state::AppState;
 use crate::validators::route_params::record_id;
 use crate::validators::user::{
-    DELETE_USER_VALIDATOR, MEMBER_ROLE_VALIDATOR, SWITCH_TEAM_VALIDATOR, TEAM_VALIDATOR,
+    DELETE_USER_VALIDATOR, MEMBER_ROLE_VALIDATOR, SUPER_ADMIN_VALIDATOR, SWITCH_TEAM_VALIDATOR,
+    TEAM_VALIDATOR,
 };
 use crate::views::shell::PageContext;
 use crate::views::teams::{
-    DELETE_USER_DIALOG_ID, TeamPage, UserRow, UsersPage, create_team_form, delete_user_form,
-    team_page, users_page,
+    OpenUserDialog, TeamPage, UserDialog, UserRow, UsersPage, create_team_form, team_page,
+    users_page,
 };
 
 /// Session key naming the form of the Team page that the previous request
@@ -46,9 +48,9 @@ pub(crate) const REFUSED_FORM_KEY: &str = "teamForm";
 pub(crate) const INVITE_FORM: &str = "invite";
 const TEAM_FORM: &str = "team";
 const CREATE_FORM: &str = "create";
-const DELETE_USER_FORM: &str = "delete-user";
 
 const MEMBER_NOT_FOUND: &str = "Member not found";
+const LAST_SUPER_ADMIN: &str = "The instance needs at least one super admin";
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
@@ -60,8 +62,12 @@ pub fn routes() -> FeatureRoutes {
         admin: Router::new()
             .route("/team", patch(update).delete(destroy))
             .route("/members/{id}", patch(update_member).delete(destroy_member)),
-        instance_admin: Router::new()
+        super_admin: Router::new()
             .route("/users", get(users))
+            .route(
+                "/users/{id}/super-admin",
+                get(confirm_super_admin).patch(update_super_admin),
+            )
             .route("/users/{id}/delete", get(confirm_destroy_user))
             .route("/users/{id}", delete(destroy_user)),
         ..Default::default()
@@ -493,57 +499,44 @@ pub async fn destroy_member(
     Ok(navigate(&headers, &page))
 }
 
-/// Why this person may not delete an account, if they may not: never their
-/// own, nor that of someone who ranks higher in the Root Team.
-async fn deletion_refusal<'e, E>(
-    db: E,
-    actor: &User,
-    account: &User,
-) -> Result<Option<&'static str>, sqlx::Error>
-where
-    E: sqlx::sqlite::SqliteExecutor<'e>,
-{
-    if account.id == actor.id {
-        return Ok(Some("You cannot delete your own account"));
+/// What someone is told who tries a dialog of the Users page on their own
+/// account: another super admin decides for them.
+fn own_account_refusal(dialog: UserDialog) -> &'static str {
+    match dialog {
+        UserDialog::SuperAdmin => "You cannot change your own super admin access",
+        UserDialog::Delete => "You cannot delete your own account",
     }
-    // What each of them is in the Root Team, read together.
-    let roles: Vec<(i64, TeamRole)> = sqlx::query_as(
-        "select `user_id`, `role` from `team_user` where `team_id` = ? and `user_id` in (?, ?)",
-    )
-    .bind(Team::ROOT_ID)
-    .bind(actor.id)
-    .bind(account.id)
-    .fetch_all(db)
-    .await?;
-    let role_of = |user: &User| {
-        roles
-            .iter()
-            .find(|(user_id, _)| *user_id == user.id)
-            .map(|(_, role)| *role)
-    };
-    let (actor_role, account_role) = (role_of(actor), role_of(account));
-    let outranked = match (actor_role, account_role) {
-        (Some(actor_role), Some(account_role)) => !actor_role.may_manage(account_role),
-        (Some(actor_role), None) => !actor_role.is_admin(),
-        (None, _) => true,
-    };
-    Ok(outranked.then_some("Only an owner of the Root Team can delete an owner of it"))
 }
 
-/// The Users page, with the dialog that deletes an account open on it or not.
+/// Whether this person still runs the instance. Read under the write lock
+/// of the transaction that acts for them: of two super admins who remove
+/// each other at once, the second is no longer one.
+async fn still_super_admin(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    actor: &User,
+) -> Result<bool, sqlx::Error> {
+    let found: Option<bool> =
+        sqlx::query_scalar("select `is_super_admin` from `users` where `id` = ?")
+            .bind(actor.id)
+            .fetch_optional(&mut **transaction)
+            .await?;
+    Ok(found.unwrap_or(false))
+}
+
+/// The Users page, with one of its dialogs open on an account or not.
 async fn users_page_for(
     state: &AppState,
     context: &PageContext,
     user: &User,
-    deleting: Option<(&User, &FormState)>,
+    open: Option<OpenUserDialog<'_>>,
 ) -> Result<Response, AppError> {
     let db = &state.core.db;
     let accounts: Vec<User> =
         sqlx::query_as("select * from `users` order by `created_at` asc, `id` asc")
             .fetch_all(&**db)
             .await?;
-    let memberships: Vec<(i64, i64, String, TeamRole)> = sqlx::query_as(
-        "select `team_user`.`user_id`, `teams`.`id`, `teams`.`name`, `team_user`.`role` from `team_user` \
+    let memberships: Vec<(i64, String, TeamRole)> = sqlx::query_as(
+        "select `team_user`.`user_id`, `teams`.`name`, `team_user`.`role` from `team_user` \
          inner join `teams` on `teams`.`id` = `team_user`.`team_id` order by `team_user`.`id` asc",
     )
     .fetch_all(&**db)
@@ -555,30 +548,20 @@ async fn users_page_for(
             let teams: Vec<(String, TeamRole)> = memberships
                 .iter()
                 .filter(|(user_id, ..)| *user_id == account.id)
-                .map(|(_, _, name, role)| (name.clone(), *role))
+                .map(|(_, name, role)| (name.clone(), *role))
                 .collect();
-            let root_role = memberships
-                .iter()
-                .find(|(user_id, team_id, ..)| *user_id == account.id && *team_id == Team::ROOT_ID)
-                .map(|(.., role)| *role);
             UserRow {
                 user: account,
                 teams,
-                root_role,
             }
         })
         .collect();
-    let own_role = rows
-        .iter()
-        .find(|row| row.user.id == user.id)
-        .and_then(|row| row.root_role);
     Ok(page(users_page(
         context,
         &UsersPage {
             users: &rows,
             current_user_id: user.id,
-            current_root_role: own_role,
-            deleting,
+            open,
         },
     )))
 }
@@ -594,9 +577,156 @@ pub async fn users(
     users_page_for(&state, &context, &user, None).await
 }
 
+/// The Users page with this dialog open on an account. The page script asks
+/// for the content of the dialog alone.
+async fn user_dialog(
+    state: &AppState,
+    context: &PageContext,
+    session: &Session,
+    actor: &User,
+    headers: &HeaderMap,
+    id: &str,
+    dialog: UserDialog,
+) -> Result<Response, AppError> {
+    let refuse = |message: &str| {
+        session.flash("error", message);
+        navigate(headers, "/users")
+    };
+    let Some(account) = find_account(state, id).await? else {
+        return Ok(refuse("User not found"));
+    };
+    if account.id == actor.id {
+        return Ok(refuse(own_account_refusal(dialog)));
+    }
+
+    if is_fetch(headers) && fragment_target(headers).as_deref() == Some(dialog.id()) {
+        return Ok(uncached(fragment(
+            StatusCode::OK,
+            dialog.form(context, &account, &FormState::default()),
+        )));
+    }
+    let form = if session.flashed_text(REFUSED_FORM_KEY).as_deref() == Some(dialog.id()) {
+        FormState::from_session(session)
+    } else {
+        FormState::default()
+    };
+    let open = OpenUserDialog {
+        dialog,
+        account: &account,
+        form: &form,
+    };
+    users_page_for(state, context, actor, Some(open)).await
+}
+
+/// What a dialog of the Users page answers when its form is refused. The
+/// script gets the form again with what is wrong. Without it, the browser
+/// goes to the page that shows the dialog open on it.
+fn refused_user_form(
+    context: &PageContext,
+    session: &Session,
+    headers: &HeaderMap,
+    dialog: UserDialog,
+    account: &User,
+    form: FormState,
+) -> Response {
+    if is_fetch(headers) {
+        return fragment(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            dialog.form(context, account, &form),
+        );
+    }
+    form.flash(session);
+    session.flash(REFUSED_FORM_KEY, dialog.id());
+    redirect_to(&dialog.href(account))
+}
+
+/// `GET /users/{id}/super-admin`: the Users page with the dialog that makes
+/// this account a super admin, or takes that from it, open.
+pub async fn confirm_super_admin(
+    State(state): State<AppState>,
+    context: PageContext,
+    session: Session,
+    CurrentUser(actor): CurrentUser,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Response, AppError> {
+    let dialog = UserDialog::SuperAdmin;
+    user_dialog(&state, &context, &session, &actor, &headers, &id, dialog).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SuperAdminChange {
+    super_admin: bool,
+    current_password: String,
+}
+
+/// `PATCH /users/{id}/super-admin`
+///
+/// Make an account a super admin, or an account like any other. Never one's
+/// own: a super admin does not leave the instance without one by mistake.
+/// It hands over the instance, so the person types their own password
+/// again: a signed-in browser is no proof that it is them.
+pub async fn update_super_admin(
+    State(state): State<AppState>,
+    context: PageContext,
+    session: Session,
+    CurrentUser(actor): CurrentUser,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Input(input): Input,
+) -> Result<Response, AppError> {
+    let dialog = UserDialog::SuperAdmin;
+    let refuse = |message: &str| {
+        session.flash("error", message);
+        navigate(&headers, "/users")
+    };
+
+    let Some(account) = find_account(&state, &id).await? else {
+        return Ok(refuse("User not found"));
+    };
+    if account.id == actor.id {
+        return Ok(refuse(own_account_refusal(dialog)));
+    }
+
+    let refused =
+        |form: FormState| refused_user_form(&context, &session, &headers, dialog, &account, form);
+    let SuperAdminChange {
+        super_admin,
+        current_password,
+    } = match SUPER_ADMIN_VALIDATOR.validate_as(&Value::Object(input.clone())) {
+        Ok(change) => change,
+        Err(error) => return Ok(refused(FormState::new(&refusal(error)?, &input))),
+    };
+    match confirm_current_password(&state, &actor, &current_password).await? {
+        PasswordCheck::Confirmed => {}
+        PasswordCheck::Wrong => return Ok(refused(wrong_current_password(&input))),
+        PasswordCheck::Limited(response) => return Ok(response),
+    }
+
+    let mut transaction = state.core.db.begin().await?;
+    if !still_super_admin(&mut transaction, &actor).await? {
+        return Ok(refuse(SUPER_ADMIN_REQUIRED));
+    }
+    if !User::set_super_admin(&mut transaction, account.id, super_admin).await? {
+        return Ok(refuse(LAST_SUPER_ADMIN));
+    }
+    transaction.commit().await?;
+
+    let name = account.display_name();
+    session.flash(
+        "success",
+        if super_admin {
+            format!("{name} is now a super admin")
+        } else {
+            format!("{name} is no longer a super admin")
+        },
+    );
+    Ok(navigate(&headers, "/users"))
+}
+
 /// `GET /users/{id}/delete`: the Users page with the dialog that deletes
-/// this account open. The page script asks for the content of the dialog
-/// alone.
+/// this account open.
 pub async fn confirm_destroy_user(
     State(state): State<AppState>,
     context: PageContext,
@@ -605,29 +735,8 @@ pub async fn confirm_destroy_user(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, AppError> {
-    let refuse = |message: &str| {
-        session.flash("error", message);
-        navigate(&headers, "/users")
-    };
-    let Some(account) = find_account(&state, &id).await? else {
-        return Ok(refuse("User not found"));
-    };
-    if let Some(message) = deletion_refusal(&*state.core.db, &actor, &account).await? {
-        return Ok(refuse(message));
-    }
-
-    if is_fetch(&headers) && fragment_target(&headers).as_deref() == Some(DELETE_USER_DIALOG_ID) {
-        return Ok(uncached(fragment(
-            StatusCode::OK,
-            delete_user_form(&context, &account, &FormState::default()),
-        )));
-    }
-    let form = if session.flashed_text(REFUSED_FORM_KEY).as_deref() == Some(DELETE_USER_FORM) {
-        FormState::from_session(&session)
-    } else {
-        FormState::default()
-    };
-    users_page_for(&state, &context, &actor, Some((&account, &form))).await
+    let dialog = UserDialog::Delete;
+    user_dialog(&state, &context, &session, &actor, &headers, &id, dialog).await
 }
 
 #[derive(Deserialize)]
@@ -638,10 +747,10 @@ struct Deletion {
 
 /// `DELETE /users/{id}`
 ///
-/// Delete an account. Never one's own, nor that of someone who ranks higher
-/// in the Root Team. The teams it was alone in go with it; the others keep
-/// an owner. It cannot be undone, so the person types their own password
-/// again: a signed-in browser is no proof that it is them.
+/// Delete an account, a super admin or not. Never one's own. The teams it
+/// was alone in go with it; the others keep an owner. It cannot be undone,
+/// so the person types their own password again: a signed-in browser is no
+/// proof that it is them.
 pub async fn destroy_user(
     State(state): State<AppState>,
     context: PageContext,
@@ -651,7 +760,7 @@ pub async fn destroy_user(
     Path(id): Path<String>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    let db = &state.core.db;
+    let dialog = UserDialog::Delete;
     let refuse = |message: &str| {
         session.flash("error", message);
         navigate(&headers, "/users")
@@ -660,23 +769,12 @@ pub async fn destroy_user(
     let Some(account) = find_account(&state, &id).await? else {
         return Ok(refuse("User not found"));
     };
-    if let Some(message) = deletion_refusal(&**db, &actor, &account).await? {
-        return Ok(refuse(message));
+    if account.id == actor.id {
+        return Ok(refuse(own_account_refusal(dialog)));
     }
 
-    // The script gets the form again with what is wrong. Without it, the
-    // browser goes to the page that shows the dialog open on it.
-    let refused = |form: FormState| {
-        if is_fetch(&headers) {
-            return fragment(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                delete_user_form(&context, &account, &form),
-            );
-        }
-        form.flash(&session);
-        session.flash(REFUSED_FORM_KEY, DELETE_USER_FORM);
-        redirect_to(&format!("/users/{}/delete", account.id))
-    };
+    let refused =
+        |form: FormState| refused_user_form(&context, &session, &headers, dialog, &account, form);
     let Deletion { current_password } =
         match DELETE_USER_VALIDATOR.validate_as(&Value::Object(input.clone())) {
             Ok(deletion) => deletion,
@@ -688,17 +786,13 @@ pub async fn destroy_user(
         PasswordCheck::Limited(response) => return Ok(response),
     }
 
-    // Read again under the write lock: what each of them is in the Root
-    // Team may have changed since the form was drawn.
-    let mut transaction = db.begin().await?;
-    if let Some(message) = deletion_refusal(&mut *transaction, &actor, &account).await? {
-        return Ok(refuse(message));
+    let mut transaction = state.core.db.begin().await?;
+    if !still_super_admin(&mut transaction, &actor).await? {
+        return Ok(refuse(SUPER_ADMIN_REQUIRED));
     }
     match Team::delete_account(&mut transaction, account.id).await? {
         Ok(()) => transaction.commit().await?,
-        Err(AccountRemovalRefusal::LastOfRootTeam) => {
-            return Ok(refuse("The Root Team needs at least one member"));
-        }
+        Err(AccountRemovalRefusal::LastSuperAdmin) => return Ok(refuse(LAST_SUPER_ADMIN)),
     }
 
     session.flash("success", "User deleted");

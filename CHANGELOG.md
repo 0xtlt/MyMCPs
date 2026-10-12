@@ -2,16 +2,30 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
-## 2026-10-11
+## 2026-10-12
 
 ### Added
 
 - Added teams, with the roles and rules of Coolify. MCPs, access tokens, approvals, call logs, and analytics belong to a team and are only shown to its members, and an access token reaches the MCPs of its own team only. Every account has a personal team, anyone can create more, and a team switcher at the top of the navigation goes from one to another. On upgrade, everything an instance had goes to the **Root Team**: its first administrator becomes the owner, the other administrators stay admins, members stay members, and each of them also gets a personal team.
 - Added the **owner**, **admin**, and **member** roles of a team. A member reads the MCPs of the team and makes access tokens of their own. An admin also manages MCPs, every access token, members, and invites, and reads the logs and the analytics. An owner also deletes the team and decides who else owns it. Nobody changes or removes someone ranked above them, nor gives a role above their own.
-- Added registration, off by default: an owner or admin of the Root Team turns **Allow registration** on under **Settings → My Instance**, and anyone can then create an account, with a team of its own, on `/signup`.
-- Added a **Users** page for the owners and admins of the Root Team, who run the instance: every account with its teams, and a way to delete one, confirmed with your own password. The teams an account was alone in are deleted with it; the others keep an owner.
+- Added **super admins**, who run the instance: they change the instance settings, export backups, and manage accounts. It is said of the account, apart from any team: owning or administering a team, the Root Team included, gives no right over the instance. The first account is a super admin, and on upgrade every administrator an instance had becomes one.
+- Added registration, off by default: a super admin turns **Allow registration** on under **Settings → My Instance**, and anyone can then create an account, with a team of its own, on `/signup`.
+- Added a **Users** page for super admins: every account with its teams, a way to make another account a super admin or to take that from it, and a way to delete an account. Each asks for your own password, and the instance always keeps a super admin. The teams a deleted account was alone in are deleted with it; the others keep an owner.
 - Added a role to invites, and invites for people who already have an account: they sign in and join the team with one button. An invite works whether or not registration is open.
 - Added a choice of team to the consent page of the OAuth server, for someone who is in several: the client reaches the MCPs of that team.
+
+### Changed
+
+- Members no longer add, change, or delete MCPs, nor set their tool approvals: that is for the owners and admins of the team. A member only sees the access tokens they made themselves.
+- Instance settings, backups, and accounts are for super admins. An owner or admin of a team manages that team only.
+- Removing a member takes them out of the team and revokes the access tokens they made there. Their account and their other teams stay; deleting the account is done from **Users**.
+- The page of the team is at `/team`, where everyone in the team sees its members. `/invites` redirects there. The slug of an MCP is unique in its team rather than in the instance.
+- A backup must hold a super admin to be imported, where it had to hold an administrator. A backup made by an earlier version still imports: its administrators become super admins.
+- The database migration that adds teams runs when the server starts and cannot be undone by installing an earlier version, which no longer reads the database afterwards. Export a backup under **Settings → Backup** before you upgrade.
+
+## 2026-10-11
+
+### Added
 
 - Added a dashboard as the home page: the gateway address with a shortcut to install it in a client, the MCPs, access tokens, and approvals that need attention, and for administrators the tool calls of the last 14 days with the most recent ones.
 - Added search, filters by status, transport, and authentication, pagination, and an on/off switch on each row to the **MCPs** page, with the number of tools each MCP listed since the server started.
@@ -22,12 +36,6 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
-- Members no longer add, change, or delete MCPs, nor set their tool approvals: that is for the owners and admins of the team. A member only sees the access tokens they made themselves.
-- Instance settings, backups, and accounts are for the owners and admins of the Root Team. An admin of any other team manages that team only.
-- Removing a member takes them out of the team and revokes the access tokens they made there. Their account and their other teams stay; deleting the account is done from **Users**.
-- The page of the team is at `/team`, where everyone in the team sees its members. `/invites` redirects there. The slug of an MCP is unique in its team rather than in the instance.
-- A backup must hold an owner or an admin of the Root Team to be imported, where it had to hold an administrator.
-- The database migration that adds teams runs when the server starts and cannot be undone by installing an earlier version, which no longer reads the database afterwards. Export a backup under **Settings → Backup** before you upgrade.
 - MyMCPs is now a single Rust program instead of a Node.js application, with the same features. It reads and writes the same SQLite database, the same `APP_KEY`, encrypted credentials, access tokens, and OAuth connections, the same environment variables, and the same `/app/tmp` volume: upgrading is replacing the image or the binary, browsers stay signed in, and an instance can return to the previous version on the same data.
 - The interface follows the new design and is rendered by the server: pages load one stylesheet and one small script instead of a React application. **Tool approvals**, **Update MCP**, and **Re-authorize** moved from the edit dialog of an MCP to the **⋯** menu of its row.
 - The image contains the `mymcps` binary and Deno, and no longer Node.js. The server creates its key and applies database migrations itself when it starts, where the entrypoint script did, and the container health check is `mymcps healthcheck`.

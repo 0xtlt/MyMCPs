@@ -21,7 +21,7 @@ permissions.
 ## Deployment baseline
 
 - Complete first-run onboarding before exposing the instance to untrusted traffic;
-  the first account created owns the Root Team, and so runs the instance.
+  the first account created is a super admin, and so runs the instance.
 - Set a unique production `APP_KEY` and keep `.env` outside version control. The
   server generates and persists one in its data directory (`/app/tmp` in the
   container) when it is omitted. It refuses to start in production with a key
@@ -43,7 +43,7 @@ permissions.
 - Treat configured npm MCP packages as executable third-party code. Pin versions
   and use a separate, restricted deployment boundary for untrusted packages.
 - Keep registration closed unless strangers may use the instance: it is off by
-  default, and an owner or admin of the Root Team turns it on under
+  default, and a super admin turns it on under
   **Settings → My Instance**. An account that registers gets a team of its own,
   where it can add MCPs, npm packages included: those run in a Deno sandbox on
   your server.
@@ -51,9 +51,10 @@ permissions.
   registry, with the credentials it holds, and every access token of the team.
   A member reads the registry and makes access tokens of their own, which call
   the tools of every enabled MCP of the team.
-- Give the owner and admin roles of the Root Team to operators only: they change
-  the instance settings, export backups, which hold every credential of every
-  team, and delete accounts.
+- Make operators only super admins: they change the instance settings, export
+  backups, which hold every credential of every team, delete accounts, and
+  decide who else is a super admin. A role in a team, the Root Team included,
+  gives none of that.
 - Revoke access tokens when a user or upstream integration is no longer trusted.
 
 ## Application safeguards

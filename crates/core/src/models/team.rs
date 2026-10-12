@@ -113,14 +113,16 @@ const BY_RANK: &str = "case `team_user`.`role` when 'owner' then 0 when 'admin' 
 /// Why an account cannot be deleted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountRemovalRefusal {
-    /// Nobody else is in the Root Team: the instance would have no one to run it.
-    LastOfRootTeam,
+    /// It is the only super admin: the instance would have no one to run it.
+    LastSuperAdmin,
 }
 
 impl Team {
-    /// The team of the instance. The migration that added teams created it,
-    /// and it is never deleted. Its owners and administrators run the
-    /// instance: its settings, its backups, its accounts.
+    /// The first team of an instance. The migration that added teams created
+    /// it and moved to it everything the instance had, and the first account
+    /// owns it. It is a team like the others: a role in it gives no right
+    /// over the instance, which the super admins run. Its owners do not
+    /// delete it; it goes, as any team does, with the last account in it.
     pub const ROOT_ID: i64 = 1;
 
     pub fn is_root(&self) -> bool {
@@ -307,11 +309,14 @@ impl Team {
         .bind(user_id)
         .fetch_all(&mut **transaction)
         .await?;
-        if teams
-            .iter()
-            .any(|(team_id, others)| *team_id == Self::ROOT_ID && *others == 0)
-        {
-            return Ok(Err(AccountRemovalRefusal::LastOfRootTeam));
+        let other_super_admins: i64 = sqlx::query_scalar(
+            "select count(*) from `users` where `is_super_admin` = 1 and `id` <> ?",
+        )
+        .bind(user_id)
+        .fetch_one(&mut **transaction)
+        .await?;
+        if other_super_admins == 0 {
+            return Ok(Err(AccountRemovalRefusal::LastSuperAdmin));
         }
 
         for (team_id, others) in teams {
