@@ -204,10 +204,11 @@ pub async fn update_email(
     let mut run = UPDATE_EMAIL_VALIDATOR.start(&Value::Object(input.clone()));
     for check in run.take_checks() {
         // The one check that needs the database: the email does not belong
-        // to another user. The user's own address is not a duplicate.
+        // to another user, in whatever letter case. The user's own address
+        // is not a duplicate.
         let taken = match check.value.as_str() {
             Some(email) => sqlx::query_scalar::<_, i64>(
-                "select `id` from `users` where `email` = ? and `id` != ? limit 1",
+                "select `id` from `users` where lower(`email`) = lower(?) and `id` != ? limit 1",
             )
             .bind(email)
             .bind(user.id)

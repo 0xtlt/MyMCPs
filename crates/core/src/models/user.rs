@@ -154,14 +154,27 @@ impl User {
         initials.to_uppercase()
     }
 
+    /// The account of an address, letter case aside: `Ada@Example.com` and
+    /// `ada@example.com` are one mailbox, so they are one account. Signing
+    /// in, signing up, changing an address and accepting an invite all ask
+    /// here, which is what keeps a second account from taking the address
+    /// of the first in another case.
+    ///
+    /// Instances from before this rule may hold such pairs. The account
+    /// written exactly as asked then wins, and the oldest one otherwise, so
+    /// each of them still signs in with its own spelling.
     pub async fn find_by_email<'e, E>(db: E, email: &str) -> Result<Option<Self>, sqlx::Error>
     where
         E: SqliteExecutor<'e>,
     {
-        sqlx::query_as("select * from `users` where `email` = ?")
-            .bind(email)
-            .fetch_optional(db)
-            .await
+        sqlx::query_as(
+            "select * from `users` where lower(`email`) = lower(?) \
+             order by `email` = ? desc, `id` asc limit 1",
+        )
+        .bind(email)
+        .bind(email)
+        .fetch_optional(db)
+        .await
     }
 
     /// Whether the first account, which runs the instance, exists.

@@ -120,14 +120,20 @@ async fn render(
     let db = &state.core.db;
     let members = members_of(state, team.id()).await?;
     // Who was invited, and the links that let them in, are for those who
-    // may invite.
+    // may invite, up to the role they may give: the link of an invite is
+    // all it takes to join with its role, so an administrator who read the
+    // link of an owner's invite could make themselves an owner.
     let invites: Vec<Invite> = if team.is_admin() {
-        sqlx::query_as(
+        let invites: Vec<Invite> = sqlx::query_as(
             "select * from `invites` where `team_id` = ? order by `created_at` desc, `id` desc",
         )
         .bind(team.id())
         .fetch_all(&**db)
-        .await?
+        .await?;
+        invites
+            .into_iter()
+            .filter(|invite| team.role().may_grant(invite.role))
+            .collect()
     } else {
         Vec::new()
     };

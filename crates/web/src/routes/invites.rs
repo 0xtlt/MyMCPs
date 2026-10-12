@@ -70,9 +70,17 @@ where
         .await
 }
 
-/// Whether two addresses are the same account's: letter case aside.
-fn same_address(left: &str, right: &str) -> bool {
-    left.eq_ignore_ascii_case(right)
+/// Whether this account is the one the invite is for: the account of the
+/// invited address, which [`User::find_by_email`] names. An address that
+/// reads the same is not enough: an earlier version let two accounts differ
+/// by letter case alone, and only one of them was invited.
+async fn is_invited<'e, E>(db: E, user: &User, invite: &Invite) -> Result<bool, sqlx::Error>
+where
+    E: SqliteExecutor<'e>,
+{
+    Ok(User::find_by_email(db, &invite.email)
+        .await?
+        .is_some_and(|account| account.id == user.id))
 }
 
 /// `GET /invites`: the invites are a part of the Team page.
@@ -191,8 +199,12 @@ pub async fn destroy(
         Some(id) => Invite::find(&**db, id).await?,
         None => None,
     };
-    // The invite of another team is answered like one that does not exist.
-    let Some(invite) = invite.filter(|invite| invite.team_id == team.id()) else {
+    // The invite of another team is answered like one that does not exist,
+    // and so is one for a role above the person's own, which they are not
+    // shown either.
+    let Some(invite) =
+        invite.filter(|invite| invite.team_id == team.id() && team.role().may_grant(invite.role))
+    else {
         session.flash("error", "Invite not found");
         return Ok(navigate(&headers, &team_page));
     };
@@ -256,7 +268,7 @@ pub async fn show(
     };
 
     if let Some(user) = &context.user {
-        if !same_address(&user.email, &invite.email) {
+        if !is_invited(&**db, user, &invite).await? {
             return Ok(other_account(&session, &invite));
         }
         return Ok(page(join_page(&context, &invite, &team)));
@@ -304,13 +316,14 @@ pub async fn accept(
     };
 
     if let Some(mut user) = user {
-        if !same_address(&user.email, &invite.email) {
-            return Ok(other_account(&session, &invite));
-        }
         // Two requests accepting the same link at once must not both use
         // it. The transaction takes the write lock when it begins, so the
         // second one reads the invite as the first one left it: accepted.
         let mut transaction = db.begin().await?;
+        if !is_invited(&mut *transaction, &user, &invite).await? {
+            transaction.rollback().await?;
+            return Ok(other_account(&session, &invite));
+        }
         let Some(mut invite) = find_by_token(&mut *transaction, &invite.token)
             .await?
             .filter(Invite::is_usable)

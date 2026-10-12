@@ -1086,10 +1086,29 @@ async fn an_invite_carries_a_role_and_nobody_invites_above_their_own() {
             .contains("<option value=\"owner\">Owner</option>")
     );
     invite(&owner, "new-owner@example.com", "owner").await;
+    let new_owner = stored("new-owner@example.com").await.unwrap();
+    assert_eq!(new_owner.role, TeamRole::Owner);
+
+    // The link of an invite is all it takes to join with its role: an
+    // administrator is not shown the invite of an owner, and does not
+    // remove it either. They see and remove the invites they could make.
+    let listed = page(&app, &admin, Team::ROOT_ID, "/team").await;
+    assert!(listed.contains(&new_admin.token));
+    assert!(!listed.contains(&new_owner.token));
+    assert!(!listed.contains("new-owner@example.com"));
+    let listed = page(&app, &owner, Team::ROOT_ID, "/team").await;
+    assert!(listed.contains(&new_admin.token) && listed.contains(&new_owner.token));
+    let response = app
+        .delete(&format!("/invites/{}", new_owner.id))
+        .login_as(&admin)
+        .csrf()
+        .send()
+        .await;
     assert_eq!(
-        stored("new-owner@example.com").await.unwrap().role,
-        TeamRole::Owner
+        flash(&response, "error").as_deref(),
+        Some("Invite not found")
     );
+    assert!(stored("new-owner@example.com").await.is_some());
 
     // The invite of a team is its administrators' to remove, and no one else's.
     let (_, outsider) = team_with_owner(&app, "Elsewhere").await;
@@ -1147,6 +1166,128 @@ async fn an_invite_carries_a_role_and_nobody_invites_above_their_own() {
     assert!(!ada.is_super_admin);
     let users = app.get("/users").session(accepted.session()).send().await;
     assert_eq!(flash(&users, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
+}
+
+#[tokio::test]
+async fn an_address_is_one_account_whatever_its_letter_case() {
+    let app = TestApp::new().await;
+    let owner = create_super_admin(&app).await;
+    set_registration(&app, &owner, true).await;
+    let ada = create_account(&app, Some("ada@example.com")).await;
+    let users = async || count(&app, "select count(*) from `users`").await;
+    let before = users().await;
+
+    // Nobody takes the address of an account in another case: not by
+    // signing up, nor by changing their own.
+    let refused = sign_up(&app, "Not Ada", "Ada@Example.com").await;
+    assert_redirect(&refused, "/signup");
+    assert_eq!(users().await, before);
+    let other = create_account(&app, Some("other@example.com")).await;
+    let refused = app
+        .post("/settings/email?_method=PATCH")
+        .login_as(&other)
+        .csrf()
+        .form(&[("email", "ADA@example.com"), ("currentPassword", PASSWORD)])
+        .send()
+        .await;
+    assert!(refused.flashed("error").is_some());
+    let stored = User::find(&*app.core.db, other.id).await.unwrap().unwrap();
+    assert_eq!(stored.email, "other@example.com");
+    // Their own, they may write as they like.
+    let changed = app
+        .post("/settings/email?_method=PATCH")
+        .login_as(&other)
+        .csrf()
+        .form(&[
+            ("email", "Other@Example.com"),
+            ("currentPassword", PASSWORD),
+        ])
+        .send()
+        .await;
+    assert_eq!(flash(&changed, "success").as_deref(), Some("Email updated"));
+
+    // And the account signs in however its address is typed.
+    let signed_in = app
+        .post("/login")
+        .csrf()
+        .form(&[("email", "ADA@EXAMPLE.COM"), ("password", PASSWORD)])
+        .send()
+        .await;
+    assert_redirect(&signed_in, "/");
+    let found = User::find_by_email(&*app.core.db, "Ada@Example.COM")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.id, ada.id);
+}
+
+#[tokio::test]
+async fn an_invite_is_for_the_account_of_its_address_and_no_look_alike() {
+    let app = TestApp::new().await;
+    let owner = create_owner(&app).await;
+    // Two accounts whose addresses differ by letter case alone, as an
+    // earlier version let them be made. The older one is in no team of
+    // the owner; the other was made to look like it.
+    let invited = create_account(&app, Some("grace@example.com")).await;
+    let look_alike = create_account(&app, Some("Grace@Example.com")).await;
+    let invite = create_invite(&app, owner.id, |invite| {
+        invite.email = "grace@example.com".into();
+        invite.role = TeamRole::Owner;
+    })
+    .await;
+    let path = format!("/invite/{}", invite.token);
+
+    // The look-alike is told the invite is not theirs, and joins nothing.
+    let shown = app.get(&path).login_as(&look_alike).send().await;
+    assert_redirect(&shown, "/");
+    assert_eq!(
+        flash(&shown, "error").as_deref(),
+        Some("This invite is for grace@example.com. Sign in with that address to accept it.")
+    );
+    let refused = app.post(&path).login_as(&look_alike).csrf().send().await;
+    assert_redirect(&refused, "/");
+    assert_eq!(role_of(&app, Team::ROOT_ID, &look_alike).await, None);
+    let stored: Invite = sqlx::query_as("select * from `invites` where `id` = ?")
+        .bind(invite.id)
+        .fetch_one(&*app.core.db)
+        .await
+        .unwrap();
+    assert!(stored.accepted_at.is_none());
+    // A visitor cannot make a third account for the address either: it has one.
+    assert_redirect(&app.get(&path).send().await, "/login");
+
+    // The account that was invited joins, with the role of the invite.
+    let accepted = app.post(&path).login_as(&invited).csrf().send().await;
+    assert_redirect(&accepted, "/");
+    assert_eq!(
+        flash(&accepted, "success").as_deref(),
+        Some("You joined the team")
+    );
+    assert_eq!(
+        role_of(&app, Team::ROOT_ID, &invited).await,
+        Some(TeamRole::Owner)
+    );
+
+    // An invite written in another case than the account is still theirs.
+    let invite = create_invite(&app, owner.id, |invite| {
+        invite.email = "LINUS@example.com".into();
+    })
+    .await;
+    let linus = create_account(&app, Some("linus@example.com")).await;
+    let accepted = app
+        .post(&format!("/invite/{}", invite.token))
+        .login_as(&linus)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(
+        flash(&accepted, "success").as_deref(),
+        Some("You joined the team")
+    );
+    assert_eq!(
+        role_of(&app, Team::ROOT_ID, &linus).await,
+        Some(TeamRole::Member)
+    );
 }
 
 #[tokio::test]
