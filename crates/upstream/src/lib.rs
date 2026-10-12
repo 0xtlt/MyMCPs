@@ -152,7 +152,7 @@ pub use npm_update::{
     McpNpmUpdateError, McpNpmUpdateFailure, McpNpmUpdateRunResult, NpmUpdateRuntime,
     is_latest_npm_version, is_tracking_latest,
 };
-pub use oauth::uses_pasted_oauth_callback;
+pub use oauth::{OAUTH_CLIENT_METADATA_PATH, oauth_client_metadata, uses_pasted_oauth_callback};
 pub use session::{
     MAX_PENDING_OAUTH_START_BYTES, OauthSession, OauthSessionStore, OauthStart,
     clear_oauth_session, read_oauth_session, start_oauth_session,

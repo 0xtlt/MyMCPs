@@ -232,6 +232,51 @@ async fn publishes_mcp_protected_resource_and_authorization_server_metadata() {
 }
 
 #[tokio::test]
+async fn publishes_the_client_it_is_to_the_provider_of_an_mcp() {
+    let app =
+        TestApp::with_config(|config| config.app_url = Some("https://mcp.example.com".into()))
+            .await;
+    create_admin(&app).await;
+
+    let response = app.get("/oauth/client-metadata.json").api().send().await;
+
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(
+        response.json(),
+        json!({
+            "client_id": "https://mcp.example.com/oauth/client-metadata.json",
+            "client_name": "MyMCPs",
+            "client_uri": "https://mcp.example.com",
+            "redirect_uris": ["https://mcp.example.com/mcps/oauth/callback"],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        })
+    );
+    assert_eq!(
+        response.header("content-type"),
+        Some("application/json; charset=utf-8")
+    );
+    assert_eq!(
+        response.header("cache-control"),
+        Some("public, max-age=3600")
+    );
+
+    // A provider cannot fetch it from the loopback address of development.
+    let local = TestApp::new().await;
+    create_admin(&local).await;
+    assert_eq!(
+        local
+            .get("/oauth/client-metadata.json")
+            .api()
+            .send()
+            .await
+            .status,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}
+
+#[tokio::test]
 async fn publishes_nothing_while_app_url_cannot_be_the_address_of_the_server() {
     for app_url in [
         None,
@@ -258,6 +303,7 @@ async fn publishes_nothing_while_app_url_cannot_be_the_address_of_the_server() {
                 .api()
                 .send()
                 .await,
+            app.get("/oauth/client-metadata.json").api().send().await,
             app.post("/register")
                 .api()
                 .json(json!({ "redirect_uris": [RUNTIME_REDIRECT_URI] }))

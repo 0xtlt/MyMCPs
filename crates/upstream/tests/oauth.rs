@@ -384,6 +384,172 @@ async fn registers_the_strava_mcp_as_claude_code_with_the_normal_app_callback() 
     assert_eq!(mcp.oauth_client_id.as_deref(), Some("strava-client-123"));
 }
 
+/// A provider like the one of ElevenLabs: no registration endpoint, and a
+/// client it reads from the URL that is its ID.
+fn metadata_document_server(members: serde_json::Value) -> impl Fn(&Call) -> CannedResponse {
+    move |call| {
+        if call.url.contains("/.well-known/oauth-protected-resource") {
+            return json_response(json!({
+                "resource": "https://api.example/v1/mcp",
+                "authorization_servers": ["https://api.example"],
+            }));
+        }
+        match call.url.as_str() {
+            "https://api.example/.well-known/oauth-authorization-server" => {
+                let mut metadata = authorization_server("https://api.example");
+                metadata
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("registration_endpoint");
+                for (name, value) in members.as_object().unwrap() {
+                    metadata[name] = value.clone();
+                }
+                json_response(metadata)
+            }
+            "https://api.example/register" => json_response(registered_client("registered-123")),
+            "https://api.example/token" => json_response(json!({
+                "access_token": "access-token",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "refresh-token",
+            })),
+            _ => not_found(),
+        }
+    }
+}
+
+const PUBLIC_APP_URL: &str = "https://mymcps.example";
+const CLIENT_DOCUMENT: &str = "https://mymcps.example/oauth/client-metadata.json";
+
+async fn draft_mcp(core: &TestCore) -> mymcps_core::models::Mcp {
+    create_mcp(core, |mcp| {
+        mcp.http_url = Some("https://api.example/v1/mcp".into());
+        mcp.status = McpStatus::Draft;
+    })
+    .await
+}
+
+#[tokio::test]
+async fn names_its_metadata_document_to_a_provider_without_registration() {
+    let core = TestCore::with_config(|config| config.app_url = Some(PUBLIC_APP_URL.into())).await;
+    let (upstream, calls) = upstream(
+        &core,
+        metadata_document_server(json!({ "client_id_metadata_document_supported": true })),
+    );
+    let mut mcp = draft_mcp(&core).await;
+    let session = MemorySession::new();
+
+    let redirect = upstream.start_oauth_flow(&session, &mut mcp).await.unwrap();
+    let redirect = Url::parse(&redirect).unwrap();
+
+    assert_eq!(
+        query(&redirect, "client_id").as_deref(),
+        Some(CLIENT_DOCUMENT)
+    );
+    assert_eq!(
+        query(&redirect, "redirect_uri").as_deref(),
+        Some("https://mymcps.example/mcps/oauth/callback")
+    );
+    assert_eq!(mcp.oauth_client_id.as_deref(), Some(CLIENT_DOCUMENT));
+    assert_eq!(mcp.oauth_client_auth_method.as_deref(), Some("none"));
+    assert_eq!(mcp.oauth_client_secret, None);
+    assert!(calls.posts().is_empty());
+
+    // The document is the client the redirect names.
+    let document = mymcps_upstream::oauth_client_metadata(&core.config).unwrap();
+    assert_eq!(document["client_id"], CLIENT_DOCUMENT);
+    assert_eq!(
+        document["redirect_uris"],
+        json!([query(&redirect, "redirect_uri")])
+    );
+    assert_eq!(document["token_endpoint_auth_method"], "none");
+
+    let oauth = read_oauth_session(&session, query(&redirect, "state").as_deref()).unwrap();
+    upstream
+        .exchange_authorization_code(&mut mcp, &oauth, "authorization-code", None)
+        .await
+        .unwrap();
+    let exchange = &calls.to("https://api.example/token")[0];
+    assert_eq!(exchange.form("client_id").as_deref(), Some(CLIENT_DOCUMENT));
+    assert_eq!(exchange.header("authorization"), None);
+    assert_eq!(mcp.status, McpStatus::Ready);
+
+    // Connecting again names the same client.
+    calls.clear();
+    let again = upstream.start_oauth_flow(&session, &mut mcp).await.unwrap();
+    assert_eq!(
+        query(&Url::parse(&again).unwrap(), "client_id").as_deref(),
+        Some(CLIENT_DOCUMENT)
+    );
+    assert!(mcp.oauth_access_token.is_some());
+}
+
+#[tokio::test]
+async fn registers_with_a_provider_that_also_reads_metadata_documents() {
+    let core = TestCore::with_config(|config| config.app_url = Some(PUBLIC_APP_URL.into())).await;
+    let (upstream, calls) = upstream(
+        &core,
+        metadata_document_server(json!({
+            "client_id_metadata_document_supported": true,
+            "registration_endpoint": "https://api.example/register",
+        })),
+    );
+    let mut mcp = draft_mcp(&core).await;
+
+    upstream
+        .start_oauth_flow(&MemorySession::new(), &mut mcp)
+        .await
+        .unwrap();
+
+    assert_eq!(mcp.oauth_client_id.as_deref(), Some("registered-123"));
+    assert_eq!(calls.to("https://api.example/register").len(), 1);
+}
+
+#[tokio::test]
+async fn has_no_metadata_document_for_a_provider_to_fetch_without_a_public_https_address() {
+    // The loopback address of the tests.
+    let core = TestCore::new().await;
+    let (upstream, _) = upstream(
+        &core,
+        metadata_document_server(json!({ "client_id_metadata_document_supported": true })),
+    );
+    let mut mcp = draft_mcp(&core).await;
+
+    let error = upstream
+        .start_oauth_flow(&MemorySession::new(), &mut mcp)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "This OAuth provider reads the client from APP_URL, which must be a public HTTPS origin it can reach"
+    );
+    assert_eq!(mcp.oauth_client_id, None);
+    assert!(mymcps_upstream::oauth_client_metadata(&core.config).is_err());
+}
+
+#[tokio::test]
+async fn refuses_a_provider_that_neither_registers_nor_reads_metadata_documents() {
+    let core = TestCore::with_config(|config| config.app_url = Some(PUBLIC_APP_URL.into())).await;
+    for members in [
+        json!({}),
+        json!({ "client_id_metadata_document_supported": false }),
+    ] {
+        let (upstream, _) = upstream(&core, metadata_document_server(members));
+        let mut mcp = draft_mcp(&core).await;
+
+        let error = upstream
+            .start_oauth_flow(&MemorySession::new(), &mut mcp)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "This OAuth provider does not support automatic client registration"
+        );
+    }
+}
+
 #[tokio::test]
 async fn verifies_a_same_origin_path_issuer_discovered_through_legacy_root_metadata() {
     let core = TestCore::new().await;

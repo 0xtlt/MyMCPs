@@ -386,6 +386,20 @@ pub const MCP_TEMPLATES: &[McpTemplate] = &[
         ),
     },
     McpTemplate {
+        id: "elevenlabs",
+        name: "ElevenLabs",
+        description: "Generate speech and voices, and manage voice agents with your ElevenLabs account.",
+        category: TemplateCategory::Development,
+        popular: false,
+        icon: "audio-lines",
+        keywords: &["voice", "text to speech", "tts", "audio", "agents", "ai"],
+        values: http(
+            "ElevenLabs",
+            "Generate speech and voices, and manage voice agents in ElevenLabs.",
+            "https://api.us.elevenlabs.io/v1/mcp",
+        ),
+    },
+    McpTemplate {
         id: "context7",
         name: "Context7",
         description: "Retrieve current, version-specific library documentation and code examples.",
@@ -527,7 +541,7 @@ mod tests {
 
     #[test]
     fn lists_the_gallery_of_the_app() {
-        assert_eq!(MCP_TEMPLATES.len(), 19);
+        assert_eq!(MCP_TEMPLATES.len(), 20);
         let ids: HashSet<&str> = MCP_TEMPLATES.iter().map(|template| template.id).collect();
         assert_eq!(ids.len(), MCP_TEMPLATES.len(), "ids are unique");
         assert_eq!(
@@ -596,6 +610,10 @@ mod tests {
         );
         // Another path of the same server is still that server.
         assert_eq!(icon_of(&http("https://MCP.Stripe.com/v2")), "credit-card");
+        assert_eq!(
+            icon_of(&http("https://api.us.elevenlabs.io/v1/mcp")),
+            "audio-lines"
+        );
         assert_eq!(icon_of(&http("https://example.com/mcp")), "plug");
         assert_eq!(icon_of(&http("not a url")), "plug");
 
