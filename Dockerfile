@@ -16,7 +16,7 @@
 # Official Node.js image (multi-arch), for its `node` binary and its npm. It is
 # built on the Debian release of the runtime stage, whose C++ library the
 # binary loads.
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS node
+FROM node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0 AS node
 
 # ---------------------------------------------------------------------------
 # Compile the server
