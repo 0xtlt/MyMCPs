@@ -18,9 +18,11 @@ pub mod logs;
 pub mod mcp_tools;
 pub mod mcps;
 pub mod oauth_server;
+pub mod passkeys;
 pub mod settings;
 pub mod teams;
 pub mod tokens;
+pub mod two_factor;
 
 /// The routes of one part of the app, by who may reach them.
 #[derive(Default)]
@@ -84,9 +86,11 @@ pub fn all() -> FeatureRoutes {
         mcp_tools::routes(),
         mcps::routes(),
         oauth_server::routes(),
+        passkeys::routes(),
         settings::routes(),
         teams::routes(),
         tokens::routes(),
+        two_factor::routes(),
     ]
     .into_iter()
     .fold(FeatureRoutes::default(), FeatureRoutes::merge)

@@ -8,7 +8,9 @@ use axum::response::Response;
 use axum::routing::{get, patch};
 use http::HeaderMap;
 use maud::Markup;
-use mymcps_core::models::{GatewayToolMode, InstanceSetting, McpLogLevel, User};
+use mymcps_core::models::{
+    GatewayToolMode, InstanceSetting, McpLogLevel, Passkey, RecoveryCode, User,
+};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -28,15 +30,20 @@ use crate::validators::user::{
 };
 use crate::views::settings::{SettingsPage, email_form, password_form, settings_page};
 use crate::views::shell::PageContext;
+use crate::views::two_factor::Protection;
 
 /// Session key naming the form of the page that the previous request
 /// refused, flashed along with its [`FormState`].
-const REFUSED_FORM_KEY: &str = "settingsForm";
+pub(crate) const REFUSED_FORM_KEY: &str = "settingsForm";
 const EMAIL_FORM: &str = "email";
 const PASSWORD_FORM: &str = "password";
 const INSTANCE_FORM: &str = "instance";
 /// The export of a backup, whose route is in [`crate::routes::backup`].
 pub(crate) const BACKUP_FORM: &str = "backup";
+/// Turning the authenticator app off, in [`crate::routes::two_factor`].
+pub(crate) const AUTHENTICATOR_FORM: &str = "authenticator";
+/// Removing a passkey, in [`crate::routes::passkeys`].
+pub(crate) const REMOVE_PASSKEY_FORM: &str = "remove-passkey";
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
@@ -56,25 +63,51 @@ pub async fn index(
     session: Session,
     CurrentUser(user): CurrentUser,
 ) -> Result<Response, AppError> {
+    render(&state, &context, &session, &user, None).await
+}
+
+/// The Settings page, with the dialog that removes a passkey open on one
+/// or not.
+pub(crate) async fn render(
+    state: &AppState,
+    context: &PageContext,
+    session: &Session,
+    user: &User,
+    removing: Option<&Passkey>,
+) -> Result<Response, AppError> {
+    let db = &*state.core.db;
     let instance = if context.super_admin {
-        Some(InstanceSetting::current(&*state.core.db).await?)
+        Some(InstanceSetting::current(db).await?)
     } else {
         None
     };
+    let passkeys = Passkey::of_user(db, user.id).await?;
+    let recovery_codes_left = RecoveryCode::remaining(db, user.id).await?;
 
     let refused = session.flashed_text(REFUSED_FORM_KEY);
     let form = |name: &str| {
         if refused.as_deref() == Some(name) {
-            FormState::from_session(&session)
+            FormState::from_session(session)
         } else {
             FormState::default()
         }
     };
+    let (authenticator_form, remove_passkey_form) =
+        (form(AUTHENTICATOR_FORM), form(REMOVE_PASSKEY_FORM));
     Ok(page(settings_page(
-        &context,
+        context,
         &SettingsPage {
-            user: &user,
+            user,
             instance: instance.as_ref(),
+            protection: &Protection {
+                authenticator_since: user
+                    .two_factor_confirmed_at
+                    .filter(|_| user.has_authenticator()),
+                passkeys: &passkeys,
+                recovery_codes_left,
+                authenticator_form: &authenticator_form,
+                removing: removing.map(|passkey| (passkey, &remove_passkey_form)),
+            },
             email_form: &form(EMAIL_FORM),
             password_form: &form(PASSWORD_FORM),
             instance_form: &form(INSTANCE_FORM),

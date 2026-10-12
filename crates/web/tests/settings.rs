@@ -160,9 +160,9 @@ async fn shows_instance_settings_only_to_admins() {
         page.matches("name=\"_csrf\"").count()
     );
     // Sign out, the team of the switcher and the form that creates one, the
-    // email and the password of the account, the settings of the instance,
-    // and the export of a backup.
-    assert_eq!(page.matches("<form ").count(), 7);
+    // email and the password of the account, the passkey it may add, the
+    // settings of the instance, and the export of a backup.
+    assert_eq!(page.matches("<form ").count(), 8);
 
     assert_eq!(member_page.status, StatusCode::OK);
     let page = member_page.text();
@@ -184,7 +184,7 @@ async fn shows_instance_settings_only_to_admins() {
     }
     // Sign out, the team of the switcher and the form that creates one, the
     // email and the password of the account.
-    assert_eq!(page.matches("<form ").count(), 5);
+    assert_eq!(page.matches("<form ").count(), 6);
     // Reading the page as a member does not create the settings row.
     let rows: i64 = sqlx::query_scalar("select count(*) from `instance_settings`")
         .fetch_one(&*app.core.db)

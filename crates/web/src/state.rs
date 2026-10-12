@@ -24,6 +24,9 @@ pub struct Limiters {
     pub registration: Limiter,
     /// Current-password confirmations by one signed-in user.
     pub current_password: Limiter,
+    /// The challenges passkeys answered, each counted once: the session is
+    /// a cookie, which a browser can send again as it was before an answer.
+    pub passkey_challenge: Limiter,
     pub oauth_authorization: Limiter,
     pub oauth_token: Limiter,
     pub oauth_registration: Limiter,
@@ -53,6 +56,8 @@ impl Limiters {
             login_address: limiter(30, 15 * MINUTES),
             registration: limiter(10, 60 * MINUTES),
             current_password: limiter(5, 15 * MINUTES),
+            // Longer than a challenge may be answered.
+            passkey_challenge: limiter(1, 10 * MINUTES),
             oauth_authorization: limiter(100, 15 * MINUTES),
             oauth_token: limiter(50, 15 * MINUTES),
             oauth_registration: limiter(20, 60 * MINUTES),

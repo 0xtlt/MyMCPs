@@ -7,6 +7,7 @@ use maud::{Markup, html};
 use crate::forms::FormState;
 use crate::views::icon::{icon, logo};
 use crate::views::shell::{PageContext, auth_page};
+use crate::views::two_factor::passkey_sign_in;
 
 /// The first error of a form, above its fields.
 pub fn form_banner(form: &FormState) -> Markup {
@@ -97,6 +98,7 @@ pub fn login_page(context: &PageContext, form: &FormState) -> Markup {
                     button type="submit" class="button button--primary button--block" { "Sign in" }
                 }
             }
+            (passkey_sign_in(context, "Sign in with a passkey", false))
         }
     };
     auth_page(context, "Sign in", content)

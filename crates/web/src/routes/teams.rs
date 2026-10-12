@@ -68,6 +68,10 @@ pub fn routes() -> FeatureRoutes {
                 "/users/{id}/super-admin",
                 get(confirm_super_admin).patch(update_super_admin),
             )
+            .route(
+                "/users/{id}/protection",
+                get(confirm_reset_protection).delete(reset_protection),
+            )
             .route("/users/{id}/delete", get(confirm_destroy_user))
             .route("/users/{id}", delete(destroy_user)),
         ..Default::default()
@@ -504,6 +508,7 @@ pub async fn destroy_member(
 fn own_account_refusal(dialog: UserDialog) -> &'static str {
     match dialog {
         UserDialog::SuperAdmin => "You cannot change your own super admin access",
+        UserDialog::Protection => "Turn your own sign-in protection off under Settings",
         UserDialog::Delete => "You cannot delete your own account",
     }
 }
@@ -541,6 +546,9 @@ async fn users_page_for(
     )
     .fetch_all(&**db)
     .await?;
+    let with_passkeys: Vec<i64> = sqlx::query_scalar("select distinct `user_id` from `passkeys`")
+        .fetch_all(&**db)
+        .await?;
 
     let rows: Vec<UserRow> = accounts
         .into_iter()
@@ -551,6 +559,7 @@ async fn users_page_for(
                 .map(|(_, name, role)| (name.clone(), *role))
                 .collect();
             UserRow {
+                protected: account.has_authenticator() || with_passkeys.contains(&account.id),
                 user: account,
                 teams,
             }
@@ -721,6 +730,84 @@ pub async fn update_super_admin(
         } else {
             format!("{name} is no longer a super admin")
         },
+    );
+    Ok(navigate(&headers, "/users"))
+}
+
+/// `GET /users/{id}/protection`: the Users page with the dialog that
+/// removes the sign-in protection of this account open.
+pub async fn confirm_reset_protection(
+    State(state): State<AppState>,
+    context: PageContext,
+    session: Session,
+    CurrentUser(actor): CurrentUser,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Response, AppError> {
+    let dialog = UserDialog::Protection;
+    user_dialog(&state, &context, &session, &actor, &headers, &id, dialog).await
+}
+
+/// `DELETE /users/{id}/protection`
+///
+/// Take away the authenticator app, the passkeys and the recovery codes of
+/// an account whose owner lost them all: its password signs in alone
+/// again. Never one's own, which Settings turns off. It lowers the guard
+/// of someone else's account, so the person types their own password.
+pub async fn reset_protection(
+    State(state): State<AppState>,
+    context: PageContext,
+    session: Session,
+    CurrentUser(actor): CurrentUser,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Input(input): Input,
+) -> Result<Response, AppError> {
+    let dialog = UserDialog::Protection;
+    let refuse = |message: &str| {
+        session.flash("error", message);
+        navigate(&headers, "/users")
+    };
+
+    let Some(mut account) = find_account(&state, &id).await? else {
+        return Ok(refuse("User not found"));
+    };
+    if account.id == actor.id {
+        return Ok(refuse(own_account_refusal(dialog)));
+    }
+
+    let name = account.display_name().to_string();
+    let Deletion { current_password } =
+        match DELETE_USER_VALIDATOR.validate_as(&Value::Object(input.clone())) {
+            Ok(confirmation) => confirmation,
+            Err(error) => {
+                let form = FormState::new(&refusal(error)?, &input);
+                return Ok(refused_user_form(
+                    &context, &session, &headers, dialog, &account, form,
+                ));
+            }
+        };
+    match confirm_current_password(&state, &actor, &current_password).await? {
+        PasswordCheck::Confirmed => {}
+        PasswordCheck::Wrong => {
+            let form = wrong_current_password(&input);
+            return Ok(refused_user_form(
+                &context, &session, &headers, dialog, &account, form,
+            ));
+        }
+        PasswordCheck::Limited(response) => return Ok(response),
+    }
+
+    let mut transaction = state.core.db.begin().await?;
+    if !still_super_admin(&mut transaction, &actor).await? {
+        return Ok(refuse(SUPER_ADMIN_REQUIRED));
+    }
+    account.remove_protection(&mut transaction).await?;
+    transaction.commit().await?;
+
+    session.flash(
+        "success",
+        format!("{name} signs in with their password alone"),
     );
     Ok(navigate(&headers, "/users"))
 }

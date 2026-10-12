@@ -23,6 +23,13 @@ model! {
         /// its accounts. It belongs to the account, not to a role in a team:
         /// running a team, the Root Team included, gives none of it.
         pub is_super_admin: bool,
+        /// The secret of the authenticator app of this account, encrypted
+        /// with `APP_KEY`. See `two_factor`.
+        pub two_factor_secret: Option<String>,
+        /// Since when a code of that app is asked for at sign-in.
+        pub two_factor_confirmed_at: Option<Timestamp>,
+        /// The last step a code was accepted for: no code works twice.
+        pub two_factor_last_step: Option<i64>,
     }
 }
 

@@ -7,6 +7,7 @@ use mymcps_core::models::{DEFAULT_MCP_AUTO_UPDATE_CRON, InstanceSetting, McpLogL
 use crate::forms::FormState;
 use crate::views::icon::icon;
 use crate::views::shell::{PageContext, app_page};
+use crate::views::two_factor::{Protection, protection_dialogs, protection_section};
 
 /// What the Settings page shows.
 pub struct SettingsPage<'a> {
@@ -14,6 +15,8 @@ pub struct SettingsPage<'a> {
     /// The settings of the instance. `None` for someone who does not run
     /// it, who is shown neither them nor the backup.
     pub instance: Option<&'a InstanceSetting>,
+    /// What the account asks for besides its password at sign-in.
+    pub protection: &'a Protection<'a>,
     /// Each form with what was refused when it was posted without the
     /// page's script. At most one of them has errors.
     pub email_form: &'a FormState,
@@ -102,7 +105,7 @@ pub(crate) fn password_field_with_help(
     }
 }
 
-fn dialog_header(title_id: &str, title: &str, subtitle: &str) -> Markup {
+pub(crate) fn dialog_header(title_id: &str, title: &str, subtitle: &str) -> Markup {
     html! {
         div class="dialog__header" {
             div class="dialog__heading" {
@@ -205,7 +208,7 @@ pub fn backup_form(context: &PageContext, form: &FormState) -> Markup {
 }
 
 /// A dialog whose form the script sends and swaps in place.
-fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) -> Markup {
+pub(crate) fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) -> Markup {
     html! {
         dialog class="dialog dialog--sm" id=(id) aria-labelledby=(title_id) data-dialog-reset data-open[open] {
             div data-fragment { (form) }
@@ -477,6 +480,7 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
         settings.backup_form,
     ]
     .into_iter()
+    .chain(settings.protection.forms())
     .find(|form| form.has_errors());
     let mut context = context.clone();
     if reopened.is_some_and(|form| context.flash_error.as_deref() == form.first_error()) {
@@ -492,6 +496,7 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
             }
         }
         (account_section(settings.user))
+        (protection_section(settings.protection))
         @if let Some(instance) = settings.instance {
             (instance_section(context, instance, settings.instance_form))
         }
@@ -510,6 +515,7 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
             settings.password_form.has_errors(),
             password_form(context, settings.password_form),
         ))
+        (protection_dialogs(context, settings.protection))
         @if settings.instance.is_some() {
             (form_dialog(
                 "export-backup",

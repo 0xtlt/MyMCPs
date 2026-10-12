@@ -5,6 +5,8 @@ mod encryption;
 mod password;
 mod signed_url;
 mod tokens;
+pub mod totp;
+pub mod webauthn;
 
 pub use encryption::Encryption;
 pub use password::{hash_password, verify_password};

@@ -274,4 +274,20 @@ pub const MIGRATIONS: &[Migration] = &[
             r#"create unique index `oauth_authorization_codes_code_hash_unique` on `oauth_authorization_codes` (`code_hash`)"#,
         ],
     },
+    // What an account asks for besides its password: the secret of an
+    // authenticator app, encrypted with `APP_KEY`, with the last step a code
+    // was accepted for, the recovery codes, hashed, and the passkeys.
+    Migration {
+        name: "database/migrations/1791786000000_add_two_factor_and_passkeys",
+        statements: &[
+            r#"alter table `users` add column `two_factor_secret` text null"#,
+            r#"alter table `users` add column `two_factor_confirmed_at` datetime null"#,
+            r#"alter table `users` add column `two_factor_last_step` integer null"#,
+            r#"create table `two_factor_recovery_codes` (`id` integer not null primary key autoincrement, `user_id` integer not null, `code_hash` varchar(64) not null, `used_at` datetime null, `created_at` datetime not null, foreign key(`user_id`) references `users`(`id`) on delete CASCADE)"#,
+            r#"create index `two_factor_recovery_codes_user_id_index` on `two_factor_recovery_codes` (`user_id`)"#,
+            r#"create table `passkeys` (`id` integer not null primary key autoincrement, `user_id` integer not null, `name` varchar(120) not null, `credential_id` varchar(1400) not null, `public_key` text not null, `sign_count` integer not null default '0', `backed_up` boolean not null default '0', `created_at` datetime not null, `last_used_at` datetime null, foreign key(`user_id`) references `users`(`id`) on delete CASCADE)"#,
+            r#"create unique index `passkeys_credential_id_unique` on `passkeys` (`credential_id`)"#,
+            r#"create index `passkeys_user_id_index` on `passkeys` (`user_id`)"#,
+        ],
+    },
 ];

@@ -15,7 +15,7 @@ use mymcps_core::backup::{
 use mymcps_core::config::{TEST_APP_KEY, generate_app_key};
 use mymcps_core::crypto::{Encryption, hash_password};
 use mymcps_core::db::migrations::MIGRATIONS;
-use mymcps_core::models::{ApprovalRequest, InstanceSetting, Mcp, User};
+use mymcps_core::models::{ApprovalRequest, InstanceSetting, Mcp, Passkey, RecoveryCode, User};
 use mymcps_core::secrets::{EnvironmentInput, decrypt_environment, merge_environment};
 use mymcps_core::{Timestamp, VERSION};
 use mymcps_web::AppState;
@@ -910,7 +910,8 @@ async fn older_database(
 #[tokio::test]
 async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
     // Short of the last migrations: no session version on users, no tool
-    // approvals or settings on MCPs, no approval requests, no teams.
+    // approvals or settings on MCPs, no approval requests, no teams, no
+    // sign-in protection.
     let older = MIGRATIONS
         .iter()
         .position(|migration| {
@@ -919,7 +920,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
                 .ends_with("add_session_version_to_users_table")
         })
         .unwrap();
-    assert_eq!(MIGRATIONS.len() - older, 4);
+    assert_eq!(MIGRATIONS.len() - older, 5);
     let old_key = generate_app_key();
     let old_encryption = Encryption::new(&old_key);
     let dir = tempfile::tempdir().unwrap();
@@ -1398,7 +1399,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
             &[
                 "create table `copy` as select * from `users`",
                 "drop table `users`",
-                "create table `users` (`id` integer not null primary key autoincrement, `full_name` varchar(255) null, `email` varchar(254) null, `password` varchar(255) not null, `created_at` datetime not null, `updated_at` datetime null, `session_version` integer not null default '1', `current_team_id` integer null references `teams`(`id`) on delete SET NULL, `is_super_admin` boolean not null default '0')",
+                "create table `users` (`id` integer not null primary key autoincrement, `full_name` varchar(255) null, `email` varchar(254) null, `password` varchar(255) not null, `created_at` datetime not null, `updated_at` datetime null, `session_version` integer not null default '1', `current_team_id` integer null references `teams`(`id`) on delete SET NULL, `is_super_admin` boolean not null default '0', `two_factor_secret` text null, `two_factor_confirmed_at` datetime null, `two_factor_last_step` integer null)",
                 "insert into `users` select * from `copy`",
                 "drop table `copy`",
                 "update `users` set `email` = null",
@@ -1720,5 +1721,82 @@ async fn imports_a_backup_the_node_app_exported() {
     assert_eq!(
         count(&target, "adonis_schema").await,
         MIGRATIONS.len() as i64
+    );
+}
+
+#[tokio::test]
+async fn the_protection_of_an_account_follows_a_backup_to_another_key() {
+    // An account that asks for a code of its authenticator app, with its
+    // recovery codes and a passkey.
+    let source = fresh_instance().await;
+    let mut admin = create_super_admin_with(&source, "ada@example.com").await;
+    let secret = mymcps_core::crypto::totp::generate_secret();
+    let mut transaction = source.core.db.begin().await.unwrap();
+    admin
+        .enable_authenticator(&mut transaction, &source.core.encryption, &secret, 0)
+        .await
+        .unwrap();
+    let codes = RecoveryCode::replace_all(&mut transaction, admin.id)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    let mut passkey = Passkey {
+        user_id: admin.id,
+        name: "MacBook".into(),
+        credential_id: "credential".into(),
+        public_key: "key".into(),
+        ..Default::default()
+    };
+    passkey.insert(&*source.core.db).await.unwrap();
+    let exported = export_with(&source, &admin, BACKUP_PASSWORD).await;
+    assert_eq!(exported.status, StatusCode::OK);
+
+    let target = fresh_instance().await;
+    let imported = import(&target, &exported.body, BACKUP_PASSWORD).await;
+    assert_redirect(&imported, "/login");
+    let db = &*target.core.db;
+
+    // The secret of the app was encrypted anew with the key of this
+    // instance, which the key of the other no longer opens.
+    let restored = User::find(db, admin.id).await.unwrap().unwrap();
+    assert!(restored.has_authenticator());
+    let stored = restored.two_factor_secret.clone().unwrap();
+    assert_eq!(
+        target.core.encryption.decrypt(&stored),
+        Some(secret.clone())
+    );
+    assert_eq!(source.core.encryption.decrypt(&stored), None);
+    assert_eq!(RecoveryCode::remaining(db, admin.id).await.unwrap(), 8);
+    assert_eq!(Passkey::of_user(db, admin.id).await.unwrap().len(), 1);
+
+    // The password is still half of a sign-in, and the app has the other.
+    let typed = target
+        .post("/login")
+        .csrf()
+        .form(&[("email", "ada@example.com"), ("password", PASSWORD)])
+        .send()
+        .await;
+    assert_redirect(&typed, "/login/two-factor");
+    let now = Timestamp::now().timestamp_millis() / 1000;
+    for (code, destination) in [
+        ("000000".to_string(), "/login/two-factor"),
+        (
+            mymcps_core::crypto::totp::current_code(&secret, now).unwrap(),
+            "/",
+        ),
+    ] {
+        let answered = target
+            .post("/login/two-factor")
+            .session(typed.session())
+            .csrf()
+            .form(&[("code", &code)])
+            .send()
+            .await;
+        assert_redirect(&answered, destination);
+    }
+    assert!(
+        RecoveryCode::consume(db, admin.id, &codes[0])
+            .await
+            .unwrap()
     );
 }

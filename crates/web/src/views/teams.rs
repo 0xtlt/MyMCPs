@@ -411,6 +411,8 @@ pub struct UserRow {
     pub user: User,
     /// The name of each team, and what the account is in it.
     pub teams: Vec<(String, TeamRole)>,
+    /// Whether the account asks for more than its password at sign-in.
+    pub protected: bool,
 }
 
 /// A dialog of the Users page. It acts on one account, and asks the person
@@ -419,17 +421,20 @@ pub struct UserRow {
 pub enum UserDialog {
     /// Make the account a super admin, or an account like any other.
     SuperAdmin,
+    /// Take away what the account asks for besides its password at sign-in.
+    Protection,
     Delete,
 }
 
 impl UserDialog {
-    pub const ALL: [Self; 2] = [Self::SuperAdmin, Self::Delete];
+    pub const ALL: [Self; 3] = [Self::SuperAdmin, Self::Protection, Self::Delete];
 
     /// The id of the `<dialog>`, which is also the fragment the page script
     /// asks for.
     pub const fn id(self) -> &'static str {
         match self {
             Self::SuperAdmin => "super-admin",
+            Self::Protection => "reset-protection",
             Self::Delete => "delete-user",
         }
     }
@@ -439,6 +444,7 @@ impl UserDialog {
     pub fn href(self, account: &User) -> String {
         match self {
             Self::SuperAdmin => format!("/users/{}/super-admin", account.id),
+            Self::Protection => format!("/users/{}/protection", account.id),
             Self::Delete => format!("/users/{}/delete", account.id),
         }
     }
@@ -448,6 +454,7 @@ impl UserDialog {
     pub fn form(self, context: &PageContext, account: &User, form: &FormState) -> Markup {
         match self {
             Self::SuperAdmin => super_admin_form(context, account, form),
+            Self::Protection => reset_protection_form(context, account, form),
             Self::Delete => delete_user_form(context, account, form),
         }
     }
@@ -507,6 +514,10 @@ fn user_menu(row: &UserRow, id: &str) -> Markup {
                     (icon("shield-check")) "Make super admin"
                 }
             }
+            @if row.protected {
+                a class="menu__item" role="menuitem" href=(UserDialog::Protection.href(account))
+                    data-dialog-open="#reset-protection" data-dialog-fetch { (icon("lock")) "Remove sign-in protection" }
+            }
             div class="menu__separator" {}
             a class="menu__item menu__item--critical" role="menuitem" href=(UserDialog::Delete.href(account))
                 data-dialog-open="#delete-user" data-dialog-fetch { (icon("trash")) "Delete user" }
@@ -560,6 +571,45 @@ pub fn super_admin_form(context: &PageContext, account: &User, form: &FormState)
                 } @else {
                     button type="submit" class="button button--critical" { "Remove super admin" }
                 }
+            }
+        }
+    }
+}
+
+/// The form of the "Remove sign-in protection" dialog, for someone who lost
+/// their authenticator app, their passkeys and their recovery codes. It
+/// opens the account to its password alone, so the person types their own.
+pub fn reset_protection_form(context: &PageContext, account: &User, form: &FormState) -> Markup {
+    let name = account.display_name();
+    html! {
+        form method="post" action=(format!("/users/{}/protection?_method=DELETE", account.id)) data-async {
+            (context.csrf_field())
+            div class="dialog__header" {
+                div class="dialog__heading" {
+                    h2 class="dialog__title" id="reset-protection-title" { "Remove the sign-in protection of " (name) "?" }
+                    p class="dialog__subtitle" { (account.email) }
+                }
+                button type="button" class="icon-button" data-dialog-close aria-label="Close" { (icon("x")) }
+            }
+            div class="dialog__body" {
+                div class="stack" {
+                    p class="text-secondary" {
+                        "Their authenticator app, their passkeys and their recovery codes are removed: their password signs in alone, until they set a protection up again. Do it only once you are sure it is them who asks."
+                    }
+                    (password_field_with_help(
+                        form,
+                        "reset-protection-password",
+                        "currentPassword",
+                        "Your password",
+                        "current-password",
+                        !form.has_errors(),
+                        Some("Your account password, to confirm it is you."),
+                    ))
+                }
+            }
+            div class="dialog__footer" {
+                button type="button" class="button button--secondary" data-dialog-close { "Cancel" }
+                button type="submit" class="button button--critical" { "Remove protection" }
             }
         }
     }

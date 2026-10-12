@@ -23,6 +23,7 @@ Accounts, teams, and permissions work as they do in Coolify, with one difference
 - **Roles.** In each team a person is a **member**, an **admin**, or an **owner**. A member sees the MCPs of the team, makes access tokens of their own, and decides the approvals those tokens ask for. An admin also adds and changes MCPs, sees every access token, the logs and the analytics, and manages members and invites up to their own rank. An owner also deletes the team and decides who else owns it.
 - **Super admins.** A super admin runs the instance: they change the instance settings under **Settings → My Instance**, export backups, and manage accounts under **Users**. The first account is one, and makes others from **Users**, which asks for their own password; the instance always keeps one. It gives no access to the teams of other people, and a role in a team gives no right over the instance: an owner of a team runs that team only.
 - **Root Team.** The first team of an instance, which the first account owns. It is a team like the others. An instance that upgrades finds everything it had there.
+- **Sign-in protection.** Under **Settings → Sign-in protection**, anyone makes their account ask for more than its password: a 6-digit code of an **authenticator app** (1Password, Google Authenticator, Authy and the like), or a **passkey** (a fingerprint, a face, or a security key). A passkey also signs in alone, from the sign-in page, without the password. The first of the two comes with eight **recovery codes**, shown once, each of which signs in once when the app and the passkeys are out of reach. Passkeys belong to the address of the instance: they need `APP_URL` to be the address people open, and stop answering if it changes.
 - **Invites.** An admin invites an email address into a team, with a role, from **Team → Create invite**. The link lets that person create their account, or join with the one they have. Invites work whether or not registration is open.
 - **Registration.** Off by default. A super admin turns **Allow registration** on under **Settings → My Instance**: anyone who reaches the instance can then create an account on `/signup`. A new account sees nothing of the other teams: it gets a personal team of its own, where it can add MCPs, including npm packages that run in a sandbox on your server. Open registration only on an instance you would let strangers use that way.
 
@@ -127,6 +128,18 @@ docker compose exec mymcps mymcps user:reset-password user@example.com
 ```
 
 The first `mymcps` names the Compose service and the second the server binary, which loads the persisted application key when needed. Successful resets end the account's browser sessions and revoke its remember-me tokens; MCP access tokens and OAuth connections are unchanged.
+
+### Recover an account that lost its sign-in protection
+
+Someone who lost their authenticator app, their passkeys and their recovery codes cannot sign in. A super admin lets them back in from **Users → ⋯ → Remove sign-in protection**: the account then signs in with its password alone, until its owner sets a protection up again.
+
+When nobody can do that, the only super admin being the one locked out, run this on the server:
+
+```sh
+mymcps user:reset-protection user@example.com
+```
+
+It removes the authenticator app, the passkeys and the recovery codes of the account, and leaves its password as it is.
 
 ## Releases
 

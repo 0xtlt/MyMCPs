@@ -564,6 +564,11 @@ On mobile a table scrolls inside its card. For the main lists, render a list too
 be read whole (a token shown once, a redirect URI).
 
 ```html
+<!-- QR code: one path the server draws (`views::two_factor::qr_code`), dark on light in both themes -->
+<svg class="qr" viewBox="0 0 45 45" role="img" aria-label="QR code of the authenticator secret"><path d="M4 4h7v1h-7z…"/></svg>
+```
+
+```html
 <!-- steps that hold content: a setup guide -->
 <ol class="steps steps--detailed" aria-label="Strava setup">
   <li class="step" data-complete><div class="step__body"><h3 class="step__title"><span class="visually-hidden">Done: </span>Create a Strava API application</h3>…</div></li>
@@ -769,6 +774,7 @@ Browser floor: Chrome 126, Firefox 126, Safari 18.
 | `data-sidebar-toggle` | Collapses the desktop sidebar: `<html data-sidebar="collapsed">`, kept in `localStorage` and in the cookie `mm_sidebar=collapsed` so the server can render the attribute. |
 | `data-shortcut="mod+k"`, `data-shortcut-hint` | Cmd/Ctrl+K focuses the field; the hint shows the platform's spelling. |
 | `data-oauth-paste`, `data-oauth-paste-submit`, `data-oauth-paste-error` | Finishes OAuth from a pasted loopback address. |
+| `form[data-passkey="create\|get"]`, `data-passkey-options="/url"` | A passkey: the form's fields go to the options URL, which answers the JSON `navigator.credentials` takes, or 422 with the form and its errors for the form's `[data-fragment]`. What the passkey answered is posted as JSON to the form's `action`, which answers `X-Location`, or 422 with `{"message"}` for a toast. A `get` form is rendered `hidden`: the script shows it where the browser has passkeys. |
 
 State app.js writes, already styled: `html[data-dialog-open]`, `html[data-sidebar="collapsed"]`,
 `aria-current="true"` on the trigger of an open dialog, `aria-busy="true"` on a pending form and

@@ -1,6 +1,7 @@
 //! The `mymcps` binary: the server, and the commands an operator runs on it.
 
 mod reset_password;
+mod reset_protection;
 mod server;
 
 use std::process::ExitCode;
@@ -41,6 +42,12 @@ enum Command {
         /// Email address of the account to recover
         email: String,
     },
+    /// Remove the authenticator app, passkeys and recovery codes of an account (requires server access)
+    #[command(name = "user:reset-protection")]
+    UserResetProtection {
+        /// Email address of the account to recover
+        email: String,
+    },
     /// Reload the Deno cache for npm MCPs that track latest
     #[command(name = "mcp:update")]
     McpUpdate,
@@ -71,6 +78,7 @@ fn main() -> ExitCode {
                 Ok(ExitCode::SUCCESS)
             }
             Command::UserResetPassword { email } => user_reset_password(&email).await,
+            Command::UserResetProtection { email } => user_reset_protection(&email).await,
             Command::McpUpdate => mcp_update().await,
             Command::Healthcheck => healthcheck().await,
         }
@@ -221,6 +229,15 @@ async fn user_reset_password(email: &str) -> CommandResult {
         rpassword::prompt_password(format!("{label}: "))
     })
     .await;
+    core.db.close().await;
+    println!("{}", outcome?);
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn user_reset_protection(email: &str) -> CommandResult {
+    let config = Config::from_env()?;
+    let core = Core::boot(config).await?;
+    let outcome = reset_protection::reset(&core, email).await;
     core.db.close().await;
     println!("{}", outcome?);
     Ok(ExitCode::SUCCESS)

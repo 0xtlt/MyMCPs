@@ -22,6 +22,7 @@ use crate::input::Input;
 use crate::redirect::{redirect_back, redirect_to, with_query};
 use crate::respond::page;
 use crate::routes::FeatureRoutes;
+use crate::routes::two_factor::{begin_second_step, forget_pending_sign_in};
 use crate::session::Session;
 use crate::state::AppState;
 use crate::validators::session::{
@@ -96,6 +97,7 @@ pub async fn login(
             }
         };
 
+    forget_pending_sign_in(&session);
     let client = rate_limit_client_key(&ip);
     // Hashed to keep limiter keys short and free of email addresses.
     let account = sha256_hex(&credentials.email.to_lowercase());
@@ -124,25 +126,30 @@ pub async fn login(
     state.limiters.login.delete(&account_key).await?;
     state.limiters.login_address.decrement(&address_key).await?;
 
-    sign_in(&state.core, &session, &cookies, &user).await?;
+    // The password is half of it for an account with an authenticator app
+    // or a passkey: nobody is signed in before the other half.
+    if user.is_protected(&*state.core.db).await? {
+        return Ok(begin_second_step(&session, &user, uri.query()));
+    }
 
-    // Both paths are complete: the query string of this request is not
-    // appended after them.
+    sign_in(&state.core, &session, &cookies, &user).await?;
+    Ok(redirect_to(&signed_in_destination(&session, uri.query())))
+}
+
+/// Where someone who just signed in goes: back to what sent them to sign
+/// in (an OAuth client to authorize, a tool call to approve, an invite to
+/// accept), or home, with the query string of the sign-in page.
+pub(crate) fn signed_in_destination(session: &Session, query: Option<&str>) -> String {
+    // These paths are complete: the query string is not appended after them.
     let return_to = |validator: &mymcps_vine::Validator, key: &str| {
         validator
             .validate_as::<String>(session.pull(key).as_ref())
             .ok()
     };
-    if let Some(oauth_return_to) = return_to(&OAUTH_RETURN_TO_VALIDATOR, "oauthReturnTo") {
-        return Ok(redirect_to(&oauth_return_to));
-    }
-    if let Some(approval_return_to) = return_to(&APPROVAL_RETURN_TO_VALIDATOR, "approvalReturnTo") {
-        return Ok(redirect_to(&approval_return_to));
-    }
-    if let Some(invite_return_to) = return_to(&INVITE_RETURN_TO_VALIDATOR, INVITE_RETURN_TO_KEY) {
-        return Ok(redirect_to(&invite_return_to));
-    }
-    Ok(redirect_to(&with_query("/", uri.query())))
+    return_to(&OAUTH_RETURN_TO_VALIDATOR, "oauthReturnTo")
+        .or_else(|| return_to(&APPROVAL_RETURN_TO_VALIDATOR, "approvalReturnTo"))
+        .or_else(|| return_to(&INVITE_RETURN_TO_VALIDATOR, INVITE_RETURN_TO_KEY))
+        .unwrap_or_else(|| with_query("/", query))
 }
 
 /// Session key of the invite that sent a visitor to sign in first.
