@@ -11,7 +11,7 @@ use http::StatusCode;
 use mymcps_core::Timestamp;
 use mymcps_core::models::{
     CallErrorCategory, CallOutcome, InstanceSetting, McpLogLevel, McpStatus, McpTransport,
-    TokenSource, User,
+    Membership, Team, TokenSource, User,
 };
 use mymcps_web::routes::analytics::Zone;
 use mymcps_web::routes::home::{HomeQuery, load};
@@ -388,7 +388,7 @@ async fn shows_a_member_nothing_of_the_call_log() {
     // The home of a member: its header, not the greeting over the figures.
     assert!(page.contains("<h1 class=\"page-header__title\">Home</h1>"));
     assert!(page.contains(
-        "Signed in as Test User. Register upstream MCPs and issue access tokens for your agents."
+        "Signed in as Test User. Use the MCPs of this team with access tokens of your own."
     ));
     for hidden in [
         "context-bar",
@@ -414,15 +414,18 @@ async fn shows_a_member_nothing_of_the_call_log() {
     assert!(page.contains("<span class=\"chip\">Tool mode: eager</span>"));
     assert!(page.contains("href=\"/tokens?install=1&amp;client=claude\""));
     let attention = text_of(between(&page, "<div class=\"attention\">", "</section>"));
-    assert_eq!(
-        attention,
-        "Strava needs authorization Sentry is in error 1 token expires this week"
-    );
+    // The MCPs of the team, and nothing of the access tokens of the others:
+    // a member is only told of the tokens they made.
+    assert_eq!(attention, "Strava needs authorization Sentry is in error");
     assert!(page.contains("<div class=\"grid grid--3\">"));
     assert_eq!(kpi(&page, "MCPs").0, "4");
-    assert_eq!(kpi(&page, "Active tokens").0, "2");
     assert_eq!(rows_of(&page, "home-mcps-title").len(), 4);
-    assert_eq!(rows_of(&page, "home-tokens-title").len(), 4);
+    // The access tokens of the administrator are not a member's to see:
+    // theirs are the ones they made, and they made none.
+    assert_eq!(kpi(&page, "Active tokens").0, "0");
+    assert!(rows_of(&page, "home-tokens-title").is_empty());
+    // An MCP opens the registry for them, not the form that changes it.
+    assert!(!page.contains("/edit\""));
 }
 
 #[tokio::test]
@@ -447,10 +450,14 @@ async fn invites_to_add_the_first_mcp() {
         assert!(!page.contains(absent), "{absent}");
     }
 
+    // Adding one is for an administrator of the team: a member is told so.
     let page = app.get("/").login_as(&member).send().await.text();
     assert!(page.contains("<h1 class=\"page-header__title\">Home</h1>"));
     assert!(page.contains("<p class=\"empty-state__title\">No MCPs yet</p>"));
-    assert!(page.contains("href=\"/mcps/new\""));
+    assert!(page.contains(
+        "<p class=\"empty-state__description\">An admin of this team adds the MCPs its agents can reach.</p>"
+    ));
+    assert!(!page.contains("href=\"/mcps/new\""));
     assert!(!page.contains("hero-card") && !page.contains("kpi__label"));
 }
 
@@ -577,10 +584,23 @@ async fn shows_no_rate_without_calls_to_compute_it_from() {
     );
 }
 
+/// What this person is in the Root Team, which the tests here work in.
+async fn root_membership(app: &TestApp, user: &User) -> Membership {
+    Team::membership(&*app.core.db, Team::ROOT_ID, user.id)
+        .await
+        .unwrap()
+        .expect("a member of the Root Team")
+}
+
 /// A page context as the request of this person would build it.
-fn context_of(app: &TestApp, user: &User, pending_approvals: i64) -> PageContext {
+async fn context_of(app: &TestApp, user: &User, pending_approvals: i64) -> PageContext {
+    let team = root_membership(app, user).await;
     PageContext {
         user: Some(user.clone()),
+        super_admin: user.is_super_admin,
+        teams: vec![team.clone()],
+        team: Some(team),
+        registration_open: false,
         path: "/".into(),
         csrf: "token".into(),
         nonce: "nonce".into(),
@@ -608,6 +628,7 @@ async fn counts_the_tools_of_the_mcps_that_listed_them() {
             let home = load(
                 &app.state,
                 admin,
+                &root_membership(app, admin).await,
                 HomeQuery::read(&Map::new()),
                 Zone::Utc,
                 pending_approvals,
@@ -615,7 +636,7 @@ async fn counts_the_tools_of_the_mcps_that_listed_them() {
             )
             .await
             .unwrap();
-            home_page(&context_of(app, admin, pending_approvals), &home).into_string()
+            home_page(&context_of(app, admin, pending_approvals).await, &home).into_string()
         }
     };
 

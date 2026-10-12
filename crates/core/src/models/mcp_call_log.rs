@@ -43,5 +43,7 @@ model! {
         pub response: Option<String>,
         pub response_captured: bool,
         pub caller_ip: Option<String>,
+        /// The team of the access token that made the call.
+        pub team_id: i64,
     }
 }

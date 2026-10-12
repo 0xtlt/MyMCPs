@@ -464,6 +464,7 @@ pub async fn create_named_access_token(
             mcp_ids,
             expires_at: None,
             created_by,
+            team_id: mymcps_core::models::Team::ROOT_ID,
         },
     )
     .await
@@ -484,6 +485,7 @@ pub async fn create_token_with_secret(
         token_prefix: "mcp_stored".into(),
         scope_mode: ScopeMode::All,
         created_by,
+        team_id: mymcps_core::models::Team::ROOT_ID,
         ..Default::default()
     };
     adjust(&mut token);

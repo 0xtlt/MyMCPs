@@ -276,6 +276,7 @@
     --mm-size-sidebar-drawer: 17.5rem; /* 280: the sidebar as a drawer on mobile */
     --mm-size-auth-card: 26.25rem; /* 420 */
     --mm-size-auth-card-wide: 32.5rem; /* 520: Authorize client */
+    --mm-size-qr: 12.5rem; /* 200: QR code of an authenticator secret */
 
     /* Motion. */
     --mm-duration-fast: 120ms;
@@ -4949,5 +4950,31 @@
     &:hover::file-selector-button {
       background: var(--mm-color-bg-fill-secondary-hover);
     }
+  }
+}
+
+/*
+ * Team switcher: a nav item that is a button, since it opens the menu of the person's teams
+ * instead of a page. A button centres its text, where a link starts it.
+ */
+@layer components {
+  button.nav-item {
+    text-align: start;
+  }
+}
+
+/*
+ * QR code of an authenticator secret: one SVG path drawn by the server. Dark on light whatever
+ * the theme, which is what a camera reads.
+ */
+@layer components {
+  .qr {
+    display: block;
+    inline-size: var(--mm-size-qr);
+    max-inline-size: 100%;
+    block-size: auto;
+    border-radius: var(--mm-radius-200);
+    fill: var(--mm-slate-1000);
+    background: var(--mm-slate-0);
   }
 }

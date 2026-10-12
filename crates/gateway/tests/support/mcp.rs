@@ -9,15 +9,16 @@ use std::sync::{Arc, Mutex};
 use futures::StreamExt;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use mymcps_builtin::BuiltinRegistry;
-use mymcps_core::models::{ApprovalRequest, Mcp, McpStatus, McpTransport, User, UserRole};
+use mymcps_core::models::{ApprovalRequest, Mcp, McpStatus, McpTransport, Team, TeamRole, User};
 use mymcps_core::{Config, Core, Db, TestCore, Timestamp};
+pub use mymcps_gateway::approvals::ApprovalScope;
 use mymcps_gateway::approvals::Decision;
 use mymcps_gateway::{Gateway, McpGateway, McpRequest};
 use mymcps_net::{AddressGuard, CannedResponse, Fetcher, Resolver, SentRequest};
 use mymcps_upstream::Upstream;
 use serde_json::{Map, Value, json};
 
-use super::{create_mcp, next_value};
+use super::create_mcp;
 
 /// One request an MCP behind the gateway received.
 #[derive(Debug, Clone)]
@@ -442,16 +443,24 @@ impl TestMcpGateway {
 }
 
 pub async fn create_member(db: &Db) -> User {
-    let mut user = User {
-        full_name: Some("Test Member".into()),
-        email: format!("{}@example.com", next_value("member")),
-        password: "not-a-password-hash".into(),
-        role: UserRole::Member,
-        session_version: 1,
-        ..Default::default()
-    };
-    user.insert(&**db).await.unwrap();
-    user
+    super::create_user(db, "member", TeamRole::Member).await
+}
+
+/// What an administrator of the Root Team reads of its approval requests.
+pub fn admin_scope(user: &User) -> ApprovalScope {
+    ApprovalScope {
+        team_id: Team::ROOT_ID,
+        user_id: user.id,
+        admin: true,
+    }
+}
+
+/// What a member of the Root Team reads of its approval requests.
+pub fn member_scope(user: &User) -> ApprovalScope {
+    ApprovalScope {
+        admin: false,
+        ..admin_scope(user)
+    }
 }
 
 /// An HTTP MCP at `https://{slug}.example/mcp`.

@@ -620,12 +620,14 @@ impl OauthServer {
         })
     }
 
-    /// Record that the user granted the request, and return the code its
-    /// client exchanges for tokens. Only the hash of the code is stored.
+    /// Record that the user granted the request for one of their teams, and
+    /// return the code its client exchanges for tokens. Only the hash of the
+    /// code is stored.
     pub async fn create_authorization_code(
         &self,
         request: &GatewayAuthorizationRequest,
         user_id: i64,
+        team_id: i64,
     ) -> Result<String> {
         let plaintext = random_base64url(32);
         sqlx::query("delete from `oauth_authorization_codes` where `expires_at` < ?")
@@ -636,6 +638,7 @@ impl OauthServer {
             code_hash: access_token::hash(&plaintext),
             oauth_client_id: request.client.id,
             user_id,
+            team_id,
             redirect_uri: request.redirect_uri.clone(),
             code_challenge: request.code_challenge.clone(),
             scopes: request.scopes.clone(),
@@ -786,6 +789,7 @@ impl OauthServer {
                 scopes: &authorization_code.scopes,
                 resource: &authorization_code.resource,
                 created_by: authorization_code.user_id,
+                team_id: authorization_code.team_id,
             },
         )
         .await?;

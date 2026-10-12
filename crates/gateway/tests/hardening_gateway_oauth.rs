@@ -93,6 +93,7 @@ async fn stored_grant(db: &Db, oauth_client: &OauthClient, user_id: i64) -> Acce
             scopes: "mcp:tools",
             resource: RESOURCE,
             created_by: user_id,
+            team_id: Team::ROOT_ID,
         },
     )
     .await
@@ -119,6 +120,7 @@ async fn pending_code(db: &Db, oauth_client: &OauthClient, user_id: i64) {
         code_hash: access_token::hash(&format!("pending-code-{}", oauth_client.id)),
         oauth_client_id: oauth_client.id,
         user_id,
+        team_id: Team::ROOT_ID,
         redirect_uri: LOOPBACK_REDIRECT_URI.into(),
         code_challenge: code_challenge(CODE_VERIFIER),
         scopes: "mcp:tools".into(),
@@ -240,7 +242,7 @@ async fn still_returns_the_operator_decision_to_a_remote_client() {
 
     let code = gateway
         .oauth
-        .create_authorization_code(&request, admin.id)
+        .create_authorization_code(&request, admin.id, Team::ROOT_ID)
         .await
         .unwrap();
     let approved = Url::parse(
@@ -492,8 +494,8 @@ async fn evicts_the_oldest_unused_client_when_the_client_limit_is_reached() {
     // Once every client is in use there is nothing left to evict.
     sqlx::query(
         "insert into oauth_authorization_codes \
-           (code_hash, oauth_client_id, user_id, redirect_uri, code_challenge, scopes, resource, expires_at, created_at) \
-         select 'pending-' || id, id, ?, ?, ?, 'mcp:tools', ?, ?, ? from oauth_clients",
+           (code_hash, oauth_client_id, user_id, redirect_uri, code_challenge, scopes, resource, expires_at, created_at, team_id) \
+         select 'pending-' || id, id, ?, ?, ?, 'mcp:tools', ?, ?, ?, 1 from oauth_clients",
     )
     .bind(admin.id)
     .bind(LOOPBACK_REDIRECT_URI)

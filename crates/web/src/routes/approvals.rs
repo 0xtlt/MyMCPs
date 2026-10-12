@@ -1,5 +1,6 @@
 //! Where people decide the tool calls that agents may not make on their own:
-//! administrators any of them, members the ones their own access tokens made.
+//! the administrators of a team any of its calls, its members the ones their
+//! own access tokens made.
 //! What a page says about a call is read by MyMCPs from the call itself: the
 //! agent only ever hands over the link. (`approvals_controller.ts`)
 
@@ -12,16 +13,16 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode};
-use mymcps_core::models::{AccessToken, ApprovalRequest, Mcp, User};
+use mymcps_core::models::{AccessToken, ApprovalRequest, Mcp, Membership, User};
 use mymcps_core::{Db, Timestamp};
-use mymcps_gateway::approvals::{ApprovalService, Decision, SavedApprovalSummary};
+use mymcps_gateway::approvals::{ApprovalScope, ApprovalService, Decision, SavedApprovalSummary};
 use mymcps_gateway::validators::approvals::{APPROVAL_DECISION, APPROVAL_PARAMS};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{QueryBuilder, Sqlite};
 
-use crate::auth::CurrentUser;
+use crate::auth::{Auth, CurrentTeam, CurrentUser, switch_team};
 use crate::error::{AppError, is_fetch};
 use crate::forms::{FormState, refusal};
 use crate::input::Input;
@@ -61,14 +62,23 @@ fn link_id(path: Result<Path<String>, PathRejection>) -> Option<String> {
     link.get("id")?.as_str().map(str::to_string)
 }
 
+/// What someone reads and decides of the requests of the team they work in.
+fn scope_of(user: &User, team: &Membership) -> ApprovalScope {
+    ApprovalScope {
+        team_id: team.team.id,
+        user_id: user.id,
+        admin: team.role.is_admin(),
+    }
+}
+
 /// The request a link names, or `None` when it matches none, or names a
-/// request this user may not read: both get the same answer.
+/// request this person may not read: both get the same answer.
 async fn find_request(
     state: &AppState,
     public_id: &str,
-    user: &User,
+    scope: ApprovalScope,
 ) -> Result<Option<ApprovalRequest>, sqlx::Error> {
-    let mut query = ApprovalService::visible_to(user);
+    let mut query = ApprovalService::visible_to(scope);
     query
         .push(" and `approval_requests`.`public_id` = ")
         .push_bind(public_id)
@@ -173,11 +183,13 @@ pub async fn index(
     State(state): State<AppState>,
     context: PageContext,
     CurrentUser(user): CurrentUser,
+    team: CurrentTeam,
 ) -> Result<Response, AppError> {
     let db = &state.core.db;
     let now = Timestamp::now();
+    let scope = scope_of(&user, &team);
     // Requests made within the same second are listed the last one first.
-    let mut waiting = ApprovalService::visible_to(&user);
+    let mut waiting = ApprovalService::visible_to(scope);
     waiting
         .push(
             " and `approval_requests`.`status` = 'pending' and `approval_requests`.`expires_at` > ",
@@ -185,7 +197,7 @@ pub async fn index(
         .push_bind(now)
         .push(" order by `approval_requests`.`created_at` desc, `approval_requests`.`id` desc");
     let waiting: Vec<ApprovalRequest> = waiting.build_query_as().fetch_all(&**db).await?;
-    let mut past = ApprovalService::visible_to(&user);
+    let mut past = ApprovalService::visible_to(scope);
     past.push(
         " and (`approval_requests`.`status` <> 'pending' or `approval_requests`.`expires_at` <= ",
     )
@@ -217,11 +229,16 @@ pub async fn index(
 ///
 /// The page behind the link an agent was given. Whoever follows it signs in
 /// first and comes back here: the link names a request and grants nothing.
+///
+/// The request belongs to a team, which may not be the one the person works
+/// in at the moment. When they are in that team too, they are taken to it:
+/// the page then shows the request among those of its own team.
 pub async fn show(
     State(state): State<AppState>,
     method: Method,
     context: PageContext,
     session: Session,
+    auth: Auth,
     path: Result<Path<String>, PathRejection>,
 ) -> Result<Response, AppError> {
     // The router also sends HEAD requests here, which must not leave a return path behind.
@@ -230,19 +247,33 @@ pub async fn show(
     }
 
     let link = link_id(path);
-    let Some(user) = &context.user else {
+    let (Some(user), Some(team)) = (&context.user, &context.team) else {
         if let Some(public_id) = &link {
             session.put(RETURN_TO_KEY, format!("/approvals/{public_id}"));
         }
         return Ok(redirect_to("/login"));
     };
 
+    // A request of another team of theirs: the same link, read from there.
+    if let Some(public_id) = &link
+        && let Some(team_id) = state.mcp_gateway.approvals.team_of(public_id).await?
+        && team_id != team.team.id
+        && let Some(other) = auth.teams.iter().find(|other| other.team.id == team_id)
+        && find_request(&state, public_id, scope_of(user, other))
+            .await?
+            .is_some()
+    {
+        let mut user = user.clone();
+        switch_team(&state.core, &session, &mut user, team_id).await?;
+        return Ok(redirect_to(&format!("/approvals/{public_id}")));
+    }
+
     let not_found = || {
         session.flash("error", NOT_FOUND);
         redirect_to("/approvals")
     };
     let request = match &link {
-        Some(public_id) => find_request(&state, public_id, user).await?,
+        Some(public_id) => find_request(&state, public_id, scope_of(user, team)).await?,
         None => None,
     };
     let Some(request) = request else {
@@ -281,14 +312,15 @@ struct Submitted {
 pub async fn decide(
     State(state): State<AppState>,
     session: Session,
-    CurrentUser(user): CurrentUser,
+    auth: Auth,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     path: Result<Path<String>, PathRejection>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
+    let (user, team) = auth.signed_in()?;
     let request = match link_id(path) {
-        Some(public_id) => find_request(&state, &public_id, &user).await?,
+        Some(public_id) => find_request(&state, &public_id, scope_of(&user, &team)).await?,
         None => None,
     };
     let Some(request) = request else {

@@ -335,21 +335,30 @@ pub fn mcps_page(context: &PageContext, page: &McpsPage) -> Markup {
             div class="page-header__text" {
                 h1 class="page-header__title" { "MCPs" }
                 p class="page-header__subtitle" {
-                    "Register upstream MCP servers. Agents reach them through MyMCPs with an access token."
+                    @if context.is_team_admin() {
+                        "Register upstream MCP servers. Agents reach them through MyMCPs with an access token."
+                    } @else {
+                        "The upstream MCP servers of this team. Agents reach them through MyMCPs with an access token."
+                    }
                 }
             }
-            div class="page-header__actions" {
-                a class="button button--primary" href=(href("/mcps/new", page.query, &[])) data-dialog-open="#add-mcp" {
-                    (icon("plus")) "Add MCP"
+            @if context.is_team_admin() {
+                div class="page-header__actions" {
+                    a class="button button--primary" href=(href("/mcps/new", page.query, &[])) data-dialog-open="#add-mcp" {
+                        (icon("plus")) "Add MCP"
+                    }
                 }
             }
         }
         (list::registry(context, page))
     };
+    // The dialogs that add and change an MCP are for those who may.
     let overlays = html! {
-        (gallery::gallery_dialog(page.query, matches!(page.dialog, Dialog::Gallery)))
-        @if let Dialog::Create(dialog) = page.dialog { (create_dialog(context, page, dialog)) }
-        (edit_dialog(context, page))
+        @if context.is_team_admin() {
+            (gallery::gallery_dialog(page.query, matches!(page.dialog, Dialog::Gallery)))
+            @if let Dialog::Create(dialog) = page.dialog { (create_dialog(context, page, dialog)) }
+            (edit_dialog(context, page))
+        }
     };
     app_page(context, "MCPs", content, overlays)
 }

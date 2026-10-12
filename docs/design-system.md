@@ -99,16 +99,26 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
       <button type="button" class="icon-button icon-button--on-frame sidebar__close" popovertarget="sidebar" popovertargetaction="hide" aria-label="Close navigation">ICON x</button>
     </div>
     <nav class="sidebar__nav" aria-label="Main navigation">
+      <!-- team switcher: the team the person works in; a button, since it opens a menu -->
+      <button type="button" class="nav-item" popovertarget="team-menu" aria-label="Team: Root Team. Switch team">ICON chevrons-up-down<span class="nav-item__label">Root Team</span></button>
+      <div class="menu menu--start" id="team-menu" popover role="menu">
+        <p class="menu__label">Teams</p>
+        <form method="post" action="/teams/switch"><input type="hidden" name="_csrf" value="…"><input type="hidden" name="teamId" value="1">
+          <button type="submit" class="menu__item" role="menuitemradio" aria-checked="true">ICON users Root Team</button></form>
+        <div class="menu__separator"></div>
+        <a class="menu__item" role="menuitem" href="/teams/new" data-dialog-open="#create-team">ICON plus Create team</a>
+      </div>
       <a class="nav-item" href="/" aria-current="page">ICON house<span class="nav-item__label">Home</span></a>
       <p class="nav-section">Gateway</p>
       <a class="nav-item" href="/mcps">ICON plug<span class="nav-item__label">MCPs</span></a>
       <a class="nav-item" href="/tokens">ICON key-round<span class="nav-item__label">Access tokens</span></a>
       <a class="nav-item" href="/approvals" aria-label="Approvals, 2 waiting">ICON shield-check<span class="nav-item__label">Approvals</span><span class="nav-item__count" aria-hidden="true">2</span></a>
-      <p class="nav-section">Observability</p>    <!-- admins only, with Logs and Analytics -->
+      <p class="nav-section">Observability</p>    <!-- owners and admins of the team only, with Logs and Analytics -->
       <a class="nav-item" href="/logs">ICON scroll-text<span class="nav-item__label">Logs</span></a>
       <a class="nav-item" href="/analytics">ICON chart-column<span class="nav-item__label">Analytics</span></a>
       <p class="nav-section">Instance</p>
-      <a class="nav-item" href="/invites">ICON users<span class="nav-item__label">Team</span></a>   <!-- admins only -->
+      <a class="nav-item" href="/team">ICON users<span class="nav-item__label">Team</span></a>
+      <a class="nav-item" href="/users">ICON user<span class="nav-item__label">Users</span></a>   <!-- super admins only -->
       <a class="nav-item" href="/settings">ICON settings<span class="nav-item__label">Settings</span></a>
     </nav>
     <div class="gateway-card">
@@ -118,7 +128,7 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
     </div>
     <div class="nav-user">
       <span class="avatar avatar--on-frame">TT</span>
-      <span class="nav-user__text"><span class="nav-user__name">Thomas Tastet</span><span class="nav-user__role">admin</span></span>
+      <span class="nav-user__text"><span class="nav-user__name">Thomas Tastet</span><span class="nav-user__role">owner</span></span>   <!-- the role in the team they work in -->
       <form method="post" action="/logout"><input type="hidden" name="_csrf" value="…">
         <button type="submit" class="icon-button icon-button--on-frame" aria-label="Log out">ICON log-out</button></form>
     </div>
@@ -131,6 +141,7 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
   </main>
 
   <!-- dialogs and side panels of the page go here, next to <main> -->
+  <!-- then <dialog id="create-team">, which the team switcher opens on every page -->
 
   <div class="toast-region" data-toasts><!-- flash toasts --></div>
   <template id="toast-template">…</template>
@@ -141,11 +152,19 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
 ```
 
 The selected entry is `aria-current="page"`. The count chip is optional (pending approvals).
+The team switcher is the first entry of the navigation: a `button.nav-item` that opens a menu of
+the person's teams. Each team is a form of its own, so switching works without the script; the
+current one is `aria-checked="true"`. What a page shows belongs to that team. A control that
+changes something of the team (an MCP, a member, an invite) is only drawn for its owners and
+admins (`PageContext::is_team_admin`), and what belongs to the instance only for its super
+admins (`PageContext::super_admin`), whatever they are in the team: anyone else gets the same page without it.
 On desktop the panel scrolls and the frame stays put; on mobile the document scrolls under a
 sticky top bar.
 
-Auth screens (sign in, authorize, onboarding, import of a backup, invite, errors without a
-session). A second action goes under the primary button, 12px apart, as a secondary or a
+Auth screens (sign in, sign up, authorize, onboarding, import of a backup, invite, errors
+without a session). The subtitle of the sign-in card and the footnote say whether registration
+is open (`PageContext::registration_open`); the sign-in card then has a tertiary
+"Create an account" link under its button. A second action goes under the primary button, 12px apart, as a secondary or a
 tertiary button: `<div class="stack gap-300"><button class="button button--primary
 button--block">Create admin</button><a class="button button--secondary button--block"
 href="/onboarding/import">Import a backup</a></div>`.
@@ -545,6 +564,11 @@ On mobile a table scrolls inside its card. For the main lists, render a list too
 be read whole (a token shown once, a redirect URI).
 
 ```html
+<!-- QR code: one path the server draws (`views::two_factor::qr_code`), dark on light in both themes -->
+<svg class="qr" viewBox="0 0 45 45" role="img" aria-label="QR code of the authenticator secret"><path d="M4 4h7v1h-7z…"/></svg>
+```
+
+```html
 <!-- steps that hold content: a setup guide -->
 <ol class="steps steps--detailed" aria-label="Strava setup">
   <li class="step" data-complete><div class="step__body"><h3 class="step__title"><span class="visually-hidden">Done: </span>Create a Strava API application</h3>…</div></li>
@@ -750,6 +774,7 @@ Browser floor: Chrome 126, Firefox 126, Safari 18.
 | `data-sidebar-toggle` | Collapses the desktop sidebar: `<html data-sidebar="collapsed">`, kept in `localStorage` and in the cookie `mm_sidebar=collapsed` so the server can render the attribute. |
 | `data-shortcut="mod+k"`, `data-shortcut-hint` | Cmd/Ctrl+K focuses the field; the hint shows the platform's spelling. |
 | `data-oauth-paste`, `data-oauth-paste-submit`, `data-oauth-paste-error` | Finishes OAuth from a pasted loopback address. |
+| `form[data-passkey="create\|get"]`, `data-passkey-options="/url"` | A passkey: the form's fields go to the options URL, which answers the JSON `navigator.credentials` takes, or 422 with the form and its errors for the form's `[data-fragment]`. What the passkey answered is posted as JSON to the form's `action`, which answers `X-Location`, or 422 with `{"message"}` for a toast. A `get` form is rendered `hidden`: the script shows it where the browser has passkeys. |
 
 State app.js writes, already styled: `html[data-dialog-open]`, `html[data-sidebar="collapsed"]`,
 `aria-current="true"` on the trigger of an open dialog, `aria-busy="true"` on a pending form and

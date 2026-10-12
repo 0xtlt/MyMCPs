@@ -1,11 +1,13 @@
-//! The screens before sign-in: sign in, and the first-run onboarding, where
-//! an instance gets its first administrator or is set up from a backup.
+//! The screens before sign-in: sign in, sign up while the instance allows
+//! it, and the first-run onboarding, where an instance gets its first
+//! account or is set up from a backup.
 
 use maud::{Markup, html};
 
 use crate::forms::FormState;
 use crate::views::icon::{icon, logo};
 use crate::views::shell::{PageContext, auth_page};
+use crate::views::two_factor::passkey_sign_in;
 
 /// The first error of a form, above its fields.
 pub fn form_banner(form: &FormState) -> Markup {
@@ -71,7 +73,13 @@ pub fn login_page(context: &PageContext, form: &FormState) -> Markup {
             (logo())
             div class="auth-card__heading" {
                 h1 class="auth-card__title" id="sign-in-title" { "Sign in" }
-                p class="auth-card__subtitle" { "Access this self-hosted MyMCPs instance. New users join by invite only." }
+                p class="auth-card__subtitle" {
+                    @if context.registration_open {
+                        "Access this self-hosted MyMCPs instance."
+                    } @else {
+                        "Access this self-hosted MyMCPs instance. New users join by invite only."
+                    }
+                }
             }
             form class="form" method="post" action="/login" {
                 (context.csrf_field())
@@ -81,11 +89,47 @@ pub fn login_page(context: &PageContext, form: &FormState) -> Markup {
                     // After a refusal the email is kept and the password is what to type again.
                     (password_field(form, "password", "password", "Password", "current-password", form.has_errors()))
                 }
-                button type="submit" class="button button--primary button--block" { "Sign in" }
+                @if context.registration_open {
+                    div class="stack gap-300" {
+                        button type="submit" class="button button--primary button--block" { "Sign in" }
+                        a class="button button--block" href="/signup" { "Create an account" }
+                    }
+                } @else {
+                    button type="submit" class="button button--primary button--block" { "Sign in" }
+                }
             }
+            (passkey_sign_in(context, "Sign in with a passkey", false))
         }
     };
     auth_page(context, "Sign in", content)
+}
+
+/// `GET /signup`: anyone creates an account, which gets a team of its own.
+pub fn register_page(context: &PageContext, form: &FormState) -> Markup {
+    let content = html! {
+        section class="auth-card control-lg" aria-labelledby="register-title" {
+            (logo())
+            div class="auth-card__heading" {
+                h1 class="auth-card__title" id="register-title" { "Create an account" }
+                p class="auth-card__subtitle" { "You get a team of your own, with its MCPs and access tokens." }
+            }
+            form class="form" method="post" action="/signup" {
+                (context.csrf_field())
+                div class="stack" {
+                    (form_banner(form))
+                    (text_field(form, "full-name", "fullName", "Full name", "text", "name"))
+                    (text_field(form, "email", "email", "Email", "email", "email"))
+                    (password_field(form, "password", "password", "Password", "new-password", false))
+                    (password_field(form, "password-confirmation", "passwordConfirmation", "Confirm password", "new-password", false))
+                }
+                div class="stack gap-300" {
+                    button type="submit" class="button button--primary button--block" { "Create account" }
+                    a class="button button--block" href="/login" { "Sign in instead" }
+                }
+            }
+        }
+    };
+    auth_page(context, "Create an account", content)
 }
 
 pub fn onboarding_page(context: &PageContext, form: &FormState) -> Markup {
@@ -94,7 +138,7 @@ pub fn onboarding_page(context: &PageContext, form: &FormState) -> Markup {
             (logo())
             div class="auth-card__heading" {
                 h1 class="auth-card__title" id="onboarding-title" { "Set up MyMCPs" }
-                p class="auth-card__subtitle" { "Create the admin account for this self-hosted instance." }
+                p class="auth-card__subtitle" { "Create the account that owns this self-hosted instance." }
             }
             form class="form" method="post" action="/onboarding" {
                 (context.csrf_field())

@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use axum::Router;
 use axum::extract::{OriginalUri, Path, State};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use mymcps_builtin::{BuiltinMcpDefinition, BuiltinOauthConfig, BuiltinPasswordConfig};
@@ -29,7 +29,7 @@ use serde_json::{Map, Value, json};
 use sqlx::sqlite::SqliteExecutor;
 use url::Url;
 
-use crate::auth::CurrentUser;
+use crate::auth::{CurrentTeam, CurrentUser};
 use crate::error::{AppError, is_fetch};
 use crate::forms::refusal;
 use crate::input::{Input, parse_query};
@@ -62,11 +62,16 @@ const NOT_FOUND: &str = "MCP not found";
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
+        // Everyone in a team reads its registry. What changes it, or shows
+        // the form of an MCP, is for its owners and administrators.
         signed_in: Router::new()
-            .route("/mcps", get(index).post(store))
+            .route("/mcps", get(index))
+            .route("/mcps/{id}", get(show)),
+        admin: Router::new()
+            .route("/mcps", post(store))
             .route("/mcps/new", get(new))
             .route("/mcps/oauth/callback", get(oauth_callback))
-            .route("/mcps/{id}", get(show).put(update).delete(destroy))
+            .route("/mcps/{id}", put(update).delete(destroy))
             .route("/mcps/{id}/edit", get(edit))
             .route("/mcps/{id}/toggle", post(toggle))
             .route("/mcps/{id}/probe", post(probe))
@@ -473,8 +478,11 @@ fn http_origin(http_url: Option<&str>) -> Option<String> {
         .map(|url| url.origin().ascii_serialization())
 }
 
+/// A slug for `name` that no other MCP of the team has. Another team may
+/// have the same one: an access token only ever reaches the MCPs of its own.
 async fn unique_slug<'e, E>(
     db: E,
+    team_id: i64,
     name: &str,
     exclude_id: Option<i64>,
 ) -> Result<String, sqlx::Error>
@@ -488,15 +496,17 @@ where
         let existing: Option<i64> = match exclude_id.filter(|id| *id != 0) {
             Some(exclude_id) => {
                 sqlx::query_scalar(
-                    "select `id` from `mcps` where `slug` = ? and not `id` = ? limit 1",
+                    "select `id` from `mcps` where `team_id` = ? and `slug` = ? and not `id` = ? limit 1",
                 )
+                .bind(team_id)
                 .bind(&candidate)
                 .bind(exclude_id)
                 .fetch_optional(db)
                 .await?
             }
             None => {
-                sqlx::query_scalar("select `id` from `mcps` where `slug` = ? limit 1")
+                sqlx::query_scalar("select `id` from `mcps` where `team_id` = ? and `slug` = ? limit 1")
+                    .bind(team_id)
                     .bind(&candidate)
                     .fetch_optional(db)
                     .await?
@@ -555,7 +565,7 @@ pub async fn assign_mcp_from_payload(
     }
 
     mcp.name = payload.name.clone();
-    mcp.slug = unique_slug(&*core.db, &payload.name, exclude_id).await?;
+    mcp.slug = unique_slug(&*core.db, mcp.team_id, &payload.name, exclude_id).await?;
     mcp.description = payload
         .description
         .clone()
@@ -630,12 +640,18 @@ async fn discard_uploads(state: &AppState, mcp_id: i64) {
     }
 }
 
-/// The MCP a route names, or `None` when its `{id}` is not an id or matches none.
-async fn find_mcp(state: &AppState, id: &str) -> Result<Option<Mcp>, sqlx::Error> {
-    match record_id(id) {
-        Some(id) => Mcp::find(&*state.core.db, id).await,
-        None => Ok(None),
-    }
+/// The MCP a route names, or `None` when its `{id}` is not an id, matches
+/// none, or names the MCP of another team: all three get the same answer.
+async fn find_mcp(
+    state: &AppState,
+    team: &CurrentTeam,
+    id: &str,
+) -> Result<Option<Mcp>, sqlx::Error> {
+    let mcp = match record_id(id) {
+        Some(id) => Mcp::find(&*state.core.db, id).await?,
+        None => None,
+    };
+    Ok(mcp.filter(|mcp| mcp.team_id == team.id()))
 }
 
 /// The registry, where every request of this page ends, with the query
@@ -706,9 +722,14 @@ async fn registry_page(
     mut query: McpListQuery,
     open: Open,
 ) -> Result<Response, AppError> {
-    let mcps: Vec<Mcp> = sqlx::query_as("select * from `mcps` order by `name` asc, `id` asc")
-        .fetch_all(&*state.core.db)
-        .await?;
+    let Some(team) = &context.team else {
+        return Err(AppError::Unauthorized);
+    };
+    let mcps: Vec<Mcp> =
+        sqlx::query_as("select * from `mcps` where `team_id` = ? order by `name` asc, `id` asc")
+            .bind(team.team.id)
+            .fetch_all(&*state.core.db)
+            .await?;
     let tool_counts = state.known_tool_counts();
     let views: Vec<McpView> = mcps
         .iter()
@@ -774,10 +795,12 @@ pub async fn index(
     session: Session,
     Input(input): Input,
 ) -> Result<Response, AppError> {
+    // The form of an MCP is for those who may change it.
     let editing = session
         .flashed(EDITING_KEY)
         .and_then(|id| FLASHED_RECORD_ID_VALIDATOR.validate(&id).ok())
-        .and_then(|id| id.as_i64());
+        .and_then(|id| id.as_i64())
+        .filter(|_| context.is_team_admin());
     let open = editing.map_or(Open::Nothing, Open::Edit);
     registry_page(&state, &context, McpListQuery::read(&input), open).await
 }
@@ -811,7 +834,8 @@ pub async fn edit(
     Path(id): Path<String>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    let Some(mcp) = find_mcp(&state, &id).await? else {
+    let team = context.current_team()?;
+    let Some(mcp) = find_mcp(&state, &team, &id).await? else {
         return Ok(not_found(&session, &headers, &uri));
     };
     if !wants_fragment(&headers, EDIT_DIALOG_ID) {
@@ -844,10 +868,11 @@ pub async fn edit(
 pub async fn show(
     State(state): State<AppState>,
     session: Session,
+    team: CurrentTeam,
     OriginalUri(uri): OriginalUri,
     Path(id): Path<String>,
 ) -> Result<Response, AppError> {
-    match find_mcp(&state, &id).await? {
+    match find_mcp(&state, &team, &id).await? {
         Some(mcp) => session.flash(EDITING_KEY, mcp.id),
         None => session.flash("error", NOT_FOUND),
     }
@@ -902,6 +927,7 @@ pub async fn store(
     headers: HeaderMap,
     Input(mut input): Input,
 ) -> Result<Response, AppError> {
+    let team = context.current_team()?;
     list_environment_rows(&mut input);
     let payload: McpPayload = match CREATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
@@ -917,6 +943,7 @@ pub async fn store(
     let mut mcp = Mcp {
         status: McpStatus::Draft,
         created_by: user.id,
+        team_id: team.id(),
         ..Default::default()
     };
     match assign_mcp_from_payload(&state.upstream, &mut mcp, &payload, None).await {
@@ -983,7 +1010,8 @@ pub async fn update(
     Path(id): Path<String>,
     Input(mut input): Input,
 ) -> Result<Response, AppError> {
-    let Some(saved) = find_mcp(&state, &id).await? else {
+    let team = context.current_team()?;
+    let Some(saved) = find_mcp(&state, &team, &id).await? else {
         return Ok(not_found(&session, &headers, &uri));
     };
 
@@ -1034,11 +1062,12 @@ pub async fn update(
 pub async fn destroy(
     State(state): State<AppState>,
     session: Session,
+    team: CurrentTeam,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, AppError> {
-    let Some(mcp) = find_mcp(&state, &id).await? else {
+    let Some(mcp) = find_mcp(&state, &team, &id).await? else {
         return Ok(not_found(&session, &headers, &uri));
     };
     mcp.delete(&*state.core.db).await?;
@@ -1053,12 +1082,13 @@ pub async fn destroy(
 pub async fn toggle(
     State(state): State<AppState>,
     session: Session,
+    team: CurrentTeam,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     Path(id): Path<String>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    let Some(mut mcp) = find_mcp(&state, &id).await? else {
+    let Some(mut mcp) = find_mcp(&state, &team, &id).await? else {
         return Ok(not_found(&session, &headers, &uri));
     };
     let asked = MCP_TOGGLE_VALIDATOR
@@ -1116,12 +1146,13 @@ fn tested(
 pub async fn probe(
     State(state): State<AppState>,
     session: Session,
+    team: CurrentTeam,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     Path(id): Path<String>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    let Some(mut mcp) = find_mcp(&state, &id).await? else {
+    let Some(mut mcp) = find_mcp(&state, &team, &id).await? else {
         return Ok(not_found(&session, &headers, &uri));
     };
     state
@@ -1144,12 +1175,13 @@ pub async fn probe(
 pub async fn update_npm(
     State(state): State<AppState>,
     session: Session,
+    team: CurrentTeam,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     Path(id): Path<String>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    let Some(mut mcp) = find_mcp(&state, &id).await? else {
+    let Some(mut mcp) = find_mcp(&state, &team, &id).await? else {
         return Ok(not_found(&session, &headers, &uri));
     };
 
@@ -1174,6 +1206,7 @@ pub async fn update_npm(
 pub async fn oauth_start(
     State(state): State<AppState>,
     session: Session,
+    team: CurrentTeam,
     method: Method,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
@@ -1202,7 +1235,7 @@ pub async fn oauth_start(
         return Ok(redirect_to("/mcps"));
     }
 
-    let Some(mut mcp) = find_mcp(&state, &id).await? else {
+    let Some(mut mcp) = find_mcp(&state, &team, &id).await? else {
         session.flash("error", NOT_FOUND);
         return Ok(redirect_to(&registry(&uri)));
     };
@@ -1269,6 +1302,7 @@ struct OauthCallback {
 pub async fn oauth_callback(
     State(state): State<AppState>,
     session: Session,
+    team: CurrentTeam,
     OriginalUri(uri): OriginalUri,
 ) -> Result<Response, AppError> {
     let db = &*state.core.db;
@@ -1303,7 +1337,9 @@ pub async fn oauth_callback(
         let Some(oauth) = &oauth else {
             return Ok(invalid());
         };
-        let mcp = Mcp::find(db, oauth.mcp_id).await?;
+        let mcp = Mcp::find(db, oauth.mcp_id)
+            .await?
+            .filter(|mcp| mcp.team_id == team.id());
         let message = format!("OAuth error: {oauth_error}");
         let callback_credentials = [code.as_deref(), callback_state.as_deref()]
             .into_iter()
@@ -1332,7 +1368,12 @@ pub async fn oauth_callback(
         return Ok(invalid());
     }
 
-    let Some(mut mcp) = Mcp::find(db, oauth.mcp_id).await? else {
+    // The authorization was started in the team the person worked in then:
+    // the MCP of another team is answered like one that is gone.
+    let Some(mut mcp) = Mcp::find(db, oauth.mcp_id)
+        .await?
+        .filter(|mcp| mcp.team_id == team.id())
+    else {
         session.flash("error", NOT_FOUND);
         return Ok(to_registry());
     };

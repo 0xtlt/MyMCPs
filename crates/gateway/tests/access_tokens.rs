@@ -42,6 +42,7 @@ async fn creates_a_token_and_shows_its_plaintext_only_once() {
             mcp_ids: &[],
             expires_at: None,
             created_by: admin.id,
+            team_id: Team::ROOT_ID,
         },
     )
     .await
@@ -272,4 +273,68 @@ async fn revokes_a_token() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn a_token_reaches_the_mcps_of_its_team_and_of_no_other() {
+    let gateway = TestGateway::new().await;
+    let db = gateway.db();
+    let admin = create_admin(db).await;
+    let other_team = create_team(db).await;
+    // The same name and slug in both teams: a slug is taken in its team only.
+    let ours = create_mcp(db, admin.id, |mcp| mcp.name = "Notes".into()).await;
+    let theirs = create_mcp(db, admin.id, |mcp| {
+        mcp.name = "Notes".into();
+        mcp.team_id = other_team.id;
+    })
+    .await;
+    assert_eq!(ours.slug, theirs.slug);
+
+    let allowed = async |token: &mymcps_core::models::AccessToken| -> Vec<i64> {
+        access_token::resolve_allowed_mcps(db, token)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|mcp| mcp.id)
+            .collect()
+    };
+
+    // Every MCP: every MCP of the team.
+    let everything = create_access_token(db, admin.id, ScopeMode::All, &[])
+        .await
+        .token;
+    assert_eq!(allowed(&everything).await, [ours.id]);
+    let mut elsewhere = everything.clone();
+    elsewhere.team_id = other_team.id;
+    assert_eq!(allowed(&elsewhere).await, [theirs.id]);
+
+    // A token limited to an MCP of another team, were such a link ever
+    // stored, opens nothing there.
+    let limited = create_access_token(db, admin.id, ScopeMode::Selected, &[ours.id, theirs.id])
+        .await
+        .token;
+    assert_eq!(token_mcp_ids(db, limited.id).await, [ours.id, theirs.id]);
+    assert_eq!(allowed(&limited).await, [ours.id]);
+
+    // Deleting a team takes its MCPs and its tokens, and leaves the others.
+    let mut gone = create_access_token(db, admin.id, ScopeMode::All, &[])
+        .await
+        .token;
+    gone.team_id = other_team.id;
+    gone.save(&**db).await.unwrap();
+    other_team.delete(&**db).await.unwrap();
+    assert!(
+        mymcps_core::models::AccessToken::find(&**db, gone.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        mymcps_core::models::Mcp::find(&**db, theirs.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(allowed(&everything).await, [ours.id]);
+    assert_eq!(token_mcp_ids(db, limited.id).await, [ours.id]);
 }

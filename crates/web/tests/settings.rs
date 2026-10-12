@@ -11,7 +11,7 @@ use mymcps_core::models::{
 };
 use mymcps_web::auth::SESSION_STAMP_KEY;
 use mymcps_web::testing::factories::{
-    create_admin, create_admin_with, create_member, create_member_with,
+    create_member, create_member_with, create_super_admin, create_super_admin_with,
 };
 use mymcps_web::testing::{TestApp, TestRequest, TestResponse};
 use serde_json::json;
@@ -90,7 +90,7 @@ fn refused_field(response: &TestResponse, field: &str) -> Option<String> {
 #[tokio::test]
 async fn requires_authentication_for_settings_pages_and_updates() {
     let app = TestApp::new().await;
-    create_admin(&app).await;
+    create_super_admin(&app).await;
 
     let page = app.get("/settings").send().await;
     let email = app
@@ -127,7 +127,7 @@ async fn requires_authentication_for_settings_pages_and_updates() {
 #[tokio::test]
 async fn shows_instance_settings_only_to_admins() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
     let member = create_member_with(&app, "member@example.com").await;
 
     let admin_page = app.get("/settings").login_as(&admin).send().await;
@@ -141,11 +141,9 @@ async fn shows_instance_settings_only_to_admins() {
     assert!(page.contains("<span class=\"detail-row__value\">admin@example.com</span>"));
     assert!(page.contains("data-dialog-open=\"#change-email\""));
     assert!(page.contains("data-dialog-open=\"#change-password\""));
-    assert!(
-        page.contains(
-            "My Instance <span class=\"badge badge--info badge--no-dot\">Admin only</span>"
-        )
-    );
+    assert!(page.contains(
+        "My Instance <span class=\"badge badge--info badge--no-dot\">Super admin</span>"
+    ));
     assert!(page.contains(
         "<form class=\"card\" method=\"post\" action=\"/settings/mcp-logging?_method=PATCH\">"
     ));
@@ -161,9 +159,10 @@ async fn shows_instance_settings_only_to_admins() {
         page.matches("<form ").count(),
         page.matches("name=\"_csrf\"").count()
     );
-    // Sign out, the email and the password of the account, the settings of
-    // the instance, and the export of a backup.
-    assert_eq!(page.matches("<form ").count(), 5);
+    // Sign out, the team of the switcher and the form that creates one, the
+    // email and the password of the account, the passkey it may add, the
+    // settings of the instance, and the export of a backup.
+    assert_eq!(page.matches("<form ").count(), 8);
 
     assert_eq!(member_page.status, StatusCode::OK);
     let page = member_page.text();
@@ -172,7 +171,7 @@ async fn shows_instance_settings_only_to_admins() {
     assert!(page.contains("action=\"/settings/password?_method=PATCH\""));
     for admin_only in [
         "My Instance",
-        "Admin only",
+        "Super admin",
         "/settings/mcp-logging",
         "gatewayToolMode",
         "mcpLogLevel",
@@ -183,7 +182,9 @@ async fn shows_instance_settings_only_to_admins() {
     ] {
         assert!(!page.contains(admin_only), "{admin_only}");
     }
-    assert_eq!(page.matches("<form ").count(), 3);
+    // Sign out, the team of the switcher and the form that creates one, the
+    // email and the password of the account.
+    assert_eq!(page.matches("<form ").count(), 6);
     // Reading the page as a member does not create the settings row.
     let rows: i64 = sqlx::query_scalar("select count(*) from `instance_settings`")
         .fetch_one(&*app.core.db)
@@ -209,7 +210,7 @@ async fn says_so_when_the_account_has_no_name() {
 #[tokio::test]
 async fn updates_the_signed_in_user_email_after_password_confirmation() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
 
     let response = change_email(&app, &admin, "updated@example.com", "password123").await;
     assert_redirect(&response, "/settings");
@@ -234,7 +235,7 @@ async fn updates_the_signed_in_user_email_after_password_confirmation() {
 #[tokio::test]
 async fn rejects_duplicate_emails_and_incorrect_current_passwords() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
     create_member_with(&app, "member@example.com").await;
 
     let duplicate = change_email(&app, &admin, "member@example.com", "password123").await;
@@ -277,7 +278,7 @@ async fn rejects_duplicate_emails_and_incorrect_current_passwords() {
 #[tokio::test]
 async fn keeping_ones_own_email_is_not_a_duplicate() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
 
     let response = change_email(&app, &admin, "admin@example.com", "password123").await;
     assert_redirect(&response, "/settings");
@@ -287,7 +288,7 @@ async fn keeping_ones_own_email_is_not_a_duplicate() {
 #[tokio::test]
 async fn refuses_an_email_form_that_is_not_filled_in() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
 
     let response = change_email(&app, &admin, "not an email", "").await;
     assert_redirect(&response, "/settings");
@@ -308,7 +309,7 @@ async fn refuses_an_email_form_that_is_not_filled_in() {
 #[tokio::test]
 async fn updates_the_password_and_invalidates_the_old_credential() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
     for secret in ["first browser", "second browser"] {
         sqlx::query(
             "insert into `remember_me_tokens` (`tokenable_id`, `hash`, `created_at`, `updated_at`, `expires_at`) values (?, ?, ?, ?, ?)",
@@ -337,7 +338,7 @@ async fn updates_the_password_and_invalidates_the_old_credential() {
 #[tokio::test]
 async fn rejects_mismatched_password_confirmation() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     let response = app
         .patch("/settings/password")
@@ -374,7 +375,7 @@ async fn rejects_mismatched_password_confirmation() {
 #[tokio::test]
 async fn refuses_a_new_password_that_is_too_short_or_too_long() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let too_long = "p".repeat(33);
     for (new_password, message) in [
         (
@@ -415,7 +416,7 @@ async fn refuses_a_new_password_that_is_too_short_or_too_long() {
 #[tokio::test]
 async fn answers_the_account_dialogs_of_the_page_script() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
 
     let refused = from_script(app.post("/settings/password?_method=PATCH"))
         .login_as(&admin)
@@ -483,7 +484,7 @@ async fn answers_the_account_dialogs_of_the_page_script() {
 #[tokio::test]
 async fn a_fresh_dialog_starts_on_its_first_field() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
     let page = app.get("/settings").login_as(&admin).send().await.text();
 
     assert!(page.contains("name=\"email\" type=\"email\" autocomplete=\"email\" value=\"admin@example.com\" required autofocus>"));
@@ -499,7 +500,7 @@ async fn a_fresh_dialog_starts_on_its_first_field() {
 #[tokio::test]
 async fn limits_wrong_current_passwords_across_the_email_and_password_forms() {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "admin@example.com").await;
+    let admin = create_super_admin_with(&app, "admin@example.com").await;
 
     for guess in 0..5 {
         let wrong_password = format!("wrong-password-{guess}");
@@ -528,7 +529,7 @@ async fn limits_wrong_current_passwords_across_the_email_and_password_forms() {
 #[tokio::test]
 async fn caps_a_parallel_burst_of_wrong_current_passwords() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let guesses: Vec<String> = (0..12).map(|guess| format!("wrong-{guess}")).collect();
 
     let responses = futures::future::join_all(
@@ -550,7 +551,7 @@ async fn caps_a_parallel_burst_of_wrong_current_passwords() {
 #[tokio::test]
 async fn counts_each_user_separately() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let member = create_member(&app).await;
 
     for _ in 0..5 {
@@ -565,7 +566,7 @@ async fn counts_each_user_separately() {
 #[tokio::test]
 async fn a_correct_current_password_clears_the_count() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     for _ in 0..2 {
         for _ in 0..4 {
@@ -579,7 +580,7 @@ async fn a_correct_current_password_clears_the_count() {
 #[tokio::test]
 async fn a_form_that_fails_validation_does_not_use_up_the_budget() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     for _ in 0..8 {
         let invalid = change_email(&app, &admin, "not an email", "wrong-password").await;
@@ -595,7 +596,7 @@ async fn a_form_that_fails_validation_does_not_use_up_the_budget() {
 #[tokio::test]
 async fn changing_the_password_retires_captured_sessions_but_not_the_browser_that_did_it() {
     let app = TestApp::new().await;
-    create_admin_with(&app, "admin@example.com").await;
+    create_super_admin_with(&app, "admin@example.com").await;
     let signed_in = app
         .post("/login")
         .csrf()
@@ -640,7 +641,7 @@ async fn changing_the_password_retires_captured_sessions_but_not_the_browser_tha
 #[tokio::test]
 async fn changes_the_default_mcp_tool_mode_from_the_settings_page() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let page = app.get("/settings").login_as(&admin).send().await.text();
     assert!(page.contains("name=\"gatewayToolMode\" value=\"eager\" checked>"));
 
@@ -679,7 +680,7 @@ async fn changes_the_default_mcp_tool_mode_from_the_settings_page() {
 #[tokio::test]
 async fn saves_every_instance_setting() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     let response = save_instance(
         &app,
@@ -735,7 +736,7 @@ async fn saves_every_instance_setting() {
 #[tokio::test]
 async fn sends_the_instance_form_back_with_what_is_wrong() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     let response = save_instance(
         &app,
@@ -791,7 +792,7 @@ async fn sends_the_instance_form_back_with_what_is_wrong() {
 #[tokio::test]
 async fn rejects_invalid_instance_settings() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     for (field, value) in [
         ("gatewayToolMode", "sometimes"),
         ("mcpLogLevel", "everything"),
@@ -822,7 +823,7 @@ async fn rejects_invalid_instance_settings() {
 #[tokio::test]
 async fn persists_auto_update_enablement_and_cron_for_admins() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     let response = save_instance(
         &app,
@@ -850,7 +851,7 @@ async fn persists_auto_update_enablement_and_cron_for_admins() {
 #[tokio::test]
 async fn rejects_an_invalid_auto_update_cron_expression() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     let response = save_instance(
         &app,
@@ -878,7 +879,7 @@ async fn rejects_an_invalid_auto_update_cron_expression() {
 #[tokio::test]
 async fn restricts_instance_settings_updates_to_admins() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let member = create_member(&app).await;
     // The settings exist, as the administrator's page left them.
     app.get("/settings").login_as(&admin).send().await;
@@ -896,7 +897,7 @@ async fn restricts_instance_settings_updates_to_admins() {
     assert_redirect(&response, "/");
     assert_eq!(
         response.flashed("error"),
-        Some(json!("Admin access required"))
+        Some(json!("Super admin access required"))
     );
 
     let settings = InstanceSetting::current(&*app.core.db).await.unwrap();
@@ -909,7 +910,7 @@ async fn restricts_instance_settings_updates_to_admins() {
 #[tokio::test]
 async fn a_shorter_retention_deletes_the_older_call_logs_at_once() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let db = &*app.core.db;
     for (tool, days_ago) in [("recent", 2), ("older", 10), ("oldest", 40)] {
         let mut log = McpCallLog {
@@ -917,6 +918,7 @@ async fn a_shorter_retention_deletes_the_older_call_logs_at_once() {
             access_token_prefix: "mmcp_test".into(),
             requested_tool_name: tool.into(),
             outcome: CallOutcome::Success,
+            team_id: mymcps_core::models::Team::ROOT_ID,
             ..Default::default()
         };
         log.insert(db).await.unwrap();

@@ -8,10 +8,11 @@ use axum::extract::{FromRef, FromRequestParts};
 use http::request::Parts;
 use maud::{DOCTYPE, Markup, html};
 use mymcps_core::Core;
-use mymcps_core::models::User;
+use mymcps_core::models::{InstanceSetting, Membership, User};
+use mymcps_gateway::approvals::ApprovalScope;
 
 use crate::assets::asset_url;
-use crate::auth::Auth;
+use crate::auth::{Auth, CurrentTeam};
 use crate::cookies::Cookies;
 use crate::csrf::{CSRF_FIELD, csrf_token};
 use crate::error::AppError;
@@ -29,6 +30,14 @@ const SIDEBAR_COOKIE: &str = "mm_sidebar";
 #[derive(Debug, Clone)]
 pub struct PageContext {
     pub user: Option<User>,
+    /// The team the signed-in person works in, and what they are in it.
+    pub team: Option<Membership>,
+    /// Their teams, in the order they joined them, for the team switcher.
+    pub teams: Vec<Membership>,
+    /// Whether they run the instance, whatever they are in their teams.
+    pub super_admin: bool,
+    /// Whether a visitor may create an account. Only read for a visitor.
+    pub registration_open: bool,
     /// The path of the request, to mark the current navigation entry.
     pub path: String,
     /// The token of this response's forms.
@@ -52,6 +61,24 @@ impl PageContext {
     /// The hidden field every state-changing form carries.
     pub fn csrf_field(&self) -> Markup {
         html! { input type="hidden" name=(CSRF_FIELD) value=(self.csrf); }
+    }
+
+    /// Whether the person is an owner or an administrator of the team they
+    /// work in: a member reads what the team has, and changes nothing of it
+    /// but their own access tokens.
+    pub fn is_team_admin(&self) -> bool {
+        self.team
+            .as_ref()
+            .is_some_and(|membership| membership.role.is_admin())
+    }
+
+    /// The team the signed-in person works in, for a handler behind
+    /// [`crate::guards::require_auth`].
+    pub fn current_team(&self) -> Result<CurrentTeam, AppError> {
+        self.team
+            .clone()
+            .map(CurrentTeam)
+            .ok_or(AppError::Unauthorized)
     }
 
     /// The address MCP clients connect to, when `APP_URL` is set.
@@ -78,22 +105,38 @@ where
             .get::<Session>()
             .cloned()
             .unwrap_or_default();
-        let user = parts
-            .extensions
-            .get::<Auth>()
-            .and_then(|auth| auth.user.clone());
+        let auth = parts.extensions.get::<Auth>().cloned().unwrap_or_default();
+        let super_admin = auth.is_super_admin();
+        let Auth { user, teams, team } = auth;
         let cookies = parts
             .extensions
             .get::<Cookies>()
             .cloned()
             .unwrap_or_default();
-        let pending_approvals = match &user {
-            Some(user) => state.pending_approvals(user).await?,
-            None => 0,
+        let pending_approvals = match (&user, &team) {
+            (Some(user), Some(membership)) => {
+                state
+                    .pending_approvals(ApprovalScope {
+                        team_id: membership.team.id,
+                        user_id: user.id,
+                        admin: membership.role.is_admin(),
+                    })
+                    .await?
+            }
+            _ => 0,
+        };
+        // The screens before sign-in say whether an account can be made.
+        let registration_open = match &user {
+            Some(_) => false,
+            None => InstanceSetting::registration_enabled(&*core.db).await?,
         };
 
         Ok(Self {
             user,
+            team,
+            teams,
+            super_admin,
+            registration_open,
             path: parts.uri.path().to_string(),
             csrf: csrf_token(&session),
             nonce: parts
@@ -186,12 +229,38 @@ fn nav_item(context: &PageContext, href: &str, icon_name: &str, label: &str) -> 
     }
 }
 
+/// The team the person works in, and the menu that takes them to another
+/// of theirs or to the form that makes a new one. Each entry is a form of
+/// its own: the menu works without the page's script.
+fn team_switcher(context: &PageContext, current: &Membership) -> Markup {
+    html! {
+        button type="button" class="nav-item" popovertarget="team-menu"
+            aria-label=(format!("Team: {}. Switch team", current.team.name)) {
+            (icon("chevrons-up-down")) span class="nav-item__label" { (current.team.name) }
+        }
+        div class="menu menu--start" id="team-menu" popover role="menu" {
+            p class="menu__label" { "Teams" }
+            @for membership in &context.teams {
+                @let is_current = membership.team.id == current.team.id;
+                form method="post" action="/teams/switch" {
+                    (context.csrf_field())
+                    input type="hidden" name="teamId" value=(membership.team.id);
+                    button type="submit" class="menu__item" role="menuitemradio"
+                        aria-checked=(if is_current { "true" } else { "false" }) {
+                        (icon("users")) (membership.team.name)
+                    }
+                }
+            }
+            div class="menu__separator" {}
+            a class="menu__item" role="menuitem" href="/teams/new" data-dialog-open="#create-team" {
+                (icon("plus")) "Create team"
+            }
+        }
+    }
+}
+
 fn sidebar(context: &PageContext, user: &User) -> Markup {
-    let name = user
-        .full_name
-        .as_deref()
-        .filter(|name| !name.is_empty())
-        .unwrap_or(&user.email);
+    let name = user.display_name();
     let approvals_current = context.path.starts_with("/approvals");
     html! {
         aside class="sidebar" id="sidebar" popover {
@@ -203,6 +272,7 @@ fn sidebar(context: &PageContext, user: &User) -> Markup {
                     popovertargetaction="hide" aria-label="Close navigation" { (icon("x")) }
             }
             nav class="sidebar__nav" aria-label="Main navigation" {
+                @if let Some(current) = &context.team { (team_switcher(context, current)) }
                 (nav_item(context, "/", "house", "Home"))
                 p class="nav-section" { "Gateway" }
                 (nav_item(context, "/mcps", "plug", "MCPs"))
@@ -216,13 +286,14 @@ fn sidebar(context: &PageContext, user: &User) -> Markup {
                 } @else {
                     (nav_item(context, "/approvals", "shield-check", "Approvals"))
                 }
-                @if user.is_admin() {
+                @if context.is_team_admin() {
                     p class="nav-section" { "Observability" }
                     (nav_item(context, "/logs", "scroll-text", "Logs"))
                     (nav_item(context, "/analytics", "chart-column", "Analytics"))
                 }
                 p class="nav-section" { "Instance" }
-                @if user.is_admin() { (nav_item(context, "/invites", "users", "Team")) }
+                (nav_item(context, "/team", "users", "Team"))
+                @if context.super_admin { (nav_item(context, "/users", "user", "Users")) }
                 (nav_item(context, "/settings", "settings", "Settings"))
             }
             @if let (Some(gateway_url), true) = (context.gateway_url(), context.app_url_configured) {
@@ -240,7 +311,9 @@ fn sidebar(context: &PageContext, user: &User) -> Markup {
                 span class="avatar avatar--on-frame" { (user.initials()) }
                 span class="nav-user__text" {
                     span class="nav-user__name" { (name) }
-                    span class="nav-user__role" { (user.role.as_str()) }
+                    @if let Some(current) = &context.team {
+                        span class="nav-user__role" { (current.role.as_str()) }
+                    }
                 }
                 form method="post" action="/logout" {
                     (context.csrf_field())
@@ -293,6 +366,11 @@ pub fn app_page(
                     }
                 }
                 (page_overlays)
+                // The trigger of this dialog is in the sidebar, on every page.
+                // The page behind /teams/new draws it itself, open.
+                @if context.path != "/teams/new" {
+                    (crate::views::teams::create_team_dialog(context, &crate::forms::FormState::default(), false))
+                }
                 (overlays(context))
             }
         }
@@ -310,7 +388,11 @@ pub fn auth_page(context: &PageContext, title: &str, content: Markup) -> Markup 
                 main class="auth__main" id="main" {
                     (content)
                     p class="auth__footnote" {
-                        "Self-hosted · invite-only" span class="hide-mobile" { " · no public registration" }
+                        @if context.registration_open {
+                            "Self-hosted" span class="hide-mobile" { " · registration open" }
+                        } @else {
+                            "Self-hosted · invite-only" span class="hide-mobile" { " · no public registration" }
+                        }
                     }
                 }
                 (overlays(context))

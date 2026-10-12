@@ -4,8 +4,8 @@ A backup is one file that holds everything an instance stores, encrypted with a 
 
 ## What a backup holds
 
-- Users, with their password hashes, and pending invites.
-- MCPs, with their credentials: bearer tokens, header values, OAuth clients and connections, built-in MCP sign-ins and settings, and the environment of npm MCPs.
+- Users, with their password hashes, their teams and their roles, and pending invites. Their sign-in protection comes with them: the secret of their authenticator app, their recovery codes, and their passkeys.
+- The MCPs of every team, with their credentials: bearer tokens, header values, OAuth clients and connections, built-in MCP sign-ins and settings, and the environment of npm MCPs.
 - Access tokens and the OAuth connections of AI clients. Agents keep working with the tokens they already have.
 - Tool approval choices and requests, call logs, and the instance settings.
 
@@ -13,7 +13,7 @@ It does not hold the files MyMCPs can make again: the Deno cache and the sandbox
 
 ## Export a backup
 
-Only an administrator can export.
+Only a super admin can export: a backup holds what every team stores.
 
 1. Open **Settings**. Under **Backup**, select **Export backup**.
 2. Choose a **Backup password** and type it again. Use one you do not use elsewhere, and store it in a password manager: the file cannot be opened without it, and nobody can recover it.
@@ -44,6 +44,8 @@ To return an instance that is already set up to a backup, start from an empty da
 Credentials are encrypted in the database with the `APP_KEY` of the instance. A backup carries the key it was made with, so the import can read them: when the new instance has another `APP_KEY`, every credential is encrypted again with the new one. You do not have to copy `APP_KEY` from the old instance.
 
 Browser sessions are tied to `APP_KEY`. With another key, everyone signs in again. Access tokens of agents do not depend on it and keep working.
+
+The secret of an authenticator app is one of these credentials: the app keeps showing the right codes on the new instance, and recovery codes keep working. A passkey belongs to the address it was made under. When the new instance has another `APP_URL`, its passkeys no longer answer: people sign in with their password and a code, or a recovery code, then remove those passkeys and add new ones.
 
 ## Versions
 

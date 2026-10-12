@@ -18,6 +18,7 @@ use mymcps_vine::ValidationError;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
+use crate::auth::CurrentTeam;
 use crate::error::{AppError, is_fetch};
 use crate::forms::refusal;
 use crate::input::Input;
@@ -38,16 +39,24 @@ const SAVED: &str = "Tool approvals saved";
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
-        signed_in: Router::new().route("/mcps/{id}/tools", get(index).put(update)),
+        // Which tools ask for an approval decides what agents may do on
+        // their own: it is for the owners and administrators of the team.
+        admin: Router::new().route("/mcps/{id}/tools", get(index).put(update)),
         ..Default::default()
     }
 }
 
-async fn find_mcp(state: &AppState, id: &str) -> Result<Option<Mcp>, sqlx::Error> {
-    match record_id(id) {
-        Some(id) => Mcp::find(&*state.core.db, id).await,
-        None => Ok(None),
-    }
+/// The MCP a route names, in the team the person works in.
+async fn find_mcp(
+    state: &AppState,
+    team: &CurrentTeam,
+    id: &str,
+) -> Result<Option<Mcp>, sqlx::Error> {
+    let mcp = match record_id(id) {
+        Some(id) => Mcp::find(&*state.core.db, id).await?,
+        None => None,
+    };
+    Ok(mcp.filter(|mcp| mcp.team_id == team.id()))
 }
 
 fn not_found(session: &Session, headers: &HeaderMap, query: Option<&str>) -> Response {
@@ -168,11 +177,12 @@ pub async fn index(
     State(state): State<AppState>,
     context: PageContext,
     session: Session,
+    team: CurrentTeam,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, AppError> {
-    let Some(mut mcp) = find_mcp(&state, &id).await? else {
+    let Some(mut mcp) = find_mcp(&state, &team, &id).await? else {
         return Ok(not_found(&session, &headers, uri.query()));
     };
     let tools = tools_page(&state, &mut mcp).await;
@@ -248,7 +258,8 @@ pub async fn update(
     Path(id): Path<String>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    let Some(mut mcp) = find_mcp(&state, &id).await? else {
+    let team = context.current_team()?;
+    let Some(mut mcp) = find_mcp(&state, &team, &id).await? else {
         return Ok(not_found(&session, &headers, uri.query()));
     };
     let page_path = format!("/mcps/{}/tools", mcp.id);

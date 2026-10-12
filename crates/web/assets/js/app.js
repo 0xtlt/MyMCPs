@@ -90,6 +90,8 @@
  *   data-oauth-paste                box that finishes OAuth from a pasted callback address
  *   data-oauth-paste-submit         its button
  *   data-oauth-paste-error          its error text
+ *   data-passkey="create|get"       form: asks the browser to make a passkey, or to sign in with one
+ *   data-passkey-options="/url"     on it: where the server says what the passkey must sign
  *   data-shortcut="mod+k"           field focused by Cmd+K (Apple) or Ctrl+K
  *   data-shortcut-hint              <kbd> that receives the platform's spelling of it
  *
@@ -116,6 +118,9 @@
 
   const GENERIC_ERROR = 'Something went wrong. Try again.'
   const COPY_ERROR = 'Copy failed. Select the text and copy it manually.'
+  const PASSKEY_UNSUPPORTED = 'This browser has no passkeys.'
+  const PASSKEY_CANCELLED = 'No passkey was used: the request was cancelled or timed out.'
+  const PASSKEY_EXISTS = 'This device already has a passkey for this account.'
   const REGION_HTML = '<div class="toast-region" data-toasts></div>'
   const TOAST_HTML = `<div class="toast" role="status"><p class="toast__message"></p><button
     type="button" class="toast__dismiss" data-toast-dismiss aria-label="Dismiss">\u00d7</button></div>`
@@ -211,10 +216,11 @@
   // ------------------------------------------------------------------- requests and fragments
   // Says the request comes from app.js and which element receives the HTML; carries the CSRF
   // token when it changes state.
-  function request(url, { method = 'GET', body, target, signal } = {}) {
+  function request(url, { method = 'GET', body, target, signal, json = false } = {}) {
     const headers = { 'X-Requested-With': 'fetch', 'Accept': 'text/html' }
     const csrf = $('meta[name="csrf-token"]')?.content
     if (method !== 'GET' && csrf) headers['X-CSRF-Token'] = csrf
+    if (json) headers['Content-Type'] = 'application/json'
     if (target?.id) headers['X-Fragment'] = encodeURIComponent(target.id)
     return fetch(url, { method, body, headers, signal, credentials: 'same-origin' })
   }
@@ -545,6 +551,65 @@
     if (method === 'GET' && form.hasAttribute('data-async-history')) replaceUrl(url)
     if (form.isConnected && form.hasAttribute('data-dirty')) syncDirty(form, true)
     emit(target, 'app:async-success', { form, status })
+  }
+
+  // ------------------------------------------------------------------------------- passkeys
+  // WebAuthn speaks in buffers; the server sends and reads them as base64url.
+  const fromBase64Url = (text) =>
+    Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
+  const toBase64Url = (buffer) =>
+    btoa(String.fromCharCode(...new Uint8Array(buffer)))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+
+  // A form[data-passkey] asks the server what the passkey must sign, with its own fields: when
+  // they are refused, the form comes back with its errors. It then asks the browser for the
+  // passkey, and posts what the passkey answered. The server says where to go next.
+  async function passkey(form) {
+    if (form.getAttribute('aria-busy') === 'true') return
+    if (!window.PublicKeyCredential) return toast(PASSKEY_UNSUPPORTED, { tone: 'error' })
+    const creating = form.dataset.passkey === 'create'
+    const buttons = [...form.elements].filter((c) => c.type === 'submit' && !c.disabled)
+    const refused = async (response) =>
+      toast((await response.json().catch(() => ({}))).message || GENERIC_ERROR, { tone: 'error' })
+    form.setAttribute('aria-busy', 'true')
+    buttons.forEach((button) => (button.disabled = true))
+    try {
+      const body = new URLSearchParams(new FormData(form))
+      const asked = await request(form.dataset.passkeyOptions, { method: 'POST', body })
+      const fragment = form.closest('[data-fragment]')
+      if (asked.status === 422 && fragment && /text\/html/.test(asked.headers.get('Content-Type'))) {
+        swap(fragment, await asked.text())
+        return focusFirst(fragment)
+      }
+      if (!asked.ok) return await refused(asked)
+      const publicKey = await asked.json()
+      publicKey.challenge = fromBase64Url(publicKey.challenge)
+      if (publicKey.user) publicKey.user.id = fromBase64Url(publicKey.user.id)
+      const known = publicKey.excludeCredentials || publicKey.allowCredentials || []
+      known.forEach((credential) => (credential.id = fromBase64Url(credential.id)))
+      const credential = await navigator.credentials[creating ? 'create' : 'get']({ publicKey })
+      const { rawId, response } = credential
+      const answer = { id: toBase64Url(rawId), clientDataJSON: toBase64Url(response.clientDataJSON) }
+      if (creating) answer.attestationObject = toBase64Url(response.attestationObject)
+      else {
+        answer.authenticatorData = toBase64Url(response.authenticatorData)
+        answer.signature = toBase64Url(response.signature)
+      }
+      const options = { method: 'POST', body: JSON.stringify(answer), json: true }
+      const sent = await request(form.action, options)
+      const next = sent.headers.get('X-Location')
+      if (next) return location.assign(next)
+      await refused(sent)
+    } catch (error) {
+      // NotAllowedError: the person closed the prompt of the browser, or let it time out.
+      const known = { NotAllowedError: PASSKEY_CANCELLED, InvalidStateError: PASSKEY_EXISTS }
+      toast(known[error?.name] || GENERIC_ERROR, { tone: 'error' })
+    } finally {
+      form.removeAttribute('aria-busy')
+      buttons.forEach((button) => (button.disabled = false))
+    }
   }
 
   // ---------------------------------------------------------------------------- plain forms
@@ -1041,6 +1106,8 @@
     })
     syncDialogs()
     each('input[data-timezone]', syncTimeZone)
+    // Signing in with a passkey is only offered where the browser has passkeys.
+    each('form[data-passkey="get"]', (form) => (form.hidden = !window.PublicKeyCredential))
     emit(scope, 'app:enhance')
   }
 
@@ -1140,6 +1207,10 @@
     const { target: form, submitter } = event
     clearTimeout(autosubmitTimers.get(form))
     if (event.defaultPrevented || heldForConfirm(event)) return
+    if (form.hasAttribute('data-passkey')) {
+      event.preventDefault()
+      return void passkey(form)
+    }
     const method = submitter?.getAttribute('formmethod') || form.getAttribute('method') || ''
     const ref = submitter?.dataset.asyncTarget || form.dataset.asyncTarget
     const target = byRef(ref) || form.closest('[data-fragment]')

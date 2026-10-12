@@ -187,6 +187,7 @@ async fn accepts_an_oauth_access_token_only_for_this_gateway_and_its_scope() {
             scopes: "mcp:tools",
             resource: RESOURCE,
             created_by: admin.id,
+            team_id: mymcps_core::models::Team::ROOT_ID,
         },
     )
     .await

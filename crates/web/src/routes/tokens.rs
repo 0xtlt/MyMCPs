@@ -4,11 +4,12 @@
 use std::collections::HashMap;
 
 use axum::Router;
-use axum::extract::{OriginalUri, Path, State};
+use axum::extract::{FromRequestParts, OriginalUri, Path, State};
 use axum::response::Response;
 use axum::routing::{get, post, put};
 use chrono::{DateTime, Utc};
 use http::header::CACHE_CONTROL;
+use http::request::Parts;
 use http::{HeaderMap, HeaderValue, StatusCode, Uri};
 use mymcps_core::models::{AccessToken, Mcp, ScopeMode, TokenSource};
 use mymcps_core::{Db, Timestamp};
@@ -17,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sqlx::{QueryBuilder, Sqlite};
 
-use crate::auth::CurrentUser;
+use crate::auth::{Auth, CurrentUser};
 use crate::error::{AppError, is_fetch};
 use crate::forms::{FormState, refusal};
 use crate::input::Input;
@@ -104,8 +105,79 @@ fn token_id(segment: &str) -> Option<i64> {
         .as_i64()
 }
 
-async fn load_mcps(db: &Db) -> Result<Vec<Mcp>, sqlx::Error> {
-    sqlx::query_as("select * from `mcps` order by `name` asc")
+/// Whose access tokens someone sees and manages in the team they work in:
+/// all of them for an administrator of it, their own for a member. A token
+/// outside of that is answered like one that does not exist.
+#[derive(Debug, Clone, Copy)]
+pub struct TokenScope {
+    team_id: i64,
+    user_id: i64,
+    admin: bool,
+}
+
+impl TokenScope {
+    /// The scope of the person a page is drawn for.
+    fn of(context: &PageContext) -> Result<Self, AppError> {
+        match (&context.user, &context.team) {
+            (Some(user), Some(team)) => Ok(Self {
+                team_id: team.team.id,
+                user_id: user.id,
+                admin: team.role.is_admin(),
+            }),
+            _ => Err(AppError::Unauthorized),
+        }
+    }
+
+    fn holds(&self, token: &AccessToken) -> bool {
+        token.team_id == self.team_id && (self.admin || token.created_by == self.user_id)
+    }
+
+    /// Continue a `where` on `access_tokens` with what this scope holds.
+    fn push_filter(&self, query: &mut QueryBuilder<Sqlite>) {
+        query
+            .push("`access_tokens`.`team_id` = ")
+            .push_bind(self.team_id);
+        if !self.admin {
+            query
+                .push(" and `access_tokens`.`created_by` = ")
+                .push_bind(self.user_id);
+        }
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for TokenScope {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        let auth = parts.extensions.get::<Auth>();
+        match auth.and_then(|auth| Some((auth.user.as_ref()?, auth.team.as_ref()?))) {
+            Some((user, team)) => Ok(Self {
+                team_id: team.team.id,
+                user_id: user.id,
+                admin: team.role.is_admin(),
+            }),
+            None => Err(AppError::Unauthorized),
+        }
+    }
+}
+
+/// The token a route names, when this scope holds it.
+async fn find_token(
+    db: &Db,
+    scope: TokenScope,
+    id: Option<i64>,
+) -> Result<Option<AccessToken>, sqlx::Error> {
+    let token = match id {
+        Some(id) => AccessToken::find(&**db, id).await?,
+        None => None,
+    };
+    Ok(token.filter(|token| scope.holds(token)))
+}
+
+/// The MCPs of the team, which a token can be limited to.
+async fn load_mcps(db: &Db, scope: TokenScope) -> Result<Vec<Mcp>, sqlx::Error> {
+    sqlx::query_as("select * from `mcps` where `team_id` = ? order by `name` asc")
+        .bind(scope.team_id)
         .fetch_all(&**db)
         .await
 }
@@ -121,19 +193,21 @@ async fn mcp_ids_of(db: &Db, token_id: i64) -> Result<Vec<i64>, sqlx::Error> {
     .await
 }
 
-/// Every token, newest first, with the MCPs it is limited to.
-async fn load_rows(db: &Db) -> Result<Vec<TokenRow>, sqlx::Error> {
-    let tokens: Vec<AccessToken> =
-        sqlx::query_as("select * from `access_tokens` order by `created_at` desc, `id` desc")
-            .fetch_all(&**db)
-            .await?;
-    let links: Vec<(i64, i64)> = sqlx::query_as(
+/// Every token of the scope, newest first, with the MCPs it is limited to.
+async fn load_rows(db: &Db, scope: TokenScope) -> Result<Vec<TokenRow>, sqlx::Error> {
+    let mut tokens = QueryBuilder::<Sqlite>::new("select * from `access_tokens` where ");
+    scope.push_filter(&mut tokens);
+    tokens.push(" order by `created_at` desc, `id` desc");
+    let tokens: Vec<AccessToken> = tokens.build_query_as().fetch_all(&**db).await?;
+    let mut links = QueryBuilder::<Sqlite>::new(
         "select `access_token_mcps`.`access_token_id`, `mcps`.`id` from `mcps` \
          inner join `access_token_mcps` on `mcps`.`id` = `access_token_mcps`.`mcp_id` \
-         order by `mcps`.`id` asc",
-    )
-    .fetch_all(&**db)
-    .await?;
+         inner join `access_tokens` on `access_tokens`.`id` = `access_token_mcps`.`access_token_id` \
+         where ",
+    );
+    scope.push_filter(&mut links);
+    links.push(" order by `mcps`.`id` asc");
+    let links: Vec<(i64, i64)> = links.build_query_as().fetch_all(&**db).await?;
     let mut mcp_ids: HashMap<i64, Vec<i64>> = HashMap::new();
     for (token_id, mcp_id) in links {
         mcp_ids.entry(token_id).or_default().push(mcp_id);
@@ -147,13 +221,15 @@ async fn load_rows(db: &Db) -> Result<Vec<TokenRow>, sqlx::Error> {
         .collect())
 }
 
-/// Whether every one of these ids is the id of an MCP. An id given twice
-/// counts twice, and so is refused.
-async fn all_mcps_exist(db: &Db, mcp_ids: &[i64]) -> Result<bool, sqlx::Error> {
+/// Whether every one of these ids is the id of an MCP of the team: a token
+/// is never limited to the MCP of another one. An id given twice counts
+/// twice, and so is refused.
+async fn all_mcps_exist(db: &Db, scope: TokenScope, mcp_ids: &[i64]) -> Result<bool, sqlx::Error> {
     if mcp_ids.is_empty() {
         return Ok(true);
     }
-    let mut query = QueryBuilder::<Sqlite>::new("select count(*) from `mcps` where `id` in (");
+    let mut query = QueryBuilder::<Sqlite>::new("select count(*) from `mcps` where `team_id` = ");
+    query.push_bind(scope.team_id).push(" and `id` in (");
     let mut ids = query.separated(", ");
     for mcp_id in mcp_ids {
         ids.push_bind(*mcp_id);
@@ -175,12 +251,13 @@ async fn render(
     state: &AppState,
     mut context: PageContext,
     session: &Session,
+    scope: TokenScope,
     input: &Map<String, Value>,
     open: Open,
 ) -> Result<Response, AppError> {
     let db = &state.core.db;
-    let rows = load_rows(db).await?;
-    let mcps = load_mcps(db).await?;
+    let rows = load_rows(db, scope).await?;
+    let mcps = load_mcps(db, scope).await?;
 
     let counts = Counts {
         all: rows.len(),
@@ -255,9 +332,10 @@ pub async fn index(
     State(state): State<AppState>,
     context: PageContext,
     session: Session,
+    scope: TokenScope,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    render(&state, context, &session, &input, Open::None).await
+    render(&state, context, &session, scope, &input, Open::None).await
 }
 
 /// `GET /tokens/new`: the page with the create dialog open.
@@ -265,9 +343,10 @@ pub async fn new(
     State(state): State<AppState>,
     context: PageContext,
     session: Session,
+    scope: TokenScope,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    render(&state, context, &session, &input, Open::Create).await
+    render(&state, context, &session, scope, &input, Open::Create).await
 }
 
 /// `GET /tokens/install`: the page with the install dialog open.
@@ -275,9 +354,10 @@ pub async fn install(
     State(state): State<AppState>,
     context: PageContext,
     session: Session,
+    scope: TokenScope,
     Input(input): Input,
 ) -> Result<Response, AppError> {
-    render(&state, context, &session, &input, Open::Install).await
+    render(&state, context, &session, scope, &input, Open::Install).await
 }
 
 /// Why a token cannot be edited, if it cannot.
@@ -297,16 +377,14 @@ pub async fn edit(
     State(state): State<AppState>,
     context: PageContext,
     session: Session,
+    scope: TokenScope,
     headers: HeaderMap,
     Path(id): Path<String>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
     let db = &state.core.db;
     let view = list_view(&input);
-    let token = match token_id(&id) {
-        Some(id) => AccessToken::find(&**db, id).await?,
-        None => None,
-    };
+    let token = find_token(db, scope, token_id(&id)).await?;
     let reason = match &token {
         Some(token) => edit_refusal(token),
         None => Some(TOKEN_NOT_FOUND),
@@ -317,13 +395,21 @@ pub async fn edit(
     };
 
     if !is_fetch(&headers) {
-        return render(&state, context, &session, &input, Open::Edit(token.id)).await;
+        return render(
+            &state,
+            context,
+            &session,
+            scope,
+            &input,
+            Open::Edit(token.id),
+        )
+        .await;
     }
     let row = TokenRow {
         mcp_ids: mcp_ids_of(db, token.id).await?,
         token,
     };
-    let mcps = load_mcps(db).await?;
+    let mcps = load_mcps(db, scope).await?;
     Ok(no_store(fragment(
         StatusCode::OK,
         edit_form(&context, &view, &row, &FormState::default(), &mcps),
@@ -349,6 +435,7 @@ pub async fn store(
     headers: HeaderMap,
     Input(input): Input,
 ) -> Result<Response, AppError> {
+    let scope = TokenScope::of(&context)?;
     let db = &state.core.db;
     let index = forwarded_index(&uri);
     let payload: TokenPayload =
@@ -356,7 +443,7 @@ pub async fn store(
             Ok(payload) => payload,
             Err(error) => {
                 let form = FormState::new(&refusal(error)?, &input);
-                let mcps = load_mcps(db).await?;
+                let mcps = load_mcps(db, scope).await?;
                 return Ok(invalid_form(
                     &headers,
                     &session,
@@ -368,7 +455,7 @@ pub async fn store(
         };
     let mcp_ids = payload.mcp_ids.unwrap_or_default();
 
-    if payload.scope_mode == ScopeMode::Selected && !all_mcps_exist(db, &mcp_ids).await? {
+    if payload.scope_mode == ScopeMode::Selected && !all_mcps_exist(db, scope, &mcp_ids).await? {
         session.flash("error", UNKNOWN_MCPS);
         return Ok(navigate(&headers, &index));
     }
@@ -384,6 +471,7 @@ pub async fn store(
             },
             expires_at: payload.expires_at.map(Timestamp::from),
             created_by: user.id,
+            team_id: scope.team_id,
         },
     )
     .await?;
@@ -406,6 +494,7 @@ pub async fn update(
     Path(id): Path<String>,
     Input(input): Input,
 ) -> Result<Response, AppError> {
+    let scope = TokenScope::of(&context)?;
     let db = &state.core.db;
     let index = forwarded_index(&uri);
     let refuse = |message: &str| {
@@ -427,11 +516,7 @@ pub async fn update(
             });
         }
     };
-    let token = match id {
-        Some(id) => AccessToken::find(&**db, id).await?,
-        None => None,
-    };
-    let Some(mut token) = token else {
+    let Some(mut token) = find_token(db, scope, id).await? else {
         return Ok(refuse(TOKEN_NOT_FOUND));
     };
     if let Some(message) = edit_refusal(&token) {
@@ -447,7 +532,7 @@ pub async fn update(
                     mcp_ids: mcp_ids_of(db, token.id).await?,
                     token,
                 };
-                let mcps = load_mcps(db).await?;
+                let mcps = load_mcps(db, scope).await?;
                 return Ok(invalid_form(
                     &headers,
                     &session,
@@ -459,7 +544,7 @@ pub async fn update(
         };
     let mcp_ids = payload.mcp_ids.unwrap_or_default();
 
-    if payload.scope_mode == ScopeMode::Selected && !all_mcps_exist(db, &mcp_ids).await? {
+    if payload.scope_mode == ScopeMode::Selected && !all_mcps_exist(db, scope, &mcp_ids).await? {
         return Ok(refuse(UNKNOWN_MCPS));
     }
 
@@ -483,17 +568,14 @@ pub async fn update(
 pub async fn revoke(
     State(state): State<AppState>,
     session: Session,
+    scope: TokenScope,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, AppError> {
     let db = &state.core.db;
     let index = forwarded_index(&uri);
-    let token = match token_id(&id) {
-        Some(id) => AccessToken::find(&**db, id).await?,
-        None => None,
-    };
-    let Some(mut token) = token else {
+    let Some(mut token) = find_token(db, scope, token_id(&id)).await? else {
         session.flash("error", TOKEN_NOT_FOUND);
         return Ok(navigate(&headers, &index));
     };
@@ -512,13 +594,18 @@ enum CleanupRefusal {
     Active,
 }
 
-/// Delete these tokens, all of them or none: every one must exist, and be
-/// revoked or expired.
-async fn delete_inactive(db: &Db, ids: &[i64]) -> Result<Result<(), CleanupRefusal>, sqlx::Error> {
+/// Delete these tokens, all of them or none: every one must be a token the
+/// scope holds, and be revoked or expired.
+async fn delete_inactive(
+    db: &Db,
+    scope: TokenScope,
+    ids: &[i64],
+) -> Result<Result<(), CleanupRefusal>, sqlx::Error> {
     let mut transaction = db.begin().await?;
 
-    let mut selection =
-        QueryBuilder::<Sqlite>::new("select count(*) from `access_tokens` where `id` in (");
+    let mut selection = QueryBuilder::<Sqlite>::new("select count(*) from `access_tokens` where ");
+    scope.push_filter(&mut selection);
+    selection.push(" and `id` in (");
     let mut list = selection.separated(", ");
     for id in ids {
         list.push_bind(*id);
@@ -533,7 +620,9 @@ async fn delete_inactive(db: &Db, ids: &[i64]) -> Result<Result<(), CleanupRefus
     }
 
     let now = Timestamp::now();
-    let mut removal = QueryBuilder::<Sqlite>::new("delete from `access_tokens` where `id` in (");
+    let mut removal = QueryBuilder::<Sqlite>::new("delete from `access_tokens` where ");
+    scope.push_filter(&mut removal);
+    removal.push(" and `id` in (");
     let mut list = removal.separated(", ");
     for id in ids {
         list.push_bind(*id);
@@ -577,6 +666,7 @@ struct Deletion {
 pub async fn destroy(
     State(state): State<AppState>,
     session: Session,
+    scope: TokenScope,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     Input(input): Input,
@@ -602,7 +692,7 @@ pub async fn destroy(
         }
     }
 
-    if let Err(refusal) = delete_inactive(&state.core.db, &unique_ids).await? {
+    if let Err(refusal) = delete_inactive(&state.core.db, scope, &unique_ids).await? {
         session.flash(
             "error",
             match refusal {

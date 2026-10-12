@@ -15,7 +15,7 @@ use mymcps_core::backup::{
 use mymcps_core::config::{TEST_APP_KEY, generate_app_key};
 use mymcps_core::crypto::{Encryption, hash_password};
 use mymcps_core::db::migrations::MIGRATIONS;
-use mymcps_core::models::{ApprovalRequest, InstanceSetting, Mcp, User};
+use mymcps_core::models::{ApprovalRequest, InstanceSetting, Mcp, Passkey, RecoveryCode, User};
 use mymcps_core::secrets::{EnvironmentInput, decrypt_environment, merge_environment};
 use mymcps_core::{Timestamp, VERSION};
 use mymcps_web::AppState;
@@ -23,7 +23,7 @@ use mymcps_web::csrf::csrf_token;
 use mymcps_web::routes::backup::BackupWork;
 use mymcps_web::session::Session;
 use mymcps_web::testing::factories::{
-    PASSWORD, create_admin, create_admin_with, create_mcp, create_member,
+    PASSWORD, create_mcp, create_member, create_super_admin, create_super_admin_with,
 };
 use mymcps_web::testing::{TestApp, TestRequest, TestResponse, multipart_form};
 use serde_json::{Map, Value, json};
@@ -234,7 +234,7 @@ async fn snapshot(app: &TestApp, tamper: &[&'static str]) -> Vec<u8> {
 /// An instance with one administrator, to take copies of.
 async fn instance_with_admin() -> (TestApp, User) {
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "ada@example.com").await;
+    let admin = create_super_admin_with(&app, "ada@example.com").await;
     (app, admin)
 }
 
@@ -243,7 +243,7 @@ async fn instance_with_admin() -> (TestApp, User) {
 #[tokio::test]
 async fn only_an_administrator_is_offered_and_given_a_backup() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let member = create_member(&app).await;
     let fields = [
         ("password", BACKUP_PASSWORD),
@@ -263,7 +263,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
     assert_redirect(&refused, "/");
     assert_eq!(
         refused.flashed("error"),
-        Some(json!("Admin access required"))
+        Some(json!("Super admin access required"))
     );
     assert!(refused.header("content-disposition").is_none());
 
@@ -283,7 +283,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
 
     let page = app.get("/settings").login_as(&admin).send().await.text();
     assert!(page.contains(
-        "<h2 class=\"section__title\" id=\"backup-title\">Backup <span class=\"badge badge--info badge--no-dot\">Admin only</span></h2>"
+        "<h2 class=\"section__title\" id=\"backup-title\">Backup <span class=\"badge badge--info badge--no-dot\">Super admin</span></h2>"
     ));
     assert!(page.contains("Export everything this instance stores to one encrypted file. Import it on the setup screen of a new instance."));
     assert!(page.contains("<span class=\"detail-row__label\">Export backup</span>"));
@@ -328,7 +328,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
 #[tokio::test]
 async fn refuses_an_export_without_the_account_password_and_counts_the_guesses() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
     let guess = async |current: &str| {
         export(
             &app,
@@ -397,7 +397,7 @@ async fn refuses_an_export_without_the_account_password_and_counts_the_guesses()
 #[tokio::test]
 async fn refuses_a_backup_password_that_is_short_or_typed_two_ways() {
     let app = TestApp::new().await;
-    let admin = create_admin(&app).await;
+    let admin = create_super_admin(&app).await;
 
     let short = export_with(&app, &admin, "7 chars").await;
     assert_redirect(&short, "/settings");
@@ -469,7 +469,7 @@ async fn refuses_a_backup_password_that_is_short_or_typed_two_ways() {
 #[tokio::test]
 async fn exports_the_instance_as_one_encrypted_file() {
     let app = fresh_instance().await;
-    let admin = create_admin_with(&app, "ada@example.com").await;
+    let admin = create_super_admin_with(&app, "ada@example.com").await;
     let mcp = create_mcp(&app, admin.id, |mcp| {
         mcp.name = "Notes".into();
         mcp.slug = "notes".into();
@@ -725,7 +725,7 @@ async fn assert_secrets(app: &TestApp, secrets: &Secrets, stranger: &Encryption)
 async fn an_instance_is_set_up_from_the_backup_of_another_one() {
     // The instance that is backed up.
     let source = fresh_instance().await;
-    let admin = create_admin_with(&source, "ada@example.com").await;
+    let admin = create_super_admin_with(&source, "ada@example.com").await;
     let member = create_member(&source).await;
     let secrets = populate_secrets(&source, &admin).await;
     assert_secrets(&source, &secrets, &Encryption::new(&generate_app_key())).await;
@@ -805,16 +805,24 @@ async fn an_instance_is_set_up_from_the_backup_of_another_one() {
         let home = target.get("/").session(signed_in.session()).send().await;
         assert_eq!(home.status, StatusCode::OK, "{email}");
     }
-    let users: Vec<(i64, String, String)> =
-        sqlx::query_as("select `id`, `email`, `role` from `users` order by `id`")
-            .fetch_all(&*target.core.db)
-            .await
-            .unwrap();
+    let users: Vec<(i64, String, String, bool)> = sqlx::query_as(
+        "select `users`.`id`, `users`.`email`, `team_user`.`role`, `users`.`is_super_admin` from `users` \
+             inner join `team_user` on `team_user`.`user_id` = `users`.`id` \
+             where `team_user`.`team_id` = 1 order by `users`.`id`",
+    )
+    .fetch_all(&*target.core.db)
+    .await
+    .unwrap();
     assert_eq!(
         users,
         [
-            (admin.id, "ada@example.com".to_string(), "admin".to_string()),
-            (member.id, member.email.clone(), "member".to_string()),
+            (
+                admin.id,
+                "ada@example.com".to_string(),
+                "owner".to_string(),
+                true
+            ),
+            (member.id, member.email.clone(), "member".to_string(), false),
         ]
     );
 
@@ -901,13 +909,18 @@ async fn older_database(
 
 #[tokio::test]
 async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
-    // Three migrations short: no session version on users, no tool
-    // approvals or settings on MCPs, no approval requests.
-    let older = MIGRATIONS.len() - 3;
-    assert_eq!(
-        MIGRATIONS[older].name,
-        "database/migrations/1791132214318_add_session_version_to_users_table"
-    );
+    // Short of the last migrations: no session version on users, no tool
+    // approvals or settings on MCPs, no approval requests, no teams, no
+    // sign-in protection.
+    let older = MIGRATIONS
+        .iter()
+        .position(|migration| {
+            migration
+                .name
+                .ends_with("add_session_version_to_users_table")
+        })
+        .unwrap();
+    assert_eq!(MIGRATIONS.len() - older, 5);
     let old_key = generate_app_key();
     let old_encryption = Encryption::new(&old_key);
     let dir = tempfile::tempdir().unwrap();
@@ -965,7 +978,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
         .await
         .unwrap()
         .unwrap();
-    assert!(user.is_admin());
+    assert!(user.is_super_admin);
     assert_eq!(user.session_version, 1);
     let signed_in = target
         .post("/login")
@@ -1003,15 +1016,25 @@ async fn refuses_a_database_that_does_not_count_its_ids() {
     // the ids it gave: no version made this database.
     let dir = tempfile::tempdir().unwrap();
     let mut database = older_database(&dir, MIGRATIONS.len(), |statement| {
+        // A database without counters has none to carry over either.
+        if statement.contains("`sqlite_sequence`") {
+            return "select 1".to_string();
+        }
         statement
             .replace(" autoincrement", "")
             .replace(" AUTOINCREMENT", "")
     })
     .await;
     sqlx::query(
-        "insert into `users` (`full_name`, `email`, `password`, `created_at`, `role`) values ('Admin', 'admin@example.com', ?, '2026-01-01 00:00:00', 'admin')",
+        "insert into `users` (`id`, `full_name`, `email`, `password`, `created_at`, `is_super_admin`) values (1, 'Admin', 'admin@example.com', ?, '2026-01-01 00:00:00', 1)",
     )
     .bind(hash_password(PASSWORD))
+    .execute(&mut database)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into `team_user` (`team_id`, `user_id`, `role`, `created_at`) values (1, 1, 'owner', '2026-01-01 00:00:00')",
+    )
     .execute(&mut database)
     .await
     .unwrap();
@@ -1035,7 +1058,7 @@ async fn the_import_is_gone_once_the_instance_is_set_up() {
     let file = seal(&snapshot(&source, &[]).await);
 
     let app = TestApp::new().await;
-    let admin = create_admin_with(&app, "existing@example.com").await;
+    let admin = create_super_admin_with(&app, "existing@example.com").await;
 
     assert_redirect(&app.get(IMPORT).send().await, "/login");
     assert_redirect(&app.get(IMPORT).login_as(&admin).send().await, "/");
@@ -1071,7 +1094,7 @@ async fn an_import_stops_when_the_instance_was_set_up_while_it_ran() {
     // The first account was created between the check of the route and the
     // moment the rows are replaced.
     let app = TestApp::new().await;
-    create_admin_with(&app, "first@example.com").await;
+    create_super_admin_with(&app, "first@example.com").await;
     let dir = BackupDir::create(&app.core.config).unwrap();
     let upload = dir.path().join("upload.mymcps");
     std::fs::write(&upload, &file).unwrap();
@@ -1285,7 +1308,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         (
             "a trigger",
             &[
-                "create trigger `promote` after insert on `users` begin update `users` set `role` = 'admin'; end",
+                "create trigger `promote` after insert on `users` begin update `users` set `is_super_admin` = 1; end",
             ],
             DAMAGED,
         ),
@@ -1303,7 +1326,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         ),
         (
             "no administrator",
-            &["update `users` set `role` = 'member'"],
+            &["update `users` set `is_super_admin` = 0"],
             NO_ADMINISTRATOR,
         ),
         (
@@ -1362,7 +1385,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
         (
             "a row that refers to a user who is not there",
             &[
-                "insert into `invites` (`token`, `email`, `role`, `created_by`, `expires_at`, `created_at`) values ('t', 'x@example.com', 'member', 999, '2030-01-01 00:00:00', '2026-01-01 00:00:00')",
+                "insert into `invites` (`token`, `email`, `role`, `created_by`, `expires_at`, `created_at`, `team_id`) values ('t', 'x@example.com', 'member', 999, '2030-01-01 00:00:00', '2026-01-01 00:00:00', 1)",
             ],
             DAMAGED,
         ),
@@ -1376,7 +1399,7 @@ async fn refuses_a_database_that_is_not_the_one_of_an_instance() {
             &[
                 "create table `copy` as select * from `users`",
                 "drop table `users`",
-                "create table `users` (`id` integer not null primary key autoincrement, `full_name` varchar(255) null, `email` varchar(254) null, `password` varchar(255) not null, `created_at` datetime not null, `updated_at` datetime null, `role` varchar(32) not null default 'member', `session_version` integer not null default '1')",
+                "create table `users` (`id` integer not null primary key autoincrement, `full_name` varchar(255) null, `email` varchar(254) null, `password` varchar(255) not null, `created_at` datetime not null, `updated_at` datetime null, `session_version` integer not null default '1', `current_team_id` integer null references `teams`(`id`) on delete SET NULL, `is_super_admin` boolean not null default '0', `two_factor_secret` text null, `two_factor_confirmed_at` datetime null, `two_factor_last_step` integer null)",
                 "insert into `users` select * from `copy`",
                 "drop table `copy`",
                 "update `users` set `email` = null",
@@ -1698,5 +1721,82 @@ async fn imports_a_backup_the_node_app_exported() {
     assert_eq!(
         count(&target, "adonis_schema").await,
         MIGRATIONS.len() as i64
+    );
+}
+
+#[tokio::test]
+async fn the_protection_of_an_account_follows_a_backup_to_another_key() {
+    // An account that asks for a code of its authenticator app, with its
+    // recovery codes and a passkey.
+    let source = fresh_instance().await;
+    let mut admin = create_super_admin_with(&source, "ada@example.com").await;
+    let secret = mymcps_core::crypto::totp::generate_secret();
+    let mut transaction = source.core.db.begin().await.unwrap();
+    admin
+        .enable_authenticator(&mut transaction, &source.core.encryption, &secret, 0)
+        .await
+        .unwrap();
+    let codes = RecoveryCode::replace_all(&mut transaction, admin.id)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    let mut passkey = Passkey {
+        user_id: admin.id,
+        name: "MacBook".into(),
+        credential_id: "credential".into(),
+        public_key: "key".into(),
+        ..Default::default()
+    };
+    passkey.insert(&*source.core.db).await.unwrap();
+    let exported = export_with(&source, &admin, BACKUP_PASSWORD).await;
+    assert_eq!(exported.status, StatusCode::OK);
+
+    let target = fresh_instance().await;
+    let imported = import(&target, &exported.body, BACKUP_PASSWORD).await;
+    assert_redirect(&imported, "/login");
+    let db = &*target.core.db;
+
+    // The secret of the app was encrypted anew with the key of this
+    // instance, which the key of the other no longer opens.
+    let restored = User::find(db, admin.id).await.unwrap().unwrap();
+    assert!(restored.has_authenticator());
+    let stored = restored.two_factor_secret.clone().unwrap();
+    assert_eq!(
+        target.core.encryption.decrypt(&stored),
+        Some(secret.clone())
+    );
+    assert_eq!(source.core.encryption.decrypt(&stored), None);
+    assert_eq!(RecoveryCode::remaining(db, admin.id).await.unwrap(), 8);
+    assert_eq!(Passkey::of_user(db, admin.id).await.unwrap().len(), 1);
+
+    // The password is still half of a sign-in, and the app has the other.
+    let typed = target
+        .post("/login")
+        .csrf()
+        .form(&[("email", "ada@example.com"), ("password", PASSWORD)])
+        .send()
+        .await;
+    assert_redirect(&typed, "/login/two-factor");
+    let now = Timestamp::now().timestamp_millis() / 1000;
+    for (code, destination) in [
+        ("000000".to_string(), "/login/two-factor"),
+        (
+            mymcps_core::crypto::totp::current_code(&secret, now).unwrap(),
+            "/",
+        ),
+    ] {
+        let answered = target
+            .post("/login/two-factor")
+            .session(typed.session())
+            .csrf()
+            .form(&[("code", &code)])
+            .send()
+            .await;
+        assert_redirect(&answered, destination);
+    }
+    assert!(
+        RecoveryCode::consume(db, admin.id, &codes[0])
+            .await
+            .unwrap()
     );
 }

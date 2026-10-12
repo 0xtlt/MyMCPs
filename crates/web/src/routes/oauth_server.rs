@@ -15,7 +15,7 @@ use http::header::{
 use http::{HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use mymcps_core::client_ip::rate_limit_client_key;
 use mymcps_core::limiter::Limiter;
-use mymcps_core::models::User;
+use mymcps_core::models::{Membership, User};
 use mymcps_core::public_url::PublicUrlError;
 use mymcps_gateway::oauth::{
     GatewayAuthorizationRequest, authorization_server_metadata, is_loopback_redirect_uri,
@@ -34,6 +34,7 @@ use crate::respond::{navigate, page};
 use crate::routes::FeatureRoutes;
 use crate::session::Session;
 use crate::state::AppState;
+use crate::validators::route_params::record_id;
 use crate::views::oauth::{Consent, authorize_page, leaving_page};
 use crate::views::shell::PageContext;
 
@@ -237,6 +238,9 @@ struct AuthorizationCall<'a> {
     session: &'a Session,
     context: &'a PageContext,
     user: Option<&'a User>,
+    /// The teams of that person, and the one they work in.
+    teams: &'a [Membership],
+    team: Option<&'a Membership>,
     input: &'a Value,
 }
 
@@ -245,7 +249,7 @@ async fn answer_authorization(call: &AuthorizationCall<'_>) -> Result<Response, 
     let request: GatewayAuthorizationRequest =
         oauth.parse_authorization_request(call.input).await?;
 
-    let Some(user) = call.user else {
+    let (Some(user), Some(current)) = (call.user, call.team) else {
         call.session.put(RETURN_TO_KEY, request.return_path()?);
         // To the bare sign-in page: the request waits in the session.
         return Ok(navigate(call.headers, "/login"));
@@ -261,6 +265,8 @@ async fn answer_authorization(call: &AuthorizationCall<'_>) -> Result<Response, 
                 is_loopback_redirect: is_loopback_redirect_uri(&request.redirect_uri),
                 scope: &request.scopes,
                 user_email: &user.email,
+                teams: call.teams,
+                team_id: current.team.id,
                 client_id: &request.client.client_id,
                 redirect_uri: &request.redirect_uri,
                 state: request.state.as_deref(),
@@ -287,7 +293,21 @@ async fn answer_authorization(call: &AuthorizationCall<'_>) -> Result<Response, 
             ],
         )?
     } else {
-        let code = oauth.create_authorization_code(&request, user.id).await?;
+        // The grant is for the team the consent screen named, which the
+        // person chose there, or else for the one they work in. A team
+        // that is named must be one of theirs: the id of another team is
+        // refused like a request that is not one.
+        let team = match call.input.get("team_id") {
+            None => current,
+            Some(team_id) => team_id
+                .as_str()
+                .and_then(record_id)
+                .and_then(|team_id| call.teams.iter().find(|team| team.team.id == team_id))
+                .ok_or_else(|| GatewayOauthError::new("invalid_request", "Unknown team"))?,
+        };
+        let code = oauth
+            .create_authorization_code(&request, user.id, team.team.id)
+            .await?;
         oauth_redirect(
             &request.redirect_uri,
             &[("code", Some(code.as_str())), ("state", state)],
@@ -310,7 +330,7 @@ pub async fn authorize(
     uri: Uri,
     headers: HeaderMap,
     session: Session,
-    Auth { user }: Auth,
+    Auth { user, teams, team }: Auth,
     ClientIp(ip): ClientIp,
     context: PageContext,
     ParsedBody(body): ParsedBody,
@@ -347,6 +367,8 @@ pub async fn authorize(
         session: &session,
         context: &context,
         user: user.as_ref(),
+        teams: &teams,
+        team: team.as_ref(),
         input: &input,
     };
     let response = match answer_authorization(&call).await {

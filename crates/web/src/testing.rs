@@ -16,7 +16,7 @@ use percent_encoding::{NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode
 use serde_json::{Map, Value};
 use tower::ServiceExt;
 
-use crate::auth::{LOGIN_KEY, SESSION_STAMP_KEY, SessionStamp};
+use crate::auth::{LOGIN_KEY, SESSION_STAMP_KEY, SessionStamp, TEAM_KEY};
 use crate::cookies::Cookies;
 use crate::csrf::{CSRF_FIELD, CSRF_HEADER, csrf_token};
 use crate::session::{SESSION_COOKIE, Session};
@@ -194,6 +194,14 @@ impl TestRequest<'_> {
     /// Sign the request in as this user, with a session stamped now.
     pub fn login_as(self, user: &User) -> Self {
         self.session(session_for(user))
+    }
+
+    /// Work in this team, as the browser of someone who switched to it does.
+    /// Without it, a signed-in user works in the first team they joined.
+    pub fn in_team(self, team_id: i64) -> Self {
+        let mut values = Map::new();
+        values.insert(TEAM_KEY.into(), Value::from(team_id));
+        self.session(values)
     }
 
     /// Send a valid CSRF token with the request.
@@ -453,11 +461,17 @@ impl TestResponse {
 
 /// Records for tests, as `tests/helpers/factories.ts` made them. Every user
 /// has the password `password123`.
+///
+/// Users, MCPs and invites go to the Root Team unless a test says otherwise:
+/// an administrator of it changes it, a member of it only reads its MCPs.
+/// Neither runs the instance: `create_super_admin` makes someone who does.
+/// A user made here has no personal team: the Root Team is the one they
+/// work in.
 pub mod factories {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use mymcps_core::Timestamp;
-    use mymcps_core::models::{Invite, Mcp, McpStatus, McpTransport, User, UserRole};
+    use mymcps_core::models::{Invite, Mcp, McpStatus, McpTransport, Team, TeamRole, User};
 
     use super::TestApp;
 
@@ -469,34 +483,82 @@ pub mod factories {
         format!("{prefix}-{}", SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1)
     }
 
-    pub async fn create_user(app: &TestApp, email: Option<&str>, role: UserRole) -> User {
+    /// A user of the Root Team, with this role in it.
+    pub async fn create_user(app: &TestApp, email: Option<&str>, role: TeamRole) -> User {
+        let user = create_account(app, email).await;
+        join_team(app, Team::ROOT_ID, &user, role).await;
+        user
+    }
+
+    /// An account that is in no team yet.
+    pub async fn create_account(app: &TestApp, email: Option<&str>) -> User {
         let email = email
             .map(str::to_string)
             .unwrap_or_else(|| format!("{}@example.com", next_value("user")));
-        let mut user = User::with_password(&email, Some("Test User"), PASSWORD, role)
+        let mut user = User::with_password(&email, Some("Test User"), PASSWORD)
             .await
             .expect("a hashed password");
         user.insert(&*app.core.db).await.expect("a new user");
         user
     }
 
+    /// A team with nobody in it.
+    pub async fn create_team(app: &TestApp, name: &str) -> Team {
+        let mut team = Team {
+            name: name.to_string(),
+            ..Default::default()
+        };
+        team.insert(&*app.core.db).await.expect("a new team");
+        team
+    }
+
+    pub async fn join_team(app: &TestApp, team_id: i64, user: &User, role: TeamRole) {
+        Team::attach(&*app.core.db, team_id, user.id, role)
+            .await
+            .expect("a new member");
+    }
+
+    /// Someone who runs the instance, as its first account does: a super
+    /// admin, who owns the Root Team.
+    pub async fn create_super_admin(app: &TestApp) -> User {
+        let mut user = create_owner(app).await;
+        make_super_admin(app, &mut user).await;
+        user
+    }
+
+    pub async fn create_super_admin_with(app: &TestApp, email: &str) -> User {
+        let mut user = create_user(app, Some(email), TeamRole::Owner).await;
+        make_super_admin(app, &mut user).await;
+        user
+    }
+
+    pub async fn make_super_admin(app: &TestApp, user: &mut User) {
+        user.is_super_admin = true;
+        user.save(&*app.core.db).await.expect("a super admin");
+    }
+
+    pub async fn create_owner(app: &TestApp) -> User {
+        create_user(app, None, TeamRole::Owner).await
+    }
+
     pub async fn create_admin(app: &TestApp) -> User {
-        create_user(app, None, UserRole::Admin).await
+        create_user(app, None, TeamRole::Admin).await
     }
 
     pub async fn create_admin_with(app: &TestApp, email: &str) -> User {
-        create_user(app, Some(email), UserRole::Admin).await
+        create_user(app, Some(email), TeamRole::Admin).await
     }
 
     pub async fn create_member(app: &TestApp) -> User {
-        create_user(app, None, UserRole::Member).await
+        create_user(app, None, TeamRole::Member).await
     }
 
     pub async fn create_member_with(app: &TestApp, email: &str) -> User {
-        create_user(app, Some(email), UserRole::Member).await
+        create_user(app, Some(email), TeamRole::Member).await
     }
 
-    /// An invite for a member, valid for a week. Change it with `adjust`.
+    /// An invite to the Root Team for a member, valid for a week. Change it
+    /// with `adjust`.
     pub async fn create_invite(
         app: &TestApp,
         created_by: i64,
@@ -504,7 +566,8 @@ pub mod factories {
     ) -> Invite {
         let mut invite = Invite {
             email: format!("{}@example.com", next_value("invite")),
-            role: UserRole::Member,
+            role: TeamRole::Member,
+            team_id: Team::ROOT_ID,
             token: Invite::generate_token(),
             created_by,
             expires_at: Timestamp::now() + chrono::Duration::days(7),
@@ -515,7 +578,7 @@ pub mod factories {
         invite
     }
 
-    /// A ready, enabled HTTP MCP. Change it with `adjust`.
+    /// A ready, enabled HTTP MCP of the Root Team. Change it with `adjust`.
     pub async fn create_mcp(app: &TestApp, created_by: i64, adjust: impl FnOnce(&mut Mcp)) -> Mcp {
         let name = next_value("MCP");
         let mut mcp = Mcp {
@@ -525,6 +588,7 @@ pub mod factories {
             status: McpStatus::Ready,
             enabled: true,
             created_by,
+            team_id: Team::ROOT_ID,
             ..Default::default()
         };
         adjust(&mut mcp);

@@ -443,7 +443,7 @@ async fn writes_the_dates_of_a_request_as_instants_whatever_the_time_zone_of_the
 #[tokio::test]
 async fn shows_every_state_a_request_can_be_in() {
     let gateway = crm_gateway().await;
-    let admin = create_user(&gateway, None, mymcps_core::models::UserRole::Admin).await;
+    let admin = create_user(&gateway, None, mymcps_core::models::TeamRole::Admin).await;
     let request = waiting_request(&gateway, admin.id).await;
     let mcp = find_mcp(&gateway, request.mcp_id).await;
     let page = async || text_of(&show(&gateway, &request, &admin).await.text());
@@ -1660,13 +1660,19 @@ async fn answers_an_mcp_that_does_not_exist_with_the_list_of_mcps() {
         assert_eq!(flash(&saved, "error").as_deref(), Some("MCP not found"));
     }
 
-    // The page is for people who are signed in, whatever their role.
+    // The page is for the owners and administrators of the team: which
+    // tools ask decides what agents may do on their own.
     let guest = gateway.get(&tools_path(&mcp)).send().await;
     assert_eq!(guest.location(), Some("/login"));
     let member = create_member(&gateway).await;
-    assert!(
-        tools_page(&gateway, &mcp, &member)
-            .await
-            .contains("delete_contact")
+    let refused = gateway
+        .get(&tools_path(&mcp))
+        .login_as(&member)
+        .send()
+        .await;
+    assert_eq!(refused.location(), Some("/"));
+    assert_eq!(
+        flash(&refused, "error").as_deref(),
+        Some("Admin access required")
     );
 }

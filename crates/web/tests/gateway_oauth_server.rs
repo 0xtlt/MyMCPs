@@ -9,10 +9,10 @@
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use http::StatusCode;
-use mymcps_core::models::{AccessToken, TokenSource, User};
+use mymcps_core::models::{AccessToken, TeamRole, TokenSource, User};
 use mymcps_gateway::access_token;
 use mymcps_gateway::bearer::{BearerError, BearerRejection};
-use mymcps_web::testing::factories::{create_admin, create_admin_with};
+use mymcps_web::testing::factories::{create_admin, create_admin_with, create_team, join_team};
 use mymcps_web::testing::{TestApp, TestResponse};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -522,8 +522,15 @@ async fn shows_the_consent_screen_of_an_authorization_request() {
     ));
     // The form carries the request back, for the page's script to send.
     assert!(page.contains(
-        "<form class=\"auth-card__actions\" method=\"post\" action=\"/authorize\" data-async>"
+        "<form class=\"auth-card__actions\" id=\"authorize-form\" method=\"post\" action=\"/authorize\" data-async>"
     ));
+    // And the team the client will reach: the only one of this person.
+    assert!(
+        page.contains(
+            "<input type=\"hidden\" name=\"team_id\" value=\"1\" form=\"authorize-form\">"
+        )
+    );
+    assert!(page.contains("value=\"Root Team\" readonly"));
     assert!(page.contains("data-fragment>"));
     assert!(page.contains("name=\"_csrf\""));
     for (name, value) in &payload {
@@ -1021,4 +1028,116 @@ async fn holds_each_client_address_to_its_allowance() {
         authorize_from("198.51.100.8").await.status,
         StatusCode::BAD_REQUEST
     );
+}
+
+#[tokio::test]
+async fn grants_a_client_the_team_chosen_on_the_consent_screen() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let research = create_team(&app, "Research").await;
+    join_team(&app, research.id, &admin, TeamRole::Member).await;
+    let foreign = create_team(&app, "Foreign").await;
+    let registered = register_public_client(&app, "Team client").await;
+    let authorization = authorization_payload(&client_id(&registered));
+
+    // Someone who is in several teams chooses the one the client reaches:
+    // the one they work in is proposed, and no team they are not in.
+    let page = app
+        .get(&authorization_path(&authorization))
+        .login_as(&admin)
+        .send()
+        .await
+        .text();
+    assert!(page.contains(
+        "<select class=\"input\" id=\"authorize-team\" name=\"team_id\" form=\"authorize-form\">"
+    ));
+    assert!(page.contains("<option value=\"1\" selected>Root Team</option>"));
+    assert!(page.contains(&format!(
+        "<option value=\"{}\">Research</option>",
+        research.id
+    )));
+    assert!(!page.contains("Foreign"));
+
+    let codes = async || -> Vec<i64> {
+        sqlx::query_scalar("select `team_id` from `oauth_authorization_codes` order by `id`")
+            .fetch_all(&*app.core.db)
+            .await
+            .unwrap()
+    };
+
+    // A team they are not in, or something that is not a team: no grant.
+    for team_id in [foreign.id.to_string(), "all".to_string(), "0".to_string()] {
+        let refused = app
+            .post("/authorize")
+            .login_as(&admin)
+            .csrf()
+            .form(&with(
+                &authorization,
+                &[("decision", "approve"), ("team_id", &team_id)],
+            ))
+            .send()
+            .await;
+        assert_eq!(refused.status, StatusCode::BAD_REQUEST, "{team_id}");
+        assert_eq!(refused.json()["error"], "invalid_request", "{team_id}");
+    }
+    assert!(codes().await.is_empty());
+
+    // The team they chose, which is not the one they work in.
+    let research_id = research.id.to_string();
+    let approved = app
+        .post("/authorize")
+        .login_as(&admin)
+        .csrf()
+        .form(&with(
+            &authorization,
+            &[("decision", "approve"), ("team_id", &research_id)],
+        ))
+        .send()
+        .await;
+    let code = param(&destination(&approved), "code").unwrap();
+    assert_eq!(codes().await, [research.id]);
+
+    let exchange = token(
+        &app,
+        &[
+            ("grant_type", "authorization_code"),
+            ("client_id", &client_id(&registered)),
+            ("code", &code),
+            ("code_verifier", CODE_VERIFIER),
+            ("redirect_uri", RUNTIME_REDIRECT_URI),
+            ("resource", RESOURCE),
+        ],
+    )
+    .await;
+    assert_eq!(exchange.status, StatusCode::OK);
+    let granted = find_by_name(&app, "Team client").await;
+    assert_eq!(granted.team_id, research.id);
+    assert_eq!(granted.created_by, admin.id);
+
+    // Without a choice, as a client of an older page sends it: the team
+    // the person works in.
+    let approved = approve(&app, &admin, &authorization).await;
+    assert!(param(&destination(&approved), "code").is_some());
+    assert_eq!(codes().await, [1]);
+
+    // A grant that waits to be exchanged goes when the person leaves the team.
+    let approved = app
+        .post("/authorize")
+        .login_as(&admin)
+        .csrf()
+        .form(&with(
+            &authorization,
+            &[("decision", "approve"), ("team_id", &research_id)],
+        ))
+        .send()
+        .await;
+    assert!(param(&destination(&approved), "code").is_some());
+    assert_eq!(codes().await, [1, research.id]);
+    let mut transaction = app.core.db.begin().await.unwrap();
+    mymcps_core::models::Team::detach(&mut transaction, research.id, admin.id)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert_eq!(codes().await, [1]);
+    assert!(find_by_name(&app, "Team client").await.is_revoked());
 }

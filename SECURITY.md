@@ -21,7 +21,7 @@ permissions.
 ## Deployment baseline
 
 - Complete first-run onboarding before exposing the instance to untrusted traffic;
-  the first account created becomes the administrator.
+  the first account created is a super admin, and so runs the instance.
 - Set a unique production `APP_KEY` and keep `.env` outside version control. The
   server generates and persists one in its data directory (`/app/tmp` in the
   container) when it is omitted. It refuses to start in production with a key
@@ -42,8 +42,24 @@ permissions.
   the container directly to the public internet.
 - Treat configured npm MCP packages as executable third-party code. Pin versions
   and use a separate, restricted deployment boundary for untrusted packages.
-- Invite only trusted operators. Members can manage the shared MCP registry and
-  gateway access tokens, so membership is not a read-only role.
+- Keep registration closed unless strangers may use the instance: it is off by
+  default, and a super admin turns it on under
+  **Settings → My Instance**. An account that registers gets a team of its own,
+  where it can add MCPs, npm packages included: those run in a Deno sandbox on
+  your server.
+- Invite only trusted people as owners or admins of a team: they manage its MCP
+  registry, with the credentials it holds, and every access token of the team.
+  A member reads the registry and makes access tokens of their own, which call
+  the tools of every enabled MCP of the team.
+- Make operators only super admins: they change the instance settings, export
+  backups, which hold every credential of every team, delete accounts, and
+  decide who else is a super admin. A role in a team, the Root Team included,
+  gives none of that.
+- Turn on sign-in protection for every super admin, and for the owners and
+  admins of teams: **Settings → Sign-in protection**. Keep the recovery codes
+  away from the device that holds the app or the passkey. A super admin can
+  remove the protection of an account under **Users**; do it only once you are
+  sure who asks.
 - Revoke access tokens when a user or upstream integration is no longer trusted.
 
 ## Application safeguards
@@ -52,6 +68,15 @@ permissions.
   account and client address, and per client address across accounts. IPv6
   clients are counted by /64. Current-password confirmations in settings are
   limited per user.
+- An account with an authenticator app or a passkey is not signed in by its
+  password alone: the password opens a second step, answered within ten
+  minutes with a code of the app, a passkey, or a recovery code. Codes are
+  limited per account and work once. The secret of the app is stored encrypted
+  with `APP_KEY`, and recovery codes as hashes. A passkey is asked to verify
+  the person, is only accepted for the origin of `APP_URL`, and answers a
+  challenge that is taken once. Turning a protection on or off, making new
+  recovery codes, and adding or removing a passkey ask for the account
+  password again.
 - Browser sessions are checked on the server on every request. They end after
   2 hours idle or 24 hours, and signing out, changing the password, or running
   `user:reset-password` revokes the account's sessions, including a copied

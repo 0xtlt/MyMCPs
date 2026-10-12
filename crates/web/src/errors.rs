@@ -21,6 +21,10 @@ fn error_page(nonce: String, status: StatusCode) -> Markup {
     // and the page must not depend on what failed.
     let context = PageContext {
         user: None,
+        team: None,
+        teams: Vec::new(),
+        super_admin: false,
+        registration_open: false,
         path: String::new(),
         csrf: String::new(),
         nonce,

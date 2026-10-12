@@ -44,6 +44,8 @@ http-body-util = "0.1"
 # Reads the one form that carries a file, field by field: the backup an
 # instance is set up from goes to disk as it arrives.
 multer = "3"
+# The QR code an authenticator app scans, drawn as SVG by the server.
+qrcode = { version = "0.14", default-features = false }
 
 [features]
 # `testing::TestApp`, for functional tests.

@@ -12,6 +12,11 @@
 //! can: its token lives in the database, where it can be revoked. Cookie and
 //! token are in the format of the AdonisJS session guard, so browsers signed
 //! in to the Node app stay signed in.
+//!
+//! Someone who is signed in works in one team at a time: [`Auth::team`].
+//! The session says which, then the account (the team it last worked in),
+//! then the order the teams were joined in. What the person may do there is
+//! read from the database on every request, never from the session.
 
 use std::sync::Arc;
 
@@ -22,7 +27,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use http::request::Parts;
 use mymcps_core::crypto::{constant_time_eq, random_base64url, sha256_hex};
-use mymcps_core::models::User;
+use mymcps_core::models::{Membership, Team, TeamRole, User};
 use mymcps_core::{Core, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -34,6 +39,8 @@ use crate::session::{SESSION_AGE_SECONDS, Session};
 /// Session key of the signed-in user's id.
 pub const LOGIN_KEY: &str = "auth_web";
 pub const SESSION_STAMP_KEY: &str = "auth_stamp";
+/// Session key of the id of the team this browser works in.
+pub const TEAM_KEY: &str = "currentTeam";
 pub const REMEMBER_COOKIE: &str = "remember_web";
 
 /// However active, a session has to be re-established this long after sign-in.
@@ -98,6 +105,8 @@ pub fn stamp_session(session: &Session, user: &User) {
 fn forget_session_login(session: &Session) {
     session.forget(LOGIN_KEY);
     session.forget(SESSION_STAMP_KEY);
+    // The next person to sign in on this browser starts in a team of theirs.
+    session.forget(TEAM_KEY);
 }
 
 /// The outcome of authenticating a request. In the request extensions once
@@ -105,6 +114,84 @@ fn forget_session_login(session: &Session) {
 #[derive(Debug, Clone, Default)]
 pub struct Auth {
     pub user: Option<User>,
+    /// The teams of that person, in the order they joined them. Empty for a
+    /// visitor.
+    pub teams: Vec<Membership>,
+    /// The one they work in. Always there for someone who is signed in.
+    pub team: Option<Membership>,
+}
+
+impl Auth {
+    /// Whether the person runs the instance. It is said of their account:
+    /// what they are in a team, the Root Team included, changes nothing.
+    pub fn is_super_admin(&self) -> bool {
+        self.user.as_ref().is_some_and(|user| user.is_super_admin)
+    }
+
+    /// The person and the team they work in, for a handler behind
+    /// [`crate::guards::require_auth`] that needs both.
+    pub fn signed_in(self) -> Result<(User, CurrentTeam), AppError> {
+        match (self.user, self.team) {
+            (Some(user), Some(team)) => Ok((user, CurrentTeam(team))),
+            _ => Err(AppError::Unauthorized),
+        }
+    }
+
+    /// Whether the person is an owner or an administrator of the team they
+    /// work in.
+    pub fn is_team_admin(&self) -> bool {
+        self.team
+            .as_ref()
+            .is_some_and(|membership| membership.role.is_admin())
+    }
+}
+
+/// The teams of someone who is signed in, and the one they work in.
+///
+/// An account always has a team. One that has none (its last team was
+/// deleted under it) gets its personal team back here.
+async fn resolve_teams(
+    core: &Core,
+    session: &Session,
+    user: &User,
+) -> Result<(Vec<Membership>, Membership), sqlx::Error> {
+    let mut teams = Team::memberships(&*core.db, user.id).await?;
+    if teams.is_empty() {
+        let mut transaction = core.db.begin().await?;
+        let team = Team::create_personal(&mut transaction, user).await?;
+        transaction.commit().await?;
+        teams.push(Membership {
+            team,
+            role: TeamRole::Owner,
+        });
+    }
+
+    let wanted = [
+        session.get(TEAM_KEY).and_then(|id| id.as_i64()),
+        user.current_team_id,
+    ];
+    let current = wanted
+        .into_iter()
+        .flatten()
+        .find_map(|id| teams.iter().find(|membership| membership.team.id == id))
+        .unwrap_or(&teams[0])
+        .clone();
+    if session.get(TEAM_KEY).and_then(|id| id.as_i64()) != Some(current.team.id) {
+        session.put(TEAM_KEY, current.team.id);
+    }
+    Ok((teams, current))
+}
+
+/// Make a team the one this browser works in, and the one the account
+/// comes back to. The caller has checked that the person is in it.
+pub async fn switch_team(
+    core: &Core,
+    session: &Session,
+    user: &mut User,
+    team_id: i64,
+) -> Result<(), sqlx::Error> {
+    session.put(TEAM_KEY, team_id);
+    user.remember_team(&*core.db, team_id).await
 }
 
 async fn create_remember_token(
@@ -304,13 +391,20 @@ pub async fn silent_auth_layer(
             }
             _ => {}
         }
-        Ok::<_, sqlx::Error>(user)
+        let (teams, team) = match &user {
+            Some(user) => {
+                let (teams, team) = resolve_teams(&core, &session, user).await?;
+                (teams, Some(team))
+            }
+            None => (Vec::new(), None),
+        };
+        Ok::<_, sqlx::Error>(Auth { user, teams, team })
     }
     .await;
 
     match resolved {
-        Ok(user) => {
-            request.extensions_mut().insert(Auth { user });
+        Ok(auth) => {
+            request.extensions_mut().insert(auth);
             next.run(request).await
         }
         Err(error) => AppError::from(error).into_response(),
@@ -346,6 +440,49 @@ impl std::ops::Deref for CurrentUser {
     type Target = User;
 
     fn deref(&self) -> &User {
+        &self.0
+    }
+}
+
+/// The team the signed-in person works in and what they are in it, for
+/// handlers behind [`crate::guards::require_auth`]. Everything a handler
+/// reads or writes of a team goes through this id: a row of another team is
+/// answered like a row that does not exist.
+#[derive(Debug, Clone)]
+pub struct CurrentTeam(pub Membership);
+
+impl CurrentTeam {
+    pub fn id(&self) -> i64 {
+        self.0.team.id
+    }
+
+    pub fn role(&self) -> TeamRole {
+        self.0.role
+    }
+
+    /// An owner or an administrator of the team.
+    pub fn is_admin(&self) -> bool {
+        self.0.role.is_admin()
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for CurrentTeam {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<Auth>()
+            .and_then(|auth| auth.team.clone())
+            .map(CurrentTeam)
+            .ok_or(AppError::Unauthorized)
+    }
+}
+
+impl std::ops::Deref for CurrentTeam {
+    type Target = Membership;
+
+    fn deref(&self) -> &Membership {
         &self.0
     }
 }

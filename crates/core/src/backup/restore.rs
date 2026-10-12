@@ -70,6 +70,11 @@ const SECRET_COLUMNS: &[SecretColumns] = &[
         single: &["arguments", "summary"],
         maps: &[],
     },
+    SecretColumns {
+        table: "users",
+        single: &["two_factor_secret"],
+        maps: &[],
+    },
 ];
 
 /// The tables whose rows a backup replaces: those of the instance, less
@@ -157,9 +162,10 @@ fn quote(identifier: &str) -> String {
 /// 2. the body is decrypted to a file;
 /// 3. the metadata is parsed;
 /// 4. the database is checked: a SQLite file that passes `quick_check`,
-///    holds tables and indexes only, only migrations this version knows,
-///    and an administrator;
-/// 5. the migrations it lacks are run on it;
+///    holds tables and indexes only, and only migrations this version
+///    knows;
+/// 5. the migrations it lacks are run on it, and it must then hold someone
+///    who runs the instance: a super admin;
 /// 6. its secrets are encrypted with the key of this instance when the
 ///    backup was made with another;
 /// 7. its rows replace those of the instance, in one transaction that
@@ -303,10 +309,17 @@ async fn readable(connection: &mut SqliteConnection) -> Result<(), BackupError> 
         .fetch_all(&mut *connection)
         .await
         .map_err(blame)?;
-    sqlx::query_as::<_, User>("select * from `users` where `role` = 'admin'")
-        .fetch_all(&mut *connection)
-        .await
-        .map_err(blame)?;
+    // Read after the migrations, which is when every backup says who runs
+    // the instance the same way: its super admins. Without one, nobody
+    // could change its settings.
+    let super_admins =
+        sqlx::query_as::<_, User>("select * from `users` where `is_super_admin` = 1")
+            .fetch_all(&mut *connection)
+            .await
+            .map_err(blame)?;
+    if super_admins.is_empty() {
+        return Err(BackupError::NoAdministrator);
+    }
     Ok(())
 }
 
@@ -370,14 +383,6 @@ async fn check(connection: &mut SqliteConnection) -> Result<(), BackupError> {
         return Err(BackupError::Damaged);
     }
 
-    let administrators: i64 =
-        sqlx::query_scalar("select count(*) from `users` where `role` = 'admin'")
-            .fetch_one(&mut *connection)
-            .await
-            .map_err(blame)?;
-    if administrators == 0 {
-        return Err(BackupError::NoAdministrator);
-    }
     Ok(())
 }
 

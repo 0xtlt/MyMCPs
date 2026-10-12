@@ -2,6 +2,32 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-12
+
+### Added
+
+- Added teams, with the roles and rules of Coolify. MCPs, access tokens, approvals, call logs, and analytics belong to a team and are only shown to its members, and an access token reaches the MCPs of its own team only. Every account has a personal team, anyone can create more, and a team switcher at the top of the navigation goes from one to another. On upgrade, everything an instance had goes to the **Root Team**: its first administrator becomes the owner, the other administrators stay admins, members stay members, and each of them also gets a personal team.
+- Added the **owner**, **admin**, and **member** roles of a team. A member reads the MCPs of the team and makes access tokens of their own. An admin also manages MCPs, every access token, members, and invites, and reads the logs and the analytics. An owner also deletes the team and decides who else owns it. Nobody changes or removes someone ranked above them, nor gives a role above their own.
+- Added **super admins**, who run the instance: they change the instance settings, export backups, and manage accounts. It is said of the account, apart from any team: owning or administering a team, the Root Team included, gives no right over the instance. The first account is a super admin, and on upgrade every administrator an instance had becomes one.
+- Added registration, off by default: a super admin turns **Allow registration** on under **Settings → My Instance**, and anyone can then create an account, with a team of its own, on `/signup`.
+- Added a **Users** page for super admins: every account with its teams, a way to make another account a super admin or to take that from it, and a way to delete an account. Each asks for your own password, and the instance always keeps a super admin. The teams a deleted account was alone in are deleted with it; the others keep an owner.
+- Added **sign-in protection** under **Settings**: an account can ask for more than its password. An **authenticator app** (1Password, Google Authenticator, Authy and the like) is set up by scanning a QR code, and its 6-digit code is then asked after the password. A **passkey** (a fingerprint, a face, a security key) answers that second step too, and also signs in alone from the sign-in page. Passkeys need `APP_URL` to be the address people open.
+- Added **recovery codes**: eight codes that come with the first protection of an account, shown once, each of which signs in once in place of the app or the passkey. New ones can be made under **Settings**.
+- Added two ways back in for someone who lost their app, their passkeys and their codes: a super admin removes the protection of the account under **Users**, and `mymcps user:reset-protection <email>` does it from the server.
+- Added a role to invites, and invites for people who already have an account: they sign in and join the team with one button. An invite works whether or not registration is open. An admin sees and removes the invites up to their own rank: the invite of an owner, with its link, is for owners.
+- Added a choice of team to the consent page of the OAuth server, for someone who is in several: the client reaches the MCPs of that team.
+
+### Changed
+
+- Members no longer add, change, or delete MCPs, nor set their tool approvals: that is for the owners and admins of the team. A member only sees the access tokens they made themselves.
+- An email address is one account whatever its letter case: signing in no longer depends on the case it is typed in, and nobody signs up with, or changes their address to, one that only differs by case from the address of another account.
+- Instance settings, backups, and accounts are for super admins. An owner or admin of a team manages that team only.
+- Removing a member takes them out of the team and revokes the access tokens they made there. Their account and their other teams stay; deleting the account is done from **Users**.
+- The page of the team is at `/team`, where everyone in the team sees its members. `/invites` redirects there. The slug of an MCP is unique in its team rather than in the instance.
+- A backup holds the sign-in protection of each account. The secret of an authenticator app is encrypted again for the instance that imports it; passkeys only keep answering when that instance has the same `APP_URL`.
+- A backup must hold a super admin to be imported, where it had to hold an administrator. A backup made by an earlier version still imports: its administrators become super admins.
+- The database migration that adds teams runs when the server starts and cannot be undone by installing an earlier version, which no longer reads the database afterwards. Export a backup under **Settings → Backup** before you upgrade.
+
 ## 2026-10-11
 
 ### Added

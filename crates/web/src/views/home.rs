@@ -171,17 +171,22 @@ fn hero_card(context: &PageContext, home: &Home) -> Markup {
     }
 }
 
-/// With no MCP at all, the page invites to add the first one.
-fn no_mcps_card(classes: &str) -> Markup {
+/// With no MCP at all, the page invites to add the first one: something an
+/// administrator of the team does.
+fn no_mcps_card(classes: &str, admin: bool) -> Markup {
     html! {
         div class=(classes) {
             div class="empty-state" {
                 span class="empty-state__icon" { (icon("plug")) }
                 div class="empty-state__text" {
                     p class="empty-state__title" { "No MCPs yet" }
-                    p class="empty-state__description" { "Create an MCP to start routing agent traffic." }
+                    @if admin {
+                        p class="empty-state__description" { "Create an MCP to start routing agent traffic." }
+                    } @else {
+                        p class="empty-state__description" { "An admin of this team adds the MCPs its agents can reach." }
+                    }
                 }
-                a class="button button--primary" href="/mcps/new" { (icon("plus")) "Add MCP" }
+                @if admin { a class="button button--primary" href="/mcps/new" { (icon("plus")) "Add MCP" } }
             }
         }
     }
@@ -203,8 +208,13 @@ fn attention(home: &Home) -> Markup {
         .as_slice()
     {
         [] => {}
+        // Dealt with in the form of the MCP, by those who may change it.
         [mcp] => items.push((
-            format!("/mcps/{}/edit", mcp.id),
+            if home.admin {
+                format!("/mcps/{}/edit", mcp.id)
+            } else {
+                "/mcps".to_string()
+            },
             icon_name,
             format!("{} {one}", mcp.name),
         )),
@@ -447,9 +457,16 @@ fn mcp_subtitle(mcp: &Mcp) -> String {
     }
 }
 
-fn mcp_row(mcp: &Mcp) -> Markup {
+/// An MCP of the team. It opens its form for those who may change it, and
+/// the registry for a member.
+fn mcp_row(mcp: &Mcp, admin: bool) -> Markup {
+    let href = if admin {
+        format!("/mcps/{}/edit", mcp.id)
+    } else {
+        "/mcps".to_string()
+    };
     html! {
-        a class="list-row" href=(format!("/mcps/{}/edit", mcp.id)) {
+        a class="list-row" href=(href) {
             span class="tile" { (icon(mcp_icon(mcp))) }
             span class="list-row__text" {
                 span class="list-row__title" { (mcp.name) }
@@ -480,7 +497,7 @@ fn mcps_card(home: &Home) -> Markup {
                 }
                 a class="button" href="/mcps" { "View all" }
             }
-            @for mcp in waiting.iter().take(SIDE_ROWS) { (mcp_row(mcp)) }
+            @for mcp in waiting.iter().take(SIDE_ROWS) { (mcp_row(mcp, home.admin)) }
             @if hidden > 0 {
                 a class="list-row" href="/mcps" {
                     span class="tile" { (icon("plug")) }
@@ -505,7 +522,7 @@ fn mcps_card(home: &Home) -> Markup {
                     (status_badge(McpStatus::Ready))
                 }
             } @else {
-                @for mcp in &ready { (mcp_row(mcp)) }
+                @for mcp in &ready { (mcp_row(mcp, home.admin)) }
             }
         }
     }
@@ -581,7 +598,7 @@ pub fn home_page(context: &PageContext, home: &Home) -> Markup {
                     "."
                     span { (endpoint_sentence(home)) }
                 }
-                @if empty { (no_mcps_card("card full-width")) } @else { (hero_card(context, home)) }
+                @if empty { (no_mcps_card("card full-width", true)) } @else { (hero_card(context, home)) }
                 (attention(home))
             }
         } @else {
@@ -591,12 +608,12 @@ pub fn home_page(context: &PageContext, home: &Home) -> Markup {
                 div class="page-header__text" {
                     h1 class="page-header__title" { "Home" }
                     p class="page-header__subtitle" {
-                        "Signed in as " (home.display_name) ". Register upstream MCPs and issue access tokens for your agents."
+                        "Signed in as " (home.display_name) ". Use the MCPs of this team with access tokens of your own."
                     }
                 }
             }
             @if empty {
-                (no_mcps_card("card"))
+                (no_mcps_card("card", false))
             } @else {
                 section class="hero" { (hero_card(context, home)) (attention(home)) }
             }

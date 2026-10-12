@@ -776,6 +776,7 @@ async fn issue_code(app: &TestApp, oauth_client: &OauthClient, admin: &User) -> 
                 resource: RESOURCE.to_string(),
             },
             admin.id,
+            mymcps_core::models::Team::ROOT_ID,
         )
         .await
         .unwrap()
@@ -792,6 +793,7 @@ async fn issue_grant(app: &TestApp, oauth_client: &OauthClient, admin: &User) ->
             scopes: "mcp:tools",
             resource: RESOURCE,
             created_by: admin.id,
+            team_id: mymcps_core::models::Team::ROOT_ID,
         },
     )
     .await

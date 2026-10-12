@@ -209,27 +209,90 @@ async fn lists_the_mcps_by_name_with_what_each_one_is() {
 }
 
 #[tokio::test]
-async fn a_member_manages_mcps_like_an_administrator() {
-    let (app, _calls) = app_with_mcp_servers().await;
+async fn a_member_reads_the_registry_and_changes_nothing_of_it() {
+    let (app, calls) = app_with_mcp_servers().await;
     let admin = create_admin(&app).await;
     let member = create_member(&app).await;
-    create_mcp(&app, admin.id, |mcp| mcp.name = "Shared".into()).await;
+    let shared = create_mcp(&app, admin.id, |mcp| mcp.name = "Shared".into()).await;
 
+    // The same registry, without the controls that change it.
     let page = page(&app, &member, "/mcps").await.text();
     assert!(page.contains("<span class=\"cell-title\">Shared</span>"));
-    assert!(page.contains("Add MCP"));
+    assert!(page.contains("<span class=\"status status--success\">on</span>"));
+    for control in [
+        "Add MCP",
+        "/mcps/new",
+        &format!("/mcps/{}/edit", shared.id),
+        &format!("/mcps/{}/toggle", shared.id),
+        &format!("/mcps/{}/tools", shared.id),
+        "role=\"switch\"",
+    ] {
+        assert!(!page.contains(control), "{control}");
+    }
+    // The page of an administrator has them.
+    let managed = self::page(&app, &admin, "/mcps").await.text();
+    assert!(managed.contains("Add MCP"));
+    assert!(managed.contains(&format!("/mcps/{}/toggle", shared.id)));
 
-    let created = app
-        .post("/mcps")
+    // The address of an MCP opens the registry, and no form.
+    let shown = app
+        .get(&format!("/mcps/{}", shared.id))
         .login_as(&member)
-        .csrf()
-        .form(&http_form(&[("name", "From a member")]))
         .send()
         .await;
-    assert_redirect(&created, "/mcps");
-    assert_eq!(created.flashed("success"), Some(json!("MCP created")));
-    let mcp = mcp_by_slug(&app, "from-a-member").await.unwrap();
-    assert_eq!(mcp.created_by, member.id);
+    assert_redirect(&shown, "/mcps");
+    let registry = app
+        .get("/mcps")
+        .session(shown.session())
+        .login_as(&member)
+        .send()
+        .await
+        .text();
+    assert!(!registry.contains("id=\"edit-mcp\" aria-labelledby=\"edit-mcp-title\" data-dialog-static data-dialog-return=\"/mcps\" data-open"));
+
+    // Every route that changes the registry, or shows the form of an MCP,
+    // sends a member home.
+    let id = shared.id;
+    let form = http_form(&[("name", "From a member")]);
+    let attempts: Vec<(&str, String, bool)> = vec![
+        ("post", "/mcps".into(), true),
+        ("get", "/mcps/new".into(), false),
+        ("get", format!("/mcps/{id}/edit"), false),
+        ("put", format!("/mcps/{id}"), true),
+        ("delete", format!("/mcps/{id}"), false),
+        ("post", format!("/mcps/{id}/toggle"), false),
+        ("post", format!("/mcps/{id}/probe"), false),
+        ("post", format!("/mcps/{id}/update"), false),
+        ("get", format!("/mcps/{id}/oauth/start"), false),
+        ("get", "/mcps/oauth/callback?code=c&state=s".into(), false),
+        ("get", format!("/mcps/{id}/tools"), false),
+        ("put", format!("/mcps/{id}/tools"), false),
+    ];
+    for (method, path, with_form) in attempts {
+        let request = match method {
+            "get" => app.get(&path),
+            "post" => app.post(&path),
+            "put" => app.put(&path),
+            _ => app.delete(&path),
+        };
+        let request = if with_form {
+            request.form(&form)
+        } else {
+            request
+        };
+        let response = request.login_as(&member).csrf().send().await;
+        assert_redirect(&response, "/");
+        assert_eq!(
+            response.flashed("error"),
+            Some(json!("Admin access required")),
+            "{method} {path}"
+        );
+    }
+    assert!(mcp_by_slug(&app, "from-a-member").await.is_none());
+    let kept = find_mcp(&app, shared.id).await;
+    assert!(kept.enabled);
+    assert_eq!(kept.name, "Shared");
+    assert!(calls.is_empty(), "nothing was sent upstream");
 }
 
 #[tokio::test]

@@ -1,5 +1,5 @@
-//! The Settings page: the account of the signed-in person and, for an
-//! administrator, the settings of the instance.
+//! The Settings page: the account of the signed-in person and, for those
+//! who run the instance (the super admins), its settings.
 
 use maud::{Markup, html};
 use mymcps_core::models::{DEFAULT_MCP_AUTO_UPDATE_CRON, InstanceSetting, McpLogLevel, User};
@@ -7,18 +7,22 @@ use mymcps_core::models::{DEFAULT_MCP_AUTO_UPDATE_CRON, InstanceSetting, McpLogL
 use crate::forms::FormState;
 use crate::views::icon::icon;
 use crate::views::shell::{PageContext, app_page};
+use crate::views::two_factor::{Protection, protection_dialogs, protection_section};
 
 /// What the Settings page shows.
 pub struct SettingsPage<'a> {
     pub user: &'a User,
-    /// The settings of the instance. `None` for a member, who is not shown them.
+    /// The settings of the instance. `None` for someone who does not run
+    /// it, who is shown neither them nor the backup.
     pub instance: Option<&'a InstanceSetting>,
+    /// What the account asks for besides its password at sign-in.
+    pub protection: &'a Protection<'a>,
     /// Each form with what was refused when it was posted without the
     /// page's script. At most one of them has errors.
     pub email_form: &'a FormState,
     pub password_form: &'a FormState,
     pub instance_form: &'a FormState,
-    /// The export of a backup. Administrators only.
+    /// The export of a backup, for those who run the instance.
     pub backup_form: &'a FormState,
 }
 
@@ -70,7 +74,7 @@ fn password_field(
 }
 
 /// [`password_field`], with a line under it that says what to type.
-fn password_field_with_help(
+pub(crate) fn password_field_with_help(
     form: &FormState,
     id: &str,
     name: &str,
@@ -101,7 +105,7 @@ fn password_field_with_help(
     }
 }
 
-fn dialog_header(title_id: &str, title: &str, subtitle: &str) -> Markup {
+pub(crate) fn dialog_header(title_id: &str, title: &str, subtitle: &str) -> Markup {
     html! {
         div class="dialog__header" {
             div class="dialog__heading" {
@@ -204,7 +208,7 @@ pub fn backup_form(context: &PageContext, form: &FormState) -> Markup {
 }
 
 /// A dialog whose form the script sends and swaps in place.
-fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) -> Markup {
+pub(crate) fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) -> Markup {
     html! {
         dialog class="dialog dialog--sm" id=(id) aria-labelledby=(title_id) data-dialog-reset data-open[open] {
             div data-fragment { (form) }
@@ -251,12 +255,12 @@ fn account_section(user: &User) -> Markup {
     }
 }
 
-/// Administrators only: a member does not get this section.
+/// For those who run the instance only.
 fn backup_section() -> Markup {
     html! {
         section class="section" aria-labelledby="backup-title" {
             div class="section__intro" {
-                h2 class="section__title" id="backup-title" { "Backup " span class="badge badge--info badge--no-dot" { "Admin only" } }
+                h2 class="section__title" id="backup-title" { "Backup " span class="badge badge--info badge--no-dot" { "Super admin" } }
                 p class="section__description" { "Export everything this instance stores to one encrypted file. Import it on the setup screen of a new instance." }
             }
             div class="card" {
@@ -278,6 +282,7 @@ struct InstanceValues {
     retention_days: String,
     auto_update: bool,
     cron: String,
+    registration: bool,
 }
 
 impl InstanceValues {
@@ -293,6 +298,10 @@ impl InstanceValues {
                     "on" | "true" | "1"
                 ),
                 cron: form.old("mcpAutoUpdateCron"),
+                registration: matches!(
+                    form.old("registrationEnabled").as_str(),
+                    "on" | "true" | "1"
+                ),
             };
         }
         let cron = if settings.mcp_auto_update_cron.is_empty() {
@@ -305,6 +314,7 @@ impl InstanceValues {
             log_level: settings.mcp_log_level.as_str().to_string(),
             retention_days: settings.mcp_log_retention_days.to_string(),
             auto_update: settings.mcp_auto_update_enabled,
+            registration: settings.is_registration_enabled,
             cron: cron.to_string(),
         }
     }
@@ -337,7 +347,7 @@ fn tool_mode_card(
     }
 }
 
-/// Administrators only: a member does not get this section.
+/// For those who run the instance only.
 fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &FormState) -> Markup {
     let values = InstanceValues::of(settings, form);
     let tool_mode = FieldError::of(form, "gatewayToolMode", "tool-mode");
@@ -359,7 +369,7 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
     html! {
         section class="section" aria-labelledby="instance-title" {
             div class="section__intro" {
-                h2 class="section__title" id="instance-title" { "My Instance " span class="badge badge--info badge--no-dot" { "Admin only" } }
+                h2 class="section__title" id="instance-title" { "My Instance " span class="badge badge--info badge--no-dot" { "Super admin" } }
                 p class="section__description" { "Configure settings that apply to everyone using this MyMCPs instance." }
             }
             form class="card" method="post" action="/settings/mcp-logging?_method=PATCH" {
@@ -427,6 +437,14 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
 
                     label class="setting-row" {
                         span class="setting-row__text" {
+                            span class="setting-row__title" { "Allow registration" }
+                            span class="setting-row__description" { "Anyone who reaches this instance can create an account, with a team of its own. Off: an invite is the only way in." }
+                        }
+                        input type="checkbox" class="switch" role="switch" name="registrationEnabled" checked[values.registration];
+                    }
+
+                    label class="setting-row" {
+                        span class="setting-row__text" {
                             span class="setting-row__title" { "Auto-update Deno npm MCPs" }
                             span class="setting-row__description" { "Reloads the Deno cache for npm MCPs that already track latest. Pinned versions are never changed." }
                         }
@@ -462,6 +480,7 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
         settings.backup_form,
     ]
     .into_iter()
+    .chain(settings.protection.forms())
     .find(|form| form.has_errors());
     let mut context = context.clone();
     if reopened.is_some_and(|form| context.flash_error.as_deref() == form.first_error()) {
@@ -477,10 +496,11 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
             }
         }
         (account_section(settings.user))
+        (protection_section(settings.protection))
         @if let Some(instance) = settings.instance {
             (instance_section(context, instance, settings.instance_form))
         }
-        @if settings.user.is_admin() { (backup_section()) }
+        @if settings.instance.is_some() { (backup_section()) }
     };
     let overlays = html! {
         (form_dialog(
@@ -495,7 +515,8 @@ pub fn settings_page(context: &PageContext, settings: &SettingsPage) -> Markup {
             settings.password_form.has_errors(),
             password_form(context, settings.password_form),
         ))
-        @if settings.user.is_admin() {
+        (protection_dialogs(context, settings.protection))
+        @if settings.instance.is_some() {
             (form_dialog(
                 "export-backup",
                 "export-backup-title",

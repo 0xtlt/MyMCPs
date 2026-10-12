@@ -32,10 +32,29 @@ model! {
         pub gateway_tool_mode: GatewayToolMode,
         pub mcp_auto_update_enabled: bool,
         pub mcp_auto_update_cron: String,
+        /// Whether anyone may create an account on the sign-up page. Off
+        /// until someone who runs the instance turns it on: an invite is
+        /// then the only way in.
+        pub is_registration_enabled: bool,
     }
 }
 
 impl InstanceSetting {
+    /// Whether anyone may create an account on the sign-up page. Read with
+    /// the executor of the caller: inside a transaction, it is what the
+    /// setting says under its lock.
+    pub async fn registration_enabled<'e, E>(db: E) -> Result<bool, sqlx::Error>
+    where
+        E: sqlx::sqlite::SqliteExecutor<'e>,
+    {
+        let enabled: Option<bool> = sqlx::query_scalar(
+            "select `is_registration_enabled` from `instance_settings` where `id` = 1",
+        )
+        .fetch_optional(db)
+        .await?;
+        Ok(enabled.unwrap_or(false))
+    }
+
     /// The one row of settings, created with the defaults when missing.
     ///
     /// Reading it takes no write lock: it is read on every request of the

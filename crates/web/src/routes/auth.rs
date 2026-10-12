@@ -1,5 +1,5 @@
-//! Signing in and out, and the first-run onboarding.
-//! (`session_controller.ts`, `onboarding_controller.ts`)
+//! Signing in and out, signing up while the instance allows it, and the
+//! first-run onboarding. (`session_controller.ts`, `onboarding_controller.ts`)
 
 use axum::Router;
 use axum::extract::{OriginalUri, State};
@@ -10,7 +10,7 @@ use http::{HeaderMap, HeaderValue, StatusCode};
 use mymcps_core::client_ip::rate_limit_client_key;
 use mymcps_core::crypto::sha256_hex;
 use mymcps_core::limiter::{Limiter, LimiterError, LimiterResponse};
-use mymcps_core::models::{User, UserRole};
+use mymcps_core::models::{InstanceSetting, User};
 use serde::Deserialize;
 
 use crate::auth::{CurrentUser, sign_in, sign_out};
@@ -22,16 +22,21 @@ use crate::input::Input;
 use crate::redirect::{redirect_back, redirect_to, with_query};
 use crate::respond::page;
 use crate::routes::FeatureRoutes;
+use crate::routes::two_factor::{begin_second_step, forget_pending_sign_in};
 use crate::session::Session;
 use crate::state::AppState;
-use crate::validators::session::{APPROVAL_RETURN_TO_VALIDATOR, OAUTH_RETURN_TO_VALIDATOR};
-use crate::validators::user::{LOGIN_VALIDATOR, ONBOARDING_VALIDATOR};
-use crate::views::auth::{login_page, onboarding_page};
+use crate::validators::session::{
+    APPROVAL_RETURN_TO_VALIDATOR, INVITE_RETURN_TO_VALIDATOR, OAUTH_RETURN_TO_VALIDATOR,
+};
+use crate::validators::user::{LOGIN_VALIDATOR, ONBOARDING_VALIDATOR, REGISTER_VALIDATOR};
+use crate::views::auth::{login_page, onboarding_page, register_page};
 use crate::views::shell::PageContext;
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
-        guest: Router::new().route("/login", get(show_login).post(login)),
+        guest: Router::new()
+            .route("/login", get(show_login).post(login))
+            .route("/signup", get(show_register).post(register)),
         signed_in: Router::new().route("/logout", post(logout)),
         first_run: Router::new().route("/onboarding", get(show_onboarding).post(onboarding)),
         ..Default::default()
@@ -92,6 +97,7 @@ pub async fn login(
             }
         };
 
+    forget_pending_sign_in(&session);
     let client = rate_limit_client_key(&ip);
     // Hashed to keep limiter keys short and free of email addresses.
     let account = sha256_hex(&credentials.email.to_lowercase());
@@ -120,21 +126,133 @@ pub async fn login(
     state.limiters.login.delete(&account_key).await?;
     state.limiters.login_address.decrement(&address_key).await?;
 
-    sign_in(&state.core, &session, &cookies, &user).await?;
+    // The password is half of it for an account with an authenticator app
+    // or a passkey: nobody is signed in before the other half.
+    if user.is_protected(&*state.core.db).await? {
+        return Ok(begin_second_step(&session, &user, uri.query()));
+    }
 
-    // Both paths are complete: the query string of this request is not
-    // appended after them.
+    sign_in(&state.core, &session, &cookies, &user).await?;
+    Ok(redirect_to(&signed_in_destination(&session, uri.query())))
+}
+
+/// Where someone who just signed in goes: back to what sent them to sign
+/// in (an OAuth client to authorize, a tool call to approve, an invite to
+/// accept), or home, with the query string of the sign-in page.
+pub(crate) fn signed_in_destination(session: &Session, query: Option<&str>) -> String {
+    // These paths are complete: the query string is not appended after them.
     let return_to = |validator: &mymcps_vine::Validator, key: &str| {
         validator
             .validate_as::<String>(session.pull(key).as_ref())
             .ok()
     };
-    if let Some(oauth_return_to) = return_to(&OAUTH_RETURN_TO_VALIDATOR, "oauthReturnTo") {
-        return Ok(redirect_to(&oauth_return_to));
+    return_to(&OAUTH_RETURN_TO_VALIDATOR, "oauthReturnTo")
+        .or_else(|| return_to(&APPROVAL_RETURN_TO_VALIDATOR, "approvalReturnTo"))
+        .or_else(|| return_to(&INVITE_RETURN_TO_VALIDATOR, INVITE_RETURN_TO_KEY))
+        .unwrap_or_else(|| with_query("/", query))
+}
+
+/// Session key of the invite that sent a visitor to sign in first.
+pub(crate) const INVITE_RETURN_TO_KEY: &str = "inviteReturnTo";
+
+const REGISTRATION_DISABLED: &str = "Registration is disabled on this instance";
+
+/// `GET /signup`
+///
+/// The sign-up page, while those who run the instance let anyone register.
+/// Otherwise an invite is the only way in, and the page is the sign-in one.
+/// (`/register` is where MCP clients register with the OAuth server.)
+pub async fn show_register(
+    State(state): State<AppState>,
+    context: PageContext,
+    session: Session,
+    OriginalUri(uri): OriginalUri,
+) -> Result<Response, AppError> {
+    if !InstanceSetting::registration_enabled(&*state.core.db).await? {
+        return Ok(redirect_to(&with_query("/login", uri.query())));
     }
-    if let Some(approval_return_to) = return_to(&APPROVAL_RETURN_TO_VALIDATOR, "approvalReturnTo") {
-        return Ok(redirect_to(&approval_return_to));
+    Ok(page(register_page(
+        &context,
+        &FormState::from_session(&session),
+    )))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NewAccount {
+    full_name: String,
+    email: String,
+    password: String,
+}
+
+/// `POST /signup`
+///
+/// A new account, with the personal team it owns. It is in no other team:
+/// it sees nothing of what the instance already holds.
+pub async fn register(
+    State(state): State<AppState>,
+    session: Session,
+    cookies: Cookies,
+    ClientIp(ip): ClientIp,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    Input(input): Input,
+) -> Result<Response, AppError> {
+    let db = &state.core.db;
+    let disabled = || {
+        session.flash("error", REGISTRATION_DISABLED);
+        redirect_to(&with_query("/login", uri.query()))
+    };
+    if !InstanceSetting::registration_enabled(&**db).await? {
+        return Ok(disabled());
     }
+
+    // Counted before anything is hashed or stored.
+    let address_key = format!("registration:{}", rate_limit_client_key(&ip));
+    if let Err(refused) = consume(&state.limiters.registration, &address_key).await? {
+        return Ok(refused);
+    }
+
+    let mut run = REGISTER_VALIDATOR.start(&serde_json::Value::Object(input.clone()));
+    for check in run.take_checks() {
+        // The one check that needs the database: the email is not taken.
+        let taken = match check.value.as_str() {
+            Some(email) => User::find_by_email(&**db, email).await?.is_some(),
+            None => false,
+        };
+        if taken {
+            run.reject(&check);
+        }
+    }
+    let payload: NewAccount = match run.finish_as() {
+        Ok(payload) => payload,
+        Err(error) => {
+            let error = refusal(error)?;
+            FormState::new(&error, &input).flash(&session);
+            return Ok(redirect_back(&headers, "/signup"));
+        }
+    };
+
+    let mut user =
+        User::with_password(&payload.email, Some(&payload.full_name), &payload.password).await?;
+    // The setting and the address are read again under the write lock: the
+    // account is made only while registration is open, and only once.
+    let mut transaction = db.begin().await?;
+    if !InstanceSetting::registration_enabled(&mut *transaction).await? {
+        return Ok(disabled());
+    }
+    if User::find_by_email(&mut *transaction, &payload.email)
+        .await?
+        .is_some()
+    {
+        FormState::with_error("email", "The email has already been taken", &input).flash(&session);
+        return Ok(redirect_back(&headers, "/signup"));
+    }
+    user.create(&mut transaction).await?;
+    transaction.commit().await?;
+
+    sign_in(&state.core, &session, &cookies, &user).await?;
+    session.flash("success", "Welcome to MyMCPs");
     Ok(redirect_to(&with_query("/", uri.query())))
 }
 
@@ -201,20 +319,16 @@ pub async fn onboarding(
     };
 
     let home = with_query("/", uri.query());
-    let mut user = User::with_password(
-        &payload.email,
-        Some(&payload.full_name),
-        &payload.password,
-        UserRole::Admin,
-    )
-    .await?;
+    let mut user =
+        User::with_password(&payload.email, Some(&payload.full_name), &payload.password).await?;
     // The first user only: two visitors finishing the form at once must not
-    // both become administrators.
+    // both run the instance. Nobody else registers until its super admin
+    // says so: the setting is off from the start.
     let mut transaction = db.begin().await?;
     if User::setup_complete(&mut *transaction).await? {
         return Ok(redirect_to(&home));
     }
-    user.insert(&mut *transaction).await?;
+    user.create_first(&mut transaction).await?;
     transaction.commit().await?;
 
     sign_in(&state.core, &session, &cookies, &user).await?;

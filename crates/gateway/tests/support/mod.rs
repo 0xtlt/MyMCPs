@@ -5,6 +5,8 @@
 
 pub mod mcp;
 
+pub use mymcps_core::models::{Team, TeamRole};
+
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,7 +15,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use mymcps_core::models::{
     AccessToken, CallOutcome, Mcp, McpCallLog, McpStatus, McpTransport, OauthClient, ScopeMode,
-    User, UserRole,
+    User,
 };
 use mymcps_core::{Config, Core, Db, TestCore, Timestamp};
 use mymcps_gateway::access_token::{self, CreatedAccessToken, NewAccessToken};
@@ -64,18 +66,36 @@ fn next_value(prefix: &str) -> String {
     format!("{prefix}-{}", SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1)
 }
 
-pub async fn create_admin(db: &Db) -> User {
+/// An account in the Root Team, which every MCP and access token of these
+/// tests belongs to unless a test says otherwise.
+pub async fn create_user(db: &Db, prefix: &str, role: TeamRole) -> User {
     let mut user = User {
         full_name: Some("Test User".into()),
-        email: format!("{}@example.com", next_value("user")),
+        email: format!("{}@example.com", next_value(prefix)),
         // No test here signs in with a password.
         password: "not-a-password-hash".into(),
-        role: UserRole::Admin,
         session_version: 1,
         ..Default::default()
     };
     user.insert(&**db).await.unwrap();
+    Team::attach(&**db, Team::ROOT_ID, user.id, role)
+        .await
+        .unwrap();
     user
+}
+
+pub async fn create_admin(db: &Db) -> User {
+    create_user(db, "user", TeamRole::Admin).await
+}
+
+/// Another team, with nobody in it.
+pub async fn create_team(db: &Db) -> Team {
+    let mut team = Team {
+        name: next_value("Team"),
+        ..Default::default()
+    };
+    team.insert(&**db).await.unwrap();
+    team
 }
 
 /// An HTTP MCP that is ready and enabled, after `adjust` had its say. Its
@@ -88,6 +108,7 @@ pub async fn create_mcp(db: &Db, created_by: i64, adjust: impl FnOnce(&mut Mcp))
         status: McpStatus::Ready,
         enabled: true,
         created_by,
+        team_id: Team::ROOT_ID,
         ..Default::default()
     };
     adjust(&mut mcp);
@@ -131,6 +152,7 @@ pub async fn create_named_access_token(
             mcp_ids,
             expires_at,
             created_by,
+            team_id: Team::ROOT_ID,
         },
     )
     .await
@@ -148,6 +170,7 @@ pub async fn create_stored_access_token(
         token_prefix: "mcp_stored".into(),
         scope_mode: ScopeMode::All,
         created_by,
+        team_id: Team::ROOT_ID,
         ..Default::default()
     };
     adjust(&mut token);
@@ -168,6 +191,7 @@ pub async fn create_mcp_call_log(
         tool_name: Some("echo".into()),
         outcome: CallOutcome::Success,
         duration_ms: 25,
+        team_id: token.team_id,
         ..Default::default()
     };
     log.insert(&**db).await.unwrap();
@@ -303,7 +327,7 @@ pub async fn approve(gateway: &Gateway, authorization: &Value, user_id: i64) -> 
         .unwrap();
     gateway
         .oauth
-        .create_authorization_code(&request, user_id)
+        .create_authorization_code(&request, user_id, Team::ROOT_ID)
         .await
         .unwrap()
 }

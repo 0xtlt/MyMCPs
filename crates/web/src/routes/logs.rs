@@ -15,6 +15,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::sqlite::SqliteExecutor;
 
+use crate::auth::CurrentTeam;
 use crate::error::AppError;
 use crate::forms::{FormState, refusal};
 use crate::input::Input;
@@ -179,10 +180,13 @@ struct LogsQuery {
 
 fn push_filters(
     query: &mut sqlx::QueryBuilder<sqlx::Sqlite>,
+    team_id: i64,
     filters: &LogFilters,
     cutoff: Option<&str>,
 ) {
-    query.push(" where 1 = 1");
+    // The calls of one team: nothing a filter says widens that.
+    query.push(" where `team_id` = ");
+    query.push_bind(team_id);
     if let Some(cutoff) = cutoff {
         query.push(" and `created_at` >= ");
         query.push_bind(cutoff.to_string());
@@ -201,10 +205,11 @@ fn push_filters(
     }
 }
 
-/// One page of the calls that pass the filters, the most recent first, and
-/// how many pass them in all.
+/// One page of the calls of a team that pass the filters, the most recent
+/// first, and how many pass them in all.
 pub async fn find_logs<'e, E>(
     db: E,
+    team_id: i64,
     filters: &LogFilters,
     page: i64,
     now: DateTime<Utc>,
@@ -214,11 +219,11 @@ where
 {
     let cutoff = filters.range.cutoff(now);
     let mut count = sqlx::QueryBuilder::<sqlx::Sqlite>::new("select count(*) from `mcp_call_logs`");
-    push_filters(&mut count, filters, cutoff.as_deref());
+    push_filters(&mut count, team_id, filters, cutoff.as_deref());
     let total: i64 = count.build_query_scalar().fetch_one(db).await?;
 
     let mut rows = sqlx::QueryBuilder::<sqlx::Sqlite>::new("select * from `mcp_call_logs`");
-    push_filters(&mut rows, filters, cutoff.as_deref());
+    push_filters(&mut rows, team_id, filters, cutoff.as_deref());
     // Calls of the same second keep one order from page to page.
     rows.push(" order by `created_at` desc, `id` desc limit ");
     rows.push_bind(filters.page_size);
@@ -238,6 +243,7 @@ pub async fn index(
     State(state): State<AppState>,
     context: PageContext,
     session: Session,
+    team: CurrentTeam,
     headers: HeaderMap,
     Input(input): Input,
 ) -> Result<Response, AppError> {
@@ -268,8 +274,11 @@ pub async fn index(
     let db = &*state.core.db;
     let now = Utc::now();
 
+    // The call of another team is answered like one that does not exist.
     let selected = match query.log_id {
-        Some(id) => McpCallLog::find(db, whole(id)).await?,
+        Some(id) => McpCallLog::find(db, whole(id))
+            .await?
+            .filter(|log| log.team_id == team.id()),
         None => None,
     };
     let target = fragment_target(&headers).filter(|_| context.is_fetch);
@@ -281,17 +290,19 @@ pub async fn index(
         )));
     }
 
-    let (logs, total) = find_logs(db, &filters, page_number, now).await?;
+    let (logs, total) = find_logs(db, team.id(), &filters, page_number, now).await?;
     // Slugs in the log are what callers asked for, including MCPs that never
     // existed. The filter lists the MCPs that do.
     let mcp_options: Vec<(String, String)> =
-        sqlx::query_as("select `slug`, `name` from `mcps` order by `name` asc")
+        sqlx::query_as("select `slug`, `name` from `mcps` where `team_id` = ? order by `name` asc")
+            .bind(team.id())
             .fetch_all(db)
             .await?;
     let token_options: Vec<(String, String)> = sqlx::query_as(
-        "select `access_token_prefix`, `access_token_name` from `mcp_call_logs` \
+        "select `access_token_prefix`, `access_token_name` from `mcp_call_logs` where `team_id` = ? \
          group by `access_token_prefix`, `access_token_name` order by `access_token_name` asc",
     )
+    .bind(team.id())
     .fetch_all(db)
     .await?;
     let settings = state.gateway.call_log.settings().await?;

@@ -1632,6 +1632,7 @@ name = "mymcps-core"
 version = "0.4.1"
 dependencies = [
  "aes-gcm",
+ "aws-lc-rs",
  "base64 0.23.1",
  "chrono",
  "fancy-regex",
@@ -1892,6 +1893,7 @@ dependencies = [
  "mymcps-vine",
  "mymcps-web",
  "percent-encoding",
+ "qrcode",
  "rust-embed",
  "serde",
  "serde_json",
@@ -2058,6 +2060,12 @@ dependencies = [
  "syn 2.0.119",
  "version_check",
 ]
+
+[[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quinn"
