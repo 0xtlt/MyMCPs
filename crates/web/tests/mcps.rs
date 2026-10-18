@@ -10,8 +10,10 @@
 
 mod mcps_support;
 
+use chrono::Duration;
 use http::StatusCode;
 use mcps_support::*;
+use mymcps_core::Timestamp;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
 use mymcps_core::secrets::{EnvironmentInput, merge_environment};
 use mymcps_node::{NodeRunner, NodeRuntime};
@@ -852,6 +854,192 @@ async fn opens_on_the_last_error_and_says_it_once() {
         .await
         .text();
     assert!(page.contains("<p class=\"toast__message\">Update failed</p>"));
+}
+
+// --- an OAuth sign-in that stopped working, or is about to ---
+
+/// A moment, as the database keeps it: to the millisecond.
+fn at(offset: Duration) -> Timestamp {
+    Timestamp::from_millis((Timestamp::now() + offset).timestamp_millis()).unwrap()
+}
+
+/// An HTTP MCP signed in with OAuth, whose token has no refresh token and
+/// expires at `expires_at`, as the gateway leaves it once that time passed.
+async fn lapsed_mcp(
+    app: &TestApp,
+    admin: &mymcps_core::models::User,
+    expires_at: Option<Timestamp>,
+    adjust: impl FnOnce(&mut Mcp),
+) -> Mcp {
+    let token = encrypt(app, "expired-access-token");
+    create_mcp(app, admin.id, |mcp| {
+        mcp.name = "T3 Code".into();
+        mcp.http_url = Some("https://t3.example/mcp".into());
+        mcp.status = McpStatus::Error;
+        mcp.oauth_required = true;
+        mcp.oauth_access_token = token.clone();
+        mcp.oauth_token_expires_at = expires_at;
+        mcp.last_error = Some("OAuth sign-in expired on 2026-09-01 08:00 UTC and cannot be renewed: the provider issues no refresh token.".into());
+        adjust(mcp);
+    })
+    .await
+}
+
+#[tokio::test]
+async fn asks_to_authorize_again_a_sign_in_that_expired() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let expired = at(Duration::days(-2));
+    let mcp = lapsed_mcp(&app, &admin, Some(expired), |_| {}).await;
+
+    let page = page_of(&app, &admin, &format!("/mcps/{}/edit", mcp.id)).await;
+    let dialog = between(&page, "id=\"edit-mcp\"", "</dialog>");
+
+    assert!(dialog.contains("<div class=\"banner banner--warning\" role=\"status\">"));
+    assert!(dialog.contains("<p class=\"banner__title\">Re-authorization required</p>"));
+    assert!(dialog.contains(&format!(
+        "<p>The OAuth sign-in expired on <time datetime=\"{}\" data-format=\"minute\">",
+        expired.to_iso()
+    )));
+    assert!(dialog.contains(
+        "</time>. Its provider issues no refresh token, so MyMCPs cannot renew it.</p><p>Agents cannot use this MCP until you re-authorize it.</p>"
+    ));
+    assert!(dialog.contains(&format!(
+        "<a class=\"button button--secondary\" href=\"/mcps/{}/oauth/start\">Re-authorize</a>",
+        mcp.id
+    )));
+    // One banner says it: the generic ones stay out, and so does the saved text.
+    assert!(!dialog.contains("Authorization required"));
+    assert!(!dialog.contains("Last connection error"));
+    assert!(!dialog.contains("cannot be renewed: the provider"));
+    assert!(!dialog.contains("Callback address"));
+    assert!(dialog.contains("<span class=\"status status--critical push-end\">error</span>"));
+    // A sign-in that already ended has nothing to warn about.
+    assert!(!dialog.contains("The OAuth sign-in expires on"));
+    assert!(!page.contains("expired-access-token"));
+}
+
+#[tokio::test]
+async fn gives_the_reason_when_a_sign_in_lapsed_without_a_stated_expiry() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let mcp = lapsed_mcp(&app, &admin, None, |mcp| {
+        mcp.last_error = Some("OAuth token rejected. HTTP 401 from the server".into());
+    })
+    .await;
+
+    let page = page_of(&app, &admin, &format!("/mcps/{}/edit", mcp.id)).await;
+    let dialog = between(&page, "id=\"edit-mcp\"", "</dialog>");
+
+    assert!(dialog.contains("<p class=\"banner__title\">Re-authorization required</p>"));
+    assert!(dialog.contains(
+        "<p>OAuth token rejected. HTTP 401 from the server</p><p>Agents cannot use this MCP until you re-authorize it.</p>"
+    ));
+    assert!(!dialog.contains("The OAuth sign-in expired on"));
+    assert!(dialog.contains(&format!(
+        "href=\"/mcps/{}/oauth/start\">Re-authorize</a>",
+        mcp.id
+    )));
+
+    // Without a reason either, the banner still says what to do.
+    let mcp = lapsed_mcp(&app, &admin, None, |mcp| mcp.last_error = None).await;
+    let page = page_of(&app, &admin, &format!("/mcps/{}/edit", mcp.id)).await;
+    let dialog = between(&page, "id=\"edit-mcp\"", "</dialog>");
+    assert!(dialog.contains(
+        "<p class=\"banner__title\">Re-authorization required</p><p>Agents cannot use this MCP until you re-authorize it.</p>"
+    ));
+}
+
+#[tokio::test]
+async fn brings_up_the_pasted_address_when_a_loopback_sign_in_lapsed() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let mcp = lapsed_mcp(&app, &admin, Some(at(Duration::hours(-1))), |mcp| {
+        mcp.http_url = Some("https://mcp.figma.com/mcp".into());
+    })
+    .await;
+
+    let page = page_of(&app, &admin, &format!("/mcps/{}/edit", mcp.id)).await;
+    let dialog = between(&page, "id=\"edit-mcp\"", "</dialog>");
+
+    assert!(dialog.contains(
+        "Re-authorize opens the provider in a new tab; paste the address it ends on below.</p>"
+    ));
+    assert!(dialog.contains(&format!(
+        "<a class=\"button button--secondary\" href=\"/mcps/{}/oauth/start\" target=\"_blank\" rel=\"noopener\">Re-authorize</a>",
+        mcp.id
+    )));
+    assert!(dialog.contains("data-oauth-paste"));
+}
+
+#[tokio::test]
+async fn says_when_a_sign_in_that_cannot_be_renewed_expires() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let expires_at = at(Duration::days(10));
+    let working = lapsed_mcp(&app, &admin, Some(expires_at), |mcp| {
+        mcp.status = McpStatus::Ready;
+        mcp.oauth_required = false;
+        mcp.last_error = None;
+    })
+    .await;
+
+    let page = page_of(&app, &admin, &format!("/mcps/{}/edit", working.id)).await;
+    let dialog = between(&page, "id=\"edit-mcp\"", "</dialog>");
+    let authentication = between(
+        dialog,
+        "<legend class=\"field-group__label\">Authentication</legend>",
+        "</p>",
+    );
+    assert!(authentication.contains(&format!(
+        "<p class=\"field-group__help\" data-show-when=\"authType=auto\">The OAuth sign-in expires on <time datetime=\"{}\" data-format=\"minute\">",
+        expires_at.to_iso()
+    )));
+    assert!(dialog.contains(
+        "</time>. Its provider issues no refresh token: re-authorize before then to keep this MCP working.</p>"
+    ));
+    // Nothing is wrong yet: no banner, and the way to authorize again is the usual one.
+    assert!(!dialog.contains("Re-authorization required"));
+    assert!(!dialog.contains("banner banner--"));
+
+    // A token that is renewed, or that states no expiry, has nothing to warn about.
+    let renewed = lapsed_mcp(&app, &admin, Some(expires_at), |mcp| {
+        mcp.status = McpStatus::Ready;
+        mcp.oauth_required = false;
+        mcp.last_error = None;
+        mcp.oauth_refresh_token = encrypt(&app, "refresh-token");
+    })
+    .await;
+    let unstated = lapsed_mcp(&app, &admin, None, |mcp| {
+        mcp.status = McpStatus::Ready;
+        mcp.oauth_required = false;
+        mcp.last_error = None;
+    })
+    .await;
+    for mcp in [renewed, unstated] {
+        let page = page_of(&app, &admin, &format!("/mcps/{}/edit", mcp.id)).await;
+        assert!(!page.contains("The OAuth sign-in expires on"), "{}", mcp.id);
+    }
+}
+
+#[tokio::test]
+async fn lists_a_lapsed_sign_in_with_its_reason_and_a_way_to_authorize_again() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let mcp = lapsed_mcp(&app, &admin, Some(at(Duration::days(-2))), |_| {}).await;
+
+    let page = page_of(&app, &admin, "/mcps").await;
+    let rows = table_rows(&page);
+    assert_eq!(rows.len(), 1);
+    let row = rows[0];
+
+    assert!(row.contains("<span class=\"status status--critical\">error</span>"));
+    assert!(row.contains("cell-sub cell-sub--critical"));
+    assert!(row.contains(">OAuth sign-in expired on 2026-09-01 08:00 UTC and cannot be renewed: the provider issues no refresh token.</span>"));
+    let menu = between(row, "role=\"menu\"", "</td>");
+    assert!(menu.contains(&format!("href=\"/mcps/{}/oauth/start\">", mcp.id)));
+    assert!(menu.contains("Re-authorize"));
+    assert!(!menu.contains("Connect"));
 }
 
 // --- the gallery of templates (tests/browser/mcp_template_gallery.spec.ts) ---

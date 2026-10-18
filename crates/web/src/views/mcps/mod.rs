@@ -10,8 +10,8 @@ mod list;
 use std::collections::BTreeMap;
 
 use maud::{Markup, html};
-use mymcps_core::Config;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::{Config, Timestamp};
 use mymcps_upstream::Upstream;
 use url::Url;
 
@@ -99,6 +99,9 @@ pub struct McpView {
     /// False when write access is on but the saved authorization predates it.
     pub builtin_write_granted: bool,
     pub oauth_required: bool,
+    /// When the OAuth sign-in stops working, for a token its provider issued
+    /// without a refresh token: MyMCPs cannot renew it.
+    pub oauth_sign_in_expires_at: Option<Timestamp>,
     pub oauth_pasted_callback: bool,
     pub npm_installed_version: Option<String>,
     /// How many tools it listed the last time it was asked, when it was.
@@ -143,6 +146,7 @@ impl McpView {
             builtin_write_granted: definition.is_some()
                 && upstream.builtin_write_granted(mcp).unwrap_or(false),
             oauth_required: mcp.oauth_required,
+            oauth_sign_in_expires_at: mcp.oauth_sign_in_expires_at(),
             oauth_pasted_callback: upstream.uses_pasted_oauth_callback(mcp),
             npm_installed_version: match mcp.transport {
                 McpTransport::Npm => upstream.installed_npm_package_version(mcp),
@@ -192,6 +196,14 @@ impl McpView {
             && !self.builtin_write_granted
             && self.has_oauth_access_token
             && !self.oauth_required
+    }
+
+    /// The OAuth sign-in of an HTTP MCP stopped working: it waits to be authorized again.
+    pub fn sign_in_lapsed(&self) -> bool {
+        self.transport == McpTransport::Http
+            && self.auth_type == McpAuthType::Auto
+            && self.oauth_required
+            && self.has_oauth_access_token
     }
 
     /// The account is connected through OAuth, and can be authorized again.

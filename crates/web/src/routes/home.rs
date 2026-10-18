@@ -269,6 +269,20 @@ impl Home {
             .collect()
     }
 
+    /// Enabled MCPs whose OAuth sign-in cannot be renewed and ends within a
+    /// week: they still work, until someone authorizes them again.
+    pub fn mcps_with_expiring_sign_in(&self) -> Vec<&Mcp> {
+        let soon = self.now + Duration::days(SOON_DAYS);
+        self.mcps
+            .iter()
+            .filter(|mcp| mcp.enabled && !mcp.oauth_required)
+            .filter(|mcp| {
+                mcp.oauth_sign_in_expires_at()
+                    .is_some_and(|expires_at| expires_at > self.now && expires_at <= soon)
+            })
+            .collect()
+    }
+
     /// Enabled MCPs whose last connection failed for another reason.
     pub fn mcps_in_error(&self) -> Vec<&Mcp> {
         self.mcps

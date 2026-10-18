@@ -147,7 +147,10 @@ use mymcps_node::NodeRunner;
 
 pub use error::UpstreamError;
 pub use http_client::{ConnectedHttpUpstream, UpstreamTool};
-pub use manager::{NamespacedTool, NamespacedToolName, namespace_tool, parse_namespaced_tool};
+pub use manager::{
+    NamespacedTool, NamespacedToolName, authorization_needed_message, namespace_tool,
+    parse_namespaced_tool,
+};
 pub use npm_update::{
     McpNpmUpdateError, McpNpmUpdateFailure, McpNpmUpdateRunResult, NpmUpdateRuntime,
     is_latest_npm_version, is_tracking_latest,

@@ -17,6 +17,7 @@ use crate::views::icon::icon;
 use crate::views::mcps::builtin::{BuiltinFields, builtin_choices, builtin_fields};
 use crate::views::mcps::{McpView, PublicApp, builtin_provider_name, builtin_setup_guide, href};
 use crate::views::shell::PageContext;
+use crate::views::time_minute;
 
 /// The most environment variables an npm MCP takes.
 const MAX_ENVIRONMENT_VARIABLES: usize = 50;
@@ -754,6 +755,16 @@ fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup 
 
         fieldset class="field-group" {
             legend class="field-group__label" { "Authentication" }
+            @if let Some(expires_at) = saved
+                .filter(|saved| !saved.mcp.sign_in_lapsed())
+                .and_then(|saved| saved.mcp.oauth_sign_in_expires_at)
+                .filter(|expires_at| expires_at.is_future())
+            {
+                p class="field-group__help" data-show-when="authType=auto" hidden[values.auth_type != McpAuthType::Auto] {
+                    "The OAuth sign-in expires on " (time_minute(expires_at))
+                    ". Its provider issues no refresh token: re-authorize before then to keep this MCP working."
+                }
+            }
             div class="option-cards" {
                 (option_card("authType", "auto", values.auth_type == McpAuthType::Auto, "Auto", "No credentials, or OAuth detected automatically"))
                 (option_card("authType", "bearer", values.auth_type == McpAuthType::Bearer, "Bearer token", "Send a static token"))
@@ -1009,9 +1020,50 @@ fn authorization_banner(context: &PageContext, mcp: &McpView) -> Markup {
     )
 }
 
+/// The banner of an HTTP MCP whose OAuth sign-in stopped working.
+fn reauthorization_banner(context: &PageContext, mcp: &McpView) -> Markup {
+    let expired = mcp
+        .oauth_sign_in_expires_at
+        .filter(|expires_at| !expires_at.is_future());
+    let last_error = mcp.last_error.as_deref().filter(|error| !error.is_empty());
+    banner(
+        "warning",
+        "Re-authorization required",
+        html! {
+            @if let Some(expired) = expired {
+                p {
+                    "The OAuth sign-in expired on " (time_minute(expired))
+                    ". Its provider issues no refresh token, so MyMCPs cannot renew it."
+                }
+            } @else if let Some(error) = last_error {
+                p { (error) }
+            }
+            p {
+                "Agents cannot use this MCP until you re-authorize it."
+                @if mcp.oauth_pasted_callback {
+                    " Re-authorize opens the provider in a new tab; paste the address it ends on below."
+                }
+            }
+        },
+        oauth_link(
+            context,
+            mcp,
+            "Re-authorize",
+            "button button--secondary",
+            false,
+        ),
+    )
+}
+
 /// What the dialog opens on: the first of these that applies.
 fn edit_banner(context: &PageContext, dialog: &EditDialog) -> Markup {
     let mcp = dialog.mcp;
+    if mcp.sign_in_lapsed() {
+        return html! {
+            (reauthorization_banner(context, mcp))
+            @if mcp.oauth_pasted_callback { (oauth_callback_paste()) }
+        };
+    }
     if mcp.oauth_required {
         return html! {
             (authorization_banner(context, mcp))

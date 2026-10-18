@@ -2,6 +2,21 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-18
+
+### Added
+
+- Added a warning before an OAuth sign-in ends. For an HTTP MCP whose provider issues no refresh token, the edit dialog says when the sign-in expires, and the home page lists the MCP as **needs re-authorization this week** when it ends within 7 days.
+- Added a sentence for agents when an MCP waits for its OAuth sign-in: a tool call, or a tool search in lazy mode, answers that the MCP needs to be re-authorized (or connected) in MyMCPs, where it answered `Upstream tool call failed`.
+
+### Changed
+
+- The expiry of an OAuth token that cannot be renewed is the one its provider states. When it states none, MyMCPs no longer guesses one hour, which would cut off tokens that never expire, such as those of GitHub OAuth apps. The expiries guessed before are cleared when the server starts after the upgrade.
+
+### Fixed
+
+- An HTTP MCP whose OAuth sign-in stopped working is marked for re-authorization by the gateway itself, where it stayed **ready** until someone selected **Test connection** while its tools vanished from the gateway and its calls failed. It happens when the token expired and cannot be renewed (it is then no longer sent), when the MCP server answers HTTP 401 to it, or when the provider refuses to renew it (`invalid_grant`). The MCP shows the error and its reason in the list, **Re-authorize** in the menu of its row, a **Re-authorization required** banner in its edit dialog, and **needs authorization** on the home page. Its tokens are kept, and a tool call that goes through again clears the mark.
+
 ## 2026-10-12
 
 ### Added

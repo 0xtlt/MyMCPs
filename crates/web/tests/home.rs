@@ -428,6 +428,122 @@ async fn shows_a_member_nothing_of_the_call_log() {
     assert!(!page.contains("/edit\""));
 }
 
+/// An enabled HTTP MCP signed in with OAuth, whose token cannot be renewed
+/// and ends `ends_in` from now.
+async fn signed_in_mcp(
+    app: &TestApp,
+    admin: &User,
+    name: &str,
+    ends_in: Duration,
+    adjust: impl FnOnce(&mut mymcps_core::models::Mcp),
+) -> mymcps_core::models::Mcp {
+    let token = app.core.encrypt_secret(Some("access-token"));
+    create_mcp(app, admin.id, |mcp| {
+        mcp.name = name.into();
+        mcp.slug = name.to_lowercase().replace(' ', "-");
+        mcp.oauth_access_token = token.clone();
+        mcp.oauth_token_expires_at = Some(Timestamp::now() + ends_in);
+        adjust(mcp);
+    })
+    .await
+}
+
+/// The links of the attention list, each with its text.
+fn attention_of(page: &str) -> Vec<(String, String)> {
+    between(page, "<div class=\"attention\">", "</section>")
+        .split("<a class=\"attention__item\" href=\"")
+        .skip(1)
+        .map(|item| {
+            (
+                item.split('"').next().unwrap().to_string(),
+                text_of(&item[item.find('>').unwrap() + 1..]),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn warns_a_week_before_a_sign_in_that_cannot_be_renewed_ends() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let member = create_member(&app).await;
+    let soon = signed_in_mcp(&app, &admin, "T3 Code", Duration::days(3), |_| {}).await;
+    // None of these is about to end: it ends later, was renewable, stated no
+    // expiry, is switched off, or has ended and says so another way.
+    signed_in_mcp(&app, &admin, "Later", Duration::days(20), |_| {}).await;
+    signed_in_mcp(&app, &admin, "Renewable", Duration::days(3), |mcp| {
+        mcp.oauth_refresh_token = app.core.encrypt_secret(Some("refresh-token"));
+    })
+    .await;
+    signed_in_mcp(&app, &admin, "Unstated", Duration::days(3), |mcp| {
+        mcp.oauth_token_expires_at = None;
+    })
+    .await;
+    signed_in_mcp(&app, &admin, "Retired", Duration::days(3), |mcp| {
+        mcp.enabled = false;
+    })
+    .await;
+
+    let page = app.get("/").login_as(&admin).send().await.text();
+    assert_eq!(
+        attention_of(&page),
+        [(
+            format!("/mcps/{}/edit", soon.id),
+            "T3 Code needs re-authorization this week".to_string()
+        )]
+    );
+
+    // A member cannot change an MCP: the list is where they learn of it.
+    let page = app.get("/").login_as(&member).send().await.text();
+    assert_eq!(
+        attention_of(&page),
+        [(
+            "/mcps".to_string(),
+            "T3 Code needs re-authorization this week".to_string()
+        )]
+    );
+
+    // Several are counted, and lead to the list.
+    signed_in_mcp(&app, &admin, "Another", Duration::hours(5), |_| {}).await;
+    let page = app.get("/").login_as(&admin).send().await.text();
+    assert_eq!(
+        attention_of(&page),
+        [(
+            "/mcps".to_string(),
+            "2 MCPs need re-authorization this week".to_string()
+        )]
+    );
+}
+
+#[tokio::test]
+async fn says_a_lapsed_sign_in_needs_authorization_and_stops_warning_of_it() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let lapsed = signed_in_mcp(&app, &admin, "T3 Code", Duration::days(-1), |mcp| {
+        mcp.status = McpStatus::Error;
+        mcp.oauth_required = true;
+        mcp.last_error = Some(
+            "OAuth sign-in expired on 2026-10-17 08:00 UTC and cannot be renewed: the provider issues no refresh token."
+                .into(),
+        );
+    })
+    .await;
+    // Marked while its stated expiry is still ahead (the server refused the token):
+    // one line says it, not two.
+    let rejected = signed_in_mcp(&app, &admin, "Rejected", Duration::days(2), |mcp| {
+        mcp.status = McpStatus::Error;
+        mcp.oauth_required = true;
+    })
+    .await;
+
+    let page = app.get("/").login_as(&admin).send().await.text();
+    assert_eq!(
+        attention_of(&page),
+        [("/mcps".to_string(), "2 MCPs need authorization".to_string())]
+    );
+    assert!(lapsed.oauth_required && rejected.oauth_required);
+}
+
 #[tokio::test]
 async fn invites_to_add_the_first_mcp() {
     let app = TestApp::new().await;

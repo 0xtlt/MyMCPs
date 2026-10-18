@@ -236,6 +236,12 @@ fn attention(home: &Home) -> Markup {
         "is in error",
         "are in error",
     );
+    mcps(
+        home.mcps_with_expiring_sign_in(),
+        "key-round",
+        "needs re-authorization this week",
+        "need re-authorization this week",
+    );
     if home.pending_approvals > 0 {
         items.push((
             "/approvals".to_string(),

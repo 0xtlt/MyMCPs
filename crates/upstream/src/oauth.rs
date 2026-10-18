@@ -692,7 +692,15 @@ impl Upstream {
                 _ => "Bearer".to_owned(),
             },
         );
-        mcp.oauth_token_expires_at = Some(token_expiry(tokens.expires_in));
+        // A token that cannot be renewed keeps the expiry its provider stated,
+        // or none: a guessed one would cut off a token that never expires.
+        // A token that can be renewed needs a time to schedule its renewal.
+        let renewable = tokens
+            .refresh_token
+            .as_deref()
+            .is_some_and(|token| !token.is_empty());
+        let stated = tokens.expires_in.is_some_and(|seconds| !seconds.is_nan());
+        mcp.oauth_token_expires_at = (renewable || stated).then(|| token_expiry(tokens.expires_in));
         if let Some(scope) = tokens.scope.filter(|scope| !scope.is_empty()) {
             mcp.oauth_scopes = Some(scope);
         }
@@ -1112,6 +1120,15 @@ impl Upstream {
             );
             mcp.save(&*self.core.db).await?;
             return Ok(());
+        }
+
+        // Nothing renews this token, and its provider said when it stops
+        // working: the MCP would only be sent what it refuses.
+        if let Some(expires_at) = mcp
+            .oauth_sign_in_expires_at()
+            .filter(|expires_at| !expires_at.is_future())
+        {
+            return Err(UpstreamError::OAuthSignInExpired(expires_at));
         }
 
         let client = self.client_information_from_mcp(&mcp);

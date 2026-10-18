@@ -417,6 +417,57 @@ async fn fails_for_an_mcp_that_was_deleted_while_a_caller_held_it() {
 }
 
 #[tokio::test]
+async fn refuses_a_token_past_its_stated_expiry_when_nothing_can_renew_it() {
+    let core = TestCore::new().await;
+    let (upstream, calls) = oauth_server(&core, |_| status(500));
+
+    let mut expired = connection(&core).await;
+    expired.oauth_refresh_token = None;
+    expired.save(&*core.db).await.unwrap();
+    let stated = expired.oauth_token_expires_at.unwrap();
+    let error = upstream
+        .refresh_oauth_access_token(&mut expired)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, UpstreamError::OAuthSignInExpired(at) if at == stated));
+    assert!(error.needs_authorization());
+    assert!(!error.is_unauthorized());
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "OAuth sign-in expired on {} and cannot be renewed: the provider issues no refresh token.",
+            stated.as_datetime().format("%Y-%m-%d %H:%M UTC")
+        )
+    );
+    // The token is kept, and the provider is not asked for a renewal it cannot grant.
+    assert_eq!(
+        decrypt(&core, &expired.oauth_access_token).as_deref(),
+        Some("access-old")
+    );
+    assert_eq!(calls.len(), 0);
+
+    // An empty refresh token column is no refresh token either.
+    let mut empty = connection(&core).await;
+    empty.oauth_refresh_token = Some(String::new());
+    empty.save(&*core.db).await.unwrap();
+    assert!(matches!(
+        upstream.refresh_oauth_access_token(&mut empty).await,
+        Err(UpstreamError::OAuthSignInExpired(_))
+    ));
+
+    // Until its stated expiry the token works, with no margin.
+    let mut working = connection(&core).await;
+    working.oauth_refresh_token = None;
+    working.oauth_token_expires_at = Some(Timestamp::now() + Duration::seconds(30));
+    working.save(&*core.db).await.unwrap();
+    upstream
+        .refresh_oauth_access_token(&mut working)
+        .await
+        .unwrap();
+    assert_eq!(calls.len(), 0);
+}
+
+#[tokio::test]
 async fn leaves_alone_what_is_not_an_expired_oauth_sign_in() {
     let core = TestCore::new().await;
     let (upstream, calls) = oauth_server(&core, |_| status(500));
@@ -430,9 +481,8 @@ async fn leaves_alone_what_is_not_an_expired_oauth_sign_in() {
         .await
         .unwrap();
 
-    // No refresh token, no client, or no provider to ask.
+    // A refresh token that cannot be read, no client, or no provider to ask.
     for incomplete in [
-        |mcp: &mut Mcp| mcp.oauth_refresh_token = None,
         |mcp: &mut Mcp| mcp.oauth_refresh_token = Some("not ciphertext".into()),
         |mcp: &mut Mcp| mcp.oauth_client_id = None,
         |mcp: &mut Mcp| {
@@ -450,6 +500,16 @@ async fn leaves_alone_what_is_not_an_expired_oauth_sign_in() {
             Some("access-old")
         );
     }
+
+    // No refresh token and no expiry stated: nothing says it stopped working.
+    let mut unstated = connection(&core).await;
+    unstated.oauth_refresh_token = None;
+    unstated.oauth_token_expires_at = None;
+    unstated.save(&*core.db).await.unwrap();
+    upstream
+        .refresh_oauth_access_token(&mut unstated)
+        .await
+        .unwrap();
 
     // More than two minutes left: the token is used as it is.
     let mut fresh = connection(&core).await;

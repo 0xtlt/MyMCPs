@@ -23,12 +23,12 @@ use mymcps_mcp::server::{
     HandlerError, RequestBody, ResponseBody, ServerOptions, ToolHandler, handle_request,
 };
 use mymcps_upstream::approvals::with_approval_notes;
-use mymcps_upstream::{Upstream, parse_namespaced_tool};
+use mymcps_upstream::{Upstream, authorization_needed_message, parse_namespaced_tool};
 use mymcps_vine::js::json_stringify;
 use serde_json::{Map, Value, json};
 
 use crate::Gateway;
-use crate::approvals::{ApprovalGate, ApprovalService, GatedCall};
+use crate::approvals::{ApprovalError, ApprovalGate, ApprovalService, GatedCall};
 use crate::auto_update::McpAutoUpdateScheduler;
 use crate::bearer::{BearerAccess, BearerError, BearerRejection};
 use crate::call_log::{McpCallLogInput, McpCallLogService};
@@ -363,7 +363,11 @@ impl Session {
                     slug = %mcp.slug,
                     "Lazy gateway tool search failed"
                 );
-                error_result(&format!("Unable to search tools for MCP \"{}\"", mcp.slug))
+                error_result(
+                    &authorization_needed_message(&mcp, &error).unwrap_or_else(|| {
+                        format!("Unable to search tools for MCP \"{}\"", mcp.slug)
+                    }),
+                )
             }
         }
     }
@@ -471,11 +475,11 @@ impl Session {
                 }
                 result
             }
-            Err(error) => {
+            Err(failure) => {
                 tracing::warn!(
                     error = %sanitize_mcp_diagnostic(
                         &self.upstream.core().encryption,
-                        &error,
+                        &failure.diagnostic,
                         &mcp,
                     ),
                     mcp_id = mcp.id,
@@ -485,22 +489,27 @@ impl Session {
                 self.record_error(
                     started_at,
                     CallErrorCategory::UpstreamException,
-                    &error,
+                    &failure.diagnostic,
                     record,
                 );
-                error_result("Upstream tool call failed")
+                error_result(
+                    failure
+                        .for_agent
+                        .as_deref()
+                        .unwrap_or("Upstream tool call failed"),
+                )
             }
         }
     }
 
-    /// Run a call, unless it has to wait for a person. Fails with the
-    /// message of what went wrong, which is redacted before it goes anywhere.
+    /// Run a call, unless it has to wait for a person. Fails with what went
+    /// wrong, see [`Failure`].
     async fn attempt(
         &self,
         mcp: &mut Mcp,
         tool_name: &str,
         args: Option<&Map<String, Value>>,
-    ) -> Result<Attempt, String> {
+    ) -> Result<Attempt, Failure> {
         // A tool set to ask is held here until a person approved this very call.
         let gate = self
             .approvals
@@ -511,7 +520,13 @@ impl Session {
                 args,
             })
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| Failure {
+                for_agent: match &error {
+                    ApprovalError::Upstream(error) => authorization_needed_message(mcp, error),
+                    ApprovalError::Database(_) => None,
+                },
+                diagnostic: error.to_string(),
+            })?;
         if let ApprovalGate::Held(held) = gate {
             return Ok(Attempt::Held(held));
         }
@@ -520,8 +535,20 @@ impl Session {
             .call_tool(mcp, tool_name, args.cloned())
             .await
             .map(Attempt::Ran)
-            .map_err(|error| error.to_string())
+            .map_err(|error| Failure {
+                for_agent: authorization_needed_message(mcp, &error),
+                diagnostic: error.to_string(),
+            })
     }
+}
+
+/// Why a call did not run or did not finish.
+struct Failure {
+    /// What went wrong, as the log keeps it once redacted.
+    diagnostic: String,
+    /// The sentence the agent is given in place of the generic failure, when
+    /// there is something it can tell the person to do.
+    for_agent: Option<String>,
 }
 
 enum Attempt {

@@ -287,6 +287,52 @@ async fn keep_the_lifetime_the_provider_states() {
     );
 }
 
+/// The MCP after the whole authorization, the provider answering with `tokens`.
+async fn authorized_with(core: &TestCore, tokens: Value) -> Mcp {
+    let mut mcp = create_mcp(core, |mcp| {
+        mcp.http_url = Some("https://mcp.example/mcp".into());
+        mcp.status = McpStatus::Draft;
+    })
+    .await;
+    let (upstream, _) = providers(core, "https://auth.example", tokens);
+    let session = MemorySession::new();
+    let redirect = upstream.start_oauth_flow(&session, &mut mcp).await.unwrap();
+    let redirect = Url::parse(&redirect).unwrap();
+    let oauth = read_oauth_session(&session, query(&redirect, "state").as_deref()).unwrap();
+    upstream
+        .exchange_authorization_code(&mut mcp, &oauth, "authorization-code", None)
+        .await
+        .unwrap();
+    find_mcp(core, mcp.id).await
+}
+
+#[tokio::test]
+async fn are_not_given_an_expiry_when_nothing_can_renew_them() {
+    let core = TestCore::new().await;
+
+    // Neither a lifetime nor a refresh token: the token may never expire, and
+    // a guessed hour would cut it off.
+    let mcp = authorized_with(&core, json!({})).await;
+    assert_eq!(
+        decrypt(&core, &mcp.oauth_access_token).as_deref(),
+        Some("access-new")
+    );
+    assert_eq!(mcp.oauth_refresh_token, None);
+    assert_eq!(mcp.oauth_token_expires_at, None);
+    assert_eq!(mcp.oauth_sign_in_expires_at(), None);
+
+    // The lifetime the provider states is kept, even without a refresh token.
+    let mcp = authorized_with(&core, json!({ "expires_in": 2592000 })).await;
+    let days = (mcp.oauth_token_expires_at.unwrap() - Timestamp::now()).num_days();
+    assert!((29..=30).contains(&days), "{days} days");
+    assert_eq!(mcp.oauth_sign_in_expires_at(), mcp.oauth_token_expires_at);
+
+    // A token that can be renewed gets a time to schedule its renewal.
+    let mcp = authorized_with(&core, json!({ "refresh_token": "refresh-new" })).await;
+    assert_about_an_hour_away(mcp.oauth_token_expires_at);
+    assert_eq!(mcp.oauth_sign_in_expires_at(), None);
+}
+
 // Pending upstream OAuth authorizations
 
 #[tokio::test]

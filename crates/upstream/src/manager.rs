@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use mymcps_core::Timestamp;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
 use mymcps_core::redaction::sanitize_mcp_diagnostic;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,32 @@ pub struct NamespacedTool {
     pub mcp_id: i64,
     pub mcp_slug: String,
     pub namespaced_name: String,
+}
+
+/// What an agent is told when a call or a tool search failed because the
+/// MCP waits for its OAuth sign-in in MyMCPs. `None` when it failed for
+/// another reason.
+pub fn authorization_needed_message(mcp: &Mcp, error: &UpstreamError) -> Option<String> {
+    if mcp.transport != McpTransport::Http
+        || mcp.auth_type != McpAuthType::Auto
+        || !error.needs_authorization()
+    {
+        return None;
+    }
+    let has_access_token = mcp
+        .oauth_access_token
+        .as_deref()
+        .is_some_and(|token| !token.is_empty());
+    let slug = &mcp.slug;
+    Some(if has_access_token {
+        format!(
+            "MCP \"{slug}\" needs to be re-authorized in MyMCPs: its OAuth sign-in has expired or was revoked. Re-authorize it on the MCPs page of MyMCPs, then try again."
+        )
+    } else {
+        format!(
+            "MCP \"{slug}\" needs to be connected in MyMCPs: it signs in with OAuth and no account is connected yet. Connect it on the MCPs page of MyMCPs, then try again."
+        )
+    })
 }
 
 /// The two halves of a tool name of the eager gateway.
@@ -53,8 +80,23 @@ impl Upstream {
 
     /// The tools an MCP has right now. Connects to it, unless it is built in.
     ///
-    /// `mcp` is read again when its OAuth access token had to be renewed.
+    /// An HTTP MCP whose OAuth sign-in no longer works is marked as waiting
+    /// to be authorized again.
+    ///
+    /// `mcp` is read again when its OAuth access token had to be renewed, or
+    /// when the mark changed.
     pub async fn probe(&self, mcp: &mut Mcp) -> Result<Vec<UpstreamTool>, UpstreamError> {
+        let listed = self.count_tools(mcp).await;
+        if let Err(error) = &listed {
+            self.note_sign_in(mcp, Some(error)).await;
+        }
+        listed
+    }
+
+    /// The tools an MCP has right now, with their count remembered for
+    /// [`Upstream::known_tool_counts`]. Unlike [`Upstream::probe`], it saves
+    /// nothing of the sign-in.
+    async fn count_tools(&self, mcp: &mut Mcp) -> Result<Vec<UpstreamTool>, UpstreamError> {
         let listed = self.list_tools(mcp).await;
         let mut counts = self
             .known_tool_counts
@@ -137,18 +179,136 @@ impl Upstream {
         match mcp.transport {
             McpTransport::Builtin => Ok(self.call_builtin_tool(mcp, tool_name, arguments).await?),
             McpTransport::Http => {
-                let connected = self.connect_http_upstream(mcp).await?;
-                let result = connected
-                    .client
-                    .call_tool(tool_name, Some(arguments.unwrap_or_default()))
-                    .await;
-                connected.close().await;
-                Ok(result?)
+                let result = self.call_http_tool(mcp, tool_name, arguments).await;
+                self.note_sign_in(mcp, result.as_ref().err()).await;
+                result
             }
             McpTransport::Npm => Ok(self
                 .node
                 .call_tool(mcp, tool_name, arguments.unwrap_or_default())
                 .await?),
+        }
+    }
+
+    async fn call_http_tool(
+        &self,
+        mcp: &mut Mcp,
+        tool_name: &str,
+        arguments: Option<Map<String, Value>>,
+    ) -> Result<Value, UpstreamError> {
+        let connected = self.connect_http_upstream(mcp).await?;
+        let result = connected
+            .client
+            .call_tool(tool_name, Some(arguments.unwrap_or_default()))
+            .await;
+        connected.close().await;
+        Ok(result?)
+    }
+
+    /// Why the OAuth sign-in of an HTTP MCP no longer works, when that is what
+    /// `error` says: what `last_error` holds while the MCP waits to be
+    /// authorized again. `None` for another failure, or an MCP without an
+    /// OAuth access token.
+    fn lapsed_sign_in(&self, mcp: &Mcp, error: &UpstreamError) -> Option<String> {
+        if mcp.transport != McpTransport::Http
+            || mcp.auth_type != McpAuthType::Auto
+            || !error.needs_authorization()
+            || self
+                .core
+                .decrypt_secret(mcp.oauth_access_token.as_deref())
+                .is_none()
+        {
+            return None;
+        }
+        Some(match error {
+            UpstreamError::OAuthSignInExpired(_) => error.to_string(),
+            UpstreamError::Unauthorized(details) => {
+                self.diagnostic(&format!("OAuth token rejected. {details}"), mcp)
+            }
+            _ => match error.refused_renewal() {
+                Some(refused) if refused.message().is_empty() => {
+                    self.diagnostic(&"OAuth refresh token rejected (invalid_grant).", mcp)
+                }
+                Some(refused) => self.diagnostic(
+                    &format!("OAuth refresh token rejected (invalid_grant): {refused}"),
+                    mcp,
+                ),
+                None => {
+                    "OAuth token was rejected by the MCP server (HTTP 401). Re-authorize this MCP."
+                        .to_owned()
+                }
+            },
+        })
+    }
+
+    /// Save what a request to an HTTP MCP showed of its OAuth sign-in, so the
+    /// pages show it without a test: a lapsed sign-in marks the MCP for
+    /// re-authorization, and a tool call that went through clears that mark.
+    ///
+    /// Only the sign-in that was used is changed: the update is conditioned on
+    /// the saved access token, so a row authorized again in the meantime keeps
+    /// what its new authorization saved. A failure to save is logged, never
+    /// returned: the request goes on.
+    async fn note_sign_in(&self, mcp: &mut Mcp, failure: Option<&UpstreamError>) {
+        if mcp.transport != McpTransport::Http || mcp.auth_type != McpAuthType::Auto {
+            return;
+        }
+        let (status, oauth_required, last_error) = match failure {
+            Some(error) => match self.lapsed_sign_in(mcp, error) {
+                Some(reason) => (McpStatus::Error, true, Some(reason)),
+                None => return,
+            },
+            None => {
+                let marked = mcp.status == McpStatus::Error
+                    && mcp.oauth_required
+                    && mcp
+                        .oauth_access_token
+                        .as_deref()
+                        .is_some_and(|token| !token.is_empty());
+                if !marked {
+                    return;
+                }
+                (McpStatus::Ready, false, None)
+            }
+        };
+        if mcp.status == status
+            && mcp.oauth_required == oauth_required
+            && mcp.last_error == last_error
+        {
+            return;
+        }
+
+        let updated = sqlx::query(
+            "update `mcps` set `status` = ?, `oauth_required` = ?, `last_error` = ?, `updated_at` = ? \
+             where `id` = ? and `oauth_access_token` = ?",
+        )
+        .bind(status)
+        .bind(oauth_required)
+        .bind(&last_error)
+        .bind(Timestamp::now())
+        .bind(mcp.id)
+        .bind(mcp.oauth_access_token.as_deref())
+        .execute(&*self.core.db)
+        .await;
+        let saved = match updated {
+            Ok(done) => done.rows_affected() == 1,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    mcp_id = mcp.id,
+                    slug = %mcp.slug,
+                    "Could not save the state of the OAuth sign-in of an MCP"
+                );
+                return;
+            }
+        };
+        if saved && let Err(error) = self.reload(mcp).await {
+            tracing::warn!(
+                error = %error,
+                mcp_id = mcp.id,
+                slug = %mcp.slug,
+                "Could not read an MCP again after saving the state of its OAuth sign-in"
+            );
         }
     }
 
@@ -196,36 +356,24 @@ impl Upstream {
             return self.test_builtin_and_update_status(mcp).await;
         }
 
-        match self.probe(mcp).await {
+        match self.count_tools(mcp).await {
             Ok(_) => {
                 mcp.status = McpStatus::Ready;
                 mcp.last_error = None;
                 mcp.oauth_required = false;
             }
             Err(error) => {
-                let authorization_required = error.is_unauthorized();
-
-                if mcp.transport == McpTransport::Http
+                let waits_for_oauth = mcp.transport == McpTransport::Http
                     && mcp.auth_type == McpAuthType::Auto
-                    && authorization_required
-                {
-                    let has_oauth_access_token = self
-                        .core
-                        .decrypt_secret(mcp.oauth_access_token.as_deref())
-                        .is_some();
-                    mcp.status = if has_oauth_access_token {
-                        McpStatus::Error
-                    } else {
-                        McpStatus::Draft
-                    };
-                    mcp.last_error = Some(if !has_oauth_access_token {
-                        "OAuth authorization required".to_owned()
-                    } else if let UpstreamError::Unauthorized(details) = &error {
-                        self.diagnostic(&format!("OAuth token rejected. {details}"), mcp)
-                    } else {
-                        "OAuth token was rejected by the MCP server (HTTP 401). Re-authorize this MCP."
-                            .to_owned()
-                    });
+                    && error.needs_authorization();
+
+                if let Some(reason) = self.lapsed_sign_in(mcp, &error) {
+                    mcp.status = McpStatus::Error;
+                    mcp.last_error = Some(reason);
+                    mcp.oauth_required = true;
+                } else if waits_for_oauth {
+                    mcp.status = McpStatus::Draft;
+                    mcp.last_error = Some("OAuth authorization required".to_owned());
                     mcp.oauth_required = true;
                 } else {
                     mcp.status = McpStatus::Error;

@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use mymcps_builtin::BuiltinError;
+use mymcps_core::Timestamp;
 use mymcps_core::public_url::PublicUrlError;
 use mymcps_mcp::client::ClientError;
+use mymcps_mcp_auth::{OAuthError, OAuthErrorKind};
 use mymcps_net::{HttpUrlError, RestrictedEndpointError};
 use mymcps_node::NodeError;
 
@@ -45,6 +47,14 @@ pub enum UpstreamError {
     #[error(transparent)]
     OAuth(Arc<mymcps_mcp_auth::Error>),
 
+    /// The access token of an HTTP MCP expired on this date and cannot be
+    /// renewed: its provider issues no refresh token. Nothing was sent.
+    #[error(
+        "OAuth sign-in expired on {} and cannot be renewed: the provider issues no refresh token.",
+        .0.as_datetime().format("%Y-%m-%d %H:%M UTC")
+    )]
+    OAuthSignInExpired(Timestamp),
+
     /// A built-in MCP refused or failed. See
     /// [`UpstreamError::is_builtin_tool_error`] for the failures meant for
     /// the agent.
@@ -82,6 +92,33 @@ impl UpstreamError {
             Self::Unauthorized(_) => true,
             Self::Client(error) => error.is_unauthorized(),
             _ => false,
+        }
+    }
+
+    /// The sign-in the MCP was given no longer opens it, and only connecting
+    /// the account again can fix that: the server refused the token (HTTP
+    /// 401), the token expired and cannot be renewed, or the provider refused
+    /// to renew it (`invalid_grant`).
+    pub fn needs_authorization(&self) -> bool {
+        match self {
+            Self::OAuthSignInExpired(_) => true,
+            _ => self.is_unauthorized() || self.refused_renewal().is_some(),
+        }
+    }
+
+    /// The answer of the token endpoint when it refused to renew a token
+    /// (`invalid_grant`).
+    pub(crate) fn refused_renewal(&self) -> Option<&OAuthError> {
+        match self {
+            Self::OAuth(error) => match error.as_ref() {
+                mymcps_mcp_auth::Error::OAuth(oauth)
+                    if oauth.kind() == OAuthErrorKind::InvalidGrant =>
+                {
+                    Some(oauth)
+                }
+                _ => None,
+            },
+            _ => None,
         }
     }
 

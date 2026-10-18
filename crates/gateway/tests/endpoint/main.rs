@@ -8,6 +8,7 @@ mod support;
 
 mod gateway_auth;
 mod gateway_lazy;
+mod gateway_oauth_sign_in;
 mod hardening_gateway_mcp;
 mod mcp_call_logging;
 mod tool_approvals;
