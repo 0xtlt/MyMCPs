@@ -80,6 +80,18 @@ pub struct AccessTokenUpdate<'a> {
     pub expires_at: Option<Timestamp>,
 }
 
+/// Whether a token may manage the MCPs of its team: an OAuth grant whose
+/// person checked the permission on the consent screen. A token made on the
+/// Tokens page never may. The role of that person in the team is checked
+/// apart, at each request.
+pub fn grants_mcp_management(token: &AccessToken) -> bool {
+    token.source == TokenSource::Oauth
+        && token
+            .oauth_scopes
+            .as_deref()
+            .is_some_and(|scopes| crate::oauth::has_scope(scopes, crate::oauth::MCPS_MANAGE_SCOPE))
+}
+
 pub fn generate_plaintext() -> String {
     format!("mcp_{}", random_base64url(32))
 }

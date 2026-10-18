@@ -42,7 +42,10 @@ use crate::validators::gateway_oauth::{
 };
 
 pub use crate::access_token::OAUTH_ACCESS_TOKEN_TTL_SECONDS;
-pub use constants::{GATEWAY_OAUTH_SCOPE, LOOPBACK_HOSTS};
+pub use constants::{
+    GATEWAY_OAUTH_SCOPE, LOOPBACK_HOSTS, MCPS_MANAGE_SCOPE, SUPPORTED_OAUTH_SCOPES, has_scope,
+    scope_names,
+};
 
 const AUTHORIZATION_CODE_TTL_MINUTES: i64 = 5;
 const CLIENT_SECRET_TTL_DAYS: i64 = 365;
