@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use mymcps_core::limiter::{Limiter, LimiterError};
 use mymcps_core::models::{
-    AccessToken, ApprovalDecision, ApprovalRequest, ApprovalState, InstanceSetting, Invite, Mcp,
-    McpLogLevel, McpStatus, McpTransport, OauthClient, Team, TeamRole, User,
+    AccessToken, ApprovalDecision, ApprovalRequest, ApprovalState, InstanceSetting, Invite,
+    MAX_PROXIES_PER_TEAM, Mcp, McpLogLevel, McpStatus, McpTransport, OauthClient, Proxy, ProxyKind,
+    Team, TeamRole, User,
 };
 use mymcps_core::{Config, Core, Db, Timestamp};
 
@@ -686,4 +687,170 @@ async fn the_instance_always_keeps_a_super_admin() {
     );
     transaction.commit().await.unwrap();
     assert!(is_super_admin(grace.id).await);
+}
+
+async fn proxy_of(db: &Db, team_id: i64, created_by: Option<i64>, name: &str) -> Proxy {
+    let mut proxy = Proxy {
+        team_id,
+        name: name.into(),
+        kind: ProxyKind::Tailscale,
+        tailscale_hostname: "mymcps".into(),
+        created_by,
+        ..Default::default()
+    };
+    proxy.insert(&**db).await.unwrap();
+    proxy
+}
+
+#[tokio::test]
+async fn proxies_belong_to_a_team_and_are_listed_by_name() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let ada = admin(db).await;
+    let (_, other_team) = account(db, "grace@example.com", Some("Grace")).await;
+    let root = Team::ROOT_ID;
+    assert_eq!(MAX_PROXIES_PER_TEAM, 5);
+
+    assert_eq!(Proxy::count(&**db).await.unwrap(), 0);
+    assert!(Proxy::for_team(&**db, root).await.unwrap().is_empty());
+
+    let work = proxy_of(db, root, Some(ada.id), "work").await;
+    let mut home = proxy_of(db, root, Some(ada.id), "Home").await;
+    let abroad = proxy_of(db, other_team.id, None, "Abroad").await;
+    assert!(work.created_at != Timestamp::default());
+    assert_eq!(work.kind, ProxyKind::Tailscale);
+    assert_eq!(ProxyKind::Tailscale.as_str(), "tailscale");
+    assert_eq!(ProxyKind::parse("wireguard"), None);
+
+    let names = |proxies: Vec<Proxy>| -> Vec<String> {
+        proxies.into_iter().map(|proxy| proxy.name).collect()
+    };
+    assert_eq!(
+        names(Proxy::for_team(&**db, root).await.unwrap()),
+        ["Home", "work"],
+        "by name, whatever the case"
+    );
+    assert_eq!(
+        names(Proxy::for_team(&**db, other_team.id).await.unwrap()),
+        ["Abroad"]
+    );
+    assert_eq!(
+        Proxy::all(&**db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|proxy| proxy.id)
+            .collect::<Vec<_>>(),
+        [work.id, home.id, abroad.id]
+    );
+    assert_eq!(Proxy::count(&**db).await.unwrap(), 3);
+    assert_eq!(Proxy::count_for_team(&**db, root).await.unwrap(), 2);
+    assert_eq!(
+        Proxy::count_for_team(&**db, other_team.id).await.unwrap(),
+        1
+    );
+
+    // The auth key is kept encrypted; a change writes only what changed.
+    home.tailscale_auth_key = core.encrypt_secret(Some("tskey-auth-abc"));
+    home.name = "Home lab".into();
+    home.save(&**db).await.unwrap();
+    let reloaded = Proxy::find(&**db, home.id).await.unwrap().unwrap();
+    assert_eq!(reloaded.name, "Home lab");
+    assert_ne!(
+        reloaded.tailscale_auth_key.as_deref(),
+        Some("tskey-auth-abc")
+    );
+    assert_eq!(
+        core.decrypt_secret(reloaded.tailscale_auth_key.as_deref())
+            .as_deref(),
+        Some("tskey-auth-abc")
+    );
+    assert!(reloaded.updated_at.is_some());
+
+    // The account that made a proxy can go: the proxy stays.
+    sqlx::query("delete from `users` where `id` = ?")
+        .bind(ada.id)
+        .execute(&**db)
+        .await
+        .unwrap();
+    let kept = Proxy::find(&**db, work.id).await.unwrap().unwrap();
+    assert_eq!(kept.created_by, None);
+
+    kept.delete(&**db).await.unwrap();
+    assert_eq!(Proxy::count(&**db).await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn an_mcp_names_its_proxy_and_keeps_it_from_being_deleted() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let ada = admin(db).await;
+    let root = Team::ROOT_ID;
+    let proxy = proxy_of(db, root, Some(ada.id), "Home").await;
+
+    let direct = mcp_of(db, root, ada.id, "Direct").await;
+    assert_eq!(direct.proxy_id, None);
+    let mut notes = Mcp {
+        name: "Notes".into(),
+        slug: "notes".into(),
+        transport: McpTransport::Http,
+        created_by: ada.id,
+        team_id: root,
+        proxy_id: Some(proxy.id),
+        ..Default::default()
+    };
+    notes.insert(&**db).await.unwrap();
+    let reloaded = Mcp::find(&**db, notes.id).await.unwrap().unwrap();
+    assert_eq!(reloaded.proxy_id, Some(proxy.id));
+
+    assert_eq!(
+        proxy.mcps(&**db).await.unwrap(),
+        [(notes.id, "Notes".to_string())]
+    );
+    let mut second = mcp_of(db, root, ada.id, "archive").await;
+    second.proxy_id = Some(proxy.id);
+    second.save(&**db).await.unwrap();
+    assert_eq!(
+        proxy.mcps(&**db).await.unwrap(),
+        [
+            (second.id, "archive".to_string()),
+            (notes.id, "Notes".to_string())
+        ]
+    );
+
+    // A proxy that an MCP uses cannot be deleted under it.
+    assert!(proxy.delete(&**db).await.is_err());
+    assert_eq!(Proxy::count(&**db).await.unwrap(), 1);
+
+    // Free again, it can.
+    for mut mcp in [reloaded, second] {
+        mcp.proxy_id = None;
+        mcp.save(&**db).await.unwrap();
+    }
+    assert!(proxy.mcps(&**db).await.unwrap().is_empty());
+    proxy.delete(&**db).await.unwrap();
+    assert_eq!(Proxy::count(&**db).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn a_team_goes_with_its_proxies_and_the_mcps_that_use_them() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    admin(db).await;
+    let (grace, team) = account(db, "grace@example.com", Some("Grace")).await;
+    let proxy = proxy_of(db, team.id, Some(grace.id), "Home").await;
+    let mut mcp = mcp_of(db, team.id, grace.id, "Notes").await;
+    mcp.proxy_id = Some(proxy.id);
+    mcp.save(&**db).await.unwrap();
+
+    // Deleting the account deletes the team it was alone in.
+    let mut transaction = db.begin().await.unwrap();
+    Team::delete_account(&mut transaction, grace.id)
+        .await
+        .unwrap()
+        .unwrap();
+    transaction.commit().await.unwrap();
+
+    assert_eq!(Proxy::count(&**db).await.unwrap(), 0);
+    assert!(Mcp::find(&**db, mcp.id).await.unwrap().is_none());
 }

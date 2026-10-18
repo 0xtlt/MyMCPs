@@ -22,6 +22,8 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use url::Url;
 
+pub mod socks;
+
 /// One request the upstream received.
 #[derive(Debug, Clone)]
 pub struct Received {
@@ -55,6 +57,10 @@ impl Upstream {
 
     pub fn port(&self) -> u16 {
         self.address.port()
+    }
+
+    pub fn address(&self) -> SocketAddr {
+        self.address
     }
 
     /// Every request received so far, in order.

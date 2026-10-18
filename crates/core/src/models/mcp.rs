@@ -92,6 +92,9 @@ model! {
         pub builtin_settings: Option<String>,
         /// The team the MCP belongs to. Its slug is unique there.
         pub team_id: i64,
+        /// The proxy an HTTP MCP is reached through, one of its team's. Without
+        /// one, MyMCPs connects to the MCP itself.
+        pub proxy_id: Option<i64>,
     }
 }
 

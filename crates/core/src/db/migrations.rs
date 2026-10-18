@@ -290,4 +290,16 @@ pub const MIGRATIONS: &[Migration] = &[
             r#"create index `passkeys_user_id_index` on `passkeys` (`user_id`)"#,
         ],
     },
+    // Where the traffic of an HTTP MCP can be sent instead of leaving
+    // directly: a Tailscale node that MyMCPs runs for a team. An MCP names the
+    // proxy it uses; deleting a proxy that an MCP uses is refused (the
+    // default action), not turned into a direct connection.
+    Migration {
+        name: "database/migrations/1792281600000_add_proxies",
+        statements: &[
+            r#"create table `proxies` (`id` integer not null primary key autoincrement, `team_id` integer not null, `name` varchar(100) not null, `kind` varchar(32) not null, `tailscale_hostname` varchar(63) not null, `tailscale_auth_key` text null, `created_by` integer null, `created_at` datetime not null, `updated_at` datetime null, foreign key(`team_id`) references `teams`(`id`) on delete CASCADE, foreign key(`created_by`) references `users`(`id`) on delete SET NULL)"#,
+            r#"create index `proxies_team_id_index` on `proxies` (`team_id`)"#,
+            r#"alter table `mcps` add column `proxy_id` integer null references `proxies`(`id`)"#,
+        ],
+    },
 ];

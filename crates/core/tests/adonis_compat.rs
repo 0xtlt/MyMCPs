@@ -437,6 +437,95 @@ async fn an_older_node_database_is_brought_up_to_date_without_losing_rows() {
     assert_eq!(links, 0);
 }
 
+#[tokio::test]
+async fn proxies_are_added_to_a_schema_that_has_mcps_already() {
+    let (db, _dir) = fresh_database().await;
+    let proxies = MIGRATIONS
+        .iter()
+        .position(|migration| migration.name.ends_with("_add_proxies"))
+        .unwrap();
+    apply(&db, &MIGRATIONS[..proxies]).await;
+    for statement in [
+        "insert into `users` (`id`, `email`, `password`, `created_at`) values (1, 'admin@example.com', 'x', '2026-10-07 12:19:57')",
+        "insert into `mcps` (`id`, `name`, `slug`, `transport`, `created_by`, `created_at`, `team_id`) values (7, 'Notion', 'notion', 'http', 1, '2026-10-07 12:19:57', 1)",
+    ] {
+        sqlx::query(statement).execute(&*db).await.unwrap();
+    }
+
+    // This one, and any written since.
+    let ran = db.migrate().await.unwrap();
+    assert_eq!(ran.len(), MIGRATIONS.len() - proxies);
+    assert_eq!(ran[0], "database/migrations/1792281600000_add_proxies");
+
+    // The MCP is still there, and goes direct.
+    let proxy_id: Option<i64> = sqlx::query_scalar("select `proxy_id` from `mcps` where `id` = 7")
+        .fetch_one(&*db)
+        .await
+        .unwrap();
+    assert_eq!(proxy_id, None);
+    let columns: Vec<String> =
+        sqlx::query_scalar("select `name` from pragma_table_info('proxies') order by `cid`")
+            .fetch_all(&*db)
+            .await
+            .unwrap();
+    assert_eq!(
+        columns,
+        [
+            "id",
+            "team_id",
+            "name",
+            "kind",
+            "tailscale_hostname",
+            "tailscale_auth_key",
+            "created_by",
+            "created_at",
+            "updated_at"
+        ]
+    );
+
+    // Foreign keys are enforced: a proxy has a team, and an MCP that names a
+    // proxy keeps it from being deleted.
+    assert!(
+        sqlx::query("insert into `proxies` (`team_id`, `name`, `kind`, `tailscale_hostname`, `created_at`) values (99, 'Lost', 'tailscale', 'mymcps', '2026-10-07 12:19:57')")
+            .execute(&*db)
+            .await
+            .is_err()
+    );
+    sqlx::query("insert into `proxies` (`id`, `team_id`, `name`, `kind`, `tailscale_hostname`, `created_at`) values (4, 1, 'Home', 'tailscale', 'mymcps', '2026-10-07 12:19:57')")
+        .execute(&*db)
+        .await
+        .unwrap();
+    sqlx::query("update `mcps` set `proxy_id` = 4 where `id` = 7")
+        .execute(&*db)
+        .await
+        .unwrap();
+    assert!(
+        sqlx::query("delete from `proxies` where `id` = 4")
+            .execute(&*db)
+            .await
+            .is_err(),
+        "an MCP that uses a proxy is never sent direct behind its back"
+    );
+    assert!(
+        sqlx::query("update `mcps` set `proxy_id` = 5 where `id` = 7")
+            .execute(&*db)
+            .await
+            .is_err()
+    );
+    // But the team goes with its proxies and the MCPs that use them.
+    sqlx::query("delete from `teams` where `id` = 1")
+        .execute(&*db)
+        .await
+        .unwrap();
+    let left: i64 = sqlx::query_scalar(
+        "select (select count(*) from `proxies`) + (select count(*) from `mcps`)",
+    )
+    .fetch_one(&*db)
+    .await
+    .unwrap();
+    assert_eq!(left, 0);
+}
+
 #[test]
 fn decrypts_what_the_node_encryption_wrote() {
     let fixtures: Value = serde_json::from_str(ADONIS_CRYPTO).unwrap();

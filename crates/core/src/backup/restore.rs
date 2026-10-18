@@ -75,6 +75,11 @@ const SECRET_COLUMNS: &[SecretColumns] = &[
         single: &["two_factor_secret"],
         maps: &[],
     },
+    SecretColumns {
+        table: "proxies",
+        single: &["tailscale_auth_key"],
+        maps: &[],
+    },
 ];
 
 /// The tables whose rows a backup replaces: those of the instance, less

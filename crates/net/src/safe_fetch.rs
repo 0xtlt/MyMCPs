@@ -90,6 +90,9 @@ pub enum FetchError {
     /// The response broke off while its body was read.
     #[error("terminated")]
     Terminated(#[source] Arc<reqwest::Error>),
+    /// [`Fetcher::through_proxy`] was given a URL that is not a proxy.
+    #[error("invalid proxy URL")]
+    InvalidProxy,
     /// A [`Fetcher::offline`] was left with a request no answer was given for.
     #[error("fetch failed")]
     Offline,
@@ -455,11 +458,32 @@ enum Transport {
     Network,
     /// The network, less the names that resolve to a restricted address.
     PublicNetwork,
+    /// The network, through a proxy that connects to the target and resolves
+    /// its name. The client holds the proxy URL and its credentials.
+    Proxied(reqwest::Client),
     Offline,
     Answering {
-        answer: Box<Answer>,
+        answer: Arc<Answer>,
         rest: Arc<Transport>,
     },
+}
+
+impl Transport {
+    /// This transport with the network at its end replaced by `client`, which
+    /// goes through the proxy. What answers in front of the network keeps
+    /// answering, and a transport that does not use the network stays as it is.
+    fn proxied(&self, client: &reqwest::Client) -> Arc<Transport> {
+        Arc::new(match self {
+            Transport::Network | Transport::PublicNetwork | Transport::Proxied(_) => {
+                Transport::Proxied(client.clone())
+            }
+            Transport::Offline => Transport::Offline,
+            Transport::Answering { answer, rest } => Transport::Answering {
+                answer: Arc::clone(answer),
+                rest: rest.proxied(client),
+            },
+        })
+    }
 }
 
 impl Transport {
@@ -481,6 +505,14 @@ impl Transport {
                     *hop.headers_mut() = request.headers.clone();
                     *hop.body_mut() = request.body.clone().map(reqwest::Body::from);
                     let response = public_only_client()?.execute(hop).await?;
+                    return Ok(RawResponse::from_network(response));
+                }
+                Transport::Proxied(client) => {
+                    let mut hop =
+                        reqwest::Request::new(request.method.clone(), request.url.clone());
+                    *hop.headers_mut() = request.headers.clone();
+                    *hop.body_mut() = request.body.clone().map(reqwest::Body::from);
+                    let response = client.execute(hop).await?;
                     return Ok(RawResponse::from_network(response));
                 }
                 Transport::Offline => return Err(FetchError::Offline),
@@ -742,7 +774,9 @@ impl Fetcher {
     /// connection is made, and a name that resolves to a loopback, private
     /// or link-local address is not connected to. A check of the name made
     /// before the request says nothing of what it resolves to by then. A
-    /// fetcher that does not use the network is returned as it is.
+    /// fetcher that does not use the network is returned as it is, and so is
+    /// one that goes through a proxy: the proxy resolves the names and
+    /// connects, so there is nothing to check here.
     pub fn public_only(&self) -> Self {
         match *self.transport {
             Transport::Network => Self {
@@ -750,6 +784,32 @@ impl Fetcher {
             },
             _ => self.clone(),
         }
+    }
+
+    /// The same fetcher, sending every request through this proxy
+    /// (`socks5h://user:pass@host:port`: the proxy resolves the target name, and
+    /// the credentials in the URL are the ones the proxy asks for).
+    ///
+    /// Only the network at the end of the fetcher is replaced, so an
+    /// [`answering`](Self::answering) wrapper in front of it keeps answering.
+    /// A fetcher that does not use the network, see [`offline`](Self::offline),
+    /// stays offline. The returned fetcher keeps its own connections: keep it
+    /// to reuse them.
+    ///
+    /// The error and the `Debug` output of the fetcher never carry the URL.
+    pub fn through_proxy(&self, proxy: &Url) -> Result<Self, FetchError> {
+        if !matches!(proxy.scheme(), "socks5" | "socks5h" | "http" | "https") || !proxy.has_host() {
+            return Err(FetchError::InvalidProxy);
+        }
+        let proxy = reqwest::Proxy::all(proxy.as_str()).map_err(FetchError::from)?;
+        // `no_proxy` is called by `client_builder`, before the proxy is added.
+        let client = client_builder()
+            .proxy(proxy)
+            .build()
+            .map_err(FetchError::from)?;
+        Ok(Self {
+            transport: self.transport.proxied(&client),
+        })
     }
 
     /// Sends nothing: a request fails like one the network could not carry.
@@ -770,7 +830,7 @@ impl Fetcher {
     ) -> Self {
         Self {
             transport: Arc::new(Transport::Answering {
-                answer: Box::new(answer),
+                answer: Arc::new(answer),
                 rest: self.transport,
             }),
         }
@@ -880,6 +940,7 @@ impl fmt::Debug for Fetcher {
         let transport = match *self.transport {
             Transport::Network => "network",
             Transport::PublicNetwork => "public network",
+            Transport::Proxied(_) => "proxied",
             Transport::Offline => "offline",
             Transport::Answering { .. } => "answering",
         };

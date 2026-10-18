@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod providers;
+pub mod socks;
 
 use std::io;
 use std::net::IpAddr;

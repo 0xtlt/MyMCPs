@@ -427,7 +427,7 @@ fn token_expiry(expires_in: Option<f64>) -> Timestamp {
 }
 
 impl Upstream {
-    fn oauth_endpoints_for(&self, mcp: &Mcp) -> Result<OAuthEndpoints, UpstreamError> {
+    async fn oauth_endpoints_for(&self, mcp: &Mcp) -> Result<OAuthEndpoints, UpstreamError> {
         let http_url = present(&mcp.http_url).filter(|_| mcp.transport == McpTransport::Http);
         let Some(http_url) = http_url else {
             return Err(UpstreamError::other(
@@ -435,10 +435,17 @@ impl Upstream {
             ));
         };
         let mcp_url = parse_http_url(http_url, "MCP URL")?;
-        Ok(OAuthEndpoints {
-            fetcher: self.fetcher.clone(),
-            guard: self.addresses.discovered_endpoint_guard(&mcp_url),
-        })
+        // The flow goes through the proxy of the MCP, if it has one, and
+        // fails if the proxy cannot be used: it never goes direct.
+        let fetcher = self.fetcher_for(mcp).await?;
+        let guard = if mcp.proxy_id.is_some() {
+            // The operator chose that network for the MCP, as with an MCP at a
+            // private address; and the proxy resolves the names, not this server.
+            self.addresses.trusted_network_guard(&mcp_url)
+        } else {
+            self.addresses.discovered_endpoint_guard(&mcp_url)
+        };
+        Ok(OAuthEndpoints { fetcher, guard })
     }
 
     /// Where the provider sends the browser back to once the admin decided.
@@ -783,7 +790,7 @@ impl Upstream {
             return self.start_builtin_oauth_flow(session, mcp);
         }
 
-        let endpoints = self.oauth_endpoints_for(mcp)?;
+        let endpoints = self.oauth_endpoints_for(mcp).await?;
         let redirect_uri = self.oauth_redirect_uri(mcp)?;
         let context = self.discover_oauth_context(mcp, &endpoints).await?;
         let issuer = authorization_server(&context.authorization_server_url)?;
@@ -956,7 +963,7 @@ impl Upstream {
             ));
         };
 
-        let endpoints = self.oauth_endpoints_for(mcp)?;
+        let endpoints = self.oauth_endpoints_for(mcp).await?;
         let metadata = self
             .metadata_for_authorization_server(mcp, &oauth.authorization_server_url, &endpoints)
             .await?;
@@ -1128,7 +1135,7 @@ impl Upstream {
 
         // The token endpoint is discovered again for every refresh, so it is checked
         // again as well, as is the saved resource indicator.
-        let endpoints = self.oauth_endpoints_for(&mcp)?;
+        let endpoints = self.oauth_endpoints_for(&mcp).await?;
         let metadata = self
             .metadata_for_authorization_server(&mcp, &authorization_server_url, &endpoints)
             .await?;

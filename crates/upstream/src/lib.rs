@@ -138,10 +138,11 @@ mod shared;
 pub mod validators;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use mymcps_builtin::{BuiltinEnv, BuiltinRegistry};
 use mymcps_core::Core;
+use mymcps_core::models::{Mcp, Proxy};
 use mymcps_net::{AddressGuard, Fetcher};
 use mymcps_node::NodeRunner;
 
@@ -158,6 +159,31 @@ pub use session::{
     clear_oauth_session, read_oauth_session, start_oauth_session,
 };
 
+/// Where the proxies of the instance are reached. The server passes its
+/// Tailscale runtime; a test passes a fake.
+pub trait ProxyDirectory: Send + Sync {
+    /// The proxy URL for this proxy (`socks5h://user:pass@host:port`), or the
+    /// sentence that says why it cannot be used now, such as `it needs a
+    /// Tailscale login`. The URL carries credentials: it is never logged or
+    /// shown.
+    fn proxy_url(&self, proxy_id: i64) -> Result<url::Url, String>;
+}
+
+/// The directory of an upstream that was given none: it knows no proxy, so
+/// an MCP that names one fails instead of going direct.
+struct NoProxies;
+
+impl ProxyDirectory for NoProxies {
+    fn proxy_url(&self, _proxy_id: i64) -> Result<url::Url, String> {
+        Err("this server runs no proxies".to_owned())
+    }
+}
+
+/// The fetchers that go through a proxy, by proxy id, with the URL each was
+/// built for. A node that logs in again gets another URL, which replaces the
+/// fetcher: the one before is not kept.
+type ProxiedFetchers = Arc<Mutex<HashMap<i64, (String, Fetcher)>>>;
+
 /// The gateway's side of every MCP it exposes. See the crate documentation.
 ///
 /// Built once and shared as an `Arc`. Cloning it is cheap, and clones share
@@ -169,6 +195,10 @@ pub struct Upstream {
     fetcher: Fetcher,
     /// Checks the endpoints that documents of an MCP or its provider name.
     addresses: AddressGuard,
+    /// Where the proxies of HTTP MCPs are reached.
+    proxies: Arc<dyn ProxyDirectory>,
+    /// The fetchers of the MCPs that use a proxy, kept for their connections.
+    proxied_fetchers: ProxiedFetchers,
     builtin_env: BuiltinEnv,
     builtins: BuiltinRegistry,
     node: NodeRunner,
@@ -196,6 +226,7 @@ impl Upstream {
             builtins,
             fetcher: None,
             addresses: None,
+            proxies: None,
             builtin_env: None,
             node: None,
             npm_update_runtime: None,
@@ -204,6 +235,46 @@ impl Upstream {
 
     pub fn core(&self) -> &Arc<Core> {
         &self.core
+    }
+
+    /// The fetcher for the requests of an HTTP MCP, its OAuth flow included:
+    /// the shared one, or, when the MCP names a proxy, one that sends
+    /// everything through that proxy.
+    ///
+    /// Fails with [`UpstreamError::Proxy`] when the proxy cannot be used now
+    /// (`Proxy "Home" is not connected: it needs a Tailscale login`), or is
+    /// not one of the MCP's team. It never falls back to a direct request.
+    pub async fn fetcher_for(&self, mcp: &Mcp) -> Result<Fetcher, UpstreamError> {
+        let Some(proxy_id) = mcp.proxy_id else {
+            return Ok(self.fetcher.clone());
+        };
+        let proxy = Proxy::find(&*self.core.db, proxy_id).await?;
+        let name = proxy
+            .as_ref()
+            .map_or_else(|| format!("#{proxy_id}"), |proxy| proxy.name.clone());
+        if proxy.is_some_and(|proxy| proxy.team_id != mcp.team_id) {
+            return Err(UpstreamError::Proxy(format!(
+                "Proxy \"{name}\" is not one of the proxies of this MCP's team"
+            )));
+        }
+        let url = self.proxies.proxy_url(proxy_id).map_err(|sentence| {
+            UpstreamError::Proxy(format!("Proxy \"{name}\" is not connected: {sentence}"))
+        })?;
+
+        let mut fetchers = self
+            .proxied_fetchers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some((built_for, fetcher)) = fetchers.get(&proxy_id)
+            && built_for == url.as_str()
+        {
+            return Ok(fetcher.clone());
+        }
+        let fetcher = self.fetcher.through_proxy(&url).map_err(|error| {
+            UpstreamError::Proxy(format!("Proxy \"{name}\" is not connected: {error}"))
+        })?;
+        fetchers.insert(proxy_id, (url.to_string(), fetcher.clone()));
+        Ok(fetcher)
     }
 
     /// What the tools of built-in MCPs run with.
@@ -263,6 +334,7 @@ pub struct UpstreamBuilder {
     builtins: BuiltinRegistry,
     fetcher: Option<Fetcher>,
     addresses: Option<AddressGuard>,
+    proxies: Option<Arc<dyn ProxyDirectory>>,
     builtin_env: Option<BuiltinEnv>,
     node: Option<NodeRunner>,
     npm_update_runtime: Option<Arc<dyn NpmUpdateRuntime>>,
@@ -281,6 +353,13 @@ impl UpstreamBuilder {
     /// relies on.
     pub fn address_guard(mut self, addresses: AddressGuard) -> Self {
         self.addresses = Some(addresses);
+        self
+    }
+
+    /// Where the proxies of HTTP MCPs are reached. Without one, an MCP that
+    /// names a proxy fails: it is never sent direct.
+    pub fn proxies(mut self, proxies: Arc<dyn ProxyDirectory>) -> Self {
+        self.proxies = Some(proxies);
         self
     }
 
@@ -313,6 +392,8 @@ impl UpstreamBuilder {
             core: self.core,
             fetcher,
             addresses: self.addresses.unwrap_or_default(),
+            proxies: self.proxies.unwrap_or_else(|| Arc::new(NoProxies)),
+            proxied_fetchers: Arc::default(),
             builtin_env,
             builtins: self.builtins,
             node,

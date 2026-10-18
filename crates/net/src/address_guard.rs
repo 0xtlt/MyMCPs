@@ -258,6 +258,27 @@ impl AddressGuard {
             }),
         }
     }
+
+    /// The check of the discovered endpoints of an MCP reached through a proxy
+    /// (a Tailscale node, say). It behaves like the check of an MCP at a private
+    /// address: nothing is refused, and no endpoint
+    /// [must be public](DiscoveredEndpointGuard::must_be_public).
+    ///
+    /// The proxy resolves names and connects, so what a name resolves to here
+    /// says nothing about where the request goes, and the endpoints of an MCP on
+    /// a tailnet are on the tailnet too. The operator chose that network for the
+    /// MCP when they chose the proxy. What the proxy itself may reach is up to
+    /// the proxy.
+    pub fn trusted_network_guard(&self, mcp_url: &Url) -> DiscoveredEndpointGuard {
+        DiscoveredEndpointGuard {
+            state: Arc::new(GuardState {
+                addresses: self.clone(),
+                mcp_hostname: mcp_url.host_str().unwrap_or_default().to_owned(),
+                mcp_is_restricted: OnceCell::new_with(Some(true)),
+                verdicts: Mutex::new(HashMap::new()),
+            }),
+        }
+    }
 }
 
 impl Default for AddressGuard {

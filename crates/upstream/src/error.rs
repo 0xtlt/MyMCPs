@@ -64,6 +64,13 @@ pub enum UpstreamError {
     #[error(transparent)]
     Database(Arc<sqlx::Error>),
 
+    /// The proxy an MCP is set to use cannot be used now. The message is the
+    /// sentence an administrator reads, such as `Proxy "Home" is not
+    /// connected: it needs a Tailscale login`. Nothing was sent: a request
+    /// never goes direct instead.
+    #[error("{0}")]
+    Proxy(String),
+
     /// Anything else, with the message the Node app gave it.
     #[error("{0}")]
     Other(String),
@@ -83,6 +90,11 @@ impl UpstreamError {
             Self::Client(error) => error.is_unauthorized(),
             _ => false,
         }
+    }
+
+    /// The proxy of the MCP could not be used, see [`UpstreamError::Proxy`].
+    pub fn is_proxy_error(&self) -> bool {
+        matches!(self, Self::Proxy(_))
     }
 
     /// A discovered endpoint was refused by the address guard

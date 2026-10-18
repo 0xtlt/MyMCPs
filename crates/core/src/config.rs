@@ -72,7 +72,16 @@ pub struct Config {
     /// `NPM_SANDBOX`: whether npm MCPs run in the sandbox of the kernel. On
     /// unless it is `off`; a server that cannot enforce it then starts none.
     pub npm_sandbox: bool,
+    /// `TAILSCALED_BINARY`: path to the `tailscaled` binary that runs the
+    /// nodes of Tailscale proxies, when it is not the `tailscaled` of the `PATH`.
+    pub tailscaled_binary: Option<String>,
+    /// `TAILSCALE_MAX_PROXIES`: how many Tailscale proxies the instance runs,
+    /// all teams together. `0` turns them off. 20 unless set.
+    pub tailscale_max_proxies: usize,
 }
+
+/// How many Tailscale proxies an instance runs when `TAILSCALE_MAX_PROXIES` is not set.
+pub const DEFAULT_TAILSCALE_MAX_PROXIES: usize = 20;
 
 impl Config {
     /// Read the process environment, after a `.env` file in the working
@@ -117,6 +126,15 @@ impl Config {
             }
         };
 
+        let tailscale_max_proxies = match get("TAILSCALE_MAX_PROXIES") {
+            Some(value) => value.parse().map_err(|_| {
+                Error::Config(format!(
+                    "TAILSCALE_MAX_PROXIES must be a number of proxies, 0 or more, not \"{value}\""
+                ))
+            })?,
+            None => DEFAULT_TAILSCALE_MAX_PROXIES,
+        };
+
         let app_key = match get("APP_KEY") {
             Some(value) => value.to_string(),
             None => load_or_create_app_key(&data_dir)?,
@@ -141,6 +159,8 @@ impl Config {
             data_dir,
             node_binary: get("NODE_BINARY").map(str::to_string),
             npm_sandbox,
+            tailscaled_binary: get("TAILSCALED_BINARY").map(str::to_string),
+            tailscale_max_proxies,
         })
     }
 
@@ -158,6 +178,8 @@ impl Config {
             data_dir: data_dir.into(),
             node_binary: None,
             npm_sandbox: true,
+            tailscaled_binary: None,
+            tailscale_max_proxies: DEFAULT_TAILSCALE_MAX_PROXIES,
         }
     }
 
@@ -376,6 +398,57 @@ mod tests {
             );
         }
         assert!(Config::for_tests("tmp").npm_sandbox);
+    }
+
+    #[test]
+    fn limits_tailscale_proxies_and_finds_tailscaled() {
+        let config = |extra: &[(&str, &str)]| {
+            let mut pairs = vec![("NODE_ENV", "test"), ("APP_KEY", TEST_APP_KEY)];
+            pairs.extend_from_slice(extra);
+            Config::from_vars(&vars(&pairs))
+        };
+        let defaults = config(&[]).unwrap();
+        assert_eq!(defaults.tailscale_max_proxies, 20);
+        assert_eq!(defaults.tailscaled_binary, None);
+        assert_eq!(
+            config(&[("TAILSCALE_MAX_PROXIES", "")])
+                .unwrap()
+                .tailscale_max_proxies,
+            20
+        );
+        assert_eq!(
+            config(&[("TAILSCALE_MAX_PROXIES", " 7 ")])
+                .unwrap()
+                .tailscale_max_proxies,
+            7
+        );
+        // Zero turns the proxies off.
+        assert_eq!(
+            config(&[("TAILSCALE_MAX_PROXIES", "0")])
+                .unwrap()
+                .tailscale_max_proxies,
+            0
+        );
+        for unclear in ["many", "-1", "2.5", "off"] {
+            assert_eq!(
+                config(&[("TAILSCALE_MAX_PROXIES", unclear)])
+                    .unwrap_err()
+                    .to_string(),
+                format!(
+                    "TAILSCALE_MAX_PROXIES must be a number of proxies, 0 or more, not \"{unclear}\""
+                )
+            );
+        }
+        assert_eq!(
+            config(&[("TAILSCALED_BINARY", "/usr/local/bin/tailscaled")])
+                .unwrap()
+                .tailscaled_binary
+                .as_deref(),
+            Some("/usr/local/bin/tailscaled")
+        );
+        let tests = Config::for_tests("tmp");
+        assert_eq!(tests.tailscale_max_proxies, 20);
+        assert_eq!(tests.tailscaled_binary, None);
     }
 
     #[test]

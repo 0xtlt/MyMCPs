@@ -15,7 +15,9 @@ use mymcps_core::backup::{
 use mymcps_core::config::{TEST_APP_KEY, generate_app_key};
 use mymcps_core::crypto::{Encryption, hash_password};
 use mymcps_core::db::migrations::MIGRATIONS;
-use mymcps_core::models::{ApprovalRequest, InstanceSetting, Mcp, Passkey, RecoveryCode, User};
+use mymcps_core::models::{
+    ApprovalRequest, InstanceSetting, Mcp, Passkey, Proxy, ProxyKind, RecoveryCode, Team, User,
+};
 use mymcps_core::secrets::{EnvironmentInput, decrypt_environment, merge_environment};
 use mymcps_core::{Timestamp, VERSION};
 use mymcps_web::AppState;
@@ -602,6 +604,7 @@ async fn the_setup_screen_offers_to_import_a_backup() {
 struct Secrets {
     mcp_id: i64,
     approval_id: i64,
+    proxy_id: i64,
 }
 
 const SINGLE_SECRETS: [(&str, &str); 6] = [
@@ -620,6 +623,7 @@ const BUILTIN_SETTINGS: [(&str, &str); 2] = [
     ("login_customer_id", "123 456 7890"),
     ("account", "the account of the test"),
 ];
+const TAILSCALE_AUTH_KEY: &str = "tskey-auth-kTestBackup-0123456789";
 const ARGUMENTS: &str = r#"{"campaign":"Autumn","budget":25}"#;
 const SUMMARY: &str = "Raise the budget of Autumn to 25 a day";
 
@@ -661,9 +665,20 @@ async fn populate_secrets(app: &TestApp, admin: &User) -> Secrets {
         ..Default::default()
     };
     approval.insert(&*core.db).await.unwrap();
+    let mut proxy = Proxy {
+        team_id: Team::ROOT_ID,
+        name: "Home".into(),
+        kind: ProxyKind::Tailscale,
+        tailscale_hostname: "mymcps".into(),
+        tailscale_auth_key: core.encrypt_secret(Some(TAILSCALE_AUTH_KEY)),
+        created_by: Some(admin.id),
+        ..Default::default()
+    };
+    proxy.insert(&*core.db).await.unwrap();
     Secrets {
         mcp_id: mcp.id,
         approval_id: approval.id,
+        proxy_id: proxy.id,
     }
 }
 
@@ -719,6 +734,20 @@ async fn assert_secrets(app: &TestApp, secrets: &Secrets, stranger: &Encryption)
     );
     assert_eq!(stranger.decrypt(&approval.arguments), None);
     assert_eq!(stranger.decrypt(&approval.summary), None);
+
+    let proxy = Proxy::find(&*core.db, secrets.proxy_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        core.decrypt_secret(proxy.tailscale_auth_key.as_deref())
+            .as_deref(),
+        Some(TAILSCALE_AUTH_KEY)
+    );
+    assert_eq!(
+        stranger.decrypt(proxy.tailscale_auth_key.as_deref().unwrap()),
+        None
+    );
 }
 
 #[tokio::test]
@@ -911,7 +940,7 @@ async fn older_database(
 async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
     // Short of the last migrations: no session version on users, no tool
     // approvals or settings on MCPs, no approval requests, no teams, no
-    // sign-in protection.
+    // sign-in protection, no proxies.
     let older = MIGRATIONS
         .iter()
         .position(|migration| {
@@ -920,7 +949,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
                 .ends_with("add_session_version_to_users_table")
         })
         .unwrap();
-    assert_eq!(MIGRATIONS.len() - older, 5);
+    assert_eq!(MIGRATIONS.len() - older, 6);
     let old_key = generate_app_key();
     let old_encryption = Encryption::new(&old_key);
     let dir = tempfile::tempdir().unwrap();
