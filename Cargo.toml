@@ -22,6 +22,7 @@ mymcps-builtin = { path = "crates/builtin" }
 mymcps-strava = { path = "crates/strava" }
 mymcps-icloud-mail = { path = "crates/icloud-mail" }
 mymcps-google-ads = { path = "crates/google-ads" }
+mymcps-tailscale = { path = "crates/tailscale" }
 mymcps-node = { path = "crates/node" }
 mymcps-upstream = { path = "crates/upstream" }
 mymcps-gateway = { path = "crates/gateway" }
@@ -35,7 +36,7 @@ async-trait = "0.1"
 bytes = "1"
 http = "1"
 url = "2.5"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "gzip", "brotli", "deflate"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "gzip", "brotli", "deflate", "socks"] }
 
 # Data
 serde = { version = "1", features = ["derive"] }

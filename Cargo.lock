@@ -1626,6 +1626,7 @@ dependencies = [
  "mymcps-core",
  "mymcps-node",
  "mymcps-sandbox",
+ "mymcps-tailscale",
  "mymcps-upstream",
  "mymcps-web",
  "rpassword",
@@ -1882,6 +1883,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "mymcps-tailscale"
+version = "0.4.1"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "mymcps-net",
+ "rand",
+ "reqwest",
+ "rustix",
+ "serde",
+ "serde_json",
+ "subtle",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "mymcps-upstream"
 version = "0.4.1"
 dependencies = [
@@ -1943,6 +1971,7 @@ dependencies = [
  "mymcps-net",
  "mymcps-node",
  "mymcps-strava",
+ "mymcps-tailscale",
  "mymcps-upstream",
  "mymcps-vine",
  "mymcps-web",
