@@ -51,6 +51,9 @@ permissions.
   the host; a server that cannot enforce it starts no npm MCP and says why.
   Do not set `NPM_SANDBOX=off` on an instance other people use: it starts
   packages with every right of the server.
+- Give a Tailscale proxy a tagged, reusable auth key, and limit in the policy of
+  your tailnet what that tag reaches: an MCP that uses a proxy is trusted like
+  one at a private address. See [docs/proxies.md](docs/proxies.md).
 - Keep registration closed unless strangers may use the instance: it is off by
   default, and a super admin turns it on under
   **Settings → My Instance**. An account that registers gets a team of its own,
@@ -120,6 +123,20 @@ permissions.
   tag: not a path, a URL, a git repository or an alias. Environment variables
   that would configure Node.js or the loader instead of the package, such as
   `PATH`, `NODE_OPTIONS`, `SSLKEYLOGFILE` and `LD_PRELOAD`, are refused.
+- A Tailscale proxy is one userspace node per proxy, with `ShieldsUp`, so
+  nothing on the tailnet can connect into the instance. Its private key is in
+  the data directory, readable only by the user the server runs as. The
+  requests of an MCP reach it through a proxy inside the server process that
+  listens on the loopback interface and asks for a random secret held in
+  memory only: it is in no file, no environment variable and no log, so a
+  sandboxed npm MCP cannot use the tailnet. Only HTTP MCPs use proxies, and a
+  request fails when its proxy is not connected instead of going out directly.
+  Through a proxy, a destination that is not on the tailnet is reached only if
+  its address is public: a loopback, private, or link-local one is refused.
+- An MCP that uses a proxy is treated like an MCP at a private address, since
+  an operator chose that network for it: the OAuth endpoints it announces are
+  accepted whatever they resolve to. Only owners and admins of a team add
+  proxies and choose them.
 - A saved bearer token, header value, or environment value is not carried over
   when an MCP is pointed at another origin, transport, or npm package.
 - An MCP on a public address cannot send the instance to OAuth endpoints on
@@ -150,16 +167,16 @@ permissions.
 ## Build and release safeguards
 
 - The container image builds from base images pinned by digest: the Rust
-  toolchain that compiles the server, the Debian runtime, and the Node.js that
-  runs npm MCP packages. The build refuses a `Cargo.lock` that does
+  toolchain that compiles the server, the Debian runtime, the Node.js that
+  runs npm MCP packages, and the `tailscaled` of proxies. The build refuses a `Cargo.lock` that does
   not match the manifests. Dependabot proposes updates for the images, for
   Cargo dependencies, and for GitHub Actions.
 - The image runs the server as an unprivileged user, uid 1000, under an init
   that reaps the processes of npm MCPs. Before an image is published, a
   container of each architecture is started without capabilities and checked:
   it must answer `/health`, run as uid 1000, leave nothing in its data
-  directory that another user can read, and report that the sandbox of npm
-  MCPs is enforced.
+  directory that another user can read, report that the sandbox of npm
+  MCPs is enforced, and, on amd64, hold the `tailscaled` of the pinned version.
 - Release workflows compile and run dependency code with a read-only token.
   Only a separate job can push the tag and create the release, and it publishes
   the exact commit that was validated. That job restores no cache, and the only

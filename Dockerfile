@@ -5,6 +5,10 @@
 # sandbox of the kernel (crates/sandbox) that needs no privilege: the
 # container can drop every capability, as docker-compose.yml does.
 #
+# It also holds `tailscaled`, so proxies work out of the box (see
+# crates/tailscale): the server runs one per proxy, in userspace, which needs
+# no privilege either.
+#
 # Build:  docker build -t mymcps .
 # Run:    docker run --rm -p 3333:3333 \
 #           -e APP_URL=http://localhost:3333 \
@@ -17,6 +21,10 @@
 # built on the Debian release of the runtime stage, whose C++ library the
 # binary loads.
 FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS node
+
+# Official Tailscale image (multi-arch), for its `tailscaled` binary, which the
+# server runs for each proxy. Nothing else of its image comes along.
+FROM tailscale/tailscale:v1.104.1@sha256:87c55d6be56ad85b3d8bceca5f87f73de288c609131460dd1be1874c250cc41d AS tailscale
 
 # ---------------------------------------------------------------------------
 # Compile the server
@@ -80,14 +88,17 @@ RUN --mount=type=cache,id=mymcps-cargo-registry,target=/usr/local/cargo/registry
 # ---------------------------------------------------------------------------
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
 
-# NODE_VERSION must name the version in the node tag above; Dependabot only
-# edits the FROM line (crates/xtask/tests/container_image.rs checks it).
+# NODE_VERSION and TAILSCALE_VERSION must name the versions in the node and
+# tailscale tags above; Dependabot only edits the FROM lines
+# (crates/xtask/tests/container_image.rs checks them).
 ENV APP_ENV=production \
   HOST=0.0.0.0 \
   PORT=3333 \
   DATA_DIR=/app/tmp \
   NODE_BINARY=/usr/local/bin/node \
-  NODE_VERSION=24.21.0
+  NODE_VERSION=24.21.0 \
+  TAILSCALED_BINARY=/usr/local/bin/tailscaled \
+  TAILSCALE_VERSION=1.104.1
 
 # ca-certificates: the server verifies upstream MCPs and OAuth providers
 # against the system trust store. dumb-init: see ENTRYPOINT.
@@ -104,9 +115,11 @@ RUN apt-get update \
   && install -d -o 1000 -g 1000 -m 0700 /app/tmp /app/tmp/mcp-sandboxes /app/tmp/mcp-packages
 
 # The binary, and the npm it runs to install a package: nothing else of the
-# image, which also holds yarn and corepack.
+# image, which also holds yarn and corepack. And the daemon of the proxies:
+# not the `tailscale` command, nor the other binaries of its image.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscaled
 COPY --from=build /out/mymcps /usr/local/bin/mymcps
 
 WORKDIR /app

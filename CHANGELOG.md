@@ -2,6 +2,21 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-18
+
+### Added
+
+- Added **Proxies**, for owners and admins of a team: a proxy is a Tailscale node that MyMCPs runs, so an HTTP MCP that only listens on a tailnet can be reached from an instance that is not on it. Add one with a name, a node name, and an optional auth key; the page shows its status (**Connected**, **Needs login**, **Waiting for approval**, **Starting**, **Error**) and a login link when there is no key. A team has at most 5. See `docs/proxies.md`, which walks through T3 Code.
+- Added a **Network** select to the dialog of HTTP MCPs, shown when the team has a proxy: **Direct**, or one of the proxies. The calls of the MCP and its OAuth sign-in go through it, and fail with a clear message while the proxy is not connected instead of going out directly.
+- Added `TAILSCALED_BINARY`, the path of the `tailscaled` binary that runs proxies when it is not the `tailscaled` of the `PATH`, and `TAILSCALE_MAX_PROXIES`, how many proxies an instance runs (20 to begin with; `0` turns them off).
+- The container image now holds `tailscaled` 1.104.1, and proxies are in backups with their encrypted auth keys. The state of their nodes is not: after an import a node logs in again with its saved key, or shows a login link.
+
+### Security
+
+- A proxy's node runs in userspace with no privilege and refuses every incoming connection from the tailnet (`ShieldsUp`).
+- The proxy inside the server asks for a random secret held in memory only, so a sandboxed npm MCP cannot use a tailnet. Only HTTP MCPs use proxies.
+- Through a proxy, an address that is not on the tailnet is reached only if it is public. An MCP that uses a proxy is treated like one at a private address for its OAuth endpoints.
+
 ## 2026-10-12
 
 ### Added

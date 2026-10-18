@@ -7,6 +7,7 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 - Connects HTTP and npm-based MCP servers.
 - Includes built-in MCPs for services with no MCP a self-hosted gateway can use: Strava, iCloud Mail, and Google Ads.
 - Holds the tool calls you choose until a person approves them, for any MCP.
+- Reaches HTTP MCPs on a private network, through Tailscale proxies that it runs for your team.
 - Supports bearer tokens, custom headers, and OAuth.
 - Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
 - Exposes every allowed upstream through `GET` and `POST /mcp`.
@@ -29,14 +30,14 @@ Accounts, teams, and permissions work as they do in Coolify, with one difference
 
 ## Run locally
 
-You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Node.js](https://nodejs.org/) with its npm if you want to run npm-based MCPs.
+You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Node.js](https://nodejs.org/) with its npm if you want to run npm-based MCPs. [`tailscaled`](https://tailscale.com/kb/1278/tailscaled) is only needed for [proxies](#proxies).
 
 ```bash
 cp .env.example .env
 cargo run --bin mymcps
 ```
 
-npm-based MCPs run in a sandbox that needs Linux: see [npm MCPs and their sandbox](#npm-mcps-and-their-sandbox). On macOS or Windows, set `NPM_SANDBOX=off` in `.env` to run them without one while you develop.
+npm-based MCPs run in a sandbox that needs Linux: see [npm MCPs and their sandbox](#npm-mcps-and-their-sandbox). On macOS or Windows, set `NPM_SANDBOX=off` in `.env` to run them without one while you develop. Proxies use the `tailscaled` of your `PATH`, or the binary `TAILSCALED_BINARY` names, the way npm MCPs use `NODE_BINARY`.
 
 The server creates its key and its SQLite database under `tmp/` and applies database migrations when it starts. Open [http://localhost:3333](http://localhost:3333) and create the first account, which owns the instance.
 
@@ -195,6 +196,12 @@ Every sandboxed process reads the directories of the system, such as `/usr`. Kee
 The network stays open: a package reaches whatever the server reaches, the server itself and its private network included. Restrict that at the level of the network when you let strangers add packages.
 
 The sandbox needs no privilege and works in a container without capabilities. It needs Linux 5.13 or later with Landlock enabled, which the kernels of current distributions are (Ubuntu 22.04, Debian 12 and later). The server says what it found when it starts: `npm MCPs run in a sandbox`, with the version of Landlock in use, or `npm MCPs cannot start` and the reason. A server that cannot sandbox a package does not start it. `NPM_SANDBOX=off` starts npm MCPs without a sandbox, with every right of the server: that is for development on another system than Linux, not for an instance other people use.
+
+## Proxies
+
+An MCP that only listens on a private network, such as a [Tailscale](https://tailscale.com/) tailnet, cannot be reached from an instance in a container on a server. A proxy fixes that: under **Proxies**, an owner or admin of a team adds a Tailscale node that MyMCPs runs, and chooses it in the **Network** select of an HTTP MCP. The calls of that MCP and its OAuth sign-in then go through the tailnet.
+
+Each proxy is one `tailscaled` process in userspace, so the container needs no privilege and no `/dev/net/tun`. The node refuses every incoming connection, and its state lives under `DATA_DIR/tailscale`. The image holds `tailscaled`; from source, `TAILSCALED_BINARY` names it, and `TAILSCALE_MAX_PROXIES` limits how many an instance runs (20 to begin with, `0` turns proxies off). A team has at most 5. npm and built-in MCPs do not use proxies. See [docs/proxies.md](docs/proxies.md) for the auth key to create, the policy to write, and a walkthrough with [T3 Code](https://github.com/pingdotgg/t3code).
 
 ## Stack
 

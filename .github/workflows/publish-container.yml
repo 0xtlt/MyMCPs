@@ -167,14 +167,16 @@ jobs:
               fi
             fi
 
-            # The runtime of package MCPs is not built here; the pinned binary
-            # is only started on the runner's own architecture. So is their
-            # sandbox, which an emulator does not pass on to the kernel: the
-            # server says at its start what the kernel enforces, here without
-            # a capability.
+            # The runtime of package MCPs and the daemon of the proxies are not
+            # built here; the pinned binaries are only started on the runner's
+            # own architecture. So is the sandbox of package MCPs, which an
+            # emulator does not pass on to the kernel: the server says at its
+            # start what the kernel enforces, here without a capability.
             if [[ "$arch" == "amd64" ]]; then
               docker exec "$container_name" sh -eu -c '"$NODE_BINARY" --version | grep -q "^v$NODE_VERSION$"' \
                 || fail "The image does not hold the runtime of package MCPs at NODE_VERSION."
+              docker exec "$container_name" sh -eu -c '"$TAILSCALED_BINARY" --version | head -n 1 | grep -q "^$TAILSCALE_VERSION$"' \
+                || fail "The image does not hold the daemon of proxies at TAILSCALE_VERSION."
               docker logs "$container_name" 2>&1 | grep -q '"enforced":"Landlock ABI ' \
                 || fail "The server does not sandbox package MCPs in a container without capabilities."
             fi

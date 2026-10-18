@@ -99,7 +99,7 @@ fn every_base_image_is_pinned_by_tag_and_digest_in_its_from_line() {
     let dockerfile = read_repository_file("Dockerfile");
     let images = base_images(&dockerfile);
 
-    assert_eq!(images.len(), 3, "{images:?}");
+    assert_eq!(images.len(), 4, "{images:?}");
     for image in images {
         // Dependabot can only update a tag and digest it reads in the FROM
         // line itself, so neither may come from an ARG.
@@ -108,6 +108,9 @@ fn every_base_image_is_pinned_by_tag_and_digest_in_its_from_line() {
 
     assert!(is_pinned(
         "node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66"
+    ));
+    assert!(is_pinned(
+        "tailscale/tailscale:v1.104.1@sha256:87c55d6be56ad85b3d8bceca5f87f73de288c609131460dd1be1874c250cc41d"
     ));
     for image in [
         "debian:trixie-slim",
@@ -278,6 +281,56 @@ fn node_version_matches_the_pinned_node_image() {
 }
 
 #[test]
+fn tailscale_version_matches_the_pinned_tailscale_image() {
+    let dockerfile = read_repository_file("Dockerfile");
+
+    let image = dockerfile
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("FROM tailscale/tailscale:")?
+                .strip_suffix(" AS tailscale")
+        })
+        .expect("a tailscale/tailscale:v<version> stage called tailscale");
+    assert!(is_pinned(&format!("tailscale/tailscale:{image}")));
+    let tag = &image[..image.find('@').unwrap()];
+    let version = tag
+        .strip_prefix('v')
+        .expect("an exact version tag such as v1.104.1");
+    assert!(
+        version.split('.').count() == 3
+            && version
+                .split('.')
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())),
+        "{version}"
+    );
+    assert_eq!(tag_of(&dockerfile, "tailscale/tailscale"), tag);
+
+    let variable = dockerfile
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("TAILSCALE_VERSION="))
+        .and_then(|value| value.split_whitespace().next())
+        .expect("the runtime stage to set TAILSCALE_VERSION");
+
+    assert_eq!(
+        variable, version,
+        "TAILSCALE_VERSION must be updated together with the tailscale image tag"
+    );
+
+    // And the daemon is where TAILSCALED_BINARY says, alone: the `tailscale`
+    // command and the other binaries of its image stay behind. The server
+    // talks to the daemon over its socket.
+    let runtime = runtime_stage(&dockerfile);
+    assert!(runtime.starts_with("FROM debian:trixie-slim@sha256:"));
+    assert!(
+        runtime.contains(
+            "\nCOPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscaled\n"
+        )
+    );
+    assert!(runtime.contains("  TAILSCALED_BINARY=/usr/local/bin/tailscaled \\\n"));
+    assert_eq!(runtime.matches("--from=tailscale").count(), 1);
+}
+
+#[test]
 fn dependabot_updates_the_dockerfile_base_images_cargo_and_the_actions() {
     let dependabot = read_repository_file(".github/dependabot.yml");
 
@@ -418,9 +471,11 @@ fn the_deployment_files_keep_the_container_restricted_and_the_checks_of_earlier_
     assert!(compose.contains("      TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}\n"));
     assert!(compose.contains("      APP_KEY: ${APP_KEY:-}\n"));
     assert!(compose.contains("      APP_URL: ${APP_URL:-}\n"));
-    // Where Node.js is, and whether npm MCPs are sandboxed, is the image's to say.
+    // Where Node.js and tailscaled are, and whether npm MCPs are sandboxed, is
+    // the image's to say.
     assert!(!compose.contains("NODE_BINARY"));
     assert!(!compose.contains("NPM_SANDBOX"));
+    assert!(!compose.contains("TAILSCALED_BINARY"));
 
     let local = read_repository_file("docker-compose.local.yml");
     assert!(local.contains("      - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-3333}:3333'\n"));

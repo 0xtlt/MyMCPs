@@ -7,9 +7,10 @@ A backup is one file that holds everything an instance stores, encrypted with a 
 - Users, with their password hashes, their teams and their roles, and pending invites. Their sign-in protection comes with them: the secret of their authenticator app, their recovery codes, and their passkeys.
 - The MCPs of every team, with their credentials: bearer tokens, header values, OAuth clients and connections, built-in MCP sign-ins and settings, and the environment of npm MCPs.
 - Access tokens and the OAuth connections of AI clients. Agents keep working with the tokens they already have.
+- The proxies of every team, with their encrypted Tailscale auth keys.
 - Tool approval choices and requests, call logs, and the instance settings.
 
-It does not hold the files MyMCPs can make again: the installed packages and the sandboxes of npm MCPs, and files waiting in `builtin-uploads`. It does not hold your environment variables either: set `APP_URL`, `TRUST_PROXY` and the others on the new instance yourself.
+It does not hold the files MyMCPs can make again: the installed packages and the sandboxes of npm MCPs, and files waiting in `builtin-uploads`. It does not hold the state of the Tailscale nodes of proxies, kept in `tailscale` in the data directory. It does not hold your environment variables either: set `APP_URL`, `TRUST_PROXY` and the others on the new instance yourself.
 
 ## Export a backup
 
@@ -36,6 +37,7 @@ On the new instance, also check:
 
 - **`APP_URL`**. If the address of the instance changed, the redirect URIs of OAuth clients you registered with providers (Strava, Google Ads, upstream OAuth MCPs) must change too, and AI clients must be given the new MCP URL.
 - **npm MCPs** are downloaded again the first time they run.
+- **Proxies** start again by themselves, as new devices of the tailnet: a node logs in with its saved auth key if it can still be used, which a reusable key can, or shows **Needs login** with a link to follow. Remove the devices of the old instance in the Tailscale admin console. See [docs/proxies.md](proxies.md#backups).
 
 To return an instance that is already set up to a backup, start from an empty data directory (a new volume), then import.
 
