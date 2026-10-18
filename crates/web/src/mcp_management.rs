@@ -11,6 +11,7 @@ use mymcps_core::redaction::{sanitize_diagnostic, sanitize_mcp_diagnostic};
 use mymcps_gateway::mcp_management::{
     ManagementActor, ManagementError, McpFields, McpRegistryManager,
 };
+use mymcps_net::parse_http_url;
 use mymcps_upstream::Upstream;
 use mymcps_vine::{Error as VineError, ValidationError};
 use serde_json::{Map, Value, json};
@@ -23,6 +24,14 @@ use crate::validators::mcp::{CREATE_MCP_VALIDATOR, McpPayload, UPDATE_MCP_VALIDA
 use crate::views::mcps::McpView;
 
 const BUILTIN_REFUSAL: &str = "Built-in MCPs cannot be created or changed with this tool: configure built-in MCPs from the MyMCPs page.";
+
+/// What an agent is told when it asks for an npm MCP to be added or changed.
+/// Running a package is running code on the server, and nobody approves what
+/// an agent does with these tools: a person does it on the MCPs page.
+const NPM_REFUSAL: &str = "Adding an npm MCP, or changing the package, version, arguments or environment variables of one, runs code on the server, so it is not done through these tools. Ask the user to do it on the MCPs page of MyMCPs. You can still list, rename, enable, disable, test and delete an npm MCP.";
+
+/// What an agent is told when the address of an MCP is one it may not set.
+const PRIVATE_URL_REFUSAL: &str = "Invalid url: the host is a loopback, private or link-local address, or a name that resolves to one. Ask the user to add an MCP on such an address on the MCPs page of MyMCPs.";
 
 /// The MCPs of a team, managed by the agent of an access token.
 #[derive(Debug, Clone)]
@@ -82,30 +91,62 @@ fn refusal_of(error: &ValidationError) -> ManagementError {
     ))
 }
 
-/// The URL of an MCP as an agent may read it: no credentials, and no value
-/// in the query, where API keys are often put.
+/// The URL of an MCP as an agent may read it: its origin, and a mark when
+/// there is more. Credentials, the values of the query and the path can all
+/// be secrets: some providers put the key of an account in the path.
 fn public_url(url: &str) -> String {
-    let Ok(mut url) = Url::parse(url) else {
+    let Ok(url) = Url::parse(url) else {
         return "(invalid URL)".to_owned();
     };
-    // Only fails for a URL that cannot hold credentials, which has none.
-    let _ = url.set_username("");
-    let _ = url.set_password(None);
-    url.set_fragment(None);
-    let names: Vec<String> = url
-        .query_pairs()
-        .map(|(name, _)| name.into_owned())
-        .collect();
-    if names.is_empty() {
-        url.set_query(None);
+    let origin = url.origin().ascii_serialization();
+    let has_more = url.path() != "/" || url.query().is_some();
+    if has_more {
+        format!("{origin}/…")
     } else {
-        url.set_query(None);
-        let mut pairs = url.query_pairs_mut();
-        for name in &names {
-            pairs.append_pair(name, "***");
-        }
+        origin
     }
-    url.to_string()
+}
+
+/// Whether `fields` names a setting of an npm MCP.
+fn names_npm_setting(fields: &McpFields) -> bool {
+    fields.npm_package.is_some()
+        || fields.npm_version.is_some()
+        || fields.npm_args.is_some()
+        || fields.npm_env.is_some()
+}
+
+/// Whether `fields` would make the npm MCP `saved` run anything else than it
+/// runs now: another package, version, arguments, or environment. An
+/// environment can point the package at an address of the agent's choosing,
+/// where the credentials the package holds would be sent.
+fn changes_what_npm_runs(saved: &Mcp, fields: &McpFields) -> bool {
+    let trimmed = |value: &Option<String>| value.as_deref().map(str::trim).map(str::to_owned);
+    if trimmed(&fields.npm_package)
+        .is_some_and(|package| Some(&package) != saved.npm_package.as_ref())
+    {
+        return true;
+    }
+    if trimmed(&fields.npm_version)
+        .is_some_and(|version| version != saved.npm_version.clone().unwrap_or_default())
+    {
+        return true;
+    }
+    if fields.npm_args.as_ref().is_some_and(|args| {
+        args.iter()
+            .map(|arg| arg.trim().to_owned())
+            .collect::<Vec<_>>()
+            != saved.npm_args_list()
+    }) {
+        return true;
+    }
+    fields.npm_env.as_ref().is_some_and(|rows| {
+        let mut given: Vec<&str> = rows.iter().map(|row| row.name.trim()).collect();
+        given.sort_unstable();
+        let mut kept = saved.npm_env_names();
+        kept.sort_unstable();
+        rows.iter().any(|row| row.value.is_some())
+            || given != kept.iter().map(String::as_str).collect::<Vec<_>>()
+    })
 }
 
 /// Whether saving `fields` leaves the MCP on another origin or package than
@@ -217,7 +258,10 @@ fn validated(
     match validator.validate_as::<McpPayload>(&Value::Object(input.clone())) {
         Ok(payload) => Ok(payload),
         Err(VineError::Validation(error)) => Err(refusal_of(&error)),
-        Err(VineError::Output(error)) => Err(failed(error)),
+        // A deserialization error quotes the value it could not read.
+        Err(VineError::Output(_)) => Err(ManagementError::Failed(
+            "the validated MCP could not be read".to_owned(),
+        )),
     }
 }
 
@@ -229,6 +273,35 @@ fn assign_refusal(error: AssignError) -> ManagementError {
 }
 
 impl WebMcpRegistry {
+    /// Refuse an address the agent may not set: where an MCP is reached from
+    /// the server is the person's to decide, not an agent's, since the
+    /// answer (or the error) of that address comes back to the agent. Checked
+    /// when an address is set, with the guard that keeps the endpoints named
+    /// by a remote document out of the network of the instance. A name that
+    /// resolves elsewhere later is not caught here.
+    async fn ensure_public_url(&self, payload: &McpPayload) -> Result<(), ManagementError> {
+        if payload.transport != McpTransport::Http {
+            return Ok(());
+        }
+        let Some(url) = payload
+            .http_url
+            .as_deref()
+            .and_then(|url| parse_http_url(url, "MCP URL").ok())
+        else {
+            return Ok(());
+        };
+        let host = url.host_str().unwrap_or_default();
+        if self
+            .upstream
+            .address_guard()
+            .resolves_to_restricted_address(host)
+            .await
+        {
+            return Err(refused(PRIVATE_URL_REFUSAL));
+        }
+        Ok(())
+    }
+
     async fn find(&self, actor: &ManagementActor, slug: &str) -> Result<Mcp, ManagementError> {
         let mcp: Option<Mcp> =
             sqlx::query_as("select * from `mcps` where `team_id` = ? and `slug` = ? limit 1")
@@ -262,7 +335,8 @@ impl WebMcpRegistry {
             "builtin_key": mcp.builtin_key,
             "npm_package": mcp.npm_package,
             "npm_version": mcp.npm_version,
-            "npm_args": mcp.npm_args_list(),
+            // Arguments are where people put a key when they should not.
+            "npm_args_count": mcp.npm_args_list().len(),
             "npm_env": view.npm_env.iter().map(|name| json!({ "name": name, "value_set": true })).collect::<Vec<_>>(),
             "auth_type": (!builtin).then(|| mcp.auth_type.as_str()),
             "bearer_token_set": view.has_auth_bearer,
@@ -353,8 +427,12 @@ impl McpRegistryManager for WebMcpRegistry {
         actor: &ManagementActor,
         fields: McpFields,
     ) -> Result<Value, ManagementError> {
+        if fields.transport == Some(McpTransport::Npm) || names_npm_setting(&fields) {
+            return Err(refused(NPM_REFUSAL));
+        }
         let input = form_input(None, &fields);
         let payload = validated(&CREATE_MCP_VALIDATOR, &input)?;
+        self.ensure_public_url(&payload).await?;
         let mut mcp = Mcp {
             status: McpStatus::Draft,
             created_by: actor.user_id,
@@ -386,8 +464,24 @@ impl McpRegistryManager for WebMcpRegistry {
             return Err(refused(BUILTIN_REFUSAL));
         }
 
+        let runs_a_package = fields.transport == Some(McpTransport::Npm)
+            || if saved.transport == McpTransport::Npm {
+                changes_what_npm_runs(&saved, &fields)
+            } else {
+                names_npm_setting(&fields)
+            };
+        if runs_a_package {
+            return Err(refused(NPM_REFUSAL));
+        }
+
         let input = form_input(Some(&saved), &fields);
         let payload = validated(&UPDATE_MCP_VALIDATOR, &input)?;
+        // The address of an MCP that is left as it is was set by a person.
+        if payload.http_url.as_deref().map(str::trim) != saved.http_url.as_deref().map(str::trim)
+            || saved.transport != McpTransport::Http
+        {
+            self.ensure_public_url(&payload).await?;
+        }
         let previous_npm_package = saved
             .npm_package
             .clone()
@@ -501,16 +595,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hides_credentials_and_query_values_of_an_url() {
-        assert_eq!(
-            public_url("https://user:pass@mcp.example/mcp?key=abc&x=1#top"),
-            "https://mcp.example/mcp?key=***&x=***"
-        );
-        assert_eq!(
-            public_url("https://mcp.example/mcp"),
-            "https://mcp.example/mcp"
-        );
-        assert_eq!(public_url("not a url"), "(invalid URL)");
+    fn shows_the_origin_of_an_url_and_nothing_a_key_can_hide_in() {
+        for (url, shown) in [
+            (
+                "https://user:pass@mcp.example/mcp?key=abc&x=1#top",
+                "https://mcp.example/…",
+            ),
+            (
+                "https://mcp.example/s/AbCd1234Secret/mcp",
+                "https://mcp.example/…",
+            ),
+            ("https://mcp.example/?key=abc", "https://mcp.example/…"),
+            ("https://mcp.example:8443/mcp", "https://mcp.example:8443/…"),
+            ("https://mcp.example/", "https://mcp.example"),
+            (
+                "https://us%65r:p%40ss@[2001:db8::1]:444/a",
+                "https://[2001:db8::1]:444/…",
+            ),
+            ("http://MCP.example:80/mcp", "http://mcp.example/…"),
+            ("not a url", "(invalid URL)"),
+        ] {
+            assert_eq!(public_url(url), shown, "{url}");
+        }
     }
 
     #[test]
