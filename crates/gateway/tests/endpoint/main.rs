@@ -10,5 +10,6 @@ mod gateway_auth;
 mod gateway_lazy;
 mod hardening_gateway_mcp;
 mod mcp_call_logging;
+mod mcp_management;
 mod tool_approvals;
 mod vine_gateway_input;

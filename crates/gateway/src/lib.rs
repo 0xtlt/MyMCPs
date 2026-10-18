@@ -11,6 +11,8 @@
 //! - [`oauth`]: the OAuth server, as [`Gateway::oauth`].
 //! - [`bearer`]: [`Gateway::authenticate_bearer`], which lets a request in.
 //! - [`lazy_tools`]: the three tools of the lazy tool mode.
+//! - [`mcp_management`]: the tools that manage the MCP registry, for the
+//!   tokens a person allowed to.
 //! - [`call_log`]: the call log, as [`Gateway::call_log`].
 //! - [`validators`]: the Vine schemas the above read their input with.
 //!
@@ -71,6 +73,7 @@ pub mod bearer;
 pub mod call_log;
 pub mod endpoint;
 pub mod lazy_tools;
+pub mod mcp_management;
 pub mod oauth;
 pub mod rate_limiter;
 pub mod validators;

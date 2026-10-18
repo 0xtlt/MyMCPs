@@ -8,6 +8,7 @@ use mymcps_core::limiter::Limiter;
 use mymcps_gateway::{Gateway, McpGateway};
 use mymcps_upstream::Upstream;
 
+use crate::mcp_management::WebMcpRegistry;
 use crate::routes::backup::BackupWork;
 use crate::routes::builtin_files::FileTraffic;
 
@@ -109,7 +110,10 @@ impl AppState {
         let gateway = Arc::new(Gateway::new(core.clone()));
         // Built from the same two values: a second gateway would count the
         // requests of a token and queue its call logs on its own.
-        let mcp_gateway = Arc::new(McpGateway::new(gateway.clone(), upstream.clone()));
+        let mcp_gateway = Arc::new(
+            McpGateway::new(gateway.clone(), upstream.clone())
+                .with_mcp_management(Arc::new(WebMcpRegistry::new(upstream.clone()))),
+        );
         Self {
             core,
             limiters,
