@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use http::header::{CONTENT_TYPE, RETRY_AFTER, WWW_AUTHENTICATE};
 use http::{HeaderMap, HeaderValue, Method, Response, StatusCode};
+use mymcps_core::limiter::{Limiter, LimiterError};
 use mymcps_core::models::{
     AccessToken, CallErrorCategory, CallOutcome, GatewayToolMode, InstanceSetting, Mcp,
 };
@@ -67,6 +68,8 @@ pub struct McpGateway {
     /// What the tools that manage the MCP registry do. Without one, the
     /// gateway has no such tools, whatever a token is allowed.
     management: Option<SharedManager>,
+    /// How often one access token may call the tools of the registry.
+    registry_limiter: Limiter,
 }
 
 impl McpGateway {
@@ -77,6 +80,7 @@ impl McpGateway {
             gateway,
             upstream,
             management: None,
+            registry_limiter: crate::rate_limiter::registry_rate_limiter(),
         }
     }
 
@@ -142,6 +146,7 @@ impl McpGateway {
             caller_ip: request.caller_ip,
             tool_mode,
             management: self.management.clone(),
+            registry_limiter: self.registry_limiter.clone(),
         });
 
         self.prune_expired();
@@ -241,6 +246,7 @@ struct Session {
     caller_ip: Option<String>,
     tool_mode: GatewayToolMode,
     management: Option<SharedManager>,
+    registry_limiter: Limiter,
 }
 
 /// A tool call the token may make, on its way to its MCP.
@@ -587,6 +593,23 @@ impl Session {
                 "MCP registry tool refused"
             );
             return error_result(permission.refusal());
+        }
+        match self
+            .registry_limiter
+            .consume(&format!("mcp-registry:{}", self.access_token.id))
+            .await
+        {
+            Ok(_) => {}
+            Err(LimiterError::TooManyRequests(response)) => {
+                return error_result(&format!(
+                    "Too many calls to the MCP registry tools from this access token. Try again in {} seconds.",
+                    response.available_in
+                ));
+            }
+            Err(LimiterError::Store(error)) => {
+                tracing::warn!(%error, "Could not count a call to the MCP registry tools");
+                return error_result("Could not check the allowance of this access token");
+            }
         }
         let actor = ManagementActor {
             user_id: self.access_token.created_by,
