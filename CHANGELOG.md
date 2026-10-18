@@ -12,6 +12,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Security
 
+- Updated rustls to 0.23.46 for RUSTSEC-2026-0346, RUSTSEC-2026-0347, RUSTSEC-2026-0348, and RUSTSEC-2026-0349, which affect the TLS connections the server makes to MCPs and OAuth providers.
 - The tools that manage MCPs never add an npm MCP, nor change what one runs: its package, version, arguments or environment variables. Running a package is running code on the server, and these tools wait for no approval, so the agent is told to ask the user to do it on the **MCPs** page. An agent can still list, rename, enable, disable, test, and delete an npm MCP.
 - The tools refuse an MCP address on a loopback, private or link-local network (such as `169.254.169.254`, the metadata service of the clouds), or a name that resolves to one: the answer of that address would come back to the agent. An MCP already on such an address, set on the **MCPs** page, can still be tested and renamed by the agent. A person adds one on the page.
 - The tools show the URL of an MCP as its origin only, since the path of an URL can hold the key of an account, and the number of arguments of an npm MCP instead of its arguments.
