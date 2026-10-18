@@ -136,6 +136,9 @@ pub struct StreamableHttpClientTransportOptions {
 struct StreamOptions {
     /// `Last-Event-ID` of a stream that is being resumed.
     resumption_token: Option<String>,
+    /// The request whose answer the stream carries, so that a resumed
+    /// stream knows what its end leaves unanswered.
+    request_id: Option<Value>,
 }
 
 struct Inner {
@@ -422,7 +425,11 @@ impl Inner {
         let content_type = header_value(&response.headers, CONTENT_TYPE.as_str());
         match media_type_essence(content_type.as_deref()).as_deref() {
             Some("text/event-stream") => {
-                self.read_stream(response.body, false);
+                let request_id = match &message {
+                    JsonRpcMessage::Request { id, .. } => Some(id.clone()),
+                    _ => None,
+                };
+                self.read_stream(response.body, false, request_id);
                 Ok(())
             }
             Some("application/json") => {
@@ -453,12 +460,13 @@ impl Inner {
         }
     }
 
-    /// Open the stream of server-initiated messages with a GET. A server that
-    /// does not offer one answers 405, which is not an error.
+    /// Open the stream of server-initiated messages with a GET, or resume the
+    /// stream of a request. A server that does not offer one answers 405,
+    /// which is not an error: the result then says that no stream is being read.
     fn open_stream(
         self: Arc<Self>,
         options: StreamOptions,
-    ) -> BoxFuture<'static, Result<(), TransportError>> {
+    ) -> BoxFuture<'static, Result<bool, TransportError>> {
         Box::pin(async move {
             let result = async {
                 let mut headers = self.common_headers();
@@ -473,15 +481,16 @@ impl Inner {
                     let status = response.status;
                     tokio::spawn(finish_quietly(response.body));
                     if status == StatusCode::METHOD_NOT_ALLOWED {
-                        return Ok(());
+                        return Ok(false);
                     }
                     return Err(TransportError::StreamableHttp {
                         code: i32::from(status.as_u16()),
                         message: format!("Failed to open SSE stream: {}", reason(status)),
                     });
                 }
-                self.clone().read_stream(response.body, true);
-                Ok(())
+                self.clone()
+                    .read_stream(response.body, true, options.request_id);
+                Ok(true)
             }
             .await;
             self.report_failure(&result);
@@ -491,9 +500,16 @@ impl Inner {
 
     /// Read an event stream in the background, handing over each message as it completes.
     ///
-    /// A request whose stream ends without its answer is not failed here: like
-    /// the SDK, the client learns of it when the request times out.
-    fn read_stream(self: Arc<Self>, mut body: HttpBody, reconnectable: bool) {
+    /// A stream that carries a request (`request_id`) and ends without its
+    /// answer is resumed when it can be, and when it cannot, or the server
+    /// does not take it up again, the answer is reported lost. The SDK leaves
+    /// that request to its timeout, which is now too long to wait for.
+    fn read_stream(
+        self: Arc<Self>,
+        mut body: HttpBody,
+        reconnectable: bool,
+        request_id: Option<Value>,
+    ) {
         tokio::spawn(async move {
             let mut parser = SseParser::new();
             let mut last_event_id = None;
@@ -550,7 +566,12 @@ impl Inner {
                         });
                     match message {
                         Ok(message) => {
-                            if matches!(message, JsonRpcMessage::Result { .. }) {
+                            // An error answers the request as well.
+                            if matches!(
+                                message,
+                                JsonRpcMessage::Result { .. }
+                                    | JsonRpcMessage::Error { id: Some(_), .. }
+                            ) {
                                 received_response = true;
                             }
                             if let Some(handler) = self.handler() {
@@ -562,17 +583,35 @@ impl Inner {
                 }
             }
 
+            // A stream that delivered its answer is complete, and a closed
+            // transport has failed what it carried.
+            if received_response || self.aborted.is_cancelled() {
+                return;
+            }
             // The server may end a stream it expects the client to resume.
-            // A stream that delivered its answer is complete.
-            if resumable && !received_response && !self.aborted.is_cancelled() {
+            if resumable {
                 self.schedule_reconnection(
                     StreamOptions {
                         resumption_token: last_event_id,
+                        request_id,
                     },
                     0,
                 );
+            } else {
+                self.answer_lost(request_id.as_ref());
             }
         });
+    }
+
+    /// Tell the handler that the answer to a request will not come. The
+    /// standalone stream carries no request.
+    fn answer_lost(&self, request_id: Option<&Value>) {
+        if let Some(id) = request_id
+            && !self.aborted.is_cancelled()
+            && let Some(handler) = self.handler()
+        {
+            handler.on_answer_lost(id);
+        }
     }
 
     fn schedule_reconnection(self: Arc<Self>, options: StreamOptions, attempt: u32) {
@@ -582,6 +621,7 @@ impl Inner {
                 "Maximum reconnection attempts ({}) exceeded.",
                 reconnection.max_retries
             )));
+            self.answer_lost(options.request_id.as_ref());
             return;
         }
         let server_retry = *lock(&self.server_retry);
@@ -603,11 +643,16 @@ impl Inner {
                 () = self.aborted.cancelled() => return,
                 () = tokio::time::sleep(delay) => {}
             }
-            if let Err(error) = self.clone().open_stream(options.clone()).await {
-                self.report(&TransportError::Notice(format!(
-                    "Failed to reconnect SSE stream: {error}"
-                )));
-                self.schedule_reconnection(options, attempt + 1);
+            match self.clone().open_stream(options.clone()).await {
+                Ok(true) => {}
+                // The server will not take the stream up again.
+                Ok(false) => self.answer_lost(options.request_id.as_ref()),
+                Err(error) => {
+                    self.report(&TransportError::Notice(format!(
+                        "Failed to reconnect SSE stream: {error}"
+                    )));
+                    self.schedule_reconnection(options, attempt + 1);
+                }
             }
         });
     }

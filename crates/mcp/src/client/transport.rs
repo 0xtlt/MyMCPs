@@ -4,6 +4,7 @@ use std::io;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
+use serde_json::Value;
 
 use crate::types::JsonRpcMessage;
 use crate::zod::ValidationError;
@@ -20,6 +21,13 @@ pub trait TransportHandler: Send + Sync + 'static {
 
     /// The connection is gone. May be called more than once.
     fn on_close(&self);
+
+    /// The answer to this request will not come: the stream that was to carry
+    /// it ended and could not be resumed. The connection itself is still up,
+    /// so the SDK has nothing to say here and its request waits for its
+    /// timeout; a transport that knows better says so, to fail the request
+    /// at once. An id that is unknown or already answered is ignored.
+    fn on_answer_lost(&self, _id: &Value) {}
 }
 
 /// A way to exchange JSON-RPC messages with one MCP server.

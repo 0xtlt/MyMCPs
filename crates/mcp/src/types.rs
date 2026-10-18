@@ -165,6 +165,18 @@ impl McpError {
             data: Some(json!({ "timeout": timeout.as_millis() as u64 })),
         }
     }
+
+    /// The request used up the longest wait it was allowed, progress or not.
+    pub(crate) fn max_total_timeout_exceeded(max_total: Duration, total_elapsed: Duration) -> Self {
+        Self {
+            code: error_code::REQUEST_TIMEOUT,
+            message: "Maximum total timeout exceeded".to_owned(),
+            data: Some(json!({
+                "maxTotalTimeout": max_total.as_millis() as u64,
+                "totalElapsed": total_elapsed.as_millis() as u64,
+            })),
+        }
+    }
 }
 
 impl From<JsonRpcError> for McpError {

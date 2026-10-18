@@ -18,8 +18,9 @@ use bytes::Bytes;
 use futures::{StreamExt, stream};
 use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use mymcps_mcp::client::{
-    BoxError, Client, ClientError, ClientOptions, HttpRequest, HttpResponse, HttpSend,
-    StreamableHttpClientTransport, StreamableHttpClientTransportOptions, Transport, TransportError,
+    BoxError, Client, ClientError, ClientOptions, HttpBody, HttpRequest, HttpResponse, HttpSend,
+    RequestTimeout, StreamableHttpClientTransport, StreamableHttpClientTransportOptions, Transport,
+    TransportError,
 };
 use mymcps_mcp::{Implementation, McpError, json};
 use serde::Deserialize;
@@ -287,7 +288,7 @@ impl HttpSend for ReqwestSend {
 
 fn describe(error: &ClientError) -> ExpectedError {
     let kind = match error {
-        ClientError::Mcp(_) => "mcp",
+        ClientError::Mcp(_) | ClientError::TimedOut(_) => "mcp",
         ClientError::Transport(TransportError::StreamableHttp { .. }) => "http",
         ClientError::InvalidResult(_)
         | ClientError::Transport(TransportError::InvalidMessage(_)) => "validation",
@@ -296,6 +297,9 @@ fn describe(error: &ClientError) -> ExpectedError {
     };
     let (code, data) = match error {
         ClientError::Mcp(McpError { code, data, .. }) => (Some(*code), data.clone()),
+        ClientError::TimedOut(timed_out) => {
+            (Some(timed_out.error.code), timed_out.error.data.clone())
+        }
         ClientError::Transport(TransportError::StreamableHttp { code, .. }) => {
             (Some(i64::from(*code)), None)
         }
@@ -344,6 +348,7 @@ async fn play(scenario: &Scenario) -> Vec<String> {
     let mut options = ClientOptions::default();
     if let Some(timeout) = scenario.timeout_ms {
         options.request_timeout = Duration::from_millis(timeout);
+        options.tool_call_timeout = RequestTimeout::fixed(options.request_timeout);
     }
     let client = Client::with_options(info, options);
 
@@ -482,11 +487,51 @@ fn closes_before_its_stream_opens(scenario: &Scenario, got: &[Seen], expected: &
     connects_then_closes && expected.is_empty() && one_stream_request
 }
 
+/// The one scenario this client does not play like the SDK, on purpose.
+///
+/// The SDK, given an event stream that ends without its answer and without
+/// an event id to resume from, tells only `onerror` and leaves the request
+/// to its timeout; the recording has it fail with "Request timed out" after
+/// `timeoutMs`. Here a request may wait an hour, so the transport reports the
+/// answer lost and the request fails at once, as a closed connection, and
+/// says so in the cancellation it sends. The recording stays as the SDK made
+/// it: the expectation is changed here.
+fn expect_what_differs_on_purpose(scenario: &mut Scenario) {
+    if scenario.name != "an event stream that ends without the answer" {
+        return;
+    }
+    let cancelled = scenario
+        .expect
+        .requests
+        .iter_mut()
+        .find(|request| request.body.contains("notifications/cancelled"))
+        .expect("the SDK cancelled the request");
+    cancelled.body = cancelled
+        .body
+        .replace("Request timed out", "Connection closed")
+        .replace("-32001", "-32000");
+    let outcome = scenario
+        .expect
+        .outcomes
+        .iter_mut()
+        .find(|outcome| outcome.step == "listTools")
+        .expect("the scenario lists tools");
+    outcome.error = Some(ExpectedError {
+        kind: "mcp".to_owned(),
+        message: "MCP error -32000: Connection closed".to_owned(),
+        code: Some(-32000),
+        data: None,
+    });
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sends_and_reads_what_the_sdk_client_does() {
-    let fixtures: Fixtures =
+    let mut fixtures: Fixtures =
         serde_json::from_str(include_str!("fixtures/client_http.json")).unwrap();
     assert!(fixtures.scenarios.len() > 30);
+    for scenario in &mut fixtures.scenarios {
+        expect_what_differs_on_purpose(scenario);
+    }
     let mut failures = Vec::new();
     for scenario in &fixtures.scenarios {
         let differences = play(scenario).await;
@@ -609,49 +654,6 @@ async fn reports_a_body_that_fails_while_it_is_read_in_the_words_of_the_http_fun
         ClientError::Transport(TransportError::Http(_))
     ));
     assert!(!error.is_unauthorized());
-}
-
-#[tokio::test]
-async fn leaves_a_request_whose_event_stream_breaks_to_its_timeout() {
-    let http = handshake_then(Requests::default(), || {
-        Ok(answer_with(
-            200,
-            "text/event-stream",
-            body_of(vec![
-                Ok(": started\n\n"),
-                Err("MCP endpoint response exceeded 33554432 bytes"),
-            ]),
-        ))
-    });
-    let notices = Arc::new(Mutex::new(Vec::new()));
-    let listener = notices.clone();
-    let client = Client::with_options(
-        Implementation::new("test-client", "1.0.0"),
-        ClientOptions {
-            request_timeout: Duration::from_millis(150),
-            on_error: Some(Arc::new(move |error: &TransportError| {
-                listener.lock().unwrap().push(error.to_string());
-            })),
-            ..ClientOptions::default()
-        },
-    );
-    client
-        .connect(StreamableHttpClientTransport::new(url(), http))
-        .await
-        .unwrap();
-
-    // The SDK only tells `onerror` about the broken stream; the request waits on.
-    let started = std::time::Instant::now();
-    let error = client.list_tools().await.unwrap_err();
-    assert_eq!(error.to_string(), "MCP error -32001: Request timed out");
-    assert!(started.elapsed() >= Duration::from_millis(140));
-    assert!(
-        notices.lock().unwrap().contains(
-            &"SSE stream disconnected: Error: MCP endpoint response exceeded 33554432 bytes"
-                .to_owned()
-        ),
-        "{notices:?}"
-    );
 }
 
 #[tokio::test]
@@ -1065,4 +1067,567 @@ async fn sessions_opened_and_closed_in_a_row_share_their_connections() {
             "{connections} connections for {SESSIONS} sessions (event streams: {event_streams})"
         );
     }
+}
+
+// Waiting for answers that take a long time.
+//
+// These run on a paused clock, so waits of minutes are exact and instant.
+
+fn info() -> Implementation {
+    Implementation::new("test-client", "1.0.0")
+}
+
+fn secs(seconds: u64) -> Duration {
+    Duration::from_secs(seconds)
+}
+
+fn json_answer(id: u64, result: Value) -> String {
+    json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string()
+}
+
+fn event(data: &Value) -> String {
+    format!("event: message\ndata: {data}\n\n")
+}
+
+fn progress_event(token: u64, progress: u64) -> String {
+    event(&json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/progress",
+        "params": { "progressToken": token, "progress": progress },
+    }))
+}
+
+/// A body whose chunks arrive after the given delays, each counted from the
+/// one before. Then it ends, or stays open.
+fn timed_body(chunks: Vec<(Duration, String)>, stays_open: bool) -> HttpBody {
+    Box::pin(stream::unfold(
+        VecDeque::from(chunks),
+        move |mut chunks| async move {
+            match chunks.pop_front() {
+                Some((delay, chunk)) => {
+                    tokio::time::sleep(delay).await;
+                    Some((Ok::<_, BoxError>(Bytes::from(chunk)), chunks))
+                }
+                None if stays_open => std::future::pending().await,
+                None => None,
+            }
+        },
+    ))
+}
+
+/// Progress for `token` every `every`, for ever.
+fn endless_progress(token: u64, every: Duration) -> HttpBody {
+    Box::pin(stream::unfold(0, move |count| async move {
+        tokio::time::sleep(every).await;
+        let chunk = Bytes::from(progress_event(token, count));
+        Some((Ok::<_, BoxError>(chunk), count + 1))
+    }))
+}
+
+fn event_stream(body: HttpBody) -> Result<HttpResponse, BoxError> {
+    Ok(answer_with(200, "text/event-stream", body))
+}
+
+/// Options that keep what the client reports.
+fn listening(options: ClientOptions) -> (ClientOptions, Arc<Mutex<Vec<String>>>) {
+    let notices = Arc::new(Mutex::new(Vec::new()));
+    let listener = notices.clone();
+    let options = ClientOptions {
+        on_error: Some(Arc::new(move |error: &TransportError| {
+            listener.lock().unwrap().push(error.to_string());
+        })),
+        ..options
+    };
+    (options, notices)
+}
+
+async fn connected_with(
+    http: Arc<dyn HttpSend>,
+    options: ClientOptions,
+) -> (Client, StreamableHttpClientTransport) {
+    let transport = StreamableHttpClientTransport::new(url(), http);
+    let client = Client::with_options(info(), options);
+    client.connect(transport.clone()).await.unwrap();
+    (client, transport)
+}
+
+fn posted(requests: &Requests) -> Vec<Value> {
+    requests
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(method, _)| method == "POST")
+        .map(|(_, body)| serde_json::from_str(body.as_deref().unwrap()).unwrap())
+        .collect()
+}
+
+fn cancellations(requests: &Requests) -> Vec<Value> {
+    posted(requests)
+        .into_iter()
+        .filter(|body| body["method"] == "notifications/cancelled")
+        .collect()
+}
+
+fn with_progress(timeout: Duration, max_total: Option<Duration>) -> ClientOptions {
+    ClientOptions {
+        tool_call_timeout: RequestTimeout {
+            timeout,
+            reset_on_progress: true,
+            max_total,
+        },
+        ..ClientOptions::default()
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn waits_for_a_tool_call_by_its_own_timeout() {
+    for method in ["tools/list", "tools/call"] {
+        let result = if method == "tools/list" {
+            json!({ "tools": [] })
+        } else {
+            json!({ "content": [] })
+        };
+        let http = handshake_then(Requests::default(), move || {
+            let answer = json_answer(1, result.clone());
+            Ok(answer_with(
+                200,
+                "application/json",
+                timed_body(vec![(secs(5), answer)], false),
+            ))
+        });
+        let options = ClientOptions {
+            request_timeout: secs(1),
+            tool_call_timeout: RequestTimeout::fixed(secs(10)),
+            ..ClientOptions::default()
+        };
+        let (client, _transport) = connected_with(http, options).await;
+
+        let started = tokio::time::Instant::now();
+        if method == "tools/list" {
+            let error = client.list_tools().await.unwrap_err();
+            let timed_out = error.timed_out().unwrap();
+            assert_eq!(timed_out.method, "tools/list");
+            assert_eq!(timed_out.waited, secs(1));
+            assert_eq!(started.elapsed(), secs(1));
+        } else {
+            client.call_tool("echo", None).await.unwrap();
+            assert_eq!(started.elapsed(), secs(5));
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn asks_for_progress_only_on_the_requests_that_are_to_restart() {
+    for reset_on_progress in [true, false] {
+        let requests = Requests::default();
+        let next_id = Arc::new(AtomicUsize::new(1));
+        let http = handshake_then(requests.clone(), move || {
+            let id = next_id.fetch_add(1, Ordering::SeqCst) as u64;
+            Ok(answer_with(
+                200,
+                "application/json",
+                timed_body(
+                    vec![(
+                        Duration::ZERO,
+                        json_answer(id, json!({ "tools": [], "content": [] })),
+                    )],
+                    false,
+                ),
+            ))
+        });
+        let options = ClientOptions {
+            tool_call_timeout: RequestTimeout {
+                timeout: secs(60),
+                reset_on_progress,
+                max_total: None,
+            },
+            ..ClientOptions::default()
+        };
+        let (client, _transport) = connected_with(http, options).await;
+        client.list_tools().await.unwrap();
+        client.call_tool("echo", None).await.unwrap();
+        let timeout = options_timeout(reset_on_progress);
+        client
+            .request_with(
+                "tools/call",
+                Some(json!({ "name": "echo", "_meta": { "other": true } })),
+                timeout,
+            )
+            .await
+            .unwrap();
+        client.request_with("ping", None, timeout).await.unwrap();
+
+        let bodies = posted(&requests);
+        // The handshake and the listing never ask.
+        assert_eq!(bodies[0]["method"], "initialize");
+        assert_eq!(bodies[0]["params"].get("_meta"), None);
+        assert_eq!(
+            bodies[2],
+            json!({ "method": "tools/list", "jsonrpc": "2.0", "id": 1 })
+        );
+        if reset_on_progress {
+            assert_eq!(
+                bodies[3],
+                json!({
+                    "method": "tools/call",
+                    "params": { "name": "echo", "_meta": { "progressToken": 2 } },
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                })
+            );
+            assert_eq!(
+                bodies[4]["params"]["_meta"],
+                json!({ "other": true, "progressToken": 3 })
+            );
+            assert_eq!(
+                bodies[5]["params"],
+                json!({ "_meta": { "progressToken": 4 } })
+            );
+        } else {
+            // Byte for byte what the SDK sends.
+            let sent = requests.lock().unwrap();
+            let body = sent[3].1.as_deref().unwrap();
+            assert_eq!(
+                body,
+                r#"{"method":"tools/call","params":{"name":"echo"},"jsonrpc":"2.0","id":2}"#
+            );
+            assert_eq!(bodies[4]["params"]["_meta"], json!({ "other": true }));
+            assert_eq!(bodies[5].get("params"), None);
+        }
+    }
+}
+
+fn options_timeout(reset_on_progress: bool) -> RequestTimeout {
+    RequestTimeout {
+        timeout: secs(60),
+        reset_on_progress,
+        max_total: None,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn restarts_the_wait_at_each_progress_notification() {
+    let http = handshake_then(Requests::default(), || {
+        event_stream(timed_body(
+            vec![
+                (secs(8), progress_event(1, 1)),
+                (secs(8), progress_event(1, 2)),
+                (secs(8), progress_event(1, 3)),
+                (
+                    secs(6),
+                    event(
+                        &serde_json::from_str(&json_answer(1, json!({ "content": [] }))).unwrap(),
+                    ),
+                ),
+            ],
+            false,
+        ))
+    });
+    let (client, _transport) = connected_with(http, with_progress(secs(10), None)).await;
+
+    let started = tokio::time::Instant::now();
+    client.call_tool("wait", None).await.unwrap();
+    assert_eq!(started.elapsed(), secs(30));
+}
+
+#[tokio::test(start_paused = true)]
+async fn lets_progress_restart_nothing_unless_it_was_asked_for() {
+    let http = handshake_then(Requests::default(), || {
+        event_stream(timed_body(
+            vec![
+                (secs(8), progress_event(1, 1)),
+                (
+                    secs(22),
+                    event(&json!({ "jsonrpc": "2.0", "id": 1, "result": { "content": [] } })),
+                ),
+            ],
+            false,
+        ))
+    });
+    let options = ClientOptions {
+        tool_call_timeout: RequestTimeout::fixed(secs(10)),
+        ..ClientOptions::default()
+    };
+    let (options, notices) = listening(options);
+    let (client, _transport) = connected_with(http, options).await;
+
+    let error = client.call_tool("wait", None).await.unwrap_err();
+    assert_eq!(error.timed_out().unwrap().waited, secs(10));
+    // Nothing asked for it, so nothing was waiting for that token.
+    assert!(
+        notices
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|notice| notice
+                .starts_with("Received a progress notification for an unknown token: ")),
+        "{notices:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn times_out_a_tool_call_without_progress_and_cancels_it() {
+    let requests = Requests::default();
+    let http = handshake_then(requests.clone(), || event_stream(timed_body(vec![], true)));
+    let (client, transport) = connected_with(http, with_progress(secs(10), None)).await;
+
+    let started = tokio::time::Instant::now();
+    let error = client.call_tool("wait", None).await.unwrap_err();
+    // The gateway closes the connection as soon as a call has failed.
+    client.close().await;
+    transport.close().await;
+
+    assert_eq!(error.to_string(), "MCP error -32001: Request timed out");
+    assert_eq!(error.mcp_code(), Some(-32001));
+    assert!(matches!(&error, ClientError::TimedOut(_)));
+    let timed_out = error.timed_out().unwrap();
+    assert_eq!(timed_out.method, "tools/call");
+    assert_eq!(timed_out.waited, secs(10));
+    assert_eq!(timed_out.error.data, Some(json!({ "timeout": 10_000 })));
+    assert_eq!(started.elapsed(), secs(10));
+    assert_eq!(
+        cancellations(&requests),
+        [json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": {
+                "requestId": 1,
+                "reason": "McpError: MCP error -32001: Request timed out",
+            },
+        })]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn counts_the_wait_up_to_the_last_progress_that_restarted_it() {
+    let http = handshake_then(Requests::default(), || {
+        event_stream(timed_body(vec![(secs(7), progress_event(1, 1))], true))
+    });
+    let (client, _transport) = connected_with(http, with_progress(secs(10), None)).await;
+
+    let error = client.call_tool("wait", None).await.unwrap_err();
+    assert_eq!(error.timed_out().unwrap().waited, secs(17));
+}
+
+#[tokio::test(start_paused = true)]
+async fn stops_waiting_at_the_maximum_total_whatever_the_progress() {
+    let requests = Requests::default();
+    let http = handshake_then(requests.clone(), || {
+        event_stream(endless_progress(1, secs(8)))
+    });
+    let (client, _transport) = connected_with(http, with_progress(secs(10), Some(secs(25)))).await;
+
+    let started = tokio::time::Instant::now();
+    let error = client.call_tool("wait", None).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "MCP error -32001: Maximum total timeout exceeded"
+    );
+    let timed_out = error.timed_out().unwrap();
+    assert_eq!(timed_out.method, "tools/call");
+    assert_eq!(timed_out.waited, secs(25));
+    assert_eq!(
+        timed_out.error.data,
+        Some(json!({ "maxTotalTimeout": 25_000, "totalElapsed": 25_000 }))
+    );
+    assert_eq!(started.elapsed(), secs(25));
+    let cancelled = cancellations(&requests);
+    assert_eq!(cancelled.len(), 1);
+    assert_eq!(
+        cancelled[0]["params"]["reason"],
+        "McpError: MCP error -32001: Maximum total timeout exceeded"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn reports_progress_for_an_unknown_token_and_changes_nothing() {
+    let http = handshake_then(Requests::default(), || {
+        event_stream(timed_body(
+            vec![
+                (secs(8), progress_event(99, 1)),
+                (
+                    secs(22),
+                    event(&json!({ "jsonrpc": "2.0", "id": 1, "result": { "content": [] } })),
+                ),
+            ],
+            false,
+        ))
+    });
+    let (options, notices) = listening(with_progress(secs(10), None));
+    let (client, _transport) = connected_with(http, options).await;
+
+    let error = client.call_tool("wait", None).await.unwrap_err();
+    assert_eq!(error.timed_out().unwrap().waited, secs(10));
+    assert_eq!(
+        notices.lock().unwrap().first().unwrap(),
+        r#"Received a progress notification for an unknown token: {"method":"notifications/progress","params":{"progressToken":99,"progress":1},"jsonrpc":"2.0"}"#
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn fails_a_request_at_once_when_its_event_stream_ends_without_the_answer() {
+    // The stream ends, or it fails.
+    for fails in [false, true] {
+        let requests = Requests::default();
+        let http = handshake_then(requests.clone(), move || {
+            let mut chunks = vec![Ok(": started\n\n")];
+            if fails {
+                chunks.push(Err("MCP endpoint response exceeded 33554432 bytes"));
+            }
+            Ok(answer_with(200, "text/event-stream", body_of(chunks)))
+        });
+        let (options, notices) = listening(ClientOptions::default());
+        let (client, _transport) = connected_with(http, options).await;
+
+        let started = tokio::time::Instant::now();
+        let error = client.list_tools().await.unwrap_err();
+        assert_eq!(error.to_string(), "MCP error -32000: Connection closed");
+        assert!(matches!(&error, ClientError::Mcp(_)));
+        assert!(error.timed_out().is_none());
+        assert_eq!(started.elapsed(), Duration::ZERO);
+        assert_eq!(
+            cancellations(&requests)[0]["params"],
+            json!({
+                "requestId": 1,
+                "reason": "McpError: MCP error -32000: Connection closed",
+            })
+        );
+        if fails {
+            assert!(
+                notices.lock().unwrap().contains(
+                    &"SSE stream disconnected: Error: MCP endpoint response exceeded 33554432 bytes"
+                        .to_owned()
+                ),
+                "{notices:?}"
+            );
+        }
+    }
+}
+
+/// A server whose answer to a request is `stream`, an event stream that
+/// ends, and whose answer to a GET that resumes a stream is `resumption`.
+fn stream_server(requests: Requests, stream: &'static str, resumption: u16) -> Arc<dyn HttpSend> {
+    Arc::new(move |request: HttpRequest| {
+        let requests = requests.clone();
+        async move {
+            let body = request
+                .body
+                .as_ref()
+                .map(|body| String::from_utf8(body.to_vec()).unwrap());
+            requests
+                .lock()
+                .unwrap()
+                .push((request.method.to_string(), body.clone()));
+            if request.method == http::Method::GET {
+                let status = if request.headers.contains_key("last-event-id") {
+                    resumption
+                } else {
+                    405
+                };
+                return Ok::<_, BoxError>(answer_with(status, "", body_of(vec![])));
+            }
+            let body = body.unwrap();
+            Ok(if body.contains("\"initialize\"") {
+                answer_with(200, "application/json", body_of(vec![Ok(INITIALIZED)]))
+            } else if body.contains("notifications/") {
+                answer_with(202, "", body_of(vec![]))
+            } else {
+                answer_with(200, "text/event-stream", body_of(vec![Ok(stream)]))
+            })
+        }
+    })
+}
+
+const PRIMING: &str = "id: p-1\ndata: \n\n";
+
+#[tokio::test(start_paused = true)]
+async fn fails_a_request_whose_stream_cannot_be_resumed() {
+    // 405: the server does not take the stream up again. 503: it is tried,
+    // and given up.
+    for (resumption, delay, notice) in [
+        (405, Duration::from_millis(1000), None),
+        (
+            503,
+            Duration::from_millis(2500),
+            Some("Maximum reconnection attempts (2) exceeded."),
+        ),
+    ] {
+        let requests = Requests::default();
+        let http = stream_server(requests.clone(), PRIMING, resumption);
+        let (options, notices) = listening(ClientOptions::default());
+        let (client, _transport) = connected_with(http, options).await;
+
+        let started = tokio::time::Instant::now();
+        let error = client.call_tool("wait", None).await.unwrap_err();
+
+        assert_eq!(error.to_string(), "MCP error -32000: Connection closed");
+        assert_eq!(started.elapsed(), delay);
+        assert_eq!(cancellations(&requests).len(), 1);
+        if let Some(notice) = notice {
+            assert!(
+                notices.lock().unwrap().contains(&notice.to_owned()),
+                "{notices:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn counts_an_error_answer_on_a_stream_as_its_answer() {
+    let requests = Requests::default();
+    let stream = "id: p-2\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"bad\"}}\n\n";
+    let http = stream_server(requests.clone(), stream, 200);
+    let (client, _transport) = connected_with(http, ClientOptions::default()).await;
+
+    let error = client.call_tool("wait", None).await.unwrap_err();
+    assert_eq!(error.to_string(), "MCP error -32602: bad");
+    assert!(error.timed_out().is_none());
+
+    // A stream that delivered its answer is complete: nothing resumes it.
+    tokio::time::sleep(secs(10)).await;
+    let gets = requests
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(method, _)| method == "GET")
+        .count();
+    assert_eq!(gets, 1, "only the standalone stream");
+    assert!(cancellations(&requests).is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn stops_waiting_for_a_notification_the_server_never_takes() {
+    let http: Arc<dyn HttpSend> = Arc::new(|request: HttpRequest| async move {
+        let body = request
+            .body
+            .map(|body| String::from_utf8(body.to_vec()).unwrap())
+            .unwrap_or_default();
+        if body.contains("\"initialize\"") {
+            Ok::<_, BoxError>(answer_with(
+                200,
+                "application/json",
+                body_of(vec![Ok(INITIALIZED)]),
+            ))
+        } else {
+            std::future::pending::<Result<HttpResponse, BoxError>>().await
+        }
+    });
+    let options = ClientOptions {
+        request_timeout: secs(5),
+        ..ClientOptions::default()
+    };
+    let client = Client::with_options(info(), options);
+
+    let started = tokio::time::Instant::now();
+    let error = client
+        .connect(StreamableHttpClientTransport::new(url(), http))
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "MCP error -32001: Request timed out");
+    let timed_out = error.timed_out().unwrap();
+    assert_eq!(timed_out.method, "notifications/initialized");
+    assert_eq!(timed_out.waited, secs(5));
+    assert_eq!(started.elapsed(), secs(5));
 }

@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use mymcps_mcp::client::{
-    Client, ClientError, ClientOptions, StdioClientTransport, StdioServerParameters, StdioStderr,
-    Transport, TransportError, TransportHandler, get_default_environment,
+    Client, ClientError, ClientOptions, RequestTimeout, StdioClientTransport,
+    StdioServerParameters, StdioStderr, Transport, TransportError, TransportHandler,
+    get_default_environment,
 };
 use mymcps_mcp::{Implementation, JsonRpcMessage, json};
 use serde_json::json;
@@ -539,7 +540,7 @@ async fn times_out_a_request_the_child_never_answers() {
     let client = Client::with_options(
         Implementation::new("test-client", "1.0.0"),
         ClientOptions {
-            request_timeout: Duration::from_millis(200),
+            tool_call_timeout: RequestTimeout::fixed(Duration::from_millis(200)),
             ..ClientOptions::default()
         },
     );
@@ -555,5 +556,51 @@ async fn times_out_a_request_the_child_never_answers() {
     assert_eq!(
         received.lines().last().unwrap(),
         r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1,"reason":"McpError: MCP error -32001: Request timed out"}}"#
+    );
+}
+
+#[tokio::test]
+async fn keeps_waiting_for_a_tool_that_reports_progress() {
+    let directory = tempfile::tempdir().unwrap();
+    // Three quiet stretches of 120 ms, each ended by progress, then the answer.
+    let script = SERVER.replace(
+        r#"      printf '\n{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"called","extra":true}]}}\n' "$id" ;;"#,
+        r#"      token=$(printf '%s' "$line" | sed -n 's/.*"progressToken":\([0-9]*\).*/\1/p')
+      for step in 1 2 3; do
+        sleep 0.12
+        printf '{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":%s,"progress":%s}}\n' "$token" "$step"
+      done
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"done"}]}}\n' "$id" ;;"#,
+    );
+    assert_ne!(script, SERVER);
+    let transport = StdioClientTransport::new(
+        shell(&script)
+            .cwd(directory.path())
+            .stderr(StdioStderr::Null),
+    );
+    let client = Client::with_options(
+        Implementation::new("test-client", "1.0.0"),
+        ClientOptions {
+            tool_call_timeout: RequestTimeout {
+                timeout: Duration::from_millis(300),
+                reset_on_progress: true,
+                max_total: None,
+            },
+            ..ClientOptions::default()
+        },
+    );
+    client.connect(transport.clone()).await.unwrap();
+
+    let started = Instant::now();
+    let result = client.call_tool("describe", None).await.unwrap();
+    // Longer than the wait, which each progress notification started again.
+    assert!(started.elapsed() > Duration::from_millis(300));
+    assert_eq!(result["content"][0]["text"], "done");
+    client.close().await;
+
+    let received = std::fs::read_to_string(directory.path().join("stdin.log")).unwrap();
+    assert!(
+        received.contains(r#""params":{"name":"describe","_meta":{"progressToken":1}}"#),
+        "{received}"
     );
 }
