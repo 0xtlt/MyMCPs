@@ -1374,3 +1374,150 @@ async fn refuses_the_permission_to_manage_mcps_to_a_member() {
     assert!(param(&destination(&approved), "code").is_some());
     assert_eq!(codes(&app).await, 1);
 }
+
+#[tokio::test]
+async fn does_not_take_the_permission_to_manage_mcps_from_anywhere_but_the_checked_box() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let registered = register_public_client(&app, "Managing client").await;
+    let client_id = client_id(&registered);
+    let mut authorization = authorization_payload(&client_id);
+    authorization.retain(|(name, _)| name != "scope");
+    authorization.push(("scope".to_string(), "mcp:tools mcps:manage".to_string()));
+
+    // The query string of the consent page decides nothing: a GET only shows.
+    let mut query = authorization.clone();
+    query.push(("decision".to_string(), "approve".to_string()));
+    query.push(("manage_mcps".to_string(), "on".to_string()));
+    let shown = app
+        .get(&authorization_path(&query))
+        .login_as(&admin)
+        .send()
+        .await;
+    assert_eq!(shown.status, StatusCode::OK);
+    assert!(shown.location().is_none() && shown.header("x-location").is_none());
+    assert_eq!(codes(&app).await, 0);
+
+    // Anything but what a checked box sends is no tick.
+    for value in ["", "true", "1", "yes", "ON", "On", "off", "manage_mcps"] {
+        let approved = app
+            .post("/authorize")
+            .login_as(&admin)
+            .csrf()
+            .form(&with(
+                &authorization,
+                &[("decision", "approve"), ("manage_mcps", value)],
+            ))
+            .send()
+            .await;
+        let code = param(&destination(&approved), "code").expect("a code");
+        let exchanged = exchange(&app, &client_id, &code).await;
+        assert_eq!(exchanged.status, StatusCode::OK, "{value:?}");
+        assert_eq!(exchanged.json()["scope"], "mcp:tools", "{value:?}");
+    }
+
+    // A scope sent with the answer, as a form field or twice, is not read either.
+    let approved = app
+        .post("/authorize")
+        .login_as(&admin)
+        .csrf()
+        .form(&with(
+            &authorization,
+            &[
+                ("decision", "approve"),
+                ("scopes", "mcp:tools mcps:manage"),
+                ("oauth_scopes", "mcp:tools mcps:manage"),
+                ("scope", "mcps:manage"),
+            ],
+        ))
+        .send()
+        .await;
+    let code = param(&destination(&approved), "code").expect("a code");
+    let exchanged = exchange(&app, &client_id, &code).await;
+    assert_eq!(exchanged.json()["scope"], "mcp:tools");
+    let managing: i64 = sqlx::query_scalar(
+        "select count(*) from `access_tokens` where `oauth_scopes` like '%mcps:manage%'",
+    )
+    .fetch_one(&*app.core.db)
+    .await
+    .unwrap();
+    assert_eq!(managing, 0);
+}
+
+#[tokio::test]
+async fn gives_the_permission_for_the_team_it_was_checked_for_and_only_where_the_person_is_an_admin()
+ {
+    let app = TestApp::new().await;
+    let person = create_admin(&app).await;
+    // An admin of the Root Team, a member of this one: the box was offered for
+    // the first, and is ticked while another team is chosen in the answer.
+    let research = create_team(&app, "Research").await;
+    join_team(&app, research.id, &person, TeamRole::Member).await;
+    let registered = register_public_client(&app, "Managing client").await;
+    let client_id = client_id(&registered);
+    let authorization = authorization_payload(&client_id);
+
+    let refused = app
+        .post("/authorize")
+        .login_as(&person)
+        .csrf()
+        .form(&with(
+            &authorization,
+            &[
+                ("decision", "approve"),
+                ("manage_mcps", "on"),
+                ("team_id", &research.id.to_string()),
+            ],
+        ))
+        .send()
+        .await;
+    let url = destination(&refused);
+    assert_eq!(param(&url, "error").as_deref(), Some("invalid_request"));
+    assert!(param(&url, "code").is_none());
+    assert_eq!(codes(&app).await, 0);
+
+    // Without the tick, that team is fine; with it, the team they administer is too.
+    let plain = app
+        .post("/authorize")
+        .login_as(&person)
+        .csrf()
+        .form(&with(
+            &authorization,
+            &[
+                ("decision", "approve"),
+                ("team_id", &research.id.to_string()),
+            ],
+        ))
+        .send()
+        .await;
+    let code = param(&destination(&plain), "code").expect("a code");
+    assert_eq!(
+        exchange(&app, &client_id, &code).await.json()["scope"],
+        "mcp:tools"
+    );
+
+    let managing = app
+        .post("/authorize")
+        .login_as(&person)
+        .csrf()
+        .form(&with(
+            &authorization,
+            &[
+                ("decision", "approve"),
+                ("manage_mcps", "on"),
+                ("team_id", "1"),
+            ],
+        ))
+        .send()
+        .await;
+    let code = param(&destination(&managing), "code").expect("a code");
+    let exchanged = exchange(&app, &client_id, &code).await;
+    assert_eq!(exchanged.json()["scope"], "mcp:tools mcps:manage");
+    let team: i64 = sqlx::query_scalar(
+        "select `team_id` from `access_tokens` where `oauth_scopes` = 'mcp:tools mcps:manage'",
+    )
+    .fetch_one(&*app.core.db)
+    .await
+    .unwrap();
+    assert_eq!(team, 1);
+}

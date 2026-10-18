@@ -10,7 +10,7 @@ use mymcps_core::models::{
 };
 use mymcps_gateway::access_token::{self, NewOauthGrant};
 use mymcps_gateway::mcp_management::{ManagementActor, ManagementError, McpRegistryManager};
-use mymcps_net::CannedResponse;
+use mymcps_net::{AddressGuard, CannedResponse, StaticResolver};
 use mymcps_node::{NodeRunner, NodeRuntime};
 use mymcps_upstream::Upstream;
 use mymcps_web::AppState;
@@ -20,6 +20,7 @@ use mymcps_web::testing::factories::{
     create_admin, create_mcp, create_member, create_team, next_value,
 };
 use serde_json::{Value, json};
+use std::sync::Arc;
 
 use support::*;
 
@@ -49,6 +50,14 @@ async fn gateway() -> TestGateway {
 }
 
 async fn gateway_with(adjust: impl FnOnce(&mut mymcps_core::Config)) -> TestGateway {
+    gateway_guarded(adjust, public_names()).await
+}
+
+/// The app where `guard` tells which names are public.
+async fn gateway_guarded(
+    adjust: impl FnOnce(&mut mymcps_core::Config),
+    guard: AddressGuard,
+) -> TestGateway {
     let (fetcher, upstreams) = upstream_fetcher(upstreams);
     // `oauth.example` asks for an authorization.
     let fetcher = fetcher.answering(|request| {
@@ -66,7 +75,7 @@ async fn gateway_with(adjust: impl FnOnce(&mut mymcps_core::Config)) -> TestGate
         });
         let upstream = Upstream::builder(core.clone(), mymcps_web::state::builtins())
             .fetcher(fetcher)
-            .address_guard(public_names())
+            .address_guard(guard)
             .node(NodeRunner::with_runtime(core.clone(), runtime))
             .build();
         AppState::with_upstream(core, upstream)
@@ -364,7 +373,8 @@ async fn lists_every_mcp_of_the_team_without_a_secret() {
     create_mcp(&gateway, admin.id, |mcp| {
         mcp.name = "Docs".into();
         mcp.slug = "docs".into();
-        mcp.http_url = Some("https://user:pw@docs.example/mcp?api_key=sk-12345".into());
+        mcp.http_url =
+            Some("https://user:pw@docs.example/s/path-secret-9f3a/mcp?api_key=sk-12345".into());
         mcp.auth_type = McpAuthType::Bearer;
         mcp.auth_bearer = core.encrypt_secret(Some("bearer-secret-value"));
         mcp.enabled = false;
@@ -377,6 +387,7 @@ async fn lists_every_mcp_of_the_team_without_a_secret() {
         mcp.http_url = None;
         mcp.npm_package = Some("@example/mcp".into());
         mcp.npm_env = merge_env(&core, &[("API_KEY", "env-secret-value")]);
+        mcp.set_npm_args_list(&["--token=arg-secret-value".to_owned()]);
     })
     .await;
     let other_team = create_team(&gateway, "Other").await;
@@ -396,7 +407,8 @@ async fn lists_every_mcp_of_the_team_without_a_secret() {
         ["docs", "package"]
     );
     assert_eq!(mcps[0]["enabled"], false);
-    assert_eq!(mcps[0]["url"], "https://docs.example/mcp?api_key=***");
+    // Only the origin: the path of an MCP can hold the key of an account.
+    assert_eq!(mcps[0]["url"], "https://docs.example/…");
     assert_eq!(mcps[0]["bearer_token_set"], true);
     assert_eq!(mcps[0]["header_value_set"], false);
     assert_eq!(
@@ -405,7 +417,15 @@ async fn lists_every_mcp_of_the_team_without_a_secret() {
     );
 
     let text = result.to_string();
-    for secret in ["bearer-secret-value", "env-secret-value", "sk-12345", "pw@"] {
+    assert_eq!(mcps[1]["npm_args_count"], 1);
+    for secret in [
+        "bearer-secret-value",
+        "env-secret-value",
+        "arg-secret-value",
+        "path-secret-9f3a",
+        "sk-12345",
+        "pw@",
+    ] {
         assert!(!text.contains(secret), "{secret} leaked: {text}");
     }
 }
@@ -501,54 +521,37 @@ async fn creates_a_disabled_mcp_with_a_custom_header() {
     );
 }
 
+/// What an agent is told to do about an npm MCP.
+const NPM_ADVICE: &str = "Ask the user to do it on the MCPs page";
+
 #[tokio::test]
-async fn creates_an_npm_mcp_with_environment_variables_it_never_echoes() {
+async fn refuses_to_create_an_npm_mcp_whatever_the_shape_of_the_call() {
     let gateway = gateway().await;
     let admin = create_admin(&gateway).await;
     let manager = grant(&gateway, &admin, MANAGE).await;
 
-    let result = call_ok(
-        &gateway,
-        &manager,
-        "mcp_registry_create",
+    let cases = [
+        json!({ "name": "A", "transport": "npm", "npm_package": "@example/mcp" }),
+        json!({ "name": "A", "transport": "npm" }),
         json!({
-            "name": "Package", "transport": "npm", "npm_package": "@example/environment-mcp",
-            "npm_version": "1.2.3", "npm_args": ["--verbose", "--port=8080"],
-            "npm_env": [
-                { "name": "API_KEY", "value": "env-secret-one" },
-                { "name": "REGION", "value": "eu-west-3" },
-            ],
+            "name": "A", "transport": "npm", "npm_package": "@example/environment-mcp",
+            "npm_version": "1.2.3", "npm_args": ["--verbose"],
+            "npm_env": [{ "name": "API_KEY", "value": "env-secret-one" }],
         }),
-    )
-    .await;
-
-    assert_eq!(result["mcp"]["transport"], "npm");
-    assert_eq!(result["mcp"]["npm_package"], "@example/environment-mcp");
-    assert_eq!(
-        result["mcp"]["npm_args"],
-        json!(["--verbose", "--port=8080"])
-    );
-    assert_eq!(
-        result["mcp"]["npm_env"],
-        json!([
-            { "name": "API_KEY", "value_set": true },
-            { "name": "REGION", "value_set": true },
-        ])
-    );
-    // Node.js never starts here: saved, in error.
-    assert_eq!(result["test"]["ok"], false);
-    let text = result.to_string();
-    assert!(!text.contains("env-secret-one") && !text.contains("eu-west-3"));
-
-    let saved = mcp_named(&gateway, "package").await;
-    assert!(!saved.npm_env.as_deref().unwrap().contains("env-secret-one"));
-    assert_eq!(
-        saved.npm_environment(&gateway.core().encryption).unwrap(),
-        [
-            ("API_KEY".to_owned(), "env-secret-one".to_owned()),
-            ("REGION".to_owned(), "eu-west-3".to_owned()),
-        ]
-    );
+        // Settings of a package under another transport are a try as well.
+        json!({ "name": "A", "transport": "http", "url": "https://a.example/mcp", "npm_package": "@example/mcp" }),
+        json!({ "name": "A", "transport": "http", "url": "https://a.example/mcp", "npm_env": [{ "name": "K", "value": "v" }] }),
+    ];
+    for arguments in cases {
+        let refusal =
+            call_refused(&gateway, &manager, "mcp_registry_create", arguments.clone()).await;
+        assert!(refusal.contains(NPM_ADVICE), "{arguments}: {refusal}");
+        assert!(!refusal.contains("env-secret-one"));
+    }
+    // Nothing was saved, nothing was installed or reached.
+    let result = call_ok(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    assert_eq!(result["mcps"], json!([]));
+    assert!(gateway.upstreams.requests().is_empty());
 }
 
 #[tokio::test]
@@ -570,22 +573,6 @@ async fn names_the_argument_that_is_wrong() {
         (
             json!({ "name": "A", "transport": "http", "url": "https://a.example/mcp", "auth_type": "header", "header_value": "x" }),
             "Invalid header_name",
-        ),
-        (
-            json!({ "name": "A", "transport": "npm" }),
-            "Invalid npm_package",
-        ),
-        (
-            json!({ "name": "A", "transport": "npm", "npm_package": "../escape" }),
-            "Invalid npm_package",
-        ),
-        (
-            json!({ "name": "A", "transport": "npm", "npm_package": "@example/mcp", "npm_env": [{ "name": "KEY" }] }),
-            "Invalid npm_env.0.value",
-        ),
-        (
-            json!({ "name": "A", "transport": "npm", "npm_package": "@example/mcp", "npm_env": [{ "name": "NODE_OPTIONS", "value": "x" }] }),
-            "Invalid npm_env.0.name",
         ),
         (
             json!({ "name": "A", "transport": "builtin" }),
@@ -761,61 +748,100 @@ async fn follows_a_rename_with_the_new_slug() {
     assert!(mcp_in(&gateway, Team::ROOT_ID, "docs").await.is_none());
 }
 
-#[tokio::test]
-async fn keeps_the_environment_unless_the_package_changes() {
-    let gateway = gateway().await;
-    let admin = create_admin(&gateway).await;
-    let manager = grant(&gateway, &admin, MANAGE).await;
+async fn package_mcp(gateway: &TestGateway, admin: &User) -> mymcps_core::models::Mcp {
     let core = gateway.core().clone();
-    create_mcp(&gateway, admin.id, |mcp| {
+    create_mcp(gateway, admin.id, |mcp| {
         mcp.name = "Package".into();
         mcp.slug = "package".into();
         mcp.transport = McpTransport::Npm;
         mcp.http_url = None;
         mcp.npm_package = Some("@example/one".into());
+        mcp.npm_version = Some("1.0.0".into());
+        mcp.set_npm_args_list(&["--flag".to_owned()]);
         mcp.npm_env = merge_env(&core, &[("API_KEY", "env-secret-one")]);
     })
-    .await;
+    .await
+}
 
-    // Another version keeps the variables, and a name without a value keeps its value.
+#[tokio::test]
+async fn does_not_let_an_agent_change_what_an_npm_mcp_runs() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    let before = package_mcp(&gateway, &admin).await;
+    create_http_mcp(&gateway, admin.id, "Docs", "docs").await;
+    gateway.upstreams.clear();
+
+    for arguments in [
+        json!({ "slug": "package", "npm_package": "@example/two" }),
+        json!({ "slug": "package", "npm_version": "2.0.0" }),
+        json!({ "slug": "package", "npm_args": ["--flag", "--extra"] }),
+        json!({ "slug": "package", "npm_args": [] }),
+        // An address in the environment is where the key it holds would go.
+        json!({ "slug": "package", "npm_env": [{ "name": "API_KEY" }, { "name": "API_URL", "value": "https://evil.example" }] }),
+        json!({ "slug": "package", "npm_env": [{ "name": "API_KEY", "value": "other" }] }),
+        json!({ "slug": "package", "npm_env": [] }),
+        // An http MCP does not become one, and an npm one does not take another transport's package.
+        json!({ "slug": "docs", "transport": "npm", "npm_package": "@example/mcp" }),
+        json!({ "slug": "docs", "npm_package": "@example/mcp" }),
+        json!({ "slug": "package", "transport": "npm", "npm_package": "@example/two" }),
+    ] {
+        let refusal =
+            call_refused(&gateway, &manager, "mcp_registry_update", arguments.clone()).await;
+        assert!(refusal.contains(NPM_ADVICE), "{arguments}: {refusal}");
+    }
+
+    let after = mcp_named(&gateway, "package").await;
+    assert_eq!(after.npm_package, before.npm_package);
+    assert_eq!(after.npm_version, before.npm_version);
+    assert_eq!(after.npm_args, before.npm_args);
+    assert_eq!(after.npm_env, before.npm_env);
+    assert_eq!(
+        mcp_named(&gateway, "docs").await.transport,
+        McpTransport::Http
+    );
+    assert!(gateway.upstreams.requests().is_empty());
+}
+
+#[tokio::test]
+async fn lets_an_agent_rename_and_switch_off_an_npm_mcp_and_say_what_it_already_has() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    package_mcp(&gateway, &admin).await;
+
+    // Repeating what is saved is not a change, a variable without a value keeps its own.
     call_ok(
         &gateway,
         &manager,
         "mcp_registry_update",
-        json!({ "slug": "package", "npm_version": "2.0.0", "npm_args": ["--flag"] }),
+        json!({
+            "slug": "package", "name": "Package renamed", "description": "Runs the package",
+            "enabled": false, "npm_package": "@example/one", "npm_version": "1.0.0",
+            "npm_args": ["--flag"], "npm_env": [{ "name": "API_KEY" }],
+        }),
     )
     .await;
-    let saved = mcp_named(&gateway, "package").await;
-    assert_eq!(saved.npm_version.as_deref(), Some("2.0.0"));
+    let saved = mcp_named(&gateway, "package-renamed").await;
+    assert!(!saved.enabled);
+    assert_eq!(saved.npm_package.as_deref(), Some("@example/one"));
     assert_eq!(saved.npm_args_list(), ["--flag"]);
     assert_eq!(
-        saved.npm_environment(&core.encryption).unwrap(),
+        saved.npm_environment(&gateway.core().encryption).unwrap(),
         [("API_KEY".to_owned(), "env-secret-one".to_owned())]
     );
+
     call_ok(
         &gateway,
         &manager,
-        "mcp_registry_update",
-        json!({ "slug": "package", "npm_env": [{ "name": "API_KEY" }, { "name": "EXTRA", "value": "added" }] }),
+        "mcp_registry_delete",
+        json!({ "slug": "package-renamed" }),
     )
     .await;
-    let saved = mcp_named(&gateway, "package").await;
-    assert_eq!(saved.npm_env_names(), ["API_KEY", "EXTRA"]);
-
-    // Another package does not inherit them, and the result says they went.
-    let result = call_ok(
-        &gateway,
-        &manager,
-        "mcp_registry_update",
-        json!({ "slug": "package", "npm_package": "@example/two" }),
-    )
-    .await;
-    assert_eq!(result["cleared_secrets"], json!(["npm_env"]));
     assert!(
-        mcp_named(&gateway, "package")
+        mcp_in(&gateway, Team::ROOT_ID, "package-renamed")
             .await
-            .npm_env_names()
-            .is_empty()
+            .is_none()
     );
 }
 
@@ -1203,4 +1229,504 @@ async fn leaves_the_setup_of_built_in_mcps_to_the_page() {
     )
     .await;
     assert!(mcp_in(&gateway, Team::ROOT_ID, "strava").await.is_none());
+}
+
+// --- addresses ---
+
+/// The names that resolve inside the network of the instance, and one that does not.
+fn guard_with_internal_names() -> AddressGuard {
+    AddressGuard::new(Arc::new(
+        StaticResolver::new()
+            .with("internal.example", &["10.0.0.5".parse().unwrap()])
+            .with(
+                "rebinding.example",
+                &["203.0.113.7".parse().unwrap(), "127.0.0.1".parse().unwrap()],
+            )
+            .with("public.example", &["203.0.113.10".parse().unwrap()]),
+    ))
+}
+
+#[tokio::test]
+async fn does_not_reach_the_network_of_the_instance_on_the_word_of_an_agent() {
+    let gateway = gateway_guarded(|_| {}, guard_with_internal_names()).await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+
+    for url in [
+        "http://127.0.0.1:3333/mcp",
+        "http://[::1]/mcp",
+        "http://0.0.0.0/mcp",
+        // The address of the metadata service of the clouds, in every spelling.
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::ffff:169.254.169.254]/latest/meta-data/",
+        "http://[::ffff:a9fe:a9fe]/",
+        "http://10.0.0.5/mcp",
+        "http://192.168.1.10:8080/mcp",
+        "http://100.64.0.1/mcp",
+        "http://[fd00::1]/mcp",
+        "http://[fe80::1]/mcp",
+        "https://user:pw@127.0.0.1/mcp",
+        // Names that resolve there, wholly or in part.
+        "https://internal.example/mcp",
+        "https://rebinding.example/mcp",
+    ] {
+        let refusal = call_refused(
+            &gateway,
+            &manager,
+            "mcp_registry_create",
+            json!({ "name": "Inside", "transport": "http", "url": url }),
+        )
+        .await;
+        assert!(
+            refusal.starts_with("Invalid url: the host is a loopback, private or link-local"),
+            "{url}: {refusal}"
+        );
+    }
+    // The form refuses a name without a dot, and a number for an address,
+    // before the guard is asked.
+    for url in [
+        "http://localhost/mcp",
+        "http://LOCALHOST./mcp",
+        "http://localhost:3333/",
+    ] {
+        let refusal = call_refused(
+            &gateway,
+            &manager,
+            "mcp_registry_create",
+            json!({ "name": "Inside", "transport": "http", "url": url }),
+        )
+        .await;
+        assert!(refusal.starts_with("Invalid url"), "{url}: {refusal}");
+    }
+    assert!(gateway.upstreams.requests().is_empty(), "no request left");
+    let result = call_ok(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    assert_eq!(result["mcps"], json!([]));
+
+    // A public name is still welcome.
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_create",
+        json!({ "name": "Outside", "transport": "http", "url": "https://public.example/mcp" }),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn does_not_let_an_agent_move_an_mcp_into_the_network_of_the_instance() {
+    let gateway = gateway_guarded(|_| {}, guard_with_internal_names()).await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "Docs".into();
+        mcp.slug = "docs".into();
+        mcp.http_url = Some("https://public.example/mcp".into());
+    })
+    .await;
+    // Put by a person, on the MCPs page: it stays what it is.
+    create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "Home".into();
+        mcp.slug = "home".into();
+        mcp.http_url = Some("http://192.168.1.10:8123/mcp".into());
+    })
+    .await;
+    gateway.upstreams.clear();
+
+    for url in [
+        "http://169.254.169.254/",
+        "https://internal.example/mcp",
+        "http://[::1]/",
+    ] {
+        let refusal = call_refused(
+            &gateway,
+            &manager,
+            "mcp_registry_update",
+            json!({ "slug": "docs", "url": url }),
+        )
+        .await;
+        assert!(
+            refusal.starts_with("Invalid url: the host is a loopback"),
+            "{url}: {refusal}"
+        );
+    }
+    assert_eq!(
+        mcp_named(&gateway, "docs").await.http_url.as_deref(),
+        Some("https://public.example/mcp")
+    );
+    assert!(gateway.upstreams.requests().is_empty());
+
+    // What a person set can be renamed and tested, not pointed elsewhere inside.
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "home", "description": "Home Assistant", "url": "http://192.168.1.10:8123/mcp" }),
+    )
+    .await;
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_test",
+        json!({ "slug": "home" }),
+    )
+    .await;
+    let refusal = call_refused(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "home", "url": "http://192.168.1.11:8123/mcp" }),
+    )
+    .await;
+    assert!(
+        refusal.starts_with("Invalid url: the host is a loopback"),
+        "{refusal}"
+    );
+}
+
+#[tokio::test]
+async fn keeps_the_secrets_of_an_url_out_of_what_the_agent_reads_back() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+
+    // `broken.` fails its connection: the error is saved and told.
+    let created = call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_create",
+        json!({
+            "name": "Broken", "transport": "http",
+            "url": "https://agent:url-password@broken.example/s/path-secret-9f3a/mcp?key=query-secret-abc",
+            "auth_type": "bearer", "bearer_token": "bearer-secret-value",
+        }),
+    )
+    .await;
+    let listed = call_ok(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    let tested = call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_test",
+        json!({ "slug": "broken" }),
+    )
+    .await;
+    for answer in [&created, &listed, &tested] {
+        let text = answer.to_string();
+        for secret in [
+            "url-password",
+            "path-secret-9f3a",
+            "query-secret-abc",
+            "bearer-secret-value",
+        ] {
+            assert!(!text.contains(secret), "{secret} leaked: {text}");
+        }
+    }
+    assert_eq!(created["mcp"]["url"], "https://broken.example/…");
+}
+
+// --- allowance ---
+
+#[tokio::test]
+async fn holds_an_access_token_to_a_number_of_registry_calls_per_minute() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    let other = grant(&gateway, &admin, MANAGE).await;
+
+    for _ in 0..30 {
+        call_ok(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    }
+    let refusal = call_refused(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    assert!(
+        refusal.contains("Too many calls to the MCP registry tools"),
+        "{refusal}"
+    );
+    // Another connection has its own allowance, and the tools of the MCPs are not counted.
+    call_ok(&gateway, &other, "mcp_registry_list", json!({})).await;
+    let tools = list_tools(&gateway, &manager, "eager").await;
+    assert!(!tools.is_empty());
+}
+
+// --- the other ways in ---
+
+/// A token that was never allowed the tools, and one that is, try every way
+/// to reach them but their name: neither changes the registry.
+#[tokio::test]
+async fn reaches_the_tools_by_their_name_only() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    let plain = grant(&gateway, &admin, "mcp:tools").await;
+    let evil = json!({ "name": "Evil", "transport": "http", "url": "https://evil.example/mcp" });
+
+    // The protocol trims a name: padding is the tool itself, and as much
+    // behind its permission as the tool. Left to the token without one.
+    for padded in [
+        " mcp_registry_create",
+        "mcp_registry_create\n",
+        "\tmcp_registry_create ",
+    ] {
+        gateway
+            .post_message(
+                &plain,
+                json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": { "name": padded, "arguments": evil } }),
+                &[],
+            )
+            .await;
+    }
+    assert!(mcp_in(&gateway, Team::ROOT_ID, "evil").await.is_none());
+
+    for token in [&plain, &manager] {
+        for mode in ["eager", "lazy"] {
+            for name in [
+                "MCP_REGISTRY_CREATE",
+                "Mcp_Registry_Create",
+                "mcp_registry_create\u{0}",
+                "mcp_registry_create\u{200b}",
+                "mcp_registry__create",
+                "mcp_registry_create__create",
+                "mcp_registry-create",
+            ] {
+                // Whatever it answers, it is not the tool.
+                gateway
+                    .post_message(
+                        token,
+                        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                            "params": { "name": name, "arguments": evil } }),
+                        &[("x-mymcps-tool-mode", mode)],
+                    )
+                    .await;
+            }
+            // The lazy meta-tool names an MCP and one of its tools.
+            for (mcp, tool) in [
+                ("mcp_registry_create", "mcp_registry_create"),
+                ("mcp_registry", "create"),
+                ("mcp", "registry_create"),
+                ("", "mcp_registry_create"),
+            ] {
+                gateway
+                    .post_message(
+                        token,
+                        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                            "params": { "name": "call_tool",
+                                "arguments": { "mcp": mcp, "tool": tool, "arguments": evil } } }),
+                        &[("x-mymcps-tool-mode", mode)],
+                    )
+                    .await;
+            }
+        }
+    }
+    assert!(mcp_in(&gateway, Team::ROOT_ID, "evil").await.is_none());
+    assert!(gateway.upstreams.requests().is_empty());
+
+    // A batch is no JSON-RPC message the gateway reads: no call in it runs.
+    for token in [&plain, &manager] {
+        let batch = gateway
+            .post_message(
+                token,
+                json!([
+                    { "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                      "params": { "name": "mcp_registry_create", "arguments": evil } },
+                    { "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                      "params": { "name": "mcp_registry_list", "arguments": {} } },
+                ]),
+                &[],
+            )
+            .await;
+        assert_eq!(batch.status, http::StatusCode::BAD_REQUEST);
+    }
+    assert!(mcp_in(&gateway, Team::ROOT_ID, "evil").await.is_none());
+}
+
+/// The person removes the permission on the Access tokens page; the access
+/// token the agent already holds stops working as a manager on its next
+/// request, with no wait for it to expire.
+#[tokio::test]
+async fn loses_the_tools_on_the_next_request_once_the_permission_is_removed() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    create_http_mcp(&gateway, admin.id, "Issues", "issues").await;
+    for mode in ["eager", "lazy"] {
+        assert_eq!(
+            registry_tools(&list_tools(&gateway, &manager, mode).await),
+            REGISTRY_TOOLS
+        );
+    }
+
+    let token_id: i64 =
+        sqlx::query_scalar("select `id` from `access_tokens` where `oauth_scopes` = ?")
+            .bind(MANAGE)
+            .fetch_one(&**gateway.db())
+            .await
+            .unwrap();
+    let removed = gateway
+        .app
+        .post(&format!("/tokens/{token_id}/remove-mcp-management"))
+        .login_as(&admin)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(removed.status, http::StatusCode::FOUND);
+
+    for mode in ["eager", "lazy"] {
+        let names = list_tools(&gateway, &manager, mode).await;
+        assert!(registry_tools(&names).is_empty(), "{mode}");
+        assert!(!names.is_empty(), "the MCPs are still served");
+    }
+    for (name, arguments) in [
+        ("mcp_registry_delete", json!({ "slug": "issues" })),
+        ("mcp_registry_list", json!({})),
+    ] {
+        let refusal = call_refused(&gateway, &manager, name, arguments).await;
+        assert!(refusal.contains("not allowed to manage MCPs"), "{refusal}");
+    }
+    assert!(mcp_in(&gateway, Team::ROOT_ID, "issues").await.is_some());
+}
+
+#[tokio::test]
+async fn refuses_the_tools_once_the_person_has_left_the_team_or_the_account_is_gone() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let other_team = create_team(&gateway, "Other").await;
+    mymcps_web::testing::factories::join_team(&gateway, other_team.id, &admin, TeamRole::Admin)
+        .await;
+    let in_root = grant(&gateway, &admin, MANAGE).await;
+    let in_other = grant_in(&gateway, &admin, MANAGE, other_team.id).await;
+    assert_eq!(
+        registry_tools(&list_tools(&gateway, &in_other, "eager").await),
+        REGISTRY_TOOLS
+    );
+
+    // Out of the other team: that team's token is done, the root team's is not.
+    sqlx::query("delete from `team_user` where `team_id` = ? and `user_id` = ?")
+        .bind(other_team.id)
+        .bind(admin.id)
+        .execute(&**gateway.db())
+        .await
+        .unwrap();
+    assert!(registry_tools(&list_tools(&gateway, &in_other, "eager").await).is_empty());
+    let refusal = call_refused(&gateway, &in_other, "mcp_registry_list", json!({})).await;
+    assert!(
+        refusal.contains("not an administrator or an owner"),
+        "{refusal}"
+    );
+    assert_eq!(
+        registry_tools(&list_tools(&gateway, &in_root, "eager").await),
+        REGISTRY_TOOLS
+    );
+
+    // Out of every team.
+    sqlx::query("delete from `team_user` where `user_id` = ?")
+        .bind(admin.id)
+        .execute(&**gateway.db())
+        .await
+        .unwrap();
+    assert!(registry_tools(&list_tools(&gateway, &in_root, "lazy").await).is_empty());
+    call_refused(
+        &gateway,
+        &in_root,
+        "mcp_registry_create",
+        json!({
+            "name": "Evil", "transport": "http", "url": "https://evil.example/mcp",
+        }),
+    )
+    .await;
+
+    // The account deleted: the token is refused, or has no tool.
+    sqlx::query("delete from `users` where `id` = ?")
+        .bind(admin.id)
+        .execute(&**gateway.db())
+        .await
+        .unwrap();
+    let response = gateway
+        .post_message(
+            &in_root,
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "mcp_registry_create", "arguments": {
+                    "name": "Evil", "transport": "http", "url": "https://evil.example/mcp" } } }),
+            &[],
+        )
+        .await;
+    if response.status == http::StatusCode::OK {
+        assert_eq!(result_of(&response)["isError"], true);
+    }
+    assert!(mcp_in(&gateway, Team::ROOT_ID, "evil").await.is_none());
+}
+
+// --- the link ---
+
+#[tokio::test]
+async fn builds_the_link_from_the_configured_address_whatever_the_request_says() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    let waiting = create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "Waiting".into();
+        mcp.slug = "waiting".into();
+        mcp.status = McpStatus::Draft;
+        mcp.oauth_required = true;
+        mcp.name = "https://evil.example/".into();
+    })
+    .await;
+
+    let response = gateway
+        .post_message(
+            &manager,
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "mcp_registry_auth_link", "arguments": { "slug": waiting.slug } } }),
+            &[
+                ("host", "evil.example"),
+                ("x-forwarded-host", "evil.example"),
+                ("x-forwarded-proto", "https"),
+                ("x-forwarded-port", "8443"),
+                ("forwarded", "host=evil.example;proto=https"),
+                ("origin", "https://evil.example"),
+                ("referer", "https://evil.example/"),
+            ],
+        )
+        .await;
+    let result = result_of(&response);
+    assert_eq!(result["isError"], Value::Null, "{result}");
+    let content = &result["structuredContent"];
+    assert_eq!(
+        content["auth_link"],
+        format!("http://localhost:3333/mcps/{}", waiting.id)
+    );
+    // Nothing the request or the MCP holds is in the link.
+    assert!(!content["auth_link"].as_str().unwrap().contains("evil"));
+}
+
+#[tokio::test]
+async fn opens_the_link_of_an_mcp_only_for_the_team_it_is_in() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let other_team = create_team(&gateway, "Other").await;
+    mymcps_web::testing::factories::join_team(&gateway, other_team.id, &admin, TeamRole::Admin)
+        .await;
+    let foreign = create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "Foreign".into();
+        mcp.slug = "foreign".into();
+        mcp.team_id = other_team.id;
+        mcp.oauth_required = true;
+    })
+    .await;
+
+    // The person works in the Root Team: the MCP of the other one is a missing MCP
+    // for the page, and nothing starts an authorization for it.
+    let opened = gateway
+        .app
+        .get(&format!("/mcps/{}", foreign.id))
+        .login_as(&admin)
+        .send()
+        .await;
+    assert_eq!(opened.redirect_path().as_deref(), Some("/mcps"));
+    let started = gateway
+        .app
+        .get(&format!("/mcps/{}/oauth/start", foreign.id))
+        .login_as(&admin)
+        .send()
+        .await;
+    assert_eq!(started.redirect_path().as_deref(), Some("/mcps"));
+    assert!(gateway.upstreams.requests().is_empty());
 }

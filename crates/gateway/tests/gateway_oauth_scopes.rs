@@ -390,3 +390,39 @@ async fn takes_the_permission_off_a_grant_without_ending_the_connection() {
             .unwrap()
     );
 }
+
+/// The copy of its row that a request holds is older than the page where the
+/// person removes the permission, or revokes the connection: what the request
+/// writes afterwards (that the token was used) must not bring either back.
+#[tokio::test]
+async fn a_request_that_began_before_the_removal_does_not_give_the_permission_back() {
+    let gateway = TestGateway::new().await;
+    let db = gateway.db();
+    let admin = create_admin(db).await;
+    let client_id = register_client(&gateway, None).await;
+    let created = grant(&gateway, &client_id, None, &admin, Team::ROOT_ID, true).await;
+
+    let mut stale = find_token(db, created.token.id).await;
+    stale.last_used_at = None;
+    let mut fresh = find_token(db, created.token.id).await;
+    assert!(
+        access_token::remove_mcp_management(db, &mut fresh)
+            .await
+            .unwrap()
+    );
+
+    access_token::touch_last_used(db, &mut stale).await.unwrap();
+    let stored = find_token(db, created.token.id).await;
+    assert!(stored.last_used_at.is_some());
+    assert_eq!(stored.oauth_scopes.as_deref(), Some("mcp:tools"));
+
+    // The same for a revocation, and for a rotation that lands in between.
+    let mut stale = find_token(db, created.token.id).await;
+    stale.last_used_at = None;
+    let mut to_revoke = find_token(db, created.token.id).await;
+    access_token::revoke(db, &mut to_revoke).await.unwrap();
+    access_token::touch_last_used(db, &mut stale).await.unwrap();
+    let stored = find_token(db, created.token.id).await;
+    assert!(stored.is_revoked(), "a revoked token is not usable again");
+    assert!(!accepts(&gateway, &created.plaintext).await);
+}
