@@ -2,6 +2,18 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-18
+
+### Added
+
+- Added tools that let an agent manage the MCPs of a team through the gateway: `mcp_registry_list`, `mcp_registry_create`, `mcp_registry_update`, `mcp_registry_delete`, `mcp_registry_test`, and `mcp_registry_auth_link`. They accept what the form of the **MCPs** page accepts, for HTTP and npm MCPs, test an MCP as **Test connection** does, and answer the link to the MCP's dialog where a person selects **Connect** for an MCP that signs in with OAuth. They never answer a secret: tokens, header and environment values are only said to be set, and the credentials and query values of URLs are hidden. Their arguments stay out of the call log. See [docs/mcp-management-tools.md](docs/mcp-management-tools.md).
+- Added the `mcps:manage` OAuth scope and a checkbox for it on the consent screen, **Allow this agent to manage your MCPs**, unchecked by default whatever the client asks for. Only an admin or an owner of the chosen team can tick it. The tools above are only listed and only run for a connection that has it, while the person who gave it is still an admin or an owner of the team; the gateway checks this at every request.
+- Added **Remove MCP management** to the OAuth connections of **Access tokens** that have the permission, marked **Manages MCPs**: the connection keeps calling tools and can no longer manage MCPs.
+
+### Changed
+
+- The OAuth server publishes `mcp:tools` and `mcps:manage` in `scopes_supported` and accepts either in the `scope` of a registration or an authorization request; any other scope is still refused. A refresh keeps the scopes of its grant: it may name fewer, never more, and never changes them.
+
 ## 2026-10-12
 
 ### Added

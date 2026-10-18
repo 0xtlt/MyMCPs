@@ -61,6 +61,10 @@ X-MyMCPs-Tool-Mode: lazy
 
 Lazy mode exposes `list_mcps`, `tool_search`, and `call_tool` instead of loading every tool definition at once. The header takes precedence over the instance setting.
 
+### Let an agent manage your MCPs
+
+On the OAuth consent screen, a team admin or owner can tick **Allow this agent to manage your MCPs** (unchecked by default). That connection then also gets tools to list, add, change, delete and test the MCPs of the team, and to get the link that connects an MCP that signs in with OAuth. Secrets are never sent back. Remove the permission from **Access tokens** with **Remove MCP management**, or revoke the connection. See [docs/mcp-management-tools.md](docs/mcp-management-tools.md).
+
 ### Upstream OAuth MCPs
 
 For providers that support MCP OAuth discovery and dynamic client registration, choose **OAuth** when adding the server, save it, then select **Connect OAuth**. Set `APP_URL` to the instance's public HTTPS URL so callback URLs are generated correctly.
