@@ -24,7 +24,7 @@ use mymcps_gateway::oauth::{
     GatewayAuthorizationRequest, authorization_server_metadata, is_loopback_redirect_uri,
     oauth_redirect, oauth_token_response, protected_resource_metadata,
 };
-use mymcps_gateway::validators::gateway_oauth::CONSENT_APPROVAL;
+use mymcps_gateway::validators::gateway_oauth::{CONSENT_APPROVAL, CONSENT_MANAGE_MCPS};
 use mymcps_gateway::{Error as OauthError, GatewayOauthError};
 use mymcps_upstream::{OAUTH_CLIENT_METADATA_PATH, oauth_client_metadata};
 use serde_json::{Value, json};
@@ -275,6 +275,7 @@ async fn answer_authorization(call: &AuthorizationCall<'_>) -> Result<Response, 
                 redirect_host: &host_of(&redirect_url),
                 is_loopback_redirect: is_loopback_redirect_uri(&request.redirect_uri),
                 scope: &request.scopes,
+                can_manage_mcps: call.teams.iter().any(|team| team.role.is_admin()),
                 user_email: &user.email,
                 teams: call.teams,
                 team_id: current.team.id,
@@ -316,8 +317,13 @@ async fn answer_authorization(call: &AuthorizationCall<'_>) -> Result<Response, 
                 .and_then(|team_id| call.teams.iter().find(|team| team.team.id == team_id))
                 .ok_or_else(|| GatewayOauthError::new("invalid_request", "Unknown team"))?,
         };
+        // The permission to manage MCPs is the person's to give, on this
+        // screen: what the client asked for does not count.
+        let manage_mcps = CONSENT_MANAGE_MCPS
+            .validate(call.input.get("manage_mcps"))
+            .is_ok();
         let code = oauth
-            .create_authorization_code(&request, user.id, team.team.id)
+            .create_authorization_code(&request, user.id, team.team.id, manage_mcps)
             .await?;
         oauth_redirect(
             &request.redirect_uri,

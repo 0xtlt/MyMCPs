@@ -2,6 +2,25 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-18
+
+### Added
+
+- Added tools that let an agent manage the MCPs of a team through the gateway: `mcp_registry_list`, `mcp_registry_create`, `mcp_registry_update`, `mcp_registry_delete`, `mcp_registry_test`, and `mcp_registry_auth_link`. They accept what the form of the **MCPs** page accepts for HTTP MCPs, test an MCP as **Test connection** does, and answer the link to the MCP's dialog where a person selects **Connect** for an MCP that signs in with OAuth. They never answer a secret: tokens, header and environment values are only said to be set, and a URL is shown as its origin. Their arguments stay out of the call log, and one access token may call them 30 times a minute. See [docs/mcp-management-tools.md](docs/mcp-management-tools.md).
+- Added the `mcps:manage` OAuth scope and a checkbox for it on the consent screen, **Allow this agent to manage your MCPs**, unchecked by default whatever the client asks for. Only an admin or an owner of the chosen team can tick it. The tools above are only listed and only run for a connection that has it, while the person who gave it is still an admin or an owner of the team; the gateway checks this at every request.
+- Added **Remove MCP management** to the OAuth connections of **Access tokens** that have the permission, marked **Manages MCPs**: the connection keeps calling tools and can no longer manage MCPs.
+
+### Security
+
+- Updated rustls to 0.23.46 for RUSTSEC-2026-0346, RUSTSEC-2026-0347, RUSTSEC-2026-0348, and RUSTSEC-2026-0349, which affect the TLS connections the server makes to MCPs and OAuth providers.
+- The tools that manage MCPs never add an npm MCP, nor change what one runs: its package, version, arguments or environment variables. Running a package is running code on the server, and these tools wait for no approval, so the agent is told to ask the user to do it on the **MCPs** page. An agent can still list, rename, enable, disable, test, and delete an npm MCP.
+- The tools refuse an MCP address on a loopback, private or link-local network (such as `169.254.169.254`, the metadata service of the clouds), or a name that resolves to one: the answer of that address would come back to the agent. An MCP already on such an address, set on the **MCPs** page, can still be tested and renamed by the agent. A person adds one on the page.
+- The tools show the URL of an MCP as its origin only, since the path of an URL can hold the key of an account, and the number of arguments of an npm MCP instead of its arguments.
+
+### Changed
+
+- The OAuth server publishes `mcp:tools` and `mcps:manage` in `scopes_supported` and accepts either in the `scope` of a registration or an authorization request; any other scope is still refused. A refresh keeps the scopes of its grant: it may name fewer, never more, and never changes them.
+
 ## 2026-10-12
 
 ### Added

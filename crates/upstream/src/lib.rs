@@ -202,6 +202,11 @@ impl Upstream {
         }
     }
 
+    /// The guard that keeps addresses out of the network of the instance.
+    pub fn address_guard(&self) -> &AddressGuard {
+        &self.addresses
+    }
+
     pub fn core(&self) -> &Arc<Core> {
         &self.core
     }

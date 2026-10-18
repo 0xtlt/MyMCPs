@@ -13,6 +13,7 @@ use mymcps_core::models::{ApprovalRequest, Mcp, McpStatus, McpTransport, Team, T
 use mymcps_core::{Config, Core, Db, TestCore, Timestamp};
 pub use mymcps_gateway::approvals::ApprovalScope;
 use mymcps_gateway::approvals::Decision;
+use mymcps_gateway::mcp_management::McpRegistryManager;
 use mymcps_gateway::{Gateway, McpGateway, McpRequest};
 use mymcps_net::{AddressGuard, CannedResponse, Fetcher, Resolver, SentRequest};
 use mymcps_upstream::Upstream;
@@ -309,6 +310,17 @@ impl TestMcpGateway {
 
     pub fn db(&self) -> &Db {
         &self.core.db
+    }
+
+    /// The same gateway, with the tools that manage the MCP registry done
+    /// by `manager`.
+    #[must_use]
+    pub fn with_mcp_management(mut self, manager: Arc<dyn McpRegistryManager>) -> Self {
+        self.mcp_gateway = Arc::new(
+            McpGateway::new(self.gateway.clone(), self.upstream.clone())
+                .with_mcp_management(manager),
+        );
+        self
     }
 
     /// Send one request to `/mcp` and read its whole answer.

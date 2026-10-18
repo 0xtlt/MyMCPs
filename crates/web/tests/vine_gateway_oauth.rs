@@ -777,6 +777,7 @@ async fn issue_code(app: &TestApp, oauth_client: &OauthClient, admin: &User) -> 
             },
             admin.id,
             mymcps_core::models::Team::ROOT_ID,
+            false,
         )
         .await
         .unwrap()

@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use mymcps_core::crypto::{constant_time_eq, random_base64url};
-use mymcps_core::models::{OauthAuthorizationCode, OauthClient};
+use mymcps_core::models::{OauthAuthorizationCode, OauthClient, Team};
 use mymcps_core::public_url::PublicUrlError;
 use mymcps_core::redaction::sanitize_diagnostic;
 use mymcps_core::{Config, Core, Timestamp};
@@ -42,7 +42,10 @@ use crate::validators::gateway_oauth::{
 };
 
 pub use crate::access_token::OAUTH_ACCESS_TOKEN_TTL_SECONDS;
-pub use constants::{GATEWAY_OAUTH_SCOPE, LOOPBACK_HOSTS};
+pub use constants::{
+    GATEWAY_OAUTH_SCOPE, LOOPBACK_HOSTS, MCPS_MANAGE_SCOPE, SUPPORTED_OAUTH_SCOPES, grant_scopes,
+    has_scope, is_usable_grant, scope_names,
+};
 
 const AUTHORIZATION_CODE_TTL_MINUTES: i64 = 5;
 const CLIENT_SECRET_TTL_DAYS: i64 = 365;
@@ -73,7 +76,7 @@ pub fn protected_resource_metadata(config: &Config) -> Result<Value, PublicUrlEr
     Ok(json!({
         "resource": gateway_resource_url(config)?,
         "authorization_servers": [issuer],
-        "scopes_supported": [GATEWAY_OAUTH_SCOPE],
+        "scopes_supported": SUPPORTED_OAUTH_SCOPES,
         "bearer_methods_supported": ["header"],
         "resource_name": "MyMCPs gateway",
     }))
@@ -87,7 +90,7 @@ pub fn authorization_server_metadata(config: &Config) -> Result<Value, PublicUrl
         "token_endpoint": format!("{issuer}/token"),
         "registration_endpoint": format!("{issuer}/register"),
         "revocation_endpoint": format!("{issuer}/revoke"),
-        "scopes_supported": [GATEWAY_OAUTH_SCOPE],
+        "scopes_supported": SUPPORTED_OAUTH_SCOPES,
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
@@ -173,6 +176,25 @@ pub fn oauth_token_response(created: &CreatedOauthTokens) -> Value {
     response
 }
 
+/// The scopes a client asked for, spelled the gateway's way: each known
+/// scope once, in the order a grant lists them. A request that names none
+/// asks for the gateway scope.
+fn requested_scopes(requested: Option<&Value>) -> String {
+    let names: Vec<&str> = requested
+        .and_then(Value::as_array)
+        .map(|names| names.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let known: Vec<&str> = SUPPORTED_OAUTH_SCOPES
+        .into_iter()
+        .filter(|scope| names.contains(scope))
+        .collect();
+    if known.is_empty() {
+        GATEWAY_OAUTH_SCOPE.to_string()
+    } else {
+        known.join(" ")
+    }
+}
+
 /// An authorization request that names a registered client and one of its
 /// redirect URIs, and asks for what the gateway grants.
 #[derive(Debug, Clone)]
@@ -181,6 +203,8 @@ pub struct GatewayAuthorizationRequest {
     pub redirect_uri: String,
     pub state: Option<String>,
     pub code_challenge: String,
+    /// What the client asked for. It is what the grant may hold at most; the
+    /// permission to manage MCPs is only given by the person who answers.
     pub scopes: String,
     pub resource: String,
 }
@@ -463,9 +487,10 @@ impl OauthServer {
             ));
         };
 
-        if REQUESTED_SCOPE.validate(metadata.get("scope")).is_err() {
+        let Ok(scope) = REQUESTED_SCOPE.validate_opt(metadata.get("scope")) else {
             return Err(invalid_client_metadata("Unsupported OAuth scope"));
-        }
+        };
+        let scope = requested_scopes(scope.as_ref());
 
         let Ok(name) = CLIENT_NAME.validate_opt(metadata.get("client_name")) else {
             return Err(invalid_client_metadata("Client name is too long"));
@@ -500,7 +525,7 @@ impl OauthServer {
             token_endpoint_auth_method: auth_method.to_string(),
             grant_types: grant_types.to_string(),
             response_types: response_types.to_string(),
-            scope: GATEWAY_OAUTH_SCOPE.to_string(),
+            scope: scope.clone(),
             ..Default::default()
         };
         client.insert(&*self.core.db).await?;
@@ -511,7 +536,7 @@ impl OauthServer {
         response.insert("token_endpoint_auth_method".into(), json!(auth_method));
         response.insert("grant_types".into(), grant_types);
         response.insert("response_types".into(), response_types);
-        response.insert("scope".into(), json!(GATEWAY_OAUTH_SCOPE));
+        response.insert("scope".into(), json!(scope));
         response.insert("client_id".into(), json!(client_id));
         response.insert(
             "client_id_issued_at".into(),
@@ -589,9 +614,9 @@ impl OauthServer {
             ));
         };
 
-        if REQUESTED_SCOPE.validate(input.get("scope")).is_err() {
+        let Ok(scope) = REQUESTED_SCOPE.validate_opt(input.get("scope")) else {
             return Err(redirect_error("invalid_scope", "Unsupported OAuth scope"));
-        }
+        };
 
         let gateway_resource = self.gateway_resource()?;
         if GATEWAY_RESOURCE
@@ -615,7 +640,7 @@ impl OauthServer {
             redirect_uri,
             state,
             code_challenge,
-            scopes: GATEWAY_OAUTH_SCOPE.to_string(),
+            scopes: requested_scopes(scope.as_ref()),
             resource: gateway_resource.0,
         })
     }
@@ -623,12 +648,33 @@ impl OauthServer {
     /// Record that the user granted the request for one of their teams, and
     /// return the code its client exchanges for tokens. Only the hash of the
     /// code is stored.
+    ///
+    /// The grant always holds the gateway scope. It also holds the
+    /// permission to manage MCPs when `manage_mcps` is set, which the person
+    /// checked on the consent screen whatever the client asked for, and only
+    /// an admin or an owner of the team may give it.
     pub async fn create_authorization_code(
         &self,
         request: &GatewayAuthorizationRequest,
         user_id: i64,
         team_id: i64,
+        manage_mcps: bool,
     ) -> Result<String> {
+        if manage_mcps
+            && !Team::role_of(&*self.core.db, team_id, user_id)
+                .await?
+                .is_some_and(|role| role.is_admin())
+        {
+            return Err(GatewayOauthError {
+                redirect_uri: Some(request.redirect_uri.clone()),
+                state: request.state.clone(),
+                ..GatewayOauthError::new(
+                    "invalid_request",
+                    "Only team admins and owners can let an agent manage MCPs",
+                )
+            }
+            .into());
+        }
         let plaintext = random_base64url(32);
         sqlx::query("delete from `oauth_authorization_codes` where `expires_at` < ?")
             .bind(Timestamp::now())
@@ -641,7 +687,7 @@ impl OauthServer {
             team_id,
             redirect_uri: request.redirect_uri.clone(),
             code_challenge: request.code_challenge.clone(),
-            scopes: request.scopes.clone(),
+            scopes: grant_scopes(manage_mcps).to_string(),
             resource: request.resource.clone(),
             expires_at: Timestamp::now()
                 + chrono::Duration::minutes(AUTHORIZATION_CODE_TTL_MINUTES),
@@ -816,9 +862,14 @@ impl OauthServer {
         }
 
         let scope = params.scope.map_or(Value::Null, Value::from);
-        if REFRESH_SCOPE.validate(&scope).is_err() {
+        let Ok(requested) = REFRESH_SCOPE.validate_opt(&scope) else {
             return Err(GatewayOauthError::new("invalid_scope", "Unsupported OAuth scope").into());
-        }
+        };
+        let requested: Vec<&str> = requested
+            .as_ref()
+            .and_then(Value::as_array)
+            .map(|names| names.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
 
         let gateway_resource = self.gateway_resource()?;
         if GATEWAY_RESOURCE
@@ -837,10 +888,14 @@ impl OauthServer {
             params.refresh_token,
             params.client.id,
             &gateway_resource.0,
+            &requested,
         )
         .await?;
         match rotation {
             OauthGrantRotation::Rotated(tokens) => Ok(*tokens),
+            OauthGrantRotation::ScopeExceeded => {
+                Err(GatewayOauthError::new("invalid_scope", "Unsupported OAuth scope").into())
+            }
             OauthGrantRotation::Invalid | OauthGrantRotation::Reused => {
                 Err(GatewayOauthError::new(
                     "invalid_grant",

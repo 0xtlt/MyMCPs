@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use maud::{Markup, html};
 use mymcps_core::Timestamp;
 use mymcps_core::models::{AccessToken, Mcp, ScopeMode, TokenSource};
+use mymcps_gateway::access_token;
 use serde_json::Value;
 
 use crate::forms::FormState;
@@ -118,6 +119,16 @@ impl TokenRow {
         } else {
             !self.token.is_revoked()
         }
+    }
+
+    /// An OAuth connection that was allowed to manage MCPs, while it works.
+    pub fn manages_mcps(&self) -> bool {
+        access_token::grants_mcp_management(&self.token)
+    }
+
+    /// The permission to manage MCPs can be taken off while the connection works.
+    pub fn can_remove_mcp_management(&self) -> bool {
+        self.manages_mcps() && self.token.is_active()
     }
 
     pub fn can_delete(&self) -> bool {
@@ -694,6 +705,16 @@ fn row_form(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                 button type="submit" class="button" { "Revoke" }
             }
         }
+        // The connection stays: only what lets it manage MCPs goes.
+        @if row.can_remove_mcp_management() {
+            form id=(format!("remove-mcp-management-{}", token.id)) method="post"
+                action=(view.url(&format!("/tokens/{}/remove-mcp-management", token.id)))
+                data-confirm=(format!("{} keeps its access to the tools of your MCPs, and can no longer add, edit, delete or test them.", token.name))
+                data-confirm-title="Remove MCP management?" data-confirm-label="Remove" {
+                (context.csrf_field())
+                button type="submit" class="button" { "Remove MCP management" }
+            }
+        }
     }
 }
 
@@ -721,6 +742,9 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                     span class="badge badge--no-dot" { "Manual" }
                 } @else {
                     span class="badge badge--info badge--no-dot" { "OAuth" }
+                    @if row.manages_mcps() {
+                        " " span class="badge badge--warning badge--no-dot" { "Manages MCPs" }
+                    }
                 }
             }
             td class="cell-code" { (row.identifier()) }
@@ -751,7 +775,8 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
 fn mobile_row(view: &ListView, row: &TokenRow) -> Markup {
     let token = &row.token;
     let menu_id = format!("token-{}-menu", token.id);
-    let has_actions = row.can_edit() || row.can_delete() || row.can_revoke();
+    let has_actions =
+        row.can_edit() || row.can_delete() || row.can_revoke() || row.can_remove_mcp_management();
     html! {
         div class="list-row" {
             span class="list-row__text" {
@@ -761,6 +786,9 @@ fn mobile_row(view: &ListView, row: &TokenRow) -> Markup {
                 }
                 span class="list-row__subtitle" {
                     (row.source_label()) " · " (row.identifier()) " · " (row.scope_label())
+                }
+                @if row.manages_mcps() {
+                    span class="list-row__subtitle" { span class="badge badge--warning badge--no-dot" { "Manages MCPs" } }
                 }
                 span class="list-row__subtitle" {
                     @match row.display_expires_at() {
@@ -789,6 +817,10 @@ fn mobile_row(view: &ListView, row: &TokenRow) -> Markup {
                     } @else if row.can_revoke() {
                         button type="submit" class="menu__item" role="menuitem"
                             form=(format!("revoke-token-{}", token.id)) { (icon("ban")) "Revoke" }
+                    }
+                    @if row.can_remove_mcp_management() {
+                        button type="submit" class="menu__item" role="menuitem"
+                            form=(format!("remove-mcp-management-{}", token.id)) { (icon("lock")) "Remove MCP management" }
                     }
                 }
             }

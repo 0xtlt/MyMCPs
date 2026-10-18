@@ -288,8 +288,17 @@ fn accepts_the_code_response_type_only_however_often_it_is_repeated() {
 }
 
 #[test]
-fn accepts_a_scope_list_that_names_the_gateway_scope_and_nothing_else() {
-    for scope in ["mcp:tools", " mcp:tools", "mcp:tools ", "   mcp:tools   "] {
+fn accepts_a_scope_list_of_distinct_scopes_the_gateway_knows() {
+    for scope in [
+        "mcp:tools",
+        " mcp:tools",
+        "mcp:tools ",
+        "   mcp:tools   ",
+        "mcps:manage",
+        "mcp:tools mcps:manage",
+        "mcps:manage mcp:tools",
+        " mcp:tools  mcps:manage ",
+    ] {
         accepted(&REQUESTED_SCOPE, json!(scope));
     }
     // Left out, or sent in a shape that is not a scope string at all.
@@ -302,11 +311,16 @@ fn accepts_a_scope_list_that_names_the_gateway_scope_and_nothing_else() {
         " ",
         "   ",
         "mcp:tools mcp:tools",
+        "mcps:manage mcps:manage",
+        "mcp:tools mcps:manage mcp:tools",
         "mcp:tools other",
         "other mcp:tools",
+        "mcps:manage other",
         "other",
         "MCP:TOOLS",
+        "MCPS:MANAGE",
         "mcp:toolsx",
+        "mcps:managex",
         "mcp: tools",
         "mcp:tools\t",
         "\tmcp:tools",
@@ -699,17 +713,18 @@ fn keeps_the_scope_of_a_refresh_request_only_when_it_is_a_string() {
 }
 
 #[test]
-fn lets_a_refresh_request_repeat_the_gateway_scope_and_ask_for_no_other() {
+fn lets_a_refresh_request_name_the_scopes_the_gateway_knows_once_each() {
     accepted(&REFRESH_SCOPE, json!(null));
-    accepted(&REFRESH_SCOPE, json!("mcp:tools"));
     for scope in [
-        "",
-        " ",
+        "mcp:tools",
         " mcp:tools",
         "mcp:tools ",
-        "mcp:tools mcp:tools",
-        "other",
+        "mcps:manage",
+        "mcp:tools mcps:manage",
     ] {
+        accepted(&REFRESH_SCOPE, json!(scope));
+    }
+    for scope in ["", " ", "mcp:tools mcp:tools", "other", "mcp:tools other"] {
         refused(&REFRESH_SCOPE, json!(scope));
     }
 }
