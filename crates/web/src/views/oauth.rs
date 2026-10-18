@@ -3,6 +3,7 @@
 
 use maud::{DOCTYPE, Markup, html};
 use mymcps_core::models::Membership;
+use mymcps_gateway::oauth::GATEWAY_OAUTH_SCOPE;
 
 use crate::assets::asset_url;
 use crate::views::icon::{icon, logo};
@@ -14,7 +15,11 @@ pub struct Consent<'a> {
     /// Host and port of the redirect URI.
     pub redirect_host: &'a str,
     pub is_loopback_redirect: bool,
+    /// What the client asked for, sent back with the answer.
     pub scope: &'a str,
+    /// Whether the person is an admin or an owner of one of their teams: the
+    /// only ones who may let the client manage MCPs.
+    pub can_manage_mcps: bool,
     pub user_email: &'a str,
     /// The teams of the person: the client gets the MCPs of one of them.
     pub teams: &'a [Membership],
@@ -44,10 +49,17 @@ pub fn authorize_page(context: &PageContext, consent: &Consent<'_>) -> Markup {
                 p class="text-secondary" {
                     "This client will be able to call every enabled MCP of one team through your gateway. You can revoke the connection at any time from Access tokens."
                 }
+                p class="text-secondary" {
+                    @if consent.can_manage_mcps {
+                        "Managing the MCPs of the team is not included, unless you tick the box under Team."
+                    } @else {
+                        "Managing the MCPs of the team is not included."
+                    }
+                }
                 div class="cluster cluster--between" {
                     p class="cluster" {
                         span class="text-body-md-medium" { "Permission" }
-                        code class="code code--info" { (consent.scope) }
+                        code class="code code--info" { (GATEWAY_OAUTH_SCOPE) }
                     }
                     p class="text-body-sm text-tertiary" { "Callback: " (consent.redirect_host) }
                 }
@@ -97,6 +109,20 @@ pub fn authorize_page(context: &PageContext, consent: &Consent<'_>) -> Markup {
                             }
                         }
                         (icon("chevron-down"))
+                    }
+                }
+            }
+
+            // Off by default, whatever the client asked for. Shown to those
+            // who may give it, and checked again when the answer is sent.
+            @if consent.can_manage_mcps {
+                label class="choice" {
+                    input type="checkbox" class="checkbox" name="manage_mcps" form="authorize-form";
+                    span class="choice__text" {
+                        span class="choice__label" { "Allow this agent to manage your MCPs" }
+                        span class="choice__description" {
+                            "Add, edit, delete and test the MCPs of this team, and read the links that connect them. Requires the admin or owner role in this team."
+                        }
                     }
                 }
             }

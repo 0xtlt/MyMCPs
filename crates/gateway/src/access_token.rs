@@ -46,6 +46,9 @@ pub enum OauthGrantRotation {
     Invalid,
     /// The refresh token was already exchanged. Its grant is now revoked.
     Reused,
+    /// The request asked for a scope the grant does not hold. The refresh
+    /// token is still good.
+    ScopeExceeded,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -90,6 +93,31 @@ pub fn grants_mcp_management(token: &AccessToken) -> bool {
             .oauth_scopes
             .as_deref()
             .is_some_and(|scopes| crate::oauth::has_scope(scopes, crate::oauth::MCPS_MANAGE_SCOPE))
+}
+
+/// Take the permission to manage MCPs off an OAuth grant, in place: the
+/// connection keeps working with the other scopes it has. `false` when the
+/// token is not a usable grant that holds the permission.
+pub async fn remove_mcp_management(db: &Db, token: &mut AccessToken) -> Result<bool, sqlx::Error> {
+    if !grants_mcp_management(token) || token.is_revoked() {
+        return Ok(false);
+    }
+    let remaining = crate::oauth::scope_names(token.oauth_scopes.as_deref().unwrap_or_default())
+        .filter(|scope| *scope != crate::oauth::MCPS_MANAGE_SCOPE)
+        .collect::<Vec<_>>()
+        .join(" ");
+    // Only this column is written: a refresh that rotates the tokens of the
+    // grant at the same time must not be undone by a stale copy of the row.
+    let updated = sqlx::query(
+        "update `access_tokens` set `oauth_scopes` = ? where `id` = ? and `revoked_at` is null",
+    )
+    .bind(&remaining)
+    .bind(token.id)
+    .execute(&**db)
+    .await?
+    .rows_affected();
+    token.oauth_scopes = Some(remaining);
+    Ok(updated == 1)
 }
 
 pub fn generate_plaintext() -> String {
@@ -181,11 +209,16 @@ where
 /// Of two requests that present the same refresh token, one rotates the
 /// grant. The other is a replay, whether it comes later or at the same
 /// time, and revokes the grant.
+///
+/// The scopes of a grant never change by being refreshed. `requested_scopes`
+/// is what the request asked for, if anything: it may repeat the scopes of
+/// the grant or name fewer, and not more.
 pub async fn rotate_oauth_grant(
     db: &Db,
     refresh_token: &str,
     client_id: i64,
     resource: &str,
+    requested_scopes: &[&str],
 ) -> Result<OauthGrantRotation, sqlx::Error> {
     let refresh_hash = hash(refresh_token);
     if revoke_oauth_grant_for_refresh_reuse(db, &refresh_hash, client_id, resource).await? {
@@ -209,6 +242,14 @@ pub async fn rotate_oauth_grant(
     }) else {
         return Ok(OauthGrantRotation::Invalid);
     };
+
+    let granted = current.oauth_scopes.as_deref().unwrap_or_default();
+    if !requested_scopes
+        .iter()
+        .all(|scope| crate::oauth::has_scope(granted, scope))
+    {
+        return Ok(OauthGrantRotation::ScopeExceeded);
+    }
 
     let plaintext = generate_plaintext();
     let next_refresh_token = generate_refresh_token();

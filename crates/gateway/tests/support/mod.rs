@@ -327,7 +327,7 @@ pub async fn approve(gateway: &Gateway, authorization: &Value, user_id: i64) -> 
         .unwrap();
     gateway
         .oauth
-        .create_authorization_code(&request, user_id, Team::ROOT_ID)
+        .create_authorization_code(&request, user_id, Team::ROOT_ID, false)
         .await
         .unwrap()
 }

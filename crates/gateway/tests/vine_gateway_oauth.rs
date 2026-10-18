@@ -655,7 +655,7 @@ async fn grants_access_on_an_explicit_approval_only() {
     assert!(CONSENT_APPROVAL.validate(form.get("decision")).is_ok());
     let code = gateway
         .oauth
-        .create_authorization_code(&request, admin.id, Team::ROOT_ID)
+        .create_authorization_code(&request, admin.id, Team::ROOT_ID, false)
         .await
         .unwrap();
     assert_eq!(
@@ -688,6 +688,7 @@ async fn issue_code(gateway: &TestGateway, oauth_client: &OauthClient, admin: &U
             },
             admin.id,
             Team::ROOT_ID,
+            false,
         )
         .await
         .unwrap()

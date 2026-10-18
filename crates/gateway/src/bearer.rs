@@ -11,7 +11,9 @@ use url::Url;
 
 use crate::Gateway;
 use crate::access_token;
-use crate::oauth::{GATEWAY_OAUTH_SCOPE, gateway_resource_url, protected_resource_metadata_url};
+use crate::oauth::{
+    GATEWAY_OAUTH_SCOPE, gateway_resource_url, is_usable_grant, protected_resource_metadata_url,
+};
 
 /// What an authenticated request may reach.
 #[derive(Debug, Clone)]
@@ -100,7 +102,7 @@ fn has_valid_oauth_audience_and_scope(config: &Config, token: &AccessToken) -> b
         return false;
     };
     Url::parse(resource).is_ok_and(|resource| resource.as_str() == gateway_resource)
-        && token.oauth_scopes.as_deref() == Some(GATEWAY_OAUTH_SCOPE)
+        && token.oauth_scopes.as_deref().is_some_and(is_usable_grant)
 }
 
 impl Gateway {

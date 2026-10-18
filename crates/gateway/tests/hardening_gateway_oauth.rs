@@ -242,7 +242,7 @@ async fn still_returns_the_operator_decision_to_a_remote_client() {
 
     let code = gateway
         .oauth
-        .create_authorization_code(&request, admin.id, Team::ROOT_ID)
+        .create_authorization_code(&request, admin.id, Team::ROOT_ID, false)
         .await
         .unwrap();
     let approved = Url::parse(

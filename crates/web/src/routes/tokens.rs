@@ -52,7 +52,11 @@ pub fn routes() -> FeatureRoutes {
             .route("/tokens/install", get(install))
             .route("/tokens/{id}", put(update))
             .route("/tokens/{id}/edit", get(edit))
-            .route("/tokens/{id}/revoke", post(revoke)),
+            .route("/tokens/{id}/revoke", post(revoke))
+            .route(
+                "/tokens/{id}/remove-mcp-management",
+                post(remove_mcp_management),
+            ),
         ..Default::default()
     }
 }
@@ -585,6 +589,31 @@ pub async fn revoke(
     }
     access_token::revoke(db, &mut token).await?;
     session.flash("success", "Token revoked");
+    Ok(navigate(&headers, &index))
+}
+
+/// `POST /tokens/{id}/remove-mcp-management`: the connection stays and keeps
+/// its access to the tools; only the permission to manage MCPs goes. Whoever
+/// may revoke a token may do this to it.
+pub async fn remove_mcp_management(
+    State(state): State<AppState>,
+    session: Session,
+    scope: TokenScope,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Response, AppError> {
+    let db = &state.core.db;
+    let index = forwarded_index(&uri);
+    let Some(mut token) = find_token(db, scope, token_id(&id)).await? else {
+        session.flash("error", TOKEN_NOT_FOUND);
+        return Ok(navigate(&headers, &index));
+    };
+    if access_token::remove_mcp_management(db, &mut token).await? {
+        session.flash("success", "MCP management removed");
+    } else {
+        session.flash("error", "This connection cannot manage MCPs");
+    }
     Ok(navigate(&headers, &index))
 }
 

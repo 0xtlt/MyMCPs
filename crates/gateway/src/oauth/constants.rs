@@ -25,6 +25,24 @@ pub fn has_scope(scopes: &str, scope: &str) -> bool {
     scope_names(scopes).any(|name| name == scope)
 }
 
+/// What a grant is given: the gateway scope always, and the permission to
+/// manage MCPs when the person checked it. It is the only spelling a grant
+/// stores.
+pub fn grant_scopes(manage_mcps: bool) -> &'static str {
+    if manage_mcps {
+        "mcp:tools mcps:manage"
+    } else {
+        GATEWAY_OAUTH_SCOPE
+    }
+}
+
+/// Whether the scopes of a stored OAuth grant let it reach `/mcp`: they
+/// include the gateway scope, and no scope this gateway does not know.
+pub fn is_usable_grant(scopes: &str) -> bool {
+    has_scope(scopes, GATEWAY_OAUTH_SCOPE)
+        && scope_names(scopes).all(|name| SUPPORTED_OAUTH_SCOPES.contains(&name))
+}
+
 /// Hosts that name the user's own device, as a parsed URL spells them.
 pub const LOOPBACK_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "[::1]"];
 

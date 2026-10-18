@@ -8,9 +8,9 @@ use std::sync::LazyLock;
 use mymcps_vine as vine;
 use serde_json::{Value, json};
 use url::Url;
-use vine::{Rule, Validator, Vine, VineString};
+use vine::{Rule, Validator, Vine, VineArray, VineString};
 
-use crate::oauth::constants::{GATEWAY_OAUTH_SCOPE, has_loopback_host};
+use crate::oauth::constants::{SUPPORTED_OAUTH_SCOPES, has_loopback_host};
 
 /// The app converts blank strings to null before validating, which suits
 /// HTML forms. An OAuth parameter is judged as the client sent it: `scope=`
@@ -203,6 +203,22 @@ fn gateway_resource() -> Rule {
     })
 }
 
+/// A scope named twice in one request is a request that is not understood.
+fn distinct_members() -> Rule {
+    vine::rule(|value, field| {
+        let Some(items) = value.as_array() else {
+            return;
+        };
+        let mut seen = HashSet::new();
+        if !items.iter().all(|item| seen.insert(item.as_str())) {
+            field.report(
+                "The {{ field }} field must not repeat a scope",
+                "distinctMembers",
+            );
+        }
+    })
+}
+
 /// Refresh tokens extend a grant that an authorization code has to start.
 fn with_authorization_code() -> Rule {
     vine::rule(|value, field| {
@@ -276,16 +292,20 @@ pub static CLIENT_RESPONSE_TYPES: LazyLock<Validator> = LazyLock::new(|| {
     )
 });
 
-/// The `scope` of a registration or an authorization request. When sent, it
-/// must name the gateway scope and nothing else.
-pub static REQUESTED_SCOPE: LazyLock<Validator> = LazyLock::new(|| {
-    VERBATIM.create(
-        vine::array(vine::literal(GATEWAY_OAUTH_SCOPE))
-            .parse(|value, _| scope_list(value))
-            .fixed_length(1)
-            .optional(),
-    )
-});
+/// A `scope` parameter that is left out, or names at least one scope the
+/// gateway knows, each of them once.
+fn known_scopes() -> VineArray {
+    vine::array(vine::enum_(SUPPORTED_OAUTH_SCOPES))
+        .parse(|value, _| scope_list(value))
+        .min_length(1)
+        .use_rule(distinct_members())
+}
+
+/// The `scope` of a registration or an authorization request. A client may
+/// ask for any scope the gateway knows: only the person who answers the
+/// consent screen decides which ones the grant gets.
+pub static REQUESTED_SCOPE: LazyLock<Validator> =
+    LazyLock::new(|| VERBATIM.create(known_scopes().optional()));
 
 /// Name of a registering client, shown on the consent screen and in the list
 /// of connections.
@@ -331,6 +351,12 @@ pub static GATEWAY_RESOURCE: LazyLock<Validator> =
 /// Answer of the consent form. Only an explicit approval grants access.
 pub static CONSENT_APPROVAL: LazyLock<Validator> =
     LazyLock::new(|| VERBATIM.create(vine::literal("approve")));
+
+/// The checkbox of the consent form that gives the permission to manage MCPs.
+/// A checkbox sends `on` when checked and nothing when not: any other answer
+/// is no permission.
+pub static CONSENT_MANAGE_MCPS: LazyLock<Validator> =
+    LazyLock::new(|| VERBATIM.create(vine::literal("on")));
 
 /// Client credentials sent in the request body: `client_secret_post`, or a
 /// public client naming itself.
@@ -381,7 +407,7 @@ pub static PKCE_VERIFIER: LazyLock<Validator> = LazyLock::new(|| {
     VERBATIM.create(vine::string().regex(static_regex(r"^[A-Za-z0-9._~-]{43,128}$")))
 });
 
-/// `scope` of a refresh request: it may repeat the scope of the grant and
-/// cannot ask for another.
+/// `scope` of a refresh request: it may name scopes the gateway knows. That
+/// it asks for no more than the grant holds is for the grant to say.
 pub static REFRESH_SCOPE: LazyLock<Validator> =
-    LazyLock::new(|| VERBATIM.create(vine::literal(GATEWAY_OAUTH_SCOPE).nullable()));
+    LazyLock::new(|| VERBATIM.create(known_scopes().optional()));

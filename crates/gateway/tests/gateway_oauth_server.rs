@@ -82,7 +82,7 @@ async fn publishes_mcp_protected_resource_and_authorization_server_metadata() {
         json!({
             "resource": RESOURCE,
             "authorization_servers": ["http://localhost:3333"],
-            "scopes_supported": ["mcp:tools"],
+            "scopes_supported": ["mcp:tools", "mcps:manage"],
             "bearer_methods_supported": ["header"],
             "resource_name": "MyMCPs gateway",
         })
@@ -351,7 +351,7 @@ async fn issues_refreshes_lists_and_revokes_an_oauth_connection() {
 
     let code = gateway
         .oauth
-        .create_authorization_code(&request, admin.id, Team::ROOT_ID)
+        .create_authorization_code(&request, admin.id, Team::ROOT_ID, false)
         .await
         .unwrap();
     let callback = oauth_redirect(

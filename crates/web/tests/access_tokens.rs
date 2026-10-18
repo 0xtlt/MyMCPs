@@ -51,6 +51,17 @@ async fn create_revoked_token(app: &TestApp, user: &User, name: &str) -> AccessT
 }
 
 async fn create_oauth_connection(app: &TestApp, user: &User, name: &str) -> AccessToken {
+    create_oauth_grant_with(app, user, name, "mcp:tools")
+        .await
+        .token
+}
+
+async fn create_oauth_grant_with(
+    app: &TestApp,
+    user: &User,
+    name: &str,
+    scopes: &str,
+) -> access_token::CreatedOauthTokens {
     let mut client = OauthClient {
         client_id: format!("mcp_client_{name}"),
         client_name: name.to_string(),
@@ -68,7 +79,7 @@ async fn create_oauth_connection(app: &TestApp, user: &User, name: &str) -> Acce
             name,
             client_id: client.id,
             client_supports_refresh: true,
-            scopes: "mcp:tools",
+            scopes,
             resource: "http://localhost:3333/mcp",
             created_by: user.id,
             team_id: mymcps_core::models::Team::ROOT_ID,
@@ -76,7 +87,6 @@ async fn create_oauth_connection(app: &TestApp, user: &User, name: &str) -> Acce
     )
     .await
     .unwrap()
-    .token
 }
 
 async fn find_by_name(app: &TestApp, name: &str) -> Option<AccessToken> {
@@ -710,6 +720,166 @@ async fn revokes_a_token() {
     assert_eq!(
         flashed_text(&again, "error").as_deref(),
         Some("Token already revoked")
+    );
+}
+
+#[tokio::test]
+async fn removes_the_permission_to_manage_mcps_and_keeps_the_connection() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let managing =
+        create_oauth_grant_with(&app, &admin, "Managing agent", "mcp:tools mcps:manage").await;
+    create_oauth_connection(&app, &admin, "Reading agent").await;
+    let manual = create_token(&app, &admin, "Manual agent", &[], None).await;
+
+    // Only the connection that holds the permission says so, and offers to remove it.
+    let page = app.get("/tokens").login_as(&admin).send().await.text();
+    let managing_row = table_row(&page, "Managing agent");
+    assert!(
+        managing_row
+            .contains("<span class=\"badge badge--warning badge--no-dot\">Manages MCPs</span>")
+    );
+    assert!(page.contains(&format!(
+        "<form id=\"remove-mcp-management-{}\" method=\"post\" action=\"/tokens/{}/remove-mcp-management\"",
+        managing.token.id, managing.token.id
+    )));
+    assert!(page.contains("Remove MCP management"));
+    assert!(!table_row(&page, "Reading agent").contains("Manages MCPs"));
+    assert!(!table_row(&page, "Manual agent").contains("Manages MCPs"));
+    assert_eq!(page.matches("<form id=\"remove-mcp-management-").count(), 1);
+
+    // A plain post, as a form without the script sends it.
+    let forged = app
+        .post(&format!(
+            "/tokens/{}/remove-mcp-management",
+            managing.token.id
+        ))
+        .login_as(&admin)
+        .api()
+        .send()
+        .await;
+    assert_eq!(forged.status, StatusCode::FORBIDDEN);
+
+    let response = app
+        .post(&format!(
+            "/tokens/{}/remove-mcp-management",
+            managing.token.id
+        ))
+        .login_as(&admin)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(response.status, StatusCode::FOUND);
+    assert_eq!(response.redirect_path().as_deref(), Some("/tokens"));
+    assert_eq!(
+        flashed_text(&response, "success").as_deref(),
+        Some("MCP management removed")
+    );
+
+    // Only that scope went: the connection is still there and works.
+    let kept = find(&app, managing.token.id).await.unwrap();
+    assert_eq!(kept.oauth_scopes.as_deref(), Some("mcp:tools"));
+    assert!(kept.is_active() && !kept.is_revoked());
+    assert!(
+        access_token::find_usable_by_plaintext(&app.core.db, &managing.plaintext)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let page = app.get("/tokens").login_as(&admin).send().await.text();
+    assert!(!page.contains("Manages MCPs"));
+    assert!(!page.contains("remove-mcp-management"));
+
+    // Nothing is left to remove, and a manual token never had it.
+    for id in [managing.token.id, manual.id] {
+        let again = app
+            .post(&format!("/tokens/{id}/remove-mcp-management"))
+            .login_as(&admin)
+            .csrf()
+            .send()
+            .await;
+        assert_eq!(
+            flashed_text(&again, "error").as_deref(),
+            Some("This connection cannot manage MCPs")
+        );
+    }
+    let missing = app
+        .post("/tokens/9999/remove-mcp-management")
+        .login_as(&admin)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(
+        flashed_text(&missing, "error").as_deref(),
+        Some("Token not found")
+    );
+}
+
+#[tokio::test]
+async fn lets_a_member_remove_the_permission_only_from_their_own_connection() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let member = create_member(&app).await;
+    let own = create_oauth_grant_with(&app, &member, "Own agent", "mcp:tools mcps:manage").await;
+    let theirs =
+        create_oauth_grant_with(&app, &admin, "Admin agent", "mcp:tools mcps:manage").await;
+
+    let refused = app
+        .post(&format!(
+            "/tokens/{}/remove-mcp-management",
+            theirs.token.id
+        ))
+        .login_as(&member)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(
+        flashed_text(&refused, "error").as_deref(),
+        Some("Token not found")
+    );
+    assert_eq!(
+        find(&app, theirs.token.id)
+            .await
+            .unwrap()
+            .oauth_scopes
+            .as_deref(),
+        Some("mcp:tools mcps:manage")
+    );
+
+    let removed = app
+        .post(&format!("/tokens/{}/remove-mcp-management", own.token.id))
+        .login_as(&member)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(
+        flashed_text(&removed, "success").as_deref(),
+        Some("MCP management removed")
+    );
+    assert_eq!(
+        find(&app, own.token.id)
+            .await
+            .unwrap()
+            .oauth_scopes
+            .as_deref(),
+        Some("mcp:tools")
+    );
+
+    // An admin can do it to the connection of a member.
+    let own_again =
+        create_oauth_grant_with(&app, &member, "Own agent 2", "mcp:tools mcps:manage").await;
+    let removed = app
+        .post(&format!(
+            "/tokens/{}/remove-mcp-management",
+            own_again.token.id
+        ))
+        .login_as(&admin)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(
+        flashed_text(&removed, "success").as_deref(),
+        Some("MCP management removed")
     );
 }
 
