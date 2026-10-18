@@ -16,7 +16,7 @@
 # Official Node.js image (multi-arch), for its `node` binary and its npm. It is
 # built on the Debian release of the runtime stage, whose C++ library the
 # binary loads.
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS node
+FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS node
 
 # ---------------------------------------------------------------------------
 # Compile the server
@@ -27,7 +27,7 @@ FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a087
 # The Rust version in this tag is the toolchain of the project: the workflows
 # install the same one (crates/xtask/tests/container_image.rs checks it), and
 # its Debian release is the one the runtime stage runs on.
-FROM --platform=$BUILDPLATFORM rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7 AS build
+FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-trixie@sha256:4df2ae8cfdfebdfc13a65da7f253b73d68983dc0339f2719bc17a279c913b13d AS build
 
 ARG TARGETARCH
 
@@ -87,7 +87,7 @@ ENV APP_ENV=production \
   PORT=3333 \
   DATA_DIR=/app/tmp \
   NODE_BINARY=/usr/local/bin/node \
-  NODE_VERSION=24.21.0
+  NODE_VERSION=24.22.0
 
 # ca-certificates: the server verifies upstream MCPs and OAuth providers
 # against the system trust store. dumb-init: see ENTRYPOINT.

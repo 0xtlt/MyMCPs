@@ -29,7 +29,7 @@ Accounts, teams, and permissions work as they do in Coolify, with one difference
 
 ## Run locally
 
-You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Node.js](https://nodejs.org/) with its npm if you want to run npm-based MCPs.
+You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.99), and [Node.js](https://nodejs.org/) with its npm if you want to run npm-based MCPs.
 
 ```bash
 cp .env.example .env

@@ -20,6 +20,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 ### Changed
 
 - The OAuth server publishes `mcp:tools` and `mcps:manage` in `scopes_supported` and accepts either in the `scope` of a registration or an authorization request; any other scope is still refused. A refresh keeps the scopes of its grant: it may name fewer, never more, and never changes them.
+- The image runs npm MCPs with Node.js 24.22.0, up from 24.21.0, and the server is built with Rust 1.99.1, up from 1.98.1, in the image and in CI.
+- Updated the Rust dependencies to their latest compatible releases, among them tokio 1.53.3, serde_json 1.0.154, aws-lc-rs 1.18.2, and uuid 1.28.0, and the GitHub Actions that install CI tools and run CodeQL.
 
 ## 2026-10-12
 
