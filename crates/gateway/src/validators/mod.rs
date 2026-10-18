@@ -5,3 +5,4 @@ pub mod approvals;
 pub mod gateway;
 pub mod gateway_oauth;
 pub mod mcp_call_log;
+pub mod mcp_management;

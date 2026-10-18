@@ -36,6 +36,9 @@ use crate::lazy_tools::{
     LAZY_GATEWAY_TOOLS, lazy_gateway_instructions, mcp_catalog, parse_call_tool_input,
     parse_gateway_tool_mode, parse_tool_search_input, search_upstream_tools,
 };
+use crate::mcp_management::{
+    self, ManagementActor, Permission, REGISTRY_TOOLS, SharedManager, is_registry_tool,
+};
 
 /// The header a request names its tool mode with.
 pub const TOOL_MODE_HEADER: &str = "x-mymcps-tool-mode";
@@ -61,6 +64,9 @@ pub struct McpGateway {
     pub upstream: Arc<Upstream>,
     pub approvals: ApprovalService,
     pub auto_update: McpAutoUpdateScheduler,
+    /// What the tools that manage the MCP registry do. Without one, the
+    /// gateway has no such tools, whatever a token is allowed.
+    management: Option<SharedManager>,
 }
 
 impl McpGateway {
@@ -70,7 +76,16 @@ impl McpGateway {
             auto_update: McpAutoUpdateScheduler::new(upstream.clone()),
             gateway,
             upstream,
+            management: None,
         }
+    }
+
+    /// Give the gateway the tools that manage the MCP registry, for the
+    /// tokens that are allowed them: see [`crate::mcp_management`].
+    #[must_use]
+    pub fn with_mcp_management(mut self, manager: SharedManager) -> Self {
+        self.management = Some(manager);
+        self
     }
 
     /// Answer a request to `/mcp`: authenticate its Bearer access token and
@@ -126,6 +141,7 @@ impl McpGateway {
             mcps: access.allowed_mcps,
             caller_ip: request.caller_ip,
             tool_mode,
+            management: self.management.clone(),
         });
 
         self.prune_expired();
@@ -202,12 +218,12 @@ fn json_response(status: StatusCode, body: &Value) -> Response<ResponseBody> {
 
 /// The result of a call the gateway refuses or fails itself: one sentence
 /// for the agent.
-fn error_result(text: &str) -> Value {
+pub(crate) fn error_result(text: &str) -> Value {
     json!({ "content": [{ "type": "text", "text": text }], "isError": true })
 }
 
 /// A result an agent reads as text and a program as data.
-fn structured_result(content: Value) -> Value {
+pub(crate) fn structured_result(content: Value) -> Value {
     json!({
         "content": [{ "type": "text", "text": json_stringify(&content) }],
         "structuredContent": content,
@@ -224,6 +240,7 @@ struct Session {
     mcps: Vec<Mcp>,
     caller_ip: Option<String>,
     tool_mode: GatewayToolMode,
+    management: Option<SharedManager>,
 }
 
 /// A tool call the token may make, on its way to its MCP.
@@ -524,6 +541,62 @@ impl Session {
     }
 }
 
+impl Session {
+    /// The tools that manage the registry, when the token may use them.
+    /// Decided at every listing, from the database: a token whose person
+    /// lost the role stops seeing them. A failure to decide is no tools.
+    async fn registry_tools(&self) -> Vec<Value> {
+        if self.management.is_none() {
+            return Vec::new();
+        }
+        match mcp_management::permission_of(&self.upstream.core().db, &self.access_token).await {
+            Ok(permission) if permission.is_granted() => REGISTRY_TOOLS.clone(),
+            Ok(_) => Vec::new(),
+            Err(error) => {
+                tracing::warn!(%error, "Could not check who may manage MCPs");
+                Vec::new()
+            }
+        }
+    }
+
+    /// A call to a tool of the registry. The permission is checked again
+    /// here, whatever the listing showed. Nothing of the call goes to the
+    /// call log: its arguments hold secrets.
+    async fn call_registry_tool(
+        &self,
+        manager: &SharedManager,
+        name: &str,
+        arguments: Option<Map<String, Value>>,
+    ) -> Value {
+        let permission =
+            match mcp_management::permission_of(&self.upstream.core().db, &self.access_token).await
+            {
+                Ok(permission) => permission,
+                Err(error) => {
+                    tracing::warn!(%error, "Could not check who may manage MCPs");
+                    return error_result("Could not check the permission to manage MCPs");
+                }
+            };
+        if permission != Permission::Granted {
+            tracing::warn!(
+                access_token_id = self.access_token.id,
+                user_id = self.access_token.created_by,
+                team_id = self.access_token.team_id,
+                tool = name,
+                reason = ?permission,
+                "MCP registry tool refused"
+            );
+            return error_result(permission.refusal());
+        }
+        let actor = ManagementActor {
+            user_id: self.access_token.created_by,
+            team_id: self.access_token.team_id,
+            access_token_id: self.access_token.id,
+        };
+        mcp_management::run_registry_tool(manager.as_ref(), &actor, name, arguments).await
+    }
+}
+
 enum Attempt {
     Held(crate::approvals::HeldCall),
     Ran(Value),
@@ -535,7 +608,13 @@ impl ToolHandler for Session {
     // request that asks for the list. A call finds its upstream by slug.
     async fn list_tools(&self) -> Result<Value, HandlerError> {
         if self.tool_mode == GatewayToolMode::Lazy {
-            return Ok(json!({ "tools": &*LAZY_GATEWAY_TOOLS }));
+            let mut tools: Vec<Value> = LAZY_GATEWAY_TOOLS
+                .iter()
+                .cloned()
+                .map(Value::Object)
+                .collect();
+            tools.extend(self.registry_tools().await);
+            return Ok(json!({ "tools": tools }));
         }
 
         let mut mcps = self.mcps.clone();
@@ -554,6 +633,8 @@ impl ToolHandler for Session {
                 })
             })
             .collect();
+        let mut tools = tools;
+        tools.extend(self.registry_tools().await);
         Ok(json!({ "tools": tools }))
     }
 
@@ -563,6 +644,11 @@ impl ToolHandler for Session {
         arguments: Option<Map<String, Value>>,
     ) -> Result<Value, HandlerError> {
         let started_at = Instant::now();
+        if is_registry_tool(&name)
+            && let Some(manager) = &self.management
+        {
+            return Ok(self.call_registry_tool(manager, &name, arguments).await);
+        }
         Ok(match self.tool_mode {
             GatewayToolMode::Lazy => self.call_lazy_tool(name, arguments, started_at).await,
             GatewayToolMode::Eager => self.call_namespaced_tool(name, arguments, started_at).await,

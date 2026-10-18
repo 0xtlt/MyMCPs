@@ -13,6 +13,7 @@ pub mod forms;
 pub mod guards;
 pub mod input;
 pub mod install_config;
+pub mod mcp_management;
 pub mod mcp_templates;
 pub mod redirect;
 pub mod respond;

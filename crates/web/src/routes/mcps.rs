@@ -613,8 +613,8 @@ fn needs_attention(upstream: &Upstream, mcp: &Mcp) -> bool {
 
 /// Files left in a sandbox are not worth failing a save or a delete over; a
 /// leftover directory is reported for the operator to remove.
-async fn discard_sandbox(state: &AppState, mcp_id: i64) {
-    if let Err(error) = state.upstream.remove_mcp_sandbox(mcp_id).await {
+pub(crate) async fn discard_sandbox(upstream: &Upstream, mcp_id: i64) {
+    if let Err(error) = upstream.remove_mcp_sandbox(mcp_id).await {
         tracing::warn!(
             mcp_id,
             error = %sanitize_diagnostic(&error.to_string()),
@@ -624,14 +624,8 @@ async fn discard_sandbox(state: &AppState, mcp_id: i64) {
 }
 
 /// Files agents uploaded for a built-in MCP expire by themselves, so neither are these.
-async fn discard_uploads(state: &AppState, mcp_id: i64) {
-    if let Err(error) = state
-        .upstream
-        .builtin_env()
-        .uploads
-        .remove_all(mcp_id)
-        .await
-    {
+pub(crate) async fn discard_uploads(upstream: &Upstream, mcp_id: i64) {
+    if let Err(error) = upstream.builtin_env().uploads.remove_all(mcp_id).await {
         tracing::warn!(
             mcp_id,
             error = %sanitize_diagnostic(&error.to_string()),
@@ -1043,7 +1037,7 @@ pub async fn update(
     mcp.save(&*state.core.db).await?;
     // Another package must not start in what the previous one left behind.
     if previous_npm_package.is_some() && previous_npm_package != mcp.npm_package {
-        discard_sandbox(&state, mcp.id).await;
+        discard_sandbox(&state.upstream, mcp.id).await;
     }
 
     state
@@ -1071,8 +1065,8 @@ pub async fn destroy(
         return Ok(not_found(&session, &headers, &uri));
     };
     mcp.delete(&*state.core.db).await?;
-    discard_sandbox(&state, mcp.id).await;
-    discard_uploads(&state, mcp.id).await;
+    discard_sandbox(&state.upstream, mcp.id).await;
+    discard_uploads(&state.upstream, mcp.id).await;
     session.flash("success", "MCP deleted");
     Ok(navigate(&headers, &registry(&uri)))
 }
@@ -1199,6 +1193,20 @@ pub async fn update_npm(
     Ok(tested(&session, &headers, &uri, &input, &mcp))
 }
 
+/// Whether an MCP signs in with OAuth: a built-in one whose provider does, or
+/// one that signs in by itself and asked for it or already holds a token.
+pub(crate) fn uses_oauth(upstream: &Upstream, mcp: &Mcp) -> bool {
+    match mcp.transport {
+        McpTransport::Builtin => upstream
+            .builtin_mcp(mcp.builtin_key.as_deref())
+            .is_some_and(|definition| definition.oauth().is_some()),
+        _ => {
+            mcp.auth_type == McpAuthType::Auto
+                && (mcp.oauth_required || is_set(&mcp.oauth_access_token))
+        }
+    }
+}
+
 /// `GET /mcps/{id}/oauth/start`
 ///
 /// Starting a flow registers a client with the provider and replaces the
@@ -1239,17 +1247,7 @@ pub async fn oauth_start(
         session.flash("error", NOT_FOUND);
         return Ok(redirect_to(&registry(&uri)));
     };
-    let uses_oauth = match mcp.transport {
-        McpTransport::Builtin => state
-            .upstream
-            .builtin_mcp(mcp.builtin_key.as_deref())
-            .is_some_and(|definition| definition.oauth().is_some()),
-        _ => {
-            mcp.auth_type == McpAuthType::Auto
-                && (mcp.oauth_required || is_set(&mcp.oauth_access_token))
-        }
-    };
-    if !uses_oauth {
+    if !uses_oauth(&state.upstream, &mcp) {
         session.flash("error", "This MCP does not require OAuth authorization");
         session.flash(EDITING_KEY, mcp.id);
         return Ok(redirect_to(&registry(&uri)));
