@@ -2,8 +2,8 @@
 //! and can read and forge the session cookie the way a browser holding a
 //! copied cookie could.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
 use bytes::Bytes;
@@ -19,6 +19,7 @@ use tower::ServiceExt;
 use crate::auth::{LOGIN_KEY, SESSION_STAMP_KEY, SessionStamp, TEAM_KEY};
 use crate::cookies::Cookies;
 use crate::csrf::{CSRF_FIELD, CSRF_HEADER, csrf_token};
+use crate::proxy_nodes::{Availability, NodeConfig, NodeState, NodeStatus, ProxyNodes};
 use crate::session::{SESSION_COOKIE, Session};
 use crate::state::AppState;
 
@@ -74,6 +75,20 @@ impl TestApp {
         }
     }
 
+    /// The app around a fake runtime of Tailscale nodes: the test decides
+    /// what each node reports, and reads what was asked of them.
+    pub async fn with_proxy_nodes(nodes: Arc<FakeProxyNodes>) -> Self {
+        Self::with_proxy_nodes_and_config(nodes, |_| {}).await
+    }
+
+    /// [`Self::with_proxy_nodes`], with a configuration of the test's making.
+    pub async fn with_proxy_nodes_and_config(
+        nodes: Arc<FakeProxyNodes>,
+        adjust: impl FnOnce(&mut mymcps_core::Config),
+    ) -> Self {
+        Self::with_state(adjust, move |core| AppState::with_proxy_nodes(core, nodes)).await
+    }
+
     pub fn request(&self, method: Method, path: &str) -> TestRequest<'_> {
         TestRequest {
             app: self,
@@ -106,6 +121,160 @@ impl TestApp {
 
     pub fn delete(&self, path: &str) -> TestRequest<'_> {
         self.request(Method::DELETE, path)
+    }
+}
+
+/// What a [`FakeProxyNodes`] was asked to do, in order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodeCall {
+    /// `ensure`, with the id, the node name and the key the runtime would log in with.
+    Ensure(i64, String, Option<String>),
+    /// `reconnect`, with the same.
+    Reconnect(i64, String, Option<String>),
+    Remove(i64),
+    /// `reconcile`, with the ids it was given.
+    Reconcile(Vec<i64>),
+    Shutdown,
+}
+
+/// A runtime of Tailscale nodes for tests: nothing runs. Each node reports
+/// the status the test gave it (`Stopped` until then), and every call that
+/// changes a node is recorded. `fail_with` makes `ensure`, `reconnect` and
+/// `remove` fail.
+pub struct FakeProxyNodes {
+    availability: Mutex<Availability>,
+    statuses: Mutex<HashMap<i64, NodeStatus>>,
+    calls: Mutex<Vec<NodeCall>>,
+    failure: Mutex<Option<String>>,
+}
+
+impl FakeProxyNodes {
+    /// Nodes that can run.
+    pub fn available() -> Arc<Self> {
+        Self::with_availability(Availability::Available {
+            version: "1.104.1".to_string(),
+        })
+    }
+
+    pub fn with_availability(availability: Availability) -> Arc<Self> {
+        Arc::new(Self {
+            availability: Mutex::new(availability),
+            statuses: Mutex::default(),
+            calls: Mutex::default(),
+            failure: Mutex::default(),
+        })
+    }
+
+    pub fn set_availability(&self, availability: Availability) {
+        *self.availability.lock().unwrap() = availability;
+    }
+
+    /// What node `id` reports from now on.
+    pub fn set_status(&self, id: i64, status: NodeStatus) {
+        self.statuses.lock().unwrap().insert(id, status);
+    }
+
+    /// A connected node in a tailnet, with a name and an address.
+    pub fn connected(tailnet: &str, dns_name: &str, address: &str) -> NodeStatus {
+        NodeStatus {
+            state: NodeState::Connected,
+            tailnet: Some(tailnet.to_string()),
+            dns_name: Some(dns_name.to_string()),
+            addresses: vec![address.parse().expect("an IP address")],
+            health: Vec::new(),
+        }
+    }
+
+    pub fn with_state(state: NodeState) -> NodeStatus {
+        NodeStatus {
+            state,
+            tailnet: None,
+            dns_name: None,
+            addresses: Vec::new(),
+            health: Vec::new(),
+        }
+    }
+
+    /// Make the calls that change a node fail with this sentence.
+    pub fn fail_with(&self, message: Option<&str>) {
+        *self.failure.lock().unwrap() = message.map(str::to_string);
+    }
+
+    /// Everything asked of the nodes so far.
+    pub fn calls(&self) -> Vec<NodeCall> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    pub fn clear_calls(&self) {
+        self.calls.lock().unwrap().clear();
+    }
+
+    fn record(&self, call: NodeCall) -> Result<(), crate::proxy_nodes::TailscaleError> {
+        self.calls.lock().unwrap().push(call);
+        match self.failure.lock().unwrap().clone() {
+            Some(message) => Err(crate::proxy_nodes::TailscaleError::Process(message)),
+            None => Ok(()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl ProxyNodes for FakeProxyNodes {
+    fn availability(&self) -> Availability {
+        self.availability.lock().unwrap().clone()
+    }
+
+    async fn ensure(&self, config: NodeConfig) -> Result<(), crate::proxy_nodes::TailscaleError> {
+        self.record(NodeCall::Ensure(
+            config.id,
+            config.hostname,
+            config.auth_key,
+        ))
+    }
+
+    async fn reconnect(
+        &self,
+        config: NodeConfig,
+    ) -> Result<(), crate::proxy_nodes::TailscaleError> {
+        self.record(NodeCall::Reconnect(
+            config.id,
+            config.hostname,
+            config.auth_key,
+        ))
+    }
+
+    fn status(&self, id: i64) -> NodeStatus {
+        self.statuses
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| Self::with_state(NodeState::Stopped))
+    }
+
+    async fn remove(&self, id: i64) -> Result<(), crate::proxy_nodes::TailscaleError> {
+        self.statuses.lock().unwrap().remove(&id);
+        self.record(NodeCall::Remove(id))
+    }
+
+    async fn reconcile(&self, configs: Vec<NodeConfig>) {
+        let _ = self.record(NodeCall::Reconcile(
+            configs.iter().map(|config| config.id).collect(),
+        ));
+    }
+
+    fn proxy_url(&self, id: i64) -> Result<url::Url, String> {
+        match self.status(id).state {
+            NodeState::Connected => {
+                url::Url::parse(&format!("socks5h://{id}:secret@127.0.0.1:1080"))
+                    .map_err(|error| error.to_string())
+            }
+            _ => Err("it is not connected".to_string()),
+        }
+    }
+
+    async fn shutdown(&self) {
+        let _ = self.record(NodeCall::Shutdown);
     }
 }
 
@@ -471,7 +640,9 @@ pub mod factories {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use mymcps_core::Timestamp;
-    use mymcps_core::models::{Invite, Mcp, McpStatus, McpTransport, Team, TeamRole, User};
+    use mymcps_core::models::{
+        Invite, Mcp, McpStatus, McpTransport, Proxy, ProxyKind, Team, TeamRole, User,
+    };
 
     use super::TestApp;
 
@@ -603,5 +774,25 @@ pub mod factories {
         }
         mcp.insert(&*app.core.db).await.expect("a new MCP");
         mcp
+    }
+
+    /// A Tailscale proxy of the Root Team, named `mymcps` in its tailnet and
+    /// without a key. Change it with `adjust`.
+    pub async fn create_proxy(
+        app: &TestApp,
+        created_by: i64,
+        adjust: impl FnOnce(&mut Proxy),
+    ) -> Proxy {
+        let mut proxy = Proxy {
+            team_id: Team::ROOT_ID,
+            name: next_value("Proxy"),
+            kind: ProxyKind::Tailscale,
+            tailscale_hostname: "mymcps".into(),
+            created_by: Some(created_by),
+            ..Default::default()
+        };
+        adjust(&mut proxy);
+        proxy.insert(&*app.core.db).await.expect("a new proxy");
+        proxy
     }
 }

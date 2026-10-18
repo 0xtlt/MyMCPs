@@ -12,7 +12,7 @@ use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use mymcps_builtin::{BuiltinMcpDefinition, BuiltinOauthConfig, BuiltinPasswordConfig};
 use mymcps_core::Core;
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, Proxy};
 use mymcps_core::redaction::{
     sanitize_diagnostic, sanitize_diagnostic_with, sanitize_mcp_diagnostic,
     sanitize_mcp_diagnostic_with,
@@ -47,7 +47,7 @@ use crate::validators::route_params::record_id;
 use crate::validators::session::FLASHED_RECORD_ID_VALIDATOR;
 use crate::views::mcps::{
     CreateDialog, Dialog, EDIT_DIALOG_ID, EditDialog, FormValues, McpForm, McpView, McpsPage,
-    PublicApp, ROWS_PER_PAGE, create_fragment, edit_fragment, mcps_page,
+    ProxyChoice, PublicApp, ROWS_PER_PAGE, create_fragment, edit_fragment, mcps_page,
 };
 use crate::views::shell::PageContext;
 
@@ -59,6 +59,9 @@ const MAX_BUILTIN_ALIASES: usize = 20;
 const EDITING_KEY: &str = "editingMcpId";
 
 const NOT_FOUND: &str = "MCP not found";
+
+/// What the Network field says of a proxy that is not one of the team's.
+const FOREIGN_PROXY: &str = "Choose a proxy of this team";
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
@@ -545,6 +548,20 @@ pub async fn assign_mcp_from_payload(
         .npm_package
         .clone()
         .filter(|_| transport == McpTransport::Npm);
+    // An HTTP MCP goes through a proxy of its own team, or none. Another
+    // transport has no network to choose: it keeps none.
+    let next_proxy_id = match (transport, payload.proxy_id) {
+        (McpTransport::Http, Some(proxy_id)) => {
+            let proxy = Proxy::find(&*core.db, proxy_id)
+                .await?
+                .filter(|proxy| proxy.team_id == mcp.team_id);
+            if proxy.is_none() {
+                return Err(ValidationError::single("proxyId", "proxyTeam", FOREIGN_PROXY).into());
+            }
+            Some(proxy_id)
+        }
+        _ => None,
+    };
     // A row that was never saved has no transport yet.
     let transport_changed = !mcp.is_persisted() || mcp.transport != transport;
     let oauth_server_changed =
@@ -572,6 +589,7 @@ pub async fn assign_mcp_from_payload(
         .filter(|description| !description.is_empty());
     mcp.transport = transport;
     mcp.http_url = next_http_url;
+    mcp.proxy_id = next_proxy_id;
     mcp.builtin_key = next_builtin_key;
     mcp.builtin_write_enabled =
         transport == McpTransport::Builtin && payload.builtin_write_enabled.unwrap_or(false);
@@ -654,6 +672,15 @@ async fn find_mcp(
     Ok(mcp.filter(|mcp| mcp.team_id == team.id()))
 }
 
+/// The proxies of a team, for the Network field and the list.
+async fn team_proxies(state: &AppState, team_id: i64) -> Result<Vec<ProxyChoice>, sqlx::Error> {
+    Ok(Proxy::for_team(&*state.core.db, team_id)
+        .await?
+        .iter()
+        .map(ProxyChoice::of)
+        .collect())
+}
+
 /// The registry, where every request of this page ends, with the query
 /// string of the request being answered as the Node app's redirects carried it.
 fn registry(uri: &Uri) -> String {
@@ -667,7 +694,7 @@ fn not_found(session: &Session, headers: &HeaderMap, uri: &Uri) -> Response {
 
 /// Whether the page script asks for the content of one of the page's
 /// dialogs, to put it in place itself.
-fn wants_fragment(headers: &HeaderMap, dialog_id: &str) -> bool {
+pub(crate) fn wants_fragment(headers: &HeaderMap, dialog_id: &str) -> bool {
     is_fetch(headers)
         && headers
             .get("x-fragment")
@@ -730,6 +757,7 @@ async fn registry_page(
             .bind(team.team.id)
             .fetch_all(&*state.core.db)
             .await?;
+    let proxies = team_proxies(state, team.team.id).await?;
     let tool_counts = state.known_tool_counts();
     let views: Vec<McpView> = mcps
         .iter()
@@ -758,6 +786,7 @@ async fn registry_page(
                 matching: matching.len(),
                 matching_enabled,
                 registered: views.len(),
+                proxies: &proxies,
                 dialog,
             },
         ))
@@ -771,6 +800,7 @@ async fn registry_page(
                 template,
                 form: &form,
                 public_app: public_app.as_ref(),
+                proxies: &proxies,
                 query: &query,
             }))
         }
@@ -781,6 +811,7 @@ async fn registry_page(
                     mcp,
                     form: &form,
                     public_app: public_app.as_ref(),
+                    proxies: &proxies,
                 }))
             }
             None => render(Dialog::None),
@@ -851,6 +882,7 @@ pub async fn edit(
     let tool_count = state.known_tool_counts().get(&mcp.id).copied();
     let view = McpView::of(&state.upstream, &mcp, tool_count);
     let form = McpForm::new(FormValues::from_mcp(&view));
+    let proxies = team_proxies(&state, team.id()).await?;
     Ok(fragment(
         StatusCode::OK,
         edit_fragment(
@@ -859,6 +891,7 @@ pub async fn edit(
                 mcp: &view,
                 form: &form,
                 public_app: PublicApp::of(&state.core.config).as_ref(),
+                proxies: &proxies,
             },
         ),
     ))
@@ -886,6 +919,7 @@ fn refused_create(
     context: &PageContext,
     session: &Session,
     headers: &HeaderMap,
+    proxies: &[ProxyChoice],
     input: &Map<String, Value>,
     error: &ValidationError,
 ) -> Response {
@@ -905,6 +939,7 @@ fn refused_create(
             template,
             form: &form,
             public_app: PublicApp::of(&state.core.config).as_ref(),
+            proxies,
             query: &McpListQuery::default(),
         },
     );
@@ -929,13 +964,14 @@ pub async fn store(
 ) -> Result<Response, AppError> {
     let team = context.current_team()?;
     list_environment_rows(&mut input);
+    let proxies = team_proxies(&state, team.id()).await?;
     let payload: McpPayload = match CREATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
         Ok(payload) => payload,
         Err(error) => {
             let error = refusal(error)?;
             return Ok(refused_create(
-                &state, &context, &session, &headers, &input, &error,
+                &state, &context, &session, &headers, &proxies, &input, &error,
             ));
         }
     };
@@ -950,7 +986,7 @@ pub async fn store(
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
             return Ok(refused_create(
-                &state, &context, &session, &headers, &input, &error,
+                &state, &context, &session, &headers, &proxies, &input, &error,
             ));
         }
         Err(AssignError::Database(error)) => return Err(error.into()),
@@ -971,11 +1007,13 @@ pub async fn store(
 
 /// A refused edit form, answered like a refused create form. The dialog is
 /// drawn from the row as it is saved: nothing of the refused form was.
+#[allow(clippy::too_many_arguments)]
 fn refused_update(
     state: &AppState,
     context: &PageContext,
     session: &Session,
     headers: &HeaderMap,
+    proxies: &[ProxyChoice],
     mcp: &Mcp,
     input: &Map<String, Value>,
     error: &ValidationError,
@@ -989,6 +1027,7 @@ fn refused_update(
             mcp: &view,
             form: &form,
             public_app: PublicApp::of(&state.core.config).as_ref(),
+            proxies,
         },
     );
     invalid_form(
@@ -1016,13 +1055,14 @@ pub async fn update(
     };
 
     list_environment_rows(&mut input);
+    let proxies = team_proxies(&state, team.id()).await?;
     let payload: McpPayload = match UPDATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
         Ok(payload) => payload,
         Err(error) => {
             let error = refusal(error)?;
             return Ok(refused_update(
-                &state, &context, &session, &headers, &saved, &input, &error,
+                &state, &context, &session, &headers, &proxies, &saved, &input, &error,
             ));
         }
     };
@@ -1035,7 +1075,7 @@ pub async fn update(
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
             return Ok(refused_update(
-                &state, &context, &session, &headers, &saved, &input, &error,
+                &state, &context, &session, &headers, &proxies, &saved, &input, &error,
             ));
         }
         Err(AssignError::Database(error)) => return Err(error.into()),

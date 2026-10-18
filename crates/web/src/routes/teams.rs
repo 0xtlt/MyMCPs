@@ -350,8 +350,14 @@ pub async fn destroy(
     if mcps > 0 {
         return Ok(refuse("Delete the MCPs of this team first"));
     }
+    // The proxies of the team go with it, and so do their nodes.
+    let proxy_ids: Vec<i64> = sqlx::query_scalar("select `id` from `proxies` where `team_id` = ?")
+        .bind(team.id())
+        .fetch_all(&mut *transaction)
+        .await?;
     team.team.delete(&mut *transaction).await?;
     transaction.commit().await?;
+    state.remove_deleted_proxy_nodes(&proxy_ids).await?;
 
     // The next page is drawn in another team of theirs.
     session.forget(crate::auth::TEAM_KEY);
@@ -883,10 +889,22 @@ pub async fn destroy_user(
     if !still_super_admin(&mut transaction, &actor).await? {
         return Ok(refuse(SUPER_ADMIN_REQUIRED));
     }
+    // The teams the account was alone in go with it, and the proxies of
+    // those teams: every proxy of its teams is a candidate, and the nodes
+    // of those the deletion took are removed.
+    let proxy_ids: Vec<i64> = sqlx::query_scalar(
+        "select `proxies`.`id` from `proxies` \
+         inner join `team_user` on `team_user`.`team_id` = `proxies`.`team_id` \
+         where `team_user`.`user_id` = ?",
+    )
+    .bind(account.id)
+    .fetch_all(&mut *transaction)
+    .await?;
     match Team::delete_account(&mut transaction, account.id).await? {
         Ok(()) => transaction.commit().await?,
         Err(AccountRemovalRefusal::LastSuperAdmin) => return Ok(refuse(LAST_SUPER_ADMIN)),
     }
+    state.remove_deleted_proxy_nodes(&proxy_ids).await?;
 
     session.flash("success", "User deleted");
     Ok(navigate(&headers, "/users"))

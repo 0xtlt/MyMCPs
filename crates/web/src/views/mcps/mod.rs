@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use maud::{Markup, html};
 use mymcps_core::Config;
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, Proxy};
 use mymcps_upstream::Upstream;
 use url::Url;
 
@@ -63,6 +63,22 @@ fn words(column: &Option<String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// A proxy of the team, as the MCP form offers it and the list names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProxyChoice {
+    pub id: i64,
+    pub name: String,
+}
+
+impl ProxyChoice {
+    pub fn of(proxy: &Proxy) -> Self {
+        Self {
+            id: proxy.id,
+            name: proxy.name.clone(),
+        }
+    }
+}
+
 /// What the pages know of an MCP. It never holds a secret, decrypted or
 /// not: only whether one is saved. (`McpTransformer`)
 #[derive(Debug, Clone)]
@@ -74,6 +90,8 @@ pub struct McpView {
     pub transport: McpTransport,
     pub builtin_key: Option<String>,
     pub http_url: Option<String>,
+    /// The proxy an HTTP MCP is reached through.
+    pub proxy_id: Option<i64>,
     pub npm_package: Option<String>,
     pub npm_version: Option<String>,
     pub auth_type: McpAuthType,
@@ -118,6 +136,7 @@ impl McpView {
             transport: mcp.transport,
             builtin_key: mcp.builtin_key.clone(),
             http_url: mcp.http_url.clone(),
+            proxy_id: mcp.proxy_id.filter(|_| mcp.transport == McpTransport::Http),
             npm_package: mcp.npm_package.clone(),
             npm_version: mcp.npm_version.clone(),
             auth_type: mcp.auth_type,
@@ -285,6 +304,8 @@ pub struct McpsPage<'a> {
     pub matching_enabled: usize,
     /// How many MCPs are registered at all.
     pub registered: usize,
+    /// The proxies of the team, which the rows name and the form offers.
+    pub proxies: &'a [ProxyChoice],
     pub dialog: Dialog<'a>,
 }
 

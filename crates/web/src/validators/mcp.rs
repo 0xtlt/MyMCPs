@@ -177,6 +177,9 @@ fn mcp_payload() -> vine::VineObject {
         "builtinSettings" => vine::record(vine::string().max_length(4000).nullable()).optional(),
         // Lets a built-in MCP request write scopes and expose its write tools.
         "builtinWriteEnabled" => vine::boolean().optional(),
+        // The proxy an HTTP MCP is reached through. The select sends nothing
+        // for "Direct", which the global transform reads as none.
+        "proxyId" => vine::number().without_decimals().positive().nullable().optional(),
         "authType" => vine::enum_(["auto", "bearer", "header"]),
         "authBearer" => vine::string().trim().max_length(4000).optional(),
         "authHeaderName" => header_name()
@@ -240,6 +243,8 @@ pub struct McpPayload {
     pub builtin_settings: Option<HashMap<String, Option<String>>>,
     #[serde(default)]
     pub builtin_write_enabled: Option<bool>,
+    #[serde(default)]
+    pub proxy_id: Option<i64>,
     pub auth_type: McpAuthType,
     #[serde(default)]
     pub auth_bearer: Option<String>,

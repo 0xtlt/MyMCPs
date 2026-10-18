@@ -15,7 +15,9 @@ use crate::mcp_templates::McpTemplate;
 use crate::validators::mcp::McpListQuery;
 use crate::views::icon::icon;
 use crate::views::mcps::builtin::{BuiltinFields, builtin_choices, builtin_fields};
-use crate::views::mcps::{McpView, PublicApp, builtin_provider_name, builtin_setup_guide, href};
+use crate::views::mcps::{
+    McpView, ProxyChoice, PublicApp, builtin_provider_name, builtin_setup_guide, href,
+};
 use crate::views::shell::PageContext;
 
 /// The most environment variables an npm MCP takes.
@@ -37,6 +39,8 @@ pub struct FormValues {
     pub description: String,
     pub transport: McpTransport,
     pub http_url: String,
+    /// The id of the proxy chosen in the Network field; empty for Direct.
+    pub proxy_id: String,
     pub npm_package: String,
     pub npm_version: String,
     pub npm_args: String,
@@ -66,6 +70,7 @@ impl Default for FormValues {
             description: String::new(),
             transport: McpTransport::Http,
             http_url: String::new(),
+            proxy_id: String::new(),
             npm_package: String::new(),
             npm_version: String::new(),
             npm_args: String::new(),
@@ -144,6 +149,7 @@ impl FormValues {
             description: mcp.description.clone().unwrap_or_default(),
             transport: mcp.transport,
             http_url: mcp.http_url.clone().unwrap_or_default(),
+            proxy_id: mcp.proxy_id.map(|id| id.to_string()).unwrap_or_default(),
             npm_package: mcp.npm_package.clone().unwrap_or_default(),
             npm_version: mcp.npm_version.clone().unwrap_or_default(),
             npm_args: mcp.npm_args.clone(),
@@ -203,6 +209,7 @@ impl FormValues {
             description: text(input, "description"),
             transport: McpTransport::parse(&text(input, "transport")).unwrap_or_default(),
             http_url: text(input, "httpUrl"),
+            proxy_id: text(input, "proxyId"),
             npm_package: text(input, "npmPackage"),
             npm_version: text(input, "npmVersion"),
             npm_args: text(input, "npmArgs"),
@@ -691,8 +698,44 @@ fn env_row(
     }
 }
 
+/// The Network select: Direct, or one of the proxies of the team. Only an
+/// HTTP MCP has one, and only a team that has a proxy is asked.
+fn network_field(prefix: &str, form: &McpForm, proxies: &[ProxyChoice]) -> Markup {
+    if proxies.is_empty() {
+        return html! {};
+    }
+    let id = format!("{prefix}-proxy");
+    let error = form.error("proxyId");
+    let chosen = &form.values.proxy_id;
+    let http = form.values.transport == McpTransport::Http;
+    let help_id = format!("{id}-help");
+    let error_id = format!("{id}-error");
+    html! {
+        div class="field" data-show-when="transport=http" hidden[!http] {
+            label class="field__label" for=(id) { "Network" }
+            div class="select" {
+                select class="input" id=(id) name="proxyId" aria-invalid=[error.map(|_| "true")]
+                    aria-describedby=(if error.is_some() { format!("{error_id} {help_id}") } else { help_id.clone() }) {
+                    option value="" selected[chosen.is_empty()] { "Direct" }
+                    @for proxy in proxies {
+                        option value=(proxy.id) selected[*chosen == proxy.id.to_string()] { (proxy.name) " · Tailscale" }
+                    }
+                }
+                (icon("chevron-down"))
+            }
+            @if let Some(message) = error { p class="field__error" id=(error_id) { (message) } }
+            p class="field__help" id=(help_id) { "Send this MCP's requests and its OAuth sign-in through a proxy of this team." }
+        }
+    }
+}
+
 /// Transport, its fields and Authentication: what a custom MCP chooses.
-fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup {
+fn custom_fields(
+    prefix: &str,
+    form: &McpForm,
+    saved: Option<&Saved>,
+    proxies: &[ProxyChoice],
+) -> Markup {
     let values = &form.values;
     let http = values.transport == McpTransport::Http;
     let installed = saved.and_then(|saved| saved.mcp.npm_installed_version.as_deref());
@@ -713,6 +756,8 @@ fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup 
             .error(form.error("httpUrl"))
             .show_when("transport=http", http)
             .render())
+
+        (network_field(prefix, form, proxies))
 
         div class="stack" data-show-when="transport=npm" hidden[http] {
             (Field::new(format!("{prefix}-npm-package"), "npmPackage", html! { "npm package" })
@@ -848,6 +893,8 @@ pub struct CreateDialog<'a> {
     pub template: Option<&'static McpTemplate>,
     pub form: &'a McpForm,
     pub public_app: Option<&'a PublicApp>,
+    /// The proxies of the team, for the Network field.
+    pub proxies: &'a [ProxyChoice],
     /// The list behind the dialog, which "Back to templates" keeps.
     pub query: &'a McpListQuery,
 }
@@ -884,7 +931,7 @@ pub fn create_fragment(context: &PageContext, dialog: &CreateDialog) -> Markup {
                 public_app: dialog.public_app,
             }))
         } @else {
-            (custom_fields("new-mcp", form, None))
+            (custom_fields("new-mcp", form, None, dialog.proxies))
         }
         (enabled_field(form))
     };
@@ -914,6 +961,8 @@ pub struct EditDialog<'a> {
     pub mcp: &'a McpView,
     pub form: &'a McpForm,
     pub public_app: Option<&'a PublicApp>,
+    /// The proxies of the team, for the Network field.
+    pub proxies: &'a [ProxyChoice],
 }
 
 impl EditDialog<'_> {
@@ -1076,7 +1125,7 @@ pub fn edit_fragment(context: &PageContext, dialog: &EditDialog) -> Markup {
                 public_app: dialog.public_app,
             }))
         } @else {
-            (custom_fields("edit-mcp", form, Some(&saved)))
+            (custom_fields("edit-mcp", form, Some(&saved), dialog.proxies))
         }
         (enabled_field(form))
     };

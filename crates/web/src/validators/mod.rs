@@ -6,6 +6,7 @@ pub mod backup;
 pub mod builtin_files;
 pub mod cron;
 pub mod mcp;
+pub mod proxy;
 pub mod route_params;
 pub mod session;
 pub mod two_factor;

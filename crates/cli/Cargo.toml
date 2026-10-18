@@ -20,6 +20,7 @@ mymcps-web.workspace = true
 mymcps-upstream.workspace = true
 mymcps-node.workspace = true
 mymcps-sandbox.workspace = true
+mymcps-tailscale.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }

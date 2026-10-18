@@ -11,7 +11,11 @@ use std::sync::{Arc, Mutex};
 use http::{HeaderMap, StatusCode};
 use mymcps_core::models::Mcp;
 use mymcps_net::{AddressGuard, CannedResponse, Fetcher, Resolver, SentRequest};
-use mymcps_web::testing::{TestApp, TestRequest, TestResponse};
+use mymcps_upstream::Upstream;
+use mymcps_web::AppState;
+use mymcps_web::proxy_nodes::ProxyDirectoryOf;
+use mymcps_web::state::builtins;
+use mymcps_web::testing::{FakeProxyNodes, TestApp, TestRequest, TestResponse};
 use serde_json::{Value, json};
 use url::Url;
 
@@ -217,6 +221,29 @@ pub async fn app_answering(
     let app =
         TestApp::with_upstream(|upstream| upstream.fetcher(fetcher).address_guard(public_names()))
             .await;
+    (app, calls)
+}
+
+/// The app around a fake runtime of Tailscale proxies and an upstream whose
+/// requests are answered by `answer`, which reaches proxies through that
+/// runtime.
+pub async fn app_with_proxies(
+    nodes: Arc<FakeProxyNodes>,
+    answer: impl Fn(&Call) -> CannedResponse + Send + Sync + 'static,
+) -> (TestApp, Calls) {
+    let (fetcher, calls) = mock_fetch(answer);
+    let app = TestApp::with_state(
+        |_| {},
+        move |core| {
+            let upstream = Upstream::builder(core.clone(), builtins())
+                .fetcher(fetcher)
+                .address_guard(public_names())
+                .proxies(Arc::new(ProxyDirectoryOf(nodes.clone())))
+                .build();
+            AppState::with_parts(core, upstream, nodes)
+        },
+    )
+    .await;
     (app, calls)
 }
 

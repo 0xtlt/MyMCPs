@@ -113,6 +113,7 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
       <a class="nav-item" href="/mcps">ICON plug<span class="nav-item__label">MCPs</span></a>
       <a class="nav-item" href="/tokens">ICON key-round<span class="nav-item__label">Access tokens</span></a>
       <a class="nav-item" href="/approvals" aria-label="Approvals, 2 waiting">ICON shield-check<span class="nav-item__label">Approvals</span><span class="nav-item__count" aria-hidden="true">2</span></a>
+      <a class="nav-item" href="/proxies">ICON cable<span class="nav-item__label">Proxies</span></a>   <!-- owners and admins of the team only -->
       <p class="nav-section">Observability</p>    <!-- owners and admins of the team only, with Logs and Analytics -->
       <a class="nav-item" href="/logs">ICON scroll-text<span class="nav-item__label">Logs</span></a>
       <a class="nav-item" href="/analytics">ICON chart-column<span class="nav-item__label">Analytics</span></a>

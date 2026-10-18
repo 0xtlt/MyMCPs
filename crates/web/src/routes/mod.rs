@@ -19,6 +19,7 @@ pub mod mcp_tools;
 pub mod mcps;
 pub mod oauth_server;
 pub mod passkeys;
+pub mod proxies;
 pub mod settings;
 pub mod teams;
 pub mod tokens;
@@ -87,6 +88,7 @@ pub fn all() -> FeatureRoutes {
         mcps::routes(),
         oauth_server::routes(),
         passkeys::routes(),
+        proxies::routes(),
         settings::routes(),
         teams::routes(),
         tokens::routes(),

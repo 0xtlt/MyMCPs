@@ -16,12 +16,14 @@ mymcps-net.workspace = true
 mymcps-node.workspace = true
 mymcps-gateway.workspace = true
 mymcps-upstream.workspace = true
+mymcps-tailscale.workspace = true
 mymcps-builtin.workspace = true
 mymcps-strava.workspace = true
 mymcps-icloud-mail.workspace = true
 mymcps-google-ads.workspace = true
 tokio.workspace = true
 futures.workspace = true
+async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
@@ -52,7 +54,6 @@ qrcode = { version = "0.14", default-features = false }
 test-util = ["mymcps-core/test-util"]
 
 [dev-dependencies]
-async-trait.workspace = true
 # The mail account and the Google Ads API that the tests of the MCPs page sign in to.
 mymcps-icloud-mail = { workspace = true, features = ["test-util"] }
 mymcps-google-ads = { workspace = true, features = ["test-util"] }

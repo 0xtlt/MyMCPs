@@ -1900,3 +1900,326 @@ async fn disables_oauth_actions_without_a_public_address() {
     assert!(calls.is_empty());
     assert_eq!(find_mcp(&app, mcp.id).await.oauth_client_id, None);
 }
+
+// --- the Network field: HTTP MCPs through a proxy of the team ---
+
+mod network {
+    use std::sync::Arc;
+
+    use super::*;
+    use mymcps_core::models::{Proxy, TeamRole, User};
+    use mymcps_web::proxy_nodes::NodeState;
+    use mymcps_web::testing::FakeProxyNodes;
+    use mymcps_web::testing::factories::{create_account, create_proxy, create_team, join_team};
+
+    const NETWORK_ERROR: &str = "Choose a proxy of this team";
+
+    async fn app_with_nodes() -> (TestApp, Arc<FakeProxyNodes>, Calls) {
+        let nodes = FakeProxyNodes::available();
+        let (app, calls) =
+            app_with_proxies(nodes.clone(), |call| mcp_answer(call, &json!([]))).await;
+        (app, nodes, calls)
+    }
+
+    async fn create_form_with(
+        app: &TestApp,
+        admin: &User,
+        fields: &[(&str, &str)],
+    ) -> TestResponse {
+        from_script(app.post("/mcps"))
+            .login_as(admin)
+            .csrf()
+            .form(&http_form(fields))
+            .send()
+            .await
+    }
+
+    /// A proxy of the Research team, which the Root Team's admin may not use.
+    async fn foreign_proxy(app: &TestApp) -> Proxy {
+        let outsider = create_account(app, None).await;
+        let team = create_team(app, "Research").await;
+        join_team(app, team.id, &outsider, TeamRole::Owner).await;
+        create_proxy(app, outsider.id, |proxy| {
+            proxy.team_id = team.id;
+            proxy.name = "Lab".into();
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn asks_for_a_network_only_when_the_team_has_a_proxy() {
+        let (app, _nodes, _calls) = app_with_nodes().await;
+        let admin = create_admin(&app).await;
+        let mcp = create_mcp(&app, admin.id, |_| {}).await;
+        // Another team's proxy is not the team's.
+        foreign_proxy(&app).await;
+
+        for path in [
+            "/mcps/new?template=custom".to_string(),
+            format!("/mcps/{}/edit", mcp.id),
+        ] {
+            let page = page(&app, &admin, &path).await.text();
+            assert!(!page.contains("name=\"proxyId\""), "{path}");
+            assert!(!page.contains("Network"), "{path}");
+        }
+
+        let home = create_proxy(&app, admin.id, |proxy| proxy.name = "Home".into()).await;
+        let office = create_proxy(&app, admin.id, |proxy| proxy.name = "Office".into()).await;
+        let page = page(&app, &admin, "/mcps/new?template=custom").await.text();
+        let field = between(
+            &page,
+            "<label class=\"field__label\" for=\"new-mcp-proxy\">",
+            "</div></div>",
+        );
+        assert!(field.contains(">Network</label>"));
+        // It follows the URL, in a block of the HTTP transport.
+        assert!(page.find("name=\"httpUrl\"").unwrap() < page.find("name=\"proxyId\"").unwrap());
+        assert!(page.contains("<div class=\"field\" data-show-when=\"transport=http\"><label class=\"field__label\" for=\"new-mcp-proxy\">"));
+        assert!(field.contains("<option value=\"\" selected>Direct</option>"));
+        assert!(field.contains(&format!(
+            "<option value=\"{}\">Home · Tailscale</option>",
+            home.id
+        )));
+        assert!(field.contains(&format!(
+            "<option value=\"{}\">Office · Tailscale</option>",
+            office.id
+        )));
+        assert!(!field.contains("Lab"));
+        assert!(
+            page.contains(
+                "Send this MCP&#39;s requests and its OAuth sign-in through a proxy of this team."
+            ) || page.contains(
+                "Send this MCP's requests and its OAuth sign-in through a proxy of this team."
+            )
+        );
+
+        // An MCP that goes through a proxy has it chosen in its dialog.
+        let through = create_mcp(&app, admin.id, |mcp| mcp.proxy_id = Some(office.id)).await;
+        let fragment = from_script(app.get(&format!("/mcps/{}/edit", through.id)))
+            .header("x-fragment", "edit-mcp")
+            .login_as(&admin)
+            .send()
+            .await
+            .text();
+        assert!(fragment.contains(&format!(
+            "<option value=\"{}\" selected>Office · Tailscale</option>",
+            office.id
+        )));
+        assert!(fragment.contains("<option value=\"\">Direct</option>"));
+    }
+
+    #[tokio::test]
+    async fn saves_an_http_mcp_with_its_proxy_and_names_it_in_the_list() {
+        let (app, nodes, calls) = app_with_nodes().await;
+        let admin = create_admin(&app).await;
+        let proxy = create_proxy(&app, admin.id, |proxy| proxy.name = "Home".into()).await;
+        nodes.set_status(
+            proxy.id,
+            FakeProxyNodes::connected("example.ts.net", "mymcps.example.ts.net", "100.64.0.7"),
+        );
+        let id = proxy.id.to_string();
+
+        let created = create_form_with(&app, &admin, &[("proxyId", &id)]).await;
+
+        assert_eq!(created.status, StatusCode::NO_CONTENT);
+        let mcp = mcp_by_slug(&app, "docs").await.unwrap();
+        assert_eq!(mcp.proxy_id, Some(proxy.id));
+        // The probe after saving was sent, through the proxy.
+        assert!(!calls.is_empty());
+        assert_eq!(mcp.status, McpStatus::Ready);
+        let page = page(&app, &admin, "/mcps").await.text();
+        assert!(table_rows(&page)[0].contains("<span class=\"cell-sub\">Through Home</span>"));
+
+        // Back to direct: the select sends no value.
+        let updated = from_script(app.post(&format!("/mcps/{}?_method=PUT", mcp.id)))
+            .login_as(&admin)
+            .csrf()
+            .form(&http_form(&[("proxyId", "")]))
+            .send()
+            .await;
+        assert_eq!(updated.status, StatusCode::NO_CONTENT);
+        assert_eq!(find_mcp(&app, mcp.id).await.proxy_id, None);
+        // And through it again.
+        let updated = app
+            .post(&format!("/mcps/{}?_method=PUT", mcp.id))
+            .login_as(&admin)
+            .csrf()
+            .form(&http_form(&[("proxyId", &id)]))
+            .send()
+            .await;
+        assert_redirect(&updated, "/mcps");
+        assert_eq!(find_mcp(&app, mcp.id).await.proxy_id, Some(proxy.id));
+    }
+
+    #[tokio::test]
+    async fn keeps_the_oauth_connection_when_the_proxy_changes() {
+        let (app, _nodes, _calls) = app_with_nodes().await;
+        let admin = create_admin(&app).await;
+        let proxy = create_proxy(&app, admin.id, |_| {}).await;
+        let mcp = create_mcp(&app, admin.id, |mcp| {
+            mcp.http_url = Some("https://docs.example/mcp".into());
+            mcp.oauth_client_id = Some("client-1".into());
+            mcp.oauth_access_token = encrypt(&app, "access-token");
+        })
+        .await;
+
+        let response = app
+            .post(&format!("/mcps/{}?_method=PUT", mcp.id))
+            .login_as(&admin)
+            .csrf()
+            .form(&http_form(&[("proxyId", &proxy.id.to_string())]))
+            .send()
+            .await;
+
+        assert_redirect(&response, "/mcps");
+        let saved = find_mcp(&app, mcp.id).await;
+        assert_eq!(saved.proxy_id, Some(proxy.id));
+        assert_eq!(saved.oauth_client_id.as_deref(), Some("client-1"));
+        assert_eq!(
+            decrypt(&app, &saved.oauth_access_token).as_deref(),
+            Some("access-token")
+        );
+    }
+
+    #[tokio::test]
+    async fn refuses_a_proxy_of_another_team_on_the_network_field() {
+        let (app, _nodes, calls) = app_with_nodes().await;
+        let admin = create_admin(&app).await;
+        let mine = create_proxy(&app, admin.id, |proxy| proxy.name = "Home".into()).await;
+        let foreign = foreign_proxy(&app).await;
+
+        for id in [foreign.id.to_string(), "9999".to_string()] {
+            let refused = create_form_with(&app, &admin, &[("proxyId", &id)]).await;
+            assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY, "{id}");
+            let body = refused.text();
+            assert!(body.contains(NETWORK_ERROR), "{id}");
+            assert!(body.contains("aria-invalid=\"true\""), "{id}");
+            // The team has a proxy: the field is the one that says it.
+            assert!(body.contains("for=\"new-mcp-proxy\""));
+            assert!(body.contains("id=\"new-mcp-proxy-error\""));
+        }
+        assert_eq!(count_mcps(&app).await, 0);
+        assert!(calls.is_empty());
+
+        // The same when editing: the MCP keeps what it had.
+        let mcp = create_mcp(&app, admin.id, |mcp| mcp.proxy_id = Some(mine.id)).await;
+        let refused = from_script(app.post(&format!("/mcps/{}?_method=PUT", mcp.id)))
+            .login_as(&admin)
+            .csrf()
+            .form(&http_form(&[("proxyId", &foreign.id.to_string())]))
+            .send()
+            .await;
+        assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(refused.text().contains(NETWORK_ERROR));
+        assert_eq!(find_mcp(&app, mcp.id).await.proxy_id, Some(mine.id));
+
+        // Without the script, the first message is flashed.
+        let refused = app
+            .post("/mcps")
+            .login_as(&admin)
+            .csrf()
+            .form(&http_form(&[("proxyId", &foreign.id.to_string())]))
+            .send()
+            .await;
+        assert_redirect(&refused, "/mcps");
+        assert_eq!(refused.flashed("error"), Some(json!(NETWORK_ERROR)));
+
+        // A team with no proxy is told the same, in the banner of the form.
+        let other = create_account(&app, None).await;
+        let empty_team = create_team(&app, "Empty").await;
+        join_team(&app, empty_team.id, &other, TeamRole::Owner).await;
+        let refused = from_script(app.post("/mcps"))
+            .login_as(&other)
+            .in_team(empty_team.id)
+            .csrf()
+            .form(&http_form(&[("proxyId", &foreign.id.to_string())]))
+            .send()
+            .await;
+        assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(refused.text().contains(NETWORK_ERROR));
+    }
+
+    #[tokio::test]
+    async fn forgets_the_proxy_of_an_mcp_that_is_not_http() {
+        let (app, _nodes, _calls) = app_with_nodes().await;
+        let admin = create_admin(&app).await;
+        let proxy = create_proxy(&app, admin.id, |_| {}).await;
+        let mcp = create_mcp(&app, admin.id, |mcp| mcp.proxy_id = Some(proxy.id)).await;
+
+        // Switching to npm clears it, even if the form still carried one.
+        let response = app
+            .post(&format!("/mcps/{}?_method=PUT", mcp.id))
+            .login_as(&admin)
+            .csrf()
+            .form(&[
+                ("name", "Docs"),
+                ("transport", "npm"),
+                ("npmPackage", "@example/mcp"),
+                ("authType", "auto"),
+                ("proxyId", &proxy.id.to_string()),
+                ("enabled", "on"),
+            ])
+            .send()
+            .await;
+
+        assert_redirect(&response, "/mcps");
+        let saved = find_mcp(&app, mcp.id).await;
+        assert_eq!(saved.transport, McpTransport::Npm);
+        assert_eq!(saved.proxy_id, None);
+        // The proxy no longer holds the MCP: it can go.
+        assert!(proxy_mcps(&app, &proxy).await.is_empty());
+    }
+
+    async fn proxy_mcps(app: &TestApp, proxy: &Proxy) -> Vec<(i64, String)> {
+        proxy.mcps(&*app.core.db).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn sends_a_proxied_mcp_through_its_node_or_fails_without_going_direct() {
+        let (app, nodes, calls) = app_with_nodes().await;
+        let admin = create_admin(&app).await;
+        let proxy = create_proxy(&app, admin.id, |proxy| proxy.name = "Home".into()).await;
+        let mcp = create_mcp(&app, admin.id, |mcp| {
+            mcp.http_url = Some("https://docs.example/mcp".into());
+            mcp.proxy_id = Some(proxy.id);
+            mcp.status = McpStatus::Draft;
+        })
+        .await;
+        let probe = async || {
+            app.post(&format!("/mcps/{}/probe", mcp.id))
+                .login_as(&admin)
+                .csrf()
+                .form(&[("from", "list")])
+                .send()
+                .await
+        };
+
+        // The node has not logged in: the request fails and nothing leaves.
+        nodes.set_status(
+            proxy.id,
+            FakeProxyNodes::with_state(NodeState::NeedsLogin { auth_url: None }),
+        );
+        let failed = probe().await;
+        assert_redirect(&failed, "/mcps");
+        let saved = find_mcp(&app, mcp.id).await;
+        assert_eq!(saved.status, McpStatus::Error);
+        assert!(
+            saved
+                .last_error
+                .as_deref()
+                .is_some_and(|error| error.contains("Proxy \"Home\" is not connected")),
+            "{:?}",
+            saved.last_error
+        );
+        assert!(calls.is_empty());
+
+        // Once it is connected, the probe goes out.
+        nodes.set_status(
+            proxy.id,
+            FakeProxyNodes::connected("example.ts.net", "mymcps.example.ts.net", "100.64.0.7"),
+        );
+        let ok = probe().await;
+        assert_eq!(ok.flashed("success"), Some(json!("Connection OK")));
+        assert!(!calls.is_empty());
+    }
+}

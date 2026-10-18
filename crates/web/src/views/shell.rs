@@ -287,6 +287,9 @@ fn sidebar(context: &PageContext, user: &User) -> Markup {
                     (nav_item(context, "/approvals", "shield-check", "Approvals"))
                 }
                 @if context.is_team_admin() {
+                    (nav_item(context, "/proxies", "cable", "Proxies"))
+                }
+                @if context.is_team_admin() {
                     p class="nav-section" { "Observability" }
                     (nav_item(context, "/logs", "scroll-text", "Logs"))
                     (nav_item(context, "/analytics", "chart-column", "Analytics"))

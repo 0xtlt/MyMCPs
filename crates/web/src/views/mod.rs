@@ -12,6 +12,7 @@ pub mod logs;
 pub mod mcp_tools;
 pub mod mcps;
 pub mod oauth;
+pub mod proxies;
 pub mod settings;
 pub mod shell;
 pub mod teams;

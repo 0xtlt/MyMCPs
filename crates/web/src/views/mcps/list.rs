@@ -7,7 +7,7 @@ use mymcps_core::models::{McpStatus, McpTransport};
 use crate::validators::mcp::{AUTH_LABELS, McpListQuery};
 use crate::views::grouped;
 use crate::views::icon::icon;
-use crate::views::mcps::{McpView, McpsPage, ROWS_PER_PAGE, href, transport_label};
+use crate::views::mcps::{McpView, McpsPage, ProxyChoice, ROWS_PER_PAGE, href, transport_label};
 use crate::views::shell::PageContext;
 
 /// What a control that starts an OAuth flow says while there is no public address.
@@ -170,8 +170,8 @@ fn edit_href(mcp: &McpView, query: &McpListQuery) -> String {
 }
 
 /// The second line of the endpoint: why the last connection failed, else
-/// the version of the package that is installed.
-fn endpoint_note(mcp: &McpView) -> Markup {
+/// the version of the package that is installed, else the proxy it goes through.
+fn endpoint_note(mcp: &McpView, proxies: &[ProxyChoice]) -> Markup {
     let error = mcp
         .last_error
         .as_deref()
@@ -181,12 +181,14 @@ fn endpoint_note(mcp: &McpView) -> Markup {
             span class="cell-sub cell-sub--critical" title=(error) { (error) }
         } @else if let (McpTransport::Npm, Some(installed)) = (mcp.transport, &mcp.npm_installed_version) {
             span class="cell-sub" { "installed " (installed) }
+        } @else if let Some(proxy) = mcp.proxy_id.and_then(|id| proxies.iter().find(|proxy| proxy.id == id)) {
+            span class="cell-sub" { "Through " (proxy.name) }
         }
     }
 }
 
-fn endpoint_cell(mcp: &McpView) -> Markup {
-    let note = endpoint_note(mcp);
+fn endpoint_cell(mcp: &McpView, proxies: &[ProxyChoice]) -> Markup {
+    let note = endpoint_note(mcp, proxies);
     html! {
         @if mcp.transport != McpTransport::Builtin {
             td { div class="cell-stack" { span class="cell-code" { (mcp.endpoint_label()) } (note) } }
@@ -257,7 +259,12 @@ fn row_menu(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Marku
     }
 }
 
-fn table_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Markup {
+fn table_row(
+    context: &PageContext,
+    mcp: &McpView,
+    query: &McpListQuery,
+    proxies: &[ProxyChoice],
+) -> Markup {
     html! {
         tr {
             td { span class=(format!("status status--{}", status_tone(mcp.status))) { (mcp.status.as_str()) } }
@@ -270,7 +277,7 @@ fn table_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Mark
                     }
                 }
             }
-            (endpoint_cell(mcp))
+            (endpoint_cell(mcp, proxies))
             td { code class="code" { (mcp.auth_label()) } }
             @match mcp.tool_count {
                 Some(count) => { td class="cell-secondary tabular" { (grouped(count)) } }
@@ -443,7 +450,7 @@ pub(super) fn registry(context: &PageContext, page: &McpsPage) -> Markup {
                             }
                         }
                         tbody {
-                            @for mcp in page.rows { (table_row(context, mcp, query)) }
+                            @for mcp in page.rows { (table_row(context, mcp, query, page.proxies)) }
                         }
                     }
                 }

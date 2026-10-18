@@ -4,6 +4,7 @@ mod reset_password;
 mod reset_protection;
 mod server;
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,6 +12,7 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use mymcps_core::{Config, Core, Db};
 use mymcps_node::SandboxStatus;
+use mymcps_tailscale::{Availability, Tailscale, TailscaleOptions};
 use mymcps_upstream::Upstream;
 use mymcps_web::AppState;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -185,6 +187,39 @@ async fn report_npm_sandbox(upstream: &Upstream) {
     }
 }
 
+/// Start the runtime of Tailscale proxies, and say, once, whether they can
+/// run on this machine. It never fails: a server that cannot run them
+/// serves everything else, and the Proxies page gives the reason.
+async fn start_tailscale(config: &Config) -> Arc<Tailscale> {
+    let root = config.data_dir.join("tailscale");
+    let options = TailscaleOptions {
+        binary: config.tailscaled_binary.as_ref().map(PathBuf::from),
+        root: std::path::absolute(&root).unwrap_or(root),
+        max_nodes: config.tailscale_max_proxies,
+    };
+    Arc::new(Tailscale::start(options).await)
+}
+
+/// Say what the runtime of proxies can do. A server without `tailscaled`
+/// only warns while no proxy is defined: nobody asked for one.
+fn report_tailscale(tailscale: &Tailscale, proxies_defined: bool) {
+    match tailscale.availability() {
+        Availability::Available { version } => {
+            tracing::info!(%version, "Tailscale proxies are available");
+        }
+        Availability::Disabled => {
+            tracing::warn!("Tailscale proxies are off: TAILSCALE_MAX_PROXIES is 0")
+        }
+        Availability::Unavailable { reason } if proxies_defined => tracing::error!(
+            %reason,
+            "Tailscale proxies cannot start: the MCPs that use one fail until they can"
+        ),
+        Availability::Unavailable { reason } => {
+            tracing::warn!(%reason, "Tailscale proxies cannot start");
+        }
+    }
+}
+
 async fn serve() -> CommandResult {
     let config = Config::from_env()?;
     init_logging(&config);
@@ -199,8 +234,20 @@ async fn serve() -> CommandResult {
     mymcps_core::backup::clear_temporary_files(&core.config)
         .map_err(|error| format!("Cannot delete the temporary files of backups: {error}"))?;
     remove_deno_cache(&core.config).await;
-    let state = AppState::new(core.clone());
+    let tailscale = start_tailscale(&core.config).await;
+    let state = AppState::with_proxy_nodes(core.clone(), tailscale.clone());
     report_npm_sandbox(&state.upstream).await;
+    // Every proxy of the database has its node running, and no other does.
+    match mymcps_core::models::Proxy::count(&*core.db).await {
+        Ok(defined) => report_tailscale(&tailscale, defined > 0),
+        Err(error) => {
+            tracing::error!(%error, "Could not count the proxies");
+            report_tailscale(&tailscale, true);
+        }
+    }
+    if let Err(error) = state.reconcile_proxy_nodes().await {
+        tracing::error!(%error, "Could not start the Tailscale nodes of the proxies");
+    }
     // Deletes the expired uploads, including the ones a previous run left.
     let upload_sweeper =
         Arc::new(state.upstream.builtin_env().uploads.clone()).start_sweeper(UPLOAD_SWEEP_INTERVAL);
@@ -228,6 +275,8 @@ async fn serve() -> CommandResult {
 
     mcp_gateway.auto_update.stop();
     upload_sweeper.abort();
+    // The nodes stop with the server; their state stays on disk.
+    tailscale.shutdown().await;
     core.db.close().await;
     Ok(ExitCode::SUCCESS)
 }
