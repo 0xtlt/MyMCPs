@@ -5,13 +5,11 @@
 mod support;
 
 use std::convert::Infallible;
-use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::response::Response;
 use bytes::Bytes;
 use futures::StreamExt;
 use mymcps_core::TestCore;
@@ -20,43 +18,6 @@ use mymcps_net::{AddressGuard, Fetcher, MAX_UPSTREAM_ERROR_RESPONSE_BYTES};
 use mymcps_upstream::{Upstream, UpstreamError, UpstreamTool};
 use serde_json::{Value, json};
 use support::*;
-
-/// An MCP server on 127.0.0.1 that runs the handshake itself and leaves
-/// every other request to `answer`.
-async fn mcp_server<F, Fut>(answer: F) -> LocalServer
-where
-    F: Fn(Value) -> Fut + Clone + Send + Sync + 'static,
-    Fut: Future<Output = Response> + Send + 'static,
-{
-    local_server(move |request: Received| {
-        let answer = answer.clone();
-        async move {
-            if request.method != "POST" {
-                return respond(405, &[], Body::empty());
-            }
-            let message = request.json();
-            if message["method"] == "initialize" {
-                return respond_json(
-                    200,
-                    json!({
-                        "jsonrpc": "2.0",
-                        "id": message["id"],
-                        "result": {
-                            "protocolVersion": message["params"]["protocolVersion"],
-                            "capabilities": { "tools": {} },
-                            "serverInfo": { "name": "local", "version": "1.0.0" },
-                        },
-                    }),
-                );
-            }
-            if message.get("id").is_none() {
-                return respond(202, &[], Body::empty());
-            }
-            answer(message).await
-        }
-    })
-    .await
-}
 
 fn tools() -> Value {
     json!({ "tools": [{ "name": "echo", "inputSchema": { "type": "object" } }] })

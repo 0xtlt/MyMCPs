@@ -255,6 +255,68 @@ async fn sanitizes_upstream_exceptions_and_preserves_the_gateway_response() {
 }
 
 #[tokio::test]
+async fn tells_the_agent_how_long_a_call_waited_before_it_timed_out() {
+    let gateway = TestMcpGateway::with(
+        |config| {
+            config.tool_call_timeout = std::time::Duration::from_millis(200);
+            config.tool_call_max_duration = std::time::Duration::from_secs(60);
+        },
+        Default::default(),
+        |fetcher| fetcher,
+        |message| match message.tool() {
+            "wait" => Reply::Unanswered,
+            _ => tool_server(message),
+        },
+    )
+    .await;
+    let (_, plaintext) = logging_setup(&gateway, |_| {}).await;
+    set_log_level(&gateway, McpLogLevel::Responses).await;
+
+    let response = call_gateway(&gateway, &plaintext, "logging__wait", None, &[]).await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(
+        response.result(),
+        json!({
+            "content": [{ "type": "text", "text": "Upstream tool call timed out after 0.2 seconds" }],
+            "isError": true,
+        })
+    );
+
+    // The call asked for progress, and the upstream was told to stop.
+    let requests = gateway.upstreams.requests();
+    let call = requests
+        .iter()
+        .find(|request| request.method == "tools/call")
+        .unwrap();
+    assert_eq!(call.params["_meta"]["progressToken"], call.id);
+    let cancelled = requests
+        .iter()
+        .find(|request| request.method == "notifications/cancelled")
+        .expect("a cancellation");
+    assert_eq!(cancelled.params["requestId"], call.id);
+
+    // The log keeps what failed, as for any other upstream failure.
+    let records = call_logs(gateway.db()).await;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].outcome, CallOutcome::Error);
+    assert_eq!(
+        records[0].error_category,
+        Some(CallErrorCategory::UpstreamException)
+    );
+    assert_eq!(
+        records[0].error_summary.as_deref(),
+        Some("MCP error -32001: Request timed out")
+    );
+
+    // A call that was not slow keeps working on the same gateway.
+    let response = call_gateway(&gateway, &plaintext, "logging__echo", None, &[]).await;
+    assert_eq!(
+        response.result(),
+        json!({ "content": [{ "type": "text", "text": "ok" }] })
+    );
+}
+
+#[tokio::test]
 async fn caps_oversized_argument_captures() {
     let gateway = TestMcpGateway::new(tool_server).await;
     let (_, plaintext) = logging_setup(&gateway, |_| {}).await;

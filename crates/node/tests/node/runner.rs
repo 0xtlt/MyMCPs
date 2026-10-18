@@ -728,6 +728,30 @@ mod requests_of_an_npm_mcp {
     }
 
     #[tokio::test]
+    async fn gives_up_on_a_call_the_package_never_answers_and_ends_the_process() {
+        let wait = std::time::Duration::from_millis(300);
+        let sandbox = Sandbox::with_config(|config| {
+            config.tool_call_timeout = wait;
+            config.tool_call_max_duration = std::time::Duration::from_secs(60);
+        })
+        .await;
+        let runner = sandbox.runner();
+        let mcp = sandbox.npm_mcp(&[]);
+
+        let error = runner
+            .call_tool(&mcp, "hang", serde_json::Map::new())
+            .await
+            .unwrap_err();
+
+        let timed_out = error.timed_out().expect("a timeout");
+        assert_eq!(timed_out.method, "tools/call");
+        assert_eq!(timed_out.waited, wait);
+        assert_eq!(error.to_string(), "MCP error -32001: Request timed out");
+        let started = Snapshot::read(&runner.sandbox_root_for(mcp.id), "started");
+        assert!(!is_running(&started.pid));
+    }
+
+    #[tokio::test]
     async fn calls_a_tool_and_ends_the_process() {
         let sandbox = Sandbox::new().await;
         let runner = sandbox.runner();
@@ -745,9 +769,10 @@ mod requests_of_an_npm_mcp {
             result,
             json!({ "content": [{ "type": "text", "text": "called" }] })
         );
+        // The call asks for progress, with its id as the token.
         assert_eq!(
             std::fs::read_to_string(sandbox_dir.join("call.json")).unwrap(),
-            "{\"method\":\"tools/call\",\"params\":{\"name\":\"snapshot\",\"arguments\":{\"query\":\"status\",\"limit\":5}},\"jsonrpc\":\"2.0\",\"id\":1}\n"
+            "{\"method\":\"tools/call\",\"params\":{\"name\":\"snapshot\",\"arguments\":{\"query\":\"status\",\"limit\":5},\"_meta\":{\"progressToken\":1}},\"jsonrpc\":\"2.0\",\"id\":1}\n"
         );
         let installed = Snapshot::read(&sandbox.install_dir(&runner, &mcp), "install");
         assert_eq!(installed.argv.last().unwrap(), "@example/fake-mcp@1.2.3");
@@ -762,7 +787,7 @@ mod requests_of_an_npm_mcp {
         assert!(
             std::fs::read_to_string(sandbox_dir.join("call.json"))
                 .unwrap()
-                .contains("\"params\":{\"name\":\"snapshot\",\"arguments\":{}}")
+                .contains("\"params\":{\"name\":\"snapshot\",\"arguments\":{},")
         );
     }
 
@@ -1016,5 +1041,56 @@ mod requests_of_an_npm_mcp {
                 .join("started.argv")
                 .exists()
         );
+    }
+}
+
+mod client_options {
+    use std::time::Duration;
+
+    use mymcps_core::Config;
+    use mymcps_mcp::McpError;
+    use mymcps_mcp::client::{ClientError, ClientOptions, RequestTimedOut};
+    use mymcps_node::client_options;
+
+    use super::*;
+
+    #[test]
+    fn gives_a_tool_call_the_configured_wait_with_progress() {
+        let mut config = Config::for_tests("tmp");
+        config.tool_call_timeout = Duration::from_secs(600);
+        config.tool_call_max_duration = Duration::from_secs(7200);
+
+        let options = client_options(&config);
+
+        assert_eq!(options.tool_call_timeout.timeout, Duration::from_secs(600));
+        assert!(options.tool_call_timeout.reset_on_progress);
+        assert_eq!(
+            options.tool_call_timeout.max_total,
+            Some(Duration::from_secs(7200))
+        );
+        // The handshake and the listing keep the client's own wait.
+        assert_eq!(
+            options.request_timeout,
+            ClientOptions::default().request_timeout
+        );
+    }
+
+    #[test]
+    fn tells_a_timeout_from_the_other_failures() {
+        let timeout = Duration::from_secs(5);
+        let timed_out = NodeError::Client(ClientError::TimedOut(Box::new(RequestTimedOut {
+            method: "tools/call".to_owned(),
+            waited: timeout,
+            error: McpError::new(-32001, "Request timed out"),
+        })));
+        let timed_out = timed_out.timed_out().expect("a timeout");
+        assert_eq!(timed_out.method, "tools/call");
+        assert_eq!(timed_out.waited, timeout);
+
+        // A server that answered with -32001 is not a local timeout.
+        let answered =
+            NodeError::Client(ClientError::Mcp(McpError::new(-32001, "Request timed out")));
+        assert!(answered.timed_out().is_none());
+        assert!(NodeError::MissingPackage.timed_out().is_none());
     }
 }

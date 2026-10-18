@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -27,6 +28,17 @@ const PUBLISHED_APP_KEYS: &[&str] = &[
     // The key the test suites use.
     TEST_APP_KEY,
 ];
+
+/// The longest `MCP_TOOL_CALL_TIMEOUT` and `MCP_TOOL_CALL_MAX_DURATION`
+/// accept, in seconds (30 days).
+const MAX_TOOL_CALL_SECONDS: u64 = 2_592_000;
+
+/// How long a tool call waits for its answer when nothing says otherwise.
+const DEFAULT_TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(3600);
+
+/// The longest a tool call waits in all, progress or not, unless a longer
+/// `MCP_TOOL_CALL_TIMEOUT` asks for more.
+const DEFAULT_TOOL_CALL_MAX_DURATION: Duration = Duration::from_secs(86_400);
 
 /// The key every test uses. Never valid in production.
 pub const TEST_APP_KEY: &str = "base64:btJw8RPglRbr2TIbpi4nR2AMmmpc/gO1Weadd2mSSaI=";
@@ -72,6 +84,14 @@ pub struct Config {
     /// `NPM_SANDBOX`: whether npm MCPs run in the sandbox of the kernel. On
     /// unless it is `off`; a server that cannot enforce it then starts none.
     pub npm_sandbox: bool,
+    /// `MCP_TOOL_CALL_TIMEOUT`: how long a tool call waits for the answer of
+    /// its upstream MCP, counted again from each progress notification of the
+    /// call. The handshake and the listing of tools keep their own, shorter
+    /// wait.
+    pub tool_call_timeout: Duration,
+    /// `MCP_TOOL_CALL_MAX_DURATION`: the longest a tool call waits in all,
+    /// however much progress it reports. Never less than `tool_call_timeout`.
+    pub tool_call_max_duration: Duration,
 }
 
 impl Config {
@@ -117,6 +137,28 @@ impl Config {
             }
         };
 
+        // Either setting alone moves the default of the other, so only two
+        // settings that contradict each other are refused.
+        let (tool_call_timeout, tool_call_max_duration) = match (
+            get_seconds(get("MCP_TOOL_CALL_TIMEOUT"), "MCP_TOOL_CALL_TIMEOUT")?,
+            get_seconds(
+                get("MCP_TOOL_CALL_MAX_DURATION"),
+                "MCP_TOOL_CALL_MAX_DURATION",
+            )?,
+        ) {
+            (Some(timeout), Some(max_duration)) if max_duration < timeout => {
+                return Err(Error::Config(
+                    "MCP_TOOL_CALL_MAX_DURATION must be at least MCP_TOOL_CALL_TIMEOUT".into(),
+                ));
+            }
+            (Some(timeout), Some(max_duration)) => (timeout, max_duration),
+            (Some(timeout), None) => (timeout, DEFAULT_TOOL_CALL_MAX_DURATION.max(timeout)),
+            (None, Some(max_duration)) => {
+                (DEFAULT_TOOL_CALL_TIMEOUT.min(max_duration), max_duration)
+            }
+            (None, None) => (DEFAULT_TOOL_CALL_TIMEOUT, DEFAULT_TOOL_CALL_MAX_DURATION),
+        };
+
         let app_key = match get("APP_KEY") {
             Some(value) => value.to_string(),
             None => load_or_create_app_key(&data_dir)?,
@@ -141,6 +183,8 @@ impl Config {
             data_dir,
             node_binary: get("NODE_BINARY").map(str::to_string),
             npm_sandbox,
+            tool_call_timeout,
+            tool_call_max_duration,
         })
     }
 
@@ -158,6 +202,8 @@ impl Config {
             data_dir: data_dir.into(),
             node_binary: None,
             npm_sandbox: true,
+            tool_call_timeout: DEFAULT_TOOL_CALL_TIMEOUT,
+            tool_call_max_duration: DEFAULT_TOOL_CALL_MAX_DURATION,
         }
     }
 
@@ -180,6 +226,21 @@ impl Config {
         } else {
             "db.sqlite3"
         })
+    }
+}
+
+/// A whole number of seconds from 1 to 30 days, when the variable is set.
+fn get_seconds(value: Option<&str>, name: &str) -> Result<Option<Duration>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    match value.parse::<u64>() {
+        Ok(seconds) if (1..=MAX_TOOL_CALL_SECONDS).contains(&seconds) => {
+            Ok(Some(Duration::from_secs(seconds)))
+        }
+        _ => Err(Error::Config(format!(
+            "{name} must be a number of seconds from 1 to {MAX_TOOL_CALL_SECONDS}, not \"{value}\""
+        ))),
     }
 }
 
@@ -388,6 +449,75 @@ mod tests {
                 ("PORT", "http")
             ]))
             .is_err()
+        );
+    }
+
+    #[test]
+    fn reads_the_tool_call_waits() {
+        let config = |pairs: &[(&str, &str)]| {
+            let mut all = vec![("NODE_ENV", "test"), ("APP_KEY", TEST_APP_KEY)];
+            all.extend_from_slice(pairs);
+            Config::from_vars(&vars(&all))
+        };
+        let seconds = Duration::from_secs;
+
+        let defaults = config(&[]).unwrap();
+        assert_eq!(defaults.tool_call_timeout, seconds(3600));
+        assert_eq!(defaults.tool_call_max_duration, seconds(86_400));
+        let for_tests = Config::for_tests("tmp");
+        assert_eq!(for_tests.tool_call_timeout, seconds(3600));
+        assert_eq!(for_tests.tool_call_max_duration, seconds(86_400));
+
+        let set = config(&[
+            ("MCP_TOOL_CALL_TIMEOUT", " 600 "),
+            ("MCP_TOOL_CALL_MAX_DURATION", "1200"),
+        ])
+        .unwrap();
+        assert_eq!(set.tool_call_timeout, seconds(600));
+        assert_eq!(set.tool_call_max_duration, seconds(1200));
+
+        // The maximum follows a longer timeout, and a blank value is not set.
+        let long = config(&[
+            ("MCP_TOOL_CALL_TIMEOUT", "172800"),
+            ("MCP_TOOL_CALL_MAX_DURATION", ""),
+        ])
+        .unwrap();
+        assert_eq!(long.tool_call_max_duration, seconds(172_800));
+        assert_eq!(
+            config(&[("MCP_TOOL_CALL_TIMEOUT", "2592000")])
+                .unwrap()
+                .tool_call_timeout,
+            seconds(2_592_000)
+        );
+        // A lower maximum alone lowers the timeout with it.
+        let capped = config(&[("MCP_TOOL_CALL_MAX_DURATION", "60")]).unwrap();
+        assert_eq!(capped.tool_call_timeout, seconds(60));
+        assert_eq!(capped.tool_call_max_duration, seconds(60));
+    }
+
+    #[test]
+    fn rejects_bad_tool_call_waits() {
+        let config = |pairs: &[(&str, &str)]| {
+            let mut all = vec![("NODE_ENV", "test"), ("APP_KEY", TEST_APP_KEY)];
+            all.extend_from_slice(pairs);
+            Config::from_vars(&vars(&all))
+        };
+        for name in ["MCP_TOOL_CALL_TIMEOUT", "MCP_TOOL_CALL_MAX_DURATION"] {
+            for bad in ["0", "-5", "1.5", "an hour", "2592001", "1h"] {
+                assert_eq!(
+                    config(&[(name, bad)]).unwrap_err().to_string(),
+                    format!("{name} must be a number of seconds from 1 to 2592000, not \"{bad}\"")
+                );
+            }
+        }
+        assert_eq!(
+            config(&[
+                ("MCP_TOOL_CALL_TIMEOUT", "600"),
+                ("MCP_TOOL_CALL_MAX_DURATION", "599"),
+            ])
+            .unwrap_err()
+            .to_string(),
+            "MCP_TOOL_CALL_MAX_DURATION must be at least MCP_TOOL_CALL_TIMEOUT"
         );
     }
 }

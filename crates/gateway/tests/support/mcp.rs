@@ -49,6 +49,9 @@ pub enum Reply {
     Result(Value),
     /// A JSON-RPC error, which the gateway meets as a call that failed.
     Error(String),
+    /// `202 Accepted` and no message: the answer is to come on a stream that
+    /// never carries it, so the gateway waits until its own timeout.
+    Unanswered,
 }
 
 /// Everything the MCPs behind the gateway were sent, in order.
@@ -74,12 +77,19 @@ impl Upstreams {
             .collect()
     }
 
-    /// The `params` of every tool call: its name and its arguments.
+    /// The `params` of every tool call: its name and its arguments, without
+    /// the `_meta` the client adds to ask for progress.
     pub fn calls(&self) -> Vec<Value> {
         self.requests()
             .into_iter()
             .filter(|request| request.method == "tools/call")
-            .map(|request| request.params)
+            .map(|request| {
+                let mut params = request.params;
+                if let Some(params) = params.as_object_mut() {
+                    params.remove("_meta");
+                }
+                params
+            })
             .collect()
     }
 
@@ -140,6 +150,7 @@ pub fn upstream_fetcher(
                 })),
                 "tools/list" | "tools/call" => match answer(&message) {
                     Reply::Result(result) => reply(result),
+                    Reply::Unanswered => CannedResponse::new(StatusCode::ACCEPTED),
                     Reply::Error(text) => CannedResponse::json(
                         StatusCode::OK,
                         &json!({

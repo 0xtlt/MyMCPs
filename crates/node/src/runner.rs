@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use mymcps_core::Core;
 use mymcps_core::models::Mcp;
+use mymcps_core::{Config, Core};
 use mymcps_mcp::client::{
-    Client, StdioClientTransport, StdioServerParameters, StdioStderr, Transport,
-    get_default_environment,
+    Client, ClientOptions, RequestTimeout, StdioClientTransport, StdioServerParameters,
+    StdioStderr, Transport, get_default_environment,
 };
 use mymcps_mcp::{Implementation, Tool};
 use mymcps_sandbox::{LAUNCH_COMMAND, Policy};
@@ -56,6 +56,21 @@ pub enum SandboxStatus {
     Unavailable(String),
     /// The server was told to run npm MCPs without a sandbox.
     Off,
+}
+
+/// The options of the MCP client of every upstream, HTTP or npm. A tool call
+/// waits as long as the configuration says, restarted by the progress the
+/// upstream reports, and no longer than the maximum. Everything else keeps
+/// the client's own, shorter wait.
+pub fn client_options(config: &Config) -> ClientOptions {
+    ClientOptions {
+        tool_call_timeout: RequestTimeout {
+            timeout: config.tool_call_timeout,
+            reset_on_progress: true,
+            max_total: Some(config.tool_call_max_duration),
+        },
+        ..ClientOptions::default()
+    }
 }
 
 type InstallLocks = Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>;
@@ -444,7 +459,10 @@ impl NodeRunner {
         );
         let stderr = StartupStderrCapture::start(transport.stderr());
 
-        let client = Client::new(Implementation::new("mymcps-gateway", mymcps_core::VERSION));
+        let client = Client::with_options(
+            Implementation::new("mymcps-gateway", mymcps_core::VERSION),
+            client_options(&self.core.config),
+        );
 
         if let Err(error) = client.connect(transport.clone()).await {
             let stderr = stderr.read().await;

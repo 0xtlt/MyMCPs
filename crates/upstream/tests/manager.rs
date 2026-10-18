@@ -186,9 +186,14 @@ async fn calls_a_tool_and_returns_what_the_mcp_answered() {
         .into_iter()
         .find(|call| call.json()["method"] == "tools/call")
         .unwrap();
+    // The call asks for progress, with its id as the token.
     assert_eq!(
         call.json()["params"],
-        json!({ "name": "search", "arguments": { "q": "roadmap", "limit": 3 } })
+        json!({
+            "name": "search",
+            "arguments": { "q": "roadmap", "limit": 3 },
+            "_meta": { "progressToken": call.json()["id"] },
+        })
     );
 
     // A call without arguments is made with an empty object.
@@ -201,7 +206,11 @@ async fn calls_a_tool_and_returns_what_the_mcp_answered() {
         .unwrap();
     assert_eq!(
         call.json()["params"],
-        json!({ "name": "search", "arguments": {} })
+        json!({
+            "name": "search",
+            "arguments": {},
+            "_meta": { "progressToken": call.json()["id"] },
+        })
     );
 }
 

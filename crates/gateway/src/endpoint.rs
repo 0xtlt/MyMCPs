@@ -8,7 +8,7 @@
 //! token may use.
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -23,7 +23,7 @@ use mymcps_mcp::server::{
     HandlerError, RequestBody, ResponseBody, ServerOptions, ToolHandler, handle_request,
 };
 use mymcps_upstream::approvals::with_approval_notes;
-use mymcps_upstream::{Upstream, parse_namespaced_tool};
+use mymcps_upstream::{Upstream, UpstreamError, parse_namespaced_tool};
 use mymcps_vine::js::json_stringify;
 use serde_json::{Map, Value, json};
 
@@ -471,11 +471,11 @@ impl Session {
                 }
                 result
             }
-            Err(error) => {
+            Err(failure) => {
                 tracing::warn!(
                     error = %sanitize_mcp_diagnostic(
                         &self.upstream.core().encryption,
-                        &error,
+                        &failure.error,
                         &mcp,
                     ),
                     mcp_id = mcp.id,
@@ -485,22 +485,23 @@ impl Session {
                 self.record_error(
                     started_at,
                     CallErrorCategory::UpstreamException,
-                    &error,
+                    &failure.error,
                     record,
                 );
-                error_result("Upstream tool call failed")
+                error_result(&failure.for_agent)
             }
         }
     }
 
     /// Run a call, unless it has to wait for a person. Fails with the
-    /// message of what went wrong, which is redacted before it goes anywhere.
+    /// message of what went wrong, which is redacted before it goes anywhere,
+    /// and with what the agent reads of it.
     async fn attempt(
         &self,
         mcp: &mut Mcp,
         tool_name: &str,
         args: Option<&Map<String, Value>>,
-    ) -> Result<Attempt, String> {
+    ) -> Result<Attempt, CallFailure> {
         // A tool set to ask is held here until a person approved this very call.
         let gate = self
             .approvals
@@ -511,7 +512,7 @@ impl Session {
                 args,
             })
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| CallFailure::generic(error.to_string()))?;
         if let ApprovalGate::Held(held) = gate {
             return Ok(Attempt::Held(held));
         }
@@ -520,13 +521,66 @@ impl Session {
             .call_tool(mcp, tool_name, args.cloned())
             .await
             .map(Attempt::Ran)
-            .map_err(|error| error.to_string())
+            .map_err(|error| CallFailure::of(&error))
     }
 }
 
 enum Attempt {
     Held(crate::approvals::HeldCall),
     Ran(Value),
+}
+
+/// Why a call failed: the message for the call log and the server log, and
+/// the text the agent reads. The agent is told about a timeout, which it can
+/// act on, and nothing of the other failures, whose messages can quote the
+/// upstream.
+struct CallFailure {
+    error: String,
+    for_agent: String,
+}
+
+impl CallFailure {
+    fn generic(error: String) -> Self {
+        Self {
+            error,
+            for_agent: "Upstream tool call failed".to_owned(),
+        }
+    }
+
+    fn of(error: &UpstreamError) -> Self {
+        let for_agent = match error.timed_out() {
+            Some(timed_out) if timed_out.method == "tools/call" => format!(
+                "Upstream tool call timed out after {}",
+                seconds_text(timed_out.waited)
+            ),
+            // The handshake: `initialize` or `notifications/initialized`.
+            Some(timed_out) => format!(
+                "Upstream MCP timed out after {} while connecting",
+                seconds_text(timed_out.waited)
+            ),
+            None => "Upstream tool call failed".to_owned(),
+        };
+        Self {
+            error: error.to_string(),
+            for_agent,
+        }
+    }
+}
+
+/// A wait in seconds, as the agent reads it: `1 second`, `3600 seconds`,
+/// `0.25 seconds`. Up to three decimals, without trailing zeros.
+fn seconds_text(waited: Duration) -> String {
+    let millis = waited.as_millis();
+    let (whole, fraction) = (millis / 1000, millis % 1000);
+    let number = if fraction == 0 {
+        whole.to_string()
+    } else {
+        format!("{whole}.{fraction:03}")
+            .trim_end_matches('0')
+            .to_owned()
+    };
+    let unit = if number == "1" { "second" } else { "seconds" };
+    format!("{number} {unit}")
 }
 
 #[async_trait]
@@ -567,5 +621,69 @@ impl ToolHandler for Session {
             GatewayToolMode::Lazy => self.call_lazy_tool(name, arguments, started_at).await,
             GatewayToolMode::Eager => self.call_namespaced_tool(name, arguments, started_at).await,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mymcps_mcp::McpError;
+    use mymcps_mcp::client::{ClientError, RequestTimedOut};
+
+    use super::*;
+
+    fn timed_out(method: &str, waited: Duration) -> UpstreamError {
+        let error = McpError::new(-32001, "Request timed out");
+        ClientError::TimedOut(Box::new(RequestTimedOut {
+            method: method.to_owned(),
+            waited,
+            error,
+        }))
+        .into()
+    }
+
+    #[test]
+    fn tells_the_agent_what_timed_out() {
+        let for_agent = |error: &UpstreamError| CallFailure::of(error).for_agent;
+        assert_eq!(
+            for_agent(&timed_out("tools/call", Duration::from_secs(3600))),
+            "Upstream tool call timed out after 3600 seconds"
+        );
+        assert_eq!(
+            for_agent(&timed_out("initialize", Duration::from_secs(60))),
+            "Upstream MCP timed out after 60 seconds while connecting"
+        );
+        assert_eq!(
+            for_agent(&timed_out(
+                "notifications/initialized",
+                Duration::from_secs(1)
+            )),
+            "Upstream MCP timed out after 1 second while connecting"
+        );
+        // The log keeps the message of the error.
+        let failure = CallFailure::of(&timed_out("tools/call", Duration::from_secs(1)));
+        assert_eq!(failure.error, "MCP error -32001: Request timed out");
+
+        // A server that answered with -32001 did not time out here.
+        let answered: UpstreamError =
+            ClientError::Mcp(McpError::new(-32001, "Request timed out")).into();
+        assert_eq!(for_agent(&answered), "Upstream tool call failed");
+        assert_eq!(
+            for_agent(&UpstreamError::Other("boom".to_owned())),
+            "Upstream tool call failed"
+        );
+    }
+
+    #[test]
+    fn tells_a_wait_in_seconds() {
+        let text = |millis| seconds_text(Duration::from_millis(millis));
+        assert_eq!(text(1000), "1 second");
+        assert_eq!(text(60_000), "60 seconds");
+        assert_eq!(text(3_600_000), "3600 seconds");
+        assert_eq!(text(250), "0.25 seconds");
+        assert_eq!(text(200), "0.2 seconds");
+        assert_eq!(text(1500), "1.5 seconds");
+        assert_eq!(text(1001), "1.001 seconds");
+        assert_eq!(text(1), "0.001 seconds");
+        assert_eq!(text(0), "0 seconds");
     }
 }

@@ -502,6 +502,43 @@ where
     }
 }
 
+/// An MCP server on 127.0.0.1 that runs the handshake itself and leaves
+/// every other request to `answer`.
+pub async fn mcp_server<F, Fut>(answer: F) -> LocalServer
+where
+    F: Fn(Value) -> Fut + Clone + Send + Sync + 'static,
+    Fut: std::future::Future<Output = axum::response::Response> + Send + 'static,
+{
+    local_server(move |request: Received| {
+        let answer = answer.clone();
+        async move {
+            if request.method != "POST" {
+                return respond(405, &[], axum::body::Body::empty());
+            }
+            let message = request.json();
+            if message["method"] == "initialize" {
+                return respond_json(
+                    200,
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": message["id"],
+                        "result": {
+                            "protocolVersion": message["params"]["protocolVersion"],
+                            "capabilities": { "tools": {} },
+                            "serverInfo": { "name": "local", "version": "1.0.0" },
+                        },
+                    }),
+                );
+            }
+            if message.get("id").is_none() {
+                return respond(202, &[], axum::body::Body::empty());
+            }
+            answer(message).await
+        }
+    })
+    .await
+}
+
 pub fn respond(
     status: u16,
     headers: &[(&str, &str)],

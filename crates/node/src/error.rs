@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use mymcps_core::secrets::EnvironmentError;
 use mymcps_mcp::McpError;
-use mymcps_mcp::client::ClientError;
+use mymcps_mcp::client::{ClientError, RequestTimedOut};
 
 use crate::paths::file_system_message;
 
@@ -86,6 +86,15 @@ impl NodeError {
     /// The JSON-RPC error code of [`NodeError::mcp_error`].
     pub fn mcp_code(&self) -> Option<i64> {
         self.mcp_error().map(|error| error.code)
+    }
+
+    /// The request got no answer in time and was cancelled: what it was and
+    /// how long it waited.
+    pub fn timed_out(&self) -> Option<&RequestTimedOut> {
+        match self {
+            Self::Client(error) => error.timed_out(),
+            _ => None,
+        }
     }
 
     /// Node was started and the MCP handshake with the package failed.

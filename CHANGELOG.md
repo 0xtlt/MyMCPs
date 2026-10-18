@@ -2,6 +2,24 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-18
+
+### Added
+
+- Added `MCP_TOOL_CALL_TIMEOUT` and `MCP_TOOL_CALL_MAX_DURATION`. A tool call to an HTTP or npm MCP waits `MCP_TOOL_CALL_TIMEOUT` seconds for its answer (one hour by default), counted again from each progress notification the MCP sends for the call, and never longer than `MCP_TOOL_CALL_MAX_DURATION` seconds in all (24 hours by default). Both take a number of seconds from 1 to 2592000; set together, the maximum cannot be below the timeout.
+
+### Changed
+
+- Tool calls to HTTP and npm MCPs no longer fail after 60 seconds: a tool that waits for a long job, such as the wait of a coding agent's run, now answers through the gateway. Connecting to an MCP and listing its tools keep their 60-second wait.
+- The gateway asks the MCP for progress on each tool call, so an MCP that reports it keeps its call alive for as long as it works.
+- A response from an MCP endpoint may stay silent for as long as a tool call waits, where it was cut after 300 seconds of silence. Every other outgoing request keeps the 300-second limit.
+
+### Fixed
+
+- A tool call that runs out of time now tells the agent `Upstream tool call timed out after N seconds` (`Upstream MCP timed out after N seconds while connecting` when the connection itself timed out), instead of `Upstream tool call failed`. The call log still records the failure as an upstream exception.
+- An upstream MCP whose event stream breaks before it sent the answer now fails the call at once with `Connection closed`, where it waited for the whole timeout.
+- The MCP is now told that the gateway stopped waiting (`notifications/cancelled`): the cancellation used to be abandoned when the connection was closed right after the failure.
+
 ## 2026-10-12
 
 ### Added

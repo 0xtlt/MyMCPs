@@ -188,9 +188,14 @@ async fn lists_and_calls_the_tools_of_an_npm_mcp() {
         &std::fs::read_to_string(server.sandbox(&mcp).join("call.json")).unwrap(),
     )
     .unwrap();
+    // The call asks for progress, with its id as the token.
     assert_eq!(
         call["params"],
-        json!({ "name": "snapshot", "arguments": { "q": "hello" } })
+        json!({
+            "name": "snapshot",
+            "arguments": { "q": "hello" },
+            "_meta": { "progressToken": call["id"] },
+        })
     );
 
     // A call without arguments is made with an empty object, and a tool
@@ -207,7 +212,11 @@ async fn lists_and_calls_the_tools_of_an_npm_mcp() {
     .unwrap();
     assert_eq!(
         call["params"],
-        json!({ "name": "failing", "arguments": {} })
+        json!({
+            "name": "failing",
+            "arguments": {},
+            "_meta": { "progressToken": call["id"] },
+        })
     );
 }
 

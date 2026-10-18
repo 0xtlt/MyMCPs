@@ -562,12 +562,12 @@ async fn times_out_a_request_the_child_never_answers() {
 #[tokio::test]
 async fn keeps_waiting_for_a_tool_that_reports_progress() {
     let directory = tempfile::tempdir().unwrap();
-    // Three quiet stretches of 120 ms, each ended by progress, then the answer.
+    // Five quiet stretches of 250 ms, each ended by progress, then the answer.
     let script = SERVER.replace(
         r#"      printf '\n{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"called","extra":true}]}}\n' "$id" ;;"#,
         r#"      token=$(printf '%s' "$line" | sed -n 's/.*"progressToken":\([0-9]*\).*/\1/p')
-      for step in 1 2 3; do
-        sleep 0.12
+      for step in 1 2 3 4 5; do
+        sleep 0.25
         printf '{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":%s,"progress":%s}}\n' "$token" "$step"
       done
       printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"done"}]}}\n' "$id" ;;"#,
@@ -582,7 +582,7 @@ async fn keeps_waiting_for_a_tool_that_reports_progress() {
         Implementation::new("test-client", "1.0.0"),
         ClientOptions {
             tool_call_timeout: RequestTimeout {
-                timeout: Duration::from_millis(300),
+                timeout: Duration::from_millis(1000),
                 reset_on_progress: true,
                 max_total: None,
             },
@@ -594,7 +594,7 @@ async fn keeps_waiting_for_a_tool_that_reports_progress() {
     let started = Instant::now();
     let result = client.call_tool("describe", None).await.unwrap();
     // Longer than the wait, which each progress notification started again.
-    assert!(started.elapsed() > Duration::from_millis(300));
+    assert!(started.elapsed() > Duration::from_millis(1000));
     assert_eq!(result["content"][0]["text"], "done");
     client.close().await;
 

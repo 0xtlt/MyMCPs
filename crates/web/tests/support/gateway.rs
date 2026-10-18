@@ -76,12 +76,19 @@ impl Upstreams {
             .collect()
     }
 
-    /// The `params` of every tool call: its name and its arguments.
+    /// The `params` of every tool call: its name and its arguments, without
+    /// the `_meta` the client adds to ask for progress.
     pub fn calls(&self) -> Vec<Value> {
         self.requests()
             .into_iter()
             .filter(|request| request.method == "tools/call")
-            .map(|request| request.params)
+            .map(|request| {
+                let mut params = request.params;
+                if let Some(params) = params.as_object_mut() {
+                    params.remove("_meta");
+                }
+                params
+            })
             .collect()
     }
 

@@ -87,6 +87,10 @@ An agent that can call a tool can call it wrongly. For any MCP, built-in or conn
 
 The page you approve on is written by MyMCPs from the call itself, never by the agent. For a built-in tool it says what would change, with the current value beside the new one: "Change the daily budget of the campaign "Spring sale" from €2.50 to €250.00". For a tool of a connected MCP it lists the exact arguments beside the description the MCP gives of its tool. An approval covers one call with those exact arguments, is used once, and expires after 24 hours. Open requests are listed under **Approvals**. See [docs/tool-approvals.md](docs/tool-approvals.md).
 
+### Long tool calls
+
+A tool call to an HTTP or npm MCP waits up to an hour for the answer (`MCP_TOOL_CALL_TIMEOUT`, in seconds), which suits a tool that waits for a long job such as a coding agent's run. If the MCP reports progress, each notification of the call starts that wait again, up to 24 hours in all (`MCP_TOOL_CALL_MAX_DURATION`). Connecting and listing tools keep a 60-second wait. When the wait runs out, the agent reads `Upstream tool call timed out after N seconds`, and the MCP is told to cancel the call. The agent's MCP client, and any reverse proxy in front of MyMCPs, have time limits of their own, which must be as long.
+
 ## How to deploy to my Coolify
 
 This repository includes a production Docker image, a Compose service, and a `coolify.json` profile.

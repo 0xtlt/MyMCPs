@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use mymcps_builtin::BuiltinError;
 use mymcps_core::public_url::PublicUrlError;
-use mymcps_mcp::client::ClientError;
+use mymcps_mcp::client::{ClientError, RequestTimedOut};
 use mymcps_net::{HttpUrlError, RestrictedEndpointError};
 use mymcps_node::NodeError;
 
@@ -82,6 +82,16 @@ impl UpstreamError {
             Self::Unauthorized(_) => true,
             Self::Client(error) => error.is_unauthorized(),
             _ => false,
+        }
+    }
+
+    /// The MCP did not answer a request in time and the request was
+    /// cancelled: which request it was and how long it waited.
+    pub fn timed_out(&self) -> Option<&RequestTimedOut> {
+        match self {
+            Self::Client(error) => error.timed_out(),
+            Self::Node(error) => error.timed_out(),
+            _ => None,
         }
     }
 

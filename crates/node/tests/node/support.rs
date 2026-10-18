@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use mymcps_core::TestCore;
 use mymcps_core::models::{Mcp, McpTransport};
 use mymcps_core::secrets::{EnvironmentInput, merge_environment};
+use mymcps_core::{Config, TestCore};
 use mymcps_node::{HostEnvironment, NodeRunner, NodeRuntime};
 
 /// Stands in for the `node` binary, which a test cannot rely on. Given npm's
@@ -59,6 +59,7 @@ while IFS= read -r line; do
       case "$line" in
         *'"name":"unknown"'*)
           printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":"Unknown tool: unknown"}}\n' "$id" ;;
+        *'"name":"hang"'*) ;;
         *'"name":"failing"'*)
           printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"it failed"}],"isError":true}}\n' "$id" ;;
         *)
@@ -158,6 +159,11 @@ pub struct Sandbox {
 
 impl Sandbox {
     pub async fn new() -> Self {
+        Self::with_config(|_| {}).await
+    }
+
+    /// Like [`Sandbox::new`], after adjusting the configuration of the server.
+    pub async fn with_config(adjust: impl FnOnce(&mut Config)) -> Self {
         let directory = tempfile::Builder::new()
             .prefix("mymcps-node-sandbox-")
             .tempdir()
@@ -172,6 +178,7 @@ impl Sandbox {
         std::fs::create_dir_all(root.join("app")).unwrap();
         let core = TestCore::with_config(|config| {
             config.data_dir = config.data_dir.canonicalize().unwrap();
+            adjust(config);
         })
         .await;
         Self {

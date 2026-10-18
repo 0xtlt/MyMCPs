@@ -2,6 +2,7 @@
 //! the credentials saved for it.
 
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -12,7 +13,10 @@ use mymcps_mcp::client::{
     BoxError, Client, HttpRequest, HttpResponse, HttpSend, StreamableHttpClientTransport,
     StreamableHttpClientTransportOptions, Transport,
 };
-use mymcps_net::{FetchRequest, Fetcher, UpstreamResponseLimits, parse_http_url};
+use mymcps_net::{
+    DEFAULT_IDLE_TIMEOUT, FetchRequest, Fetcher, UpstreamResponseLimits, parse_http_url,
+};
+use mymcps_node::client_options;
 use mymcps_vine::js;
 use serde::Serialize;
 use serde_json::Value;
@@ -101,11 +105,21 @@ fn compact_diagnostic(value: Option<&str>) -> String {
     }
 }
 
+/// How long a request to an MCP endpoint may stay quiet. The MCP client
+/// bounds every request and notification itself, naming the call and
+/// cancelling it, so the HTTP limit sits just above the longest of those
+/// bounds and never cuts a call the client still waits for. Progress and
+/// keep-alive events are bytes, so they keep it from running out too.
+fn endpoint_idle_timeout(tool_call_timeout: Duration) -> Duration {
+    DEFAULT_IDLE_TIMEOUT.max(tool_call_timeout.saturating_add(Duration::from_secs(60)))
+}
+
 /// The fetch the MCP transport sends its requests through. It follows
 /// redirects within the origin, limits what it reads, and remembers what a
 /// server said when it answered 401.
 struct DiagnosticFetch {
     fetcher: Fetcher,
+    idle_timeout: Duration,
     unauthorized: Arc<Mutex<Option<UnauthorizedResponse>>>,
 }
 
@@ -115,6 +129,7 @@ impl HttpSend for DiagnosticFetch {
         let mut fetch = FetchRequest::new(request.method, request.url);
         fetch.headers = request.headers;
         fetch.body = request.body;
+        fetch.idle_timeout = Some(self.idle_timeout);
         let mut response = self
             .fetcher
             .fetch_with_same_origin_redirects(
@@ -294,6 +309,7 @@ impl Upstream {
             endpoint,
             Arc::new(DiagnosticFetch {
                 fetcher: self.fetcher.clone(),
+                idle_timeout: endpoint_idle_timeout(self.core.config.tool_call_timeout),
                 unauthorized: Arc::clone(&unauthorized),
             }),
             StreamableHttpClientTransportOptions {
@@ -301,7 +317,10 @@ impl Upstream {
                 ..Default::default()
             },
         );
-        let client = Client::new(mcp_client_info_for_url(Some(http_url)));
+        let client = Client::with_options(
+            mcp_client_info_for_url(Some(http_url)),
+            client_options(&self.core.config),
+        );
 
         if let Err(error) = client.connect(transport.clone()).await {
             let details = unauthorized
@@ -346,6 +365,17 @@ impl Upstream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn leaves_an_endpoint_quiet_a_minute_longer_than_a_tool_call_waits() {
+        let seconds = Duration::from_secs;
+        // The default limit holds while it is the longer one.
+        assert_eq!(endpoint_idle_timeout(seconds(1)), DEFAULT_IDLE_TIMEOUT);
+        assert_eq!(endpoint_idle_timeout(seconds(240)), DEFAULT_IDLE_TIMEOUT);
+        assert_eq!(endpoint_idle_timeout(seconds(241)), seconds(301));
+        assert_eq!(endpoint_idle_timeout(seconds(3600)), seconds(3660));
+        assert_eq!(endpoint_idle_timeout(Duration::MAX), Duration::MAX);
+    }
 
     #[test]
     fn compacts_what_a_server_said_into_one_short_line() {
