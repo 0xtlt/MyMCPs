@@ -9,9 +9,10 @@ mod support;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
+use axum::response::Response;
 use bytes::Bytes;
 use futures::StreamExt;
 use http::Method;
@@ -171,6 +172,138 @@ async fn hands_every_hop_the_one_timeout_of_the_caller() {
         server.requests().len() >= 2,
         "the redirects were being followed"
     );
+}
+
+// Upstream fetch: idle limit
+
+fn stalled_after(first: &'static str) -> Response {
+    // Headers and a first chunk, then nothing more.
+    let partial = futures::stream::iter([Ok::<_, std::io::Error>(Bytes::from(first))])
+        .chain(futures::stream::pending());
+    respond(
+        200,
+        &[("Content-Type", "text/plain")],
+        Body::from_stream(partial),
+    )
+}
+
+#[tokio::test]
+async fn fails_a_request_whose_headers_stay_away_for_its_idle_limit() {
+    let server = upstream(|_, _| async { std::future::pending().await }).await;
+
+    let started = Instant::now();
+    let request = FetchRequest::get(server.url("/mcp")).idle_timeout(Duration::from_millis(200));
+    let failure = fetch_with_same_origin_redirects(request, "MCP endpoint", NO_LIMITS)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(failure, FetchError::HeadersTimeout), "{failure:?}");
+    assert_eq!(failure.to_string(), "fetch failed");
+    assert!(started.elapsed() >= Duration::from_millis(200));
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+#[tokio::test]
+async fn waits_longer_for_the_headers_than_the_default_when_the_idle_limit_allows() {
+    let server = upstream(|_, _| async {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        respond(200, &[], "late")
+    })
+    .await;
+
+    let request = FetchRequest::get(server.url("/mcp")).idle_timeout(Duration::from_secs(30));
+    let mut response = fetch_with_same_origin_redirects(request, "MCP endpoint", NO_LIMITS)
+        .await
+        .unwrap();
+    assert_eq!(response.text().await.unwrap(), "late");
+}
+
+#[tokio::test]
+async fn fails_the_read_of_a_body_that_goes_silent_for_the_idle_limit() {
+    let server = upstream(|_, _| async { stalled_after("partial") }).await;
+
+    let request = FetchRequest::get(server.url("/mcp")).idle_timeout(Duration::from_millis(200));
+    let mut response = fetch_with_same_origin_redirects(request, "MCP endpoint", NO_LIMITS)
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+
+    let failure = response.text().await.unwrap_err();
+    assert!(matches!(failure, FetchError::BodyTimeout), "{failure:?}");
+    assert_eq!(failure.to_string(), "terminated");
+    // The failed read is what a second reader gets too.
+    assert!(matches!(
+        response.bytes().await,
+        Err(FetchError::BodyTimeout)
+    ));
+}
+
+#[tokio::test]
+async fn reads_a_body_that_keeps_arriving_for_longer_than_the_idle_limit() {
+    let server = upstream(|_, _| async {
+        // 800 ms in all, a chunk every 100 ms, against a limit of 300 ms.
+        let chunks = futures::stream::unfold(0, |sent| async move {
+            if sent == 8 {
+                return None;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Some((Ok::<_, std::io::Error>(Bytes::from("tick ")), sent + 1))
+        });
+        respond(200, &[], Body::from_stream(chunks))
+    })
+    .await;
+
+    let started = Instant::now();
+    let request = FetchRequest::get(server.url("/mcp")).idle_timeout(Duration::from_millis(300));
+    let mut response = fetch_with_same_origin_redirects(request, "MCP endpoint", NO_LIMITS)
+        .await
+        .unwrap();
+
+    assert_eq!(response.text().await.unwrap(), "tick ".repeat(8));
+    assert!(started.elapsed() > Duration::from_millis(300));
+}
+
+#[tokio::test]
+async fn ends_the_exchange_at_the_timeout_when_that_is_shorter_than_the_idle_limit() {
+    let silent = upstream(|_, _| async { std::future::pending().await }).await;
+    let failure = fetch_with_same_origin_redirects(
+        FetchRequest::get(silent.url("/mcp"))
+            .timeout(Duration::from_millis(200))
+            .idle_timeout(Duration::from_secs(30)),
+        "MCP endpoint",
+        NO_LIMITS,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(failure, FetchError::Timeout), "{failure:?}");
+
+    let stalled = upstream(|_, _| async { stalled_after("partial") }).await;
+    let mut response = fetch_with_same_origin_redirects(
+        FetchRequest::get(stalled.url("/mcp"))
+            .timeout(Duration::from_millis(200))
+            .idle_timeout(Duration::from_secs(30)),
+        "MCP endpoint",
+        NO_LIMITS,
+    )
+    .await
+    .unwrap();
+    let failure = response.text().await.unwrap_err();
+    assert!(matches!(failure, FetchError::Timeout), "{failure:?}");
+}
+
+#[tokio::test]
+async fn ends_the_exchange_at_the_idle_limit_when_that_is_shorter_than_the_timeout() {
+    let silent = upstream(|_, _| async { std::future::pending().await }).await;
+    let failure = fetch_with_same_origin_redirects(
+        FetchRequest::get(silent.url("/mcp"))
+            .timeout(Duration::from_secs(30))
+            .idle_timeout(Duration::from_millis(200)),
+        "MCP endpoint",
+        NO_LIMITS,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(failure, FetchError::HeadersTimeout), "{failure:?}");
 }
 
 // Upstream fetch: response size

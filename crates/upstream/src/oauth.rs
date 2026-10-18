@@ -153,6 +153,7 @@ fn comparable_oauth_issuer(value: &str, label: &str) -> Result<String, UpstreamE
 fn oauth_fetch_error(error: FetchError) -> HttpFetchError {
     match error {
         FetchError::Transport(_)
+        | FetchError::HeadersTimeout
         | FetchError::BadPort
         | FetchError::Offline
         | FetchError::InvalidRedirectUrl

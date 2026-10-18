@@ -2,7 +2,7 @@ use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
-use std::task::{Context, Poll, ready};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -39,8 +39,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Node's HTTP client gave up on a response that stayed silent for this long,
 /// before its headers or between two chunks of its body. A request without a
-/// timeout of its own, and an event stream left open, rely on it.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+/// timeout of its own, and an event stream left open, rely on it. A request can
+/// ask for another limit, see [`FetchRequest::idle_timeout`].
+pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Ports `fetch` refuses to connect to, whatever the host: those of mail, DNS,
 /// file sharing and other services that would take an HTTP request for commands
@@ -73,6 +74,14 @@ pub enum FetchError {
     /// body was read.
     #[error("The operation was aborted due to timeout")]
     Timeout,
+    /// The response stayed silent for the `idle_timeout` of the request before
+    /// its headers came. Node's `fetch` fails with undici's `HeadersTimeoutError`.
+    #[error("fetch failed")]
+    HeadersTimeout,
+    /// The body stayed silent for the `idle_timeout` of the request between two
+    /// chunks. Node's `fetch` fails with undici's `BodyTimeoutError`.
+    #[error("terminated")]
+    BodyTimeout,
     /// A redirect named a location that is not a URL.
     #[error("Invalid URL")]
     InvalidRedirectUrl,
@@ -114,9 +123,13 @@ pub struct FetchRequest {
     pub headers: HeaderMap,
     pub body: Option<Bytes>,
     /// Bounds the whole exchange: every redirect and the read of the response
-    /// body. Without one the request is only bound by the idle limits of the
-    /// client. To cancel a request, drop its future or its body.
+    /// body. Without one the request is only bound by its idle limit. To cancel
+    /// a request, drop its future or its body.
     pub timeout: Option<Duration>,
+    /// How long the response may stay silent, before its headers of each hop or
+    /// between two chunks of its body. `None` keeps [`DEFAULT_IDLE_TIMEOUT`].
+    /// The `timeout` still ends the exchange first when it is the shorter.
+    pub idle_timeout: Option<Duration>,
 }
 
 impl FetchRequest {
@@ -127,6 +140,7 @@ impl FetchRequest {
             headers: HeaderMap::new(),
             body: None,
             timeout: None,
+            idle_timeout: None,
         }
     }
 
@@ -152,6 +166,11 @@ impl FetchRequest {
 
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
+        self
+    }
+
+    pub fn idle_timeout(mut self, idle_timeout: Duration) -> Self {
+        self.idle_timeout = Some(idle_timeout);
         self
     }
 }
@@ -319,7 +338,6 @@ fn client_builder() -> reqwest::ClientBuilder {
         // Node's HTTP client did not read the proxy variables of the environment.
         .no_proxy()
         .connect_timeout(CONNECT_TIMEOUT)
-        .read_timeout(IDLE_TIMEOUT)
         .user_agent(DEFAULT_USER_AGENT)
 }
 
@@ -381,14 +399,24 @@ pub fn shared_client() -> Result<&'static reqwest::Client, FetchError> {
         .map_err(Clone::clone)
 }
 
+/// Wait for the headers of a hop: until the total `deadline` of the request,
+/// or until the response has been silent for `idle`, whichever comes first.
+/// Which one ran out is told by the error; the total deadline wins a tie.
 async fn before<T>(
     deadline: Option<Instant>,
+    idle: Duration,
     future: impl Future<Output = T>,
 ) -> Result<T, FetchError> {
-    match deadline {
-        Some(deadline) => tokio::time::timeout_at(deadline, future)
+    let idle_deadline = Instant::now().checked_add(idle);
+    let (until, error) = match (deadline, idle_deadline) {
+        (Some(total), Some(idle)) if idle < total => (Some(idle), FetchError::HeadersTimeout),
+        (Some(total), _) => (Some(total), FetchError::Timeout),
+        (None, idle) => (idle, FetchError::HeadersTimeout),
+    };
+    match until {
+        Some(until) => tokio::time::timeout_at(until, future)
             .await
-            .map_err(|_| FetchError::Timeout),
+            .map_err(|_| error),
         None => Ok(future.await),
     }
 }
@@ -493,28 +521,45 @@ impl Transport {
     }
 }
 
-/// The body of a response, which stops at its limit and at the deadline of the
-/// request. Dropping it stops the download.
+/// The body of a response, which stops at its limit, at the deadline of the
+/// request and when it stays silent for too long. Dropping it stops the download.
 pub struct BodyStream {
     chunks: Option<ChunkStream>,
     deadline: Option<Pin<Box<Sleep>>>,
+    idle: Option<IdleLimit>,
     endpoint_label: String,
     max_bytes: usize,
     truncates: bool,
     received: usize,
 }
 
+/// How long a body may stay silent, counted from when it is waited for.
+struct IdleLimit {
+    limit: Duration,
+    sleep: Pin<Box<Sleep>>,
+    /// Whether the silence is being counted: a reader that is slow to ask for
+    /// the next chunk does not use up the limit.
+    waiting: bool,
+}
+
 impl BodyStream {
+    /// `idle` is how long the body may stay silent, `None` for no limit.
     fn limited(
         chunks: ChunkStream,
         endpoint_label: &str,
         max_bytes: usize,
         truncates: bool,
         deadline: Option<Instant>,
+        idle: Option<Duration>,
     ) -> Self {
         Self {
             chunks: Some(chunks),
             deadline: deadline.map(|deadline| Box::pin(tokio::time::sleep_until(deadline))),
+            idle: idle.map(|limit| IdleLimit {
+                limit,
+                sleep: Box::pin(tokio::time::sleep(Duration::ZERO)),
+                waiting: false,
+            }),
             endpoint_label: endpoint_label.to_owned(),
             max_bytes,
             truncates,
@@ -527,6 +572,7 @@ impl BodyStream {
         Self {
             chunks: Some(whole_body(body)),
             deadline: None,
+            idle: None,
             endpoint_label: String::new(),
             max_bytes: usize::MAX,
             truncates: true,
@@ -550,7 +596,30 @@ impl Stream for BodyStream {
             return Poll::Ready(Some(Err(FetchError::Timeout)));
         }
 
-        let chunk = match ready!(chunks.as_mut().poll_next(context)) {
+        let next = match chunks.as_mut().poll_next(context) {
+            Poll::Ready(next) => next,
+            Poll::Pending => {
+                if let Some(idle) = this.idle.as_mut() {
+                    if !idle.waiting {
+                        // A limit too large to be a point in time never runs out.
+                        let Some(until) = Instant::now().checked_add(idle.limit) else {
+                            return Poll::Pending;
+                        };
+                        idle.waiting = true;
+                        idle.sleep.as_mut().reset(until);
+                    }
+                    if idle.sleep.as_mut().poll(context).is_ready() {
+                        this.chunks = None;
+                        return Poll::Ready(Some(Err(FetchError::BodyTimeout)));
+                    }
+                }
+                return Poll::Pending;
+            }
+        };
+        if let Some(idle) = this.idle.as_mut() {
+            idle.waiting = false;
+        }
+        let chunk = match next {
             Some(Ok(chunk)) => chunk,
             end => {
                 this.chunks = None;
@@ -691,6 +760,7 @@ fn with_limited_body(
     endpoint_label: &str,
     limits: UpstreamResponseLimits,
     deadline: Option<Instant>,
+    idle: Duration,
 ) -> FetchResponse {
     let truncates = !response.status.is_success();
     let max_bytes = if truncates {
@@ -716,6 +786,7 @@ fn with_limited_body(
             max_bytes,
             truncates,
             deadline,
+            Some(idle),
         )),
     }
 }
@@ -799,8 +870,10 @@ impl Fetcher {
             url,
             headers,
             mut body,
+            idle_timeout,
             ..
         } = request;
+        let idle = idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
         if body.is_some() && (method == Method::GET || method == Method::HEAD) {
             return Err(FetchError::BodyNotAllowed);
         }
@@ -817,7 +890,7 @@ impl Fetcher {
                 headers: headers.clone(),
                 body: body.clone(),
             };
-            let response = before(deadline, self.transport.send(&hop)).await??;
+            let response = before(deadline, idle, self.transport.send(&hop)).await??;
 
             let location = if is_redirect(response.status) {
                 header_text(&response.headers, LOCATION).filter(|location| !location.is_empty())
@@ -831,6 +904,7 @@ impl Fetcher {
                     endpoint_label,
                     limits,
                     deadline,
+                    idle,
                 ));
             };
 
@@ -997,7 +1071,14 @@ mod tests {
             state: Arc::clone(&state),
         };
         (
-            BodyStream::limited(Box::pin(body), "MCP endpoint", max_bytes, truncates, None),
+            BodyStream::limited(
+                Box::pin(body),
+                "MCP endpoint",
+                max_bytes,
+                truncates,
+                None,
+                None,
+            ),
             state,
         )
     }
@@ -1062,13 +1143,134 @@ mod tests {
             futures::stream::iter([Ok(Bytes::from_static(b"partial"))])
                 .chain(futures::stream::pending()),
         );
-        let mut body = BodyStream::limited(stalled, "MCP endpoint", 1000, false, Some(deadline));
+        let mut body =
+            BodyStream::limited(stalled, "MCP endpoint", 1000, false, Some(deadline), None);
 
         assert_eq!(body.next().await.unwrap().unwrap(), "partial");
         let error = body.next().await.unwrap().unwrap_err();
         assert!(matches!(error, FetchError::Timeout));
         assert_eq!(Instant::now(), deadline);
         assert!(body.next().await.is_none());
+    }
+
+    /// Chunks that arrive `every` apart, `count` of them, and then nothing.
+    fn chunks_every(every: Duration, count: usize, then_ends: bool) -> ChunkStream {
+        let chunks = futures::stream::unfold(0, move |sent| async move {
+            if sent == count {
+                return None;
+            }
+            tokio::time::sleep(every).await;
+            Some((Ok(Bytes::from_static(b"x")), sent + 1))
+        });
+        if then_ends {
+            Box::pin(chunks)
+        } else {
+            Box::pin(chunks.chain(futures::stream::pending()))
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fails_the_read_of_a_body_that_stays_silent_for_its_idle_limit() {
+        let start = Instant::now();
+        let mut body = BodyStream::limited(
+            chunks_every(Duration::from_secs(4), 2, false),
+            "MCP endpoint",
+            1000,
+            false,
+            None,
+            Some(Duration::from_secs(10)),
+        );
+
+        assert!(body.next().await.unwrap().is_ok());
+        assert!(body.next().await.unwrap().is_ok());
+        let error = body.next().await.unwrap().unwrap_err();
+        assert!(matches!(error, FetchError::BodyTimeout), "{error:?}");
+        assert_eq!(error.to_string(), "terminated");
+        // The silence is counted from the last chunk, not from the start.
+        assert_eq!(Instant::now() - start, Duration::from_secs(18));
+        assert!(body.next().await.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reads_a_body_that_keeps_arriving_for_longer_than_its_idle_limit() {
+        let start = Instant::now();
+        let body = BodyStream::limited(
+            chunks_every(Duration::from_secs(8), 10, true),
+            "MCP endpoint",
+            1000,
+            false,
+            None,
+            Some(Duration::from_secs(10)),
+        );
+
+        assert_eq!(read(body).await.unwrap(), vec![b'x'; 10]);
+        assert_eq!(Instant::now() - start, Duration::from_secs(80));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn does_not_count_the_time_a_reader_takes_to_ask_for_the_next_chunk() {
+        let mut body = BodyStream::limited(
+            chunks_every(Duration::from_secs(1), 2, true),
+            "MCP endpoint",
+            1000,
+            false,
+            None,
+            Some(Duration::from_secs(10)),
+        );
+
+        assert!(body.next().await.unwrap().is_ok());
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        assert!(body.next().await.unwrap().is_ok());
+        assert!(body.next().await.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ends_a_silent_body_at_its_deadline_when_that_comes_before_its_idle_limit() {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut body = BodyStream::limited(
+            chunks_every(Duration::from_secs(1), 1, false),
+            "MCP endpoint",
+            1000,
+            false,
+            Some(deadline),
+            Some(Duration::from_secs(10)),
+        );
+
+        assert!(body.next().await.unwrap().is_ok());
+        let error = body.next().await.unwrap().unwrap_err();
+        assert!(matches!(error, FetchError::Timeout), "{error:?}");
+        assert_eq!(Instant::now(), deadline);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn waits_for_the_headers_until_the_idle_limit_or_the_deadline() {
+        let start = Instant::now();
+        let never = || std::future::pending::<()>();
+        let secs = Duration::from_secs;
+
+        let error = before(None, secs(10), never()).await.unwrap_err();
+        assert!(matches!(error, FetchError::HeadersTimeout), "{error:?}");
+        assert_eq!(error.to_string(), "fetch failed");
+        assert_eq!(Instant::now() - start, secs(10));
+
+        let error = before(Some(Instant::now() + secs(3)), secs(10), never())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, FetchError::Timeout), "{error:?}");
+        assert_eq!(Instant::now() - start, secs(13));
+
+        let error = before(Some(Instant::now() + secs(30)), secs(10), never())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, FetchError::HeadersTimeout), "{error:?}");
+        assert_eq!(Instant::now() - start, secs(23));
+
+        // A limit too large to be a point in time never runs out.
+        let waiting = before(None, Duration::MAX, async {
+            tokio::time::sleep(secs(3600)).await;
+            7
+        });
+        assert_eq!(waiting.await.unwrap(), 7);
     }
 
     #[test]

@@ -191,7 +191,7 @@ pub use address_guard::{
 };
 pub use http_url::{HttpUrlError, parse_http_url};
 pub use safe_fetch::{
-    BodyStream, CannedResponse, DEFAULT_USER_AGENT, FetchError, FetchRequest, FetchResponse,
-    Fetcher, MAX_UPSTREAM_ERROR_RESPONSE_BYTES, MAX_UPSTREAM_RESPONSE_BYTES, SentRequest,
-    UpstreamResponseLimits, fetch_with_same_origin_redirects, shared_client,
+    BodyStream, CannedResponse, DEFAULT_IDLE_TIMEOUT, DEFAULT_USER_AGENT, FetchError, FetchRequest,
+    FetchResponse, Fetcher, MAX_UPSTREAM_ERROR_RESPONSE_BYTES, MAX_UPSTREAM_RESPONSE_BYTES,
+    SentRequest, UpstreamResponseLimits, fetch_with_same_origin_redirects, shared_client,
 };
