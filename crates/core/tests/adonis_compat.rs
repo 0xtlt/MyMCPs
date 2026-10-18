@@ -356,6 +356,63 @@ async fn an_instance_from_before_teams_goes_to_the_root_team_whole() {
 }
 
 #[tokio::test]
+async fn forgets_the_guessed_expiry_of_tokens_that_cannot_be_renewed() {
+    let (db, _dir) = fresh_database().await;
+    let forget = MIGRATIONS
+        .iter()
+        .position(|migration| {
+            migration
+                .name
+                .ends_with("forget_guessed_oauth_token_expiries")
+        })
+        .unwrap();
+    apply(&db, &MIGRATIONS[..forget]).await;
+    let expiry = "2026-10-07 13:19:57";
+    sqlx::query("insert into `users` (`id`, `email`, `password`, `created_at`) values (1, 'admin@example.com', 'x', '2026-10-07 12:19:57')")
+        .execute(&*db)
+        .await
+        .unwrap();
+    for (id, transport, refresh_token) in [
+        // An HTTP token without a refresh token: its expiry may be a guess.
+        (1, "http", None),
+        (2, "http", Some("")),
+        // A token that is renewed needs its expiry to be renewed in time.
+        (3, "http", Some("refresh-ciphertext")),
+        // Built-in MCPs renew their tokens as they did.
+        (4, "builtin", None),
+    ] {
+        sqlx::query("insert into `mcps` (`id`, `name`, `slug`, `transport`, `created_by`, `created_at`, `team_id`, `oauth_access_token`, `oauth_refresh_token`, `oauth_token_expires_at`) values (?, ?, ?, ?, 1, '2026-10-07 12:19:57', 1, 'access-ciphertext', ?, ?)")
+            .bind(id)
+            .bind(format!("MCP {id}"))
+            .bind(format!("mcp-{id}"))
+            .bind(transport)
+            .bind(refresh_token)
+            .bind(expiry)
+            .execute(&*db)
+            .await
+            .unwrap();
+    }
+
+    let ran = db.migrate().await.unwrap();
+    assert_eq!(ran.len(), MIGRATIONS.len() - forget);
+
+    let expiries: Vec<(i64, Option<String>)> =
+        sqlx::query_as("select `id`, `oauth_token_expires_at` from `mcps` order by `id`")
+            .fetch_all(&*db)
+            .await
+            .unwrap();
+    assert_eq!(
+        expiries,
+        [
+            (1, None),
+            (2, None),
+            (3, Some(expiry.to_string())),
+            (4, Some(expiry.to_string())),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn an_older_node_database_is_brought_up_to_date_without_losing_rows() {
     let (db, _dir) = fresh_database().await;
     // Stop before the migration that rebuilds `mcps`, with rows that reference it.

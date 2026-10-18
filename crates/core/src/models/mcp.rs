@@ -123,6 +123,23 @@ impl Mcp {
         secrets::environment_names(self.npm_env.as_deref())
     }
 
+    /// When the OAuth sign-in of an HTTP MCP stops working: the expiry its
+    /// provider stated for an access token that comes without a refresh
+    /// token, and so cannot be renewed. `None` for a token that is renewed,
+    /// one whose provider stated no lifetime, or an MCP that signs in another
+    /// way.
+    pub fn oauth_sign_in_expires_at(&self) -> Option<Timestamp> {
+        let is_set =
+            |column: &Option<String>| column.as_deref().is_some_and(|value| !value.is_empty());
+        let renewable = is_set(&self.oauth_refresh_token);
+        (self.transport == McpTransport::Http
+            && self.auth_type == McpAuthType::Auto
+            && is_set(&self.oauth_access_token)
+            && !renewable)
+            .then_some(self.oauth_token_expires_at)
+            .flatten()
+    }
+
     /// The process environment of an npm MCP, decrypted, in the order saved.
     pub fn npm_environment(
         &self,

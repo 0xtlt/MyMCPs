@@ -3,7 +3,7 @@ use std::time::Duration;
 use mymcps_core::limiter::{Limiter, LimiterError};
 use mymcps_core::models::{
     AccessToken, ApprovalDecision, ApprovalRequest, ApprovalState, InstanceSetting, Invite, Mcp,
-    McpLogLevel, McpStatus, McpTransport, OauthClient, Team, TeamRole, User,
+    McpAuthType, McpLogLevel, McpStatus, McpTransport, OauthClient, Team, TeamRole, User,
 };
 use mymcps_core::{Config, Core, Db, Timestamp};
 
@@ -194,6 +194,60 @@ fn slugs_and_lists_follow_the_node_models() {
     assert_eq!(client.redirect_uri_list(), ["http://localhost:1/callback"]);
     assert!(client.grant_type_list().is_empty());
     assert_eq!(client.response_type_list(), ["code"]);
+}
+
+#[test]
+fn an_oauth_sign_in_expires_only_when_its_token_cannot_be_renewed() {
+    let expires_at = Timestamp::now();
+    let signed_in = Mcp {
+        transport: McpTransport::Http,
+        auth_type: McpAuthType::Auto,
+        oauth_access_token: Some("access-ciphertext".into()),
+        oauth_token_expires_at: Some(expires_at),
+        ..Default::default()
+    };
+    assert_eq!(signed_in.oauth_sign_in_expires_at(), Some(expires_at));
+    let empty_refresh_token = Mcp {
+        oauth_refresh_token: Some(String::new()),
+        ..signed_in.clone()
+    };
+    assert_eq!(
+        empty_refresh_token.oauth_sign_in_expires_at(),
+        Some(expires_at)
+    );
+
+    for other in [
+        // Renewed before it expires.
+        Mcp {
+            oauth_refresh_token: Some("refresh-ciphertext".into()),
+            ..signed_in.clone()
+        },
+        // Its provider stated no lifetime.
+        Mcp {
+            oauth_token_expires_at: None,
+            ..signed_in.clone()
+        },
+        // Not signed in.
+        Mcp {
+            oauth_access_token: None,
+            ..signed_in.clone()
+        },
+        Mcp {
+            oauth_access_token: Some(String::new()),
+            ..signed_in.clone()
+        },
+        // A static credential, or a built-in MCP.
+        Mcp {
+            auth_type: McpAuthType::Bearer,
+            ..signed_in.clone()
+        },
+        Mcp {
+            transport: McpTransport::Builtin,
+            ..signed_in.clone()
+        },
+    ] {
+        assert_eq!(other.oauth_sign_in_expires_at(), None, "{other:?}");
+    }
 }
 
 #[tokio::test]

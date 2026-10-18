@@ -290,4 +290,15 @@ pub const MIGRATIONS: &[Migration] = &[
             r#"create index `passkeys_user_id_index` on `passkeys` (`user_id`)"#,
         ],
     },
+    // The expiry of an access token that cannot be renewed now marks its MCP
+    // for re-authorization. It was saved as one hour when the provider stated
+    // no lifetime, which some providers never do for tokens that never
+    // expire: those guesses go, and a token issued from now on keeps the
+    // expiry its provider stated, or none.
+    Migration {
+        name: "database/migrations/1792281600000_forget_guessed_oauth_token_expiries",
+        statements: &[
+            r#"update `mcps` set `oauth_token_expires_at` = null where `transport` = 'http' and (`oauth_refresh_token` is null or `oauth_refresh_token` = '')"#,
+        ],
+    },
 ];
