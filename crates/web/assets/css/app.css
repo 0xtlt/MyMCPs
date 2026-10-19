@@ -4978,3 +4978,13 @@
     background: var(--mm-slate-0);
   }
 }
+
+/*
+ * Second line of a cell that warns, as .cell-sub--critical does for an error: an OAuth
+ * connection that may manage MCPs (Access tokens).
+ */
+@layer components {
+  .cell-sub--warning {
+    color: var(--mm-color-text-warning);
+  }
+}

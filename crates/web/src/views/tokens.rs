@@ -678,9 +678,10 @@ fn delete_message(count: usize) -> String {
     )
 }
 
-/// The form behind "Revoke" or "Delete" of a row. The row menu of the
-/// mobile list submits the same form, so each request exists once in the page.
-fn row_form(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
+/// The forms behind "Revoke", "Delete" and "Remove MCP management" of a row.
+/// They hold no button: the row menus of the table and of the mobile list
+/// submit them, so each request exists once in the page.
+fn row_forms(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
     let token = &row.token;
     html! {
         @if row.can_delete() {
@@ -689,7 +690,6 @@ fn row_form(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                 data-confirm-tone="critical" {
                 (context.csrf_field())
                 input type="hidden" name="ids[]" value=(token.id);
-                button type="submit" class="button" { "Delete" }
             }
         } @else if row.can_revoke() {
             @let message = if row.is_manual() {
@@ -702,7 +702,6 @@ fn row_form(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                 data-confirm=(message) data-confirm-title=(format!("Revoke {}?", token.name))
                 data-confirm-label="Revoke" data-confirm-tone="critical" {
                 (context.csrf_field())
-                button type="submit" class="button" { "Revoke" }
             }
         }
         // The connection stays: only what lets it manage MCPs goes.
@@ -712,7 +711,6 @@ fn row_form(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                 data-confirm=(format!("{} keeps its access to the tools of your MCPs, and can no longer add, edit, delete or test them.", token.name))
                 data-confirm-title="Remove MCP management?" data-confirm-label="Remove" {
                 (context.csrf_field())
-                button type="submit" class="button" { "Remove MCP management" }
             }
         }
     }
@@ -722,8 +720,56 @@ fn edit_url(view: &ListView, row: &TokenRow) -> String {
     view.url(&format!("/tokens/{}/edit", row.token.id))
 }
 
+/// The "…" button of a row and the menu it opens: every action of the token.
+/// The table and the mobile list each have one, with ids of their own, and
+/// both submit the forms of `row_forms`. A native popover: no script needed.
+fn row_menu(view: &ListView, row: &TokenRow, menu_id: &str) -> Markup {
+    let token = &row.token;
+    // The action that ends the token comes last, under a separator when others precede it.
+    let ends = row.can_delete() || row.can_revoke();
+    let precedes = row.can_edit() || row.can_remove_mcp_management();
+    html! {
+        @if ends || precedes {
+            button type="button" class="icon-button" popovertarget=(menu_id)
+                aria-label=(format!("Actions for {}", token.name)) { (icon("ellipsis")) }
+            div class="menu" id=(menu_id) popover role="menu" {
+                @if row.can_edit() {
+                    a class="menu__item" role="menuitem" href=(edit_url(view, row)) data-dialog-open="#edit-token"
+                        data-dialog-fetch { (icon("pencil")) "Edit" }
+                }
+                @if row.can_remove_mcp_management() {
+                    button type="submit" class="menu__item" role="menuitem"
+                        form=(format!("remove-mcp-management-{}", token.id)) { (icon("lock")) "Remove MCP management" }
+                }
+                @if ends && precedes {
+                    div class="menu__separator" {}
+                }
+                @if row.can_delete() {
+                    button type="submit" class="menu__item menu__item--critical" role="menuitem"
+                        form=(format!("delete-token-{}", token.id)) { (icon("trash")) "Delete" }
+                } @else if row.can_revoke() {
+                    button type="submit" class="menu__item" role="menuitem"
+                        form=(format!("revoke-token-{}", token.id)) { (icon("ban")) "Revoke" }
+                }
+            }
+        }
+    }
+}
+
 fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
     let token = &row.token;
+    // The permission to manage MCPs is a second line under the name: the Type
+    // column only has room for one badge.
+    let name = html! {
+        @if row.manages_mcps() {
+            div class="cell-stack" {
+                span class="cell-title" { (token.name) }
+                span class="cell-sub cell-sub--warning" { "Manages MCPs" }
+            }
+        } @else {
+            span class="cell-title" { (token.name) }
+        }
+    };
     html! {
         tr {
             @if view.status == StatusFilter::Inactive {
@@ -731,9 +777,11 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                     div class="cell-media" {
                         input type="checkbox" class="checkbox" name="ids[]" value=(token.id) form="delete-selected"
                             data-select-item aria-label=(format!("Select {} for deletion", token.name));
-                        span class="cell-title" { (token.name) }
+                        (name)
                     }
                 }
+            } @else if row.manages_mcps() {
+                td { (name) }
             } @else {
                 td class="cell-strong" { (token.name) }
             }
@@ -742,9 +790,6 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                     span class="badge badge--no-dot" { "Manual" }
                 } @else {
                     span class="badge badge--info badge--no-dot" { "OAuth" }
-                    @if row.manages_mcps() {
-                        " " span class="badge badge--warning badge--no-dot" { "Manages MCPs" }
-                    }
                 }
             }
             td class="cell-code" { (row.identifier()) }
@@ -762,10 +807,8 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
             td { (status_badge(token)) }
             td class="cell-end" {
                 span class="row-actions" {
-                    @if row.can_edit() {
-                        a class="button" href=(edit_url(view, row)) data-dialog-open="#edit-token" data-dialog-fetch { "Edit" }
-                    }
-                    (row_form(context, view, row))
+                    (row_forms(context, view, row))
+                    (row_menu(view, row, &format!("token-{}-actions", token.id)))
                 }
             }
         }
@@ -774,9 +817,6 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
 
 fn mobile_row(view: &ListView, row: &TokenRow) -> Markup {
     let token = &row.token;
-    let menu_id = format!("token-{}-menu", token.id);
-    let has_actions =
-        row.can_edit() || row.can_delete() || row.can_revoke() || row.can_remove_mcp_management();
     html! {
         div class="list-row" {
             span class="list-row__text" {
@@ -803,27 +843,7 @@ fn mobile_row(view: &ListView, row: &TokenRow) -> Markup {
                     }
                 }
             }
-            @if has_actions {
-                button type="button" class="icon-button" popovertarget=(menu_id)
-                    aria-label=(format!("Actions for {}", token.name)) { (icon("ellipsis")) }
-                div class="menu" id=(menu_id) popover role="menu" {
-                    @if row.can_edit() {
-                        a class="menu__item" role="menuitem" href=(edit_url(view, row)) data-dialog-open="#edit-token"
-                            data-dialog-fetch { (icon("pencil")) "Edit" }
-                    }
-                    @if row.can_delete() {
-                        button type="submit" class="menu__item menu__item--critical" role="menuitem"
-                            form=(format!("delete-token-{}", token.id)) { (icon("trash")) "Delete" }
-                    } @else if row.can_revoke() {
-                        button type="submit" class="menu__item" role="menuitem"
-                            form=(format!("revoke-token-{}", token.id)) { (icon("ban")) "Revoke" }
-                    }
-                    @if row.can_remove_mcp_management() {
-                        button type="submit" class="menu__item" role="menuitem"
-                            form=(format!("remove-mcp-management-{}", token.id)) { (icon("lock")) "Remove MCP management" }
-                    }
-                }
-            }
+            (row_menu(view, row, &format!("token-{}-menu", token.id)))
         }
     }
 }
@@ -949,7 +969,7 @@ fn token_list(context: &PageContext, page: &TokensPage<'_>) -> Markup {
         } @else {
             div class="card hide-mobile" {
                 div class="table-scroll" {
-                    table class="table" id="tokens-table" {
+                    table class="table table--wide" id="tokens-table" {
                         thead { tr {
                             @if selecting {
                                 th scope="col" {
@@ -961,13 +981,13 @@ fn token_list(context: &PageContext, page: &TokensPage<'_>) -> Markup {
                             } @else {
                                 th scope="col" { "Name" }
                             }
-                            th scope="col" class="col-80" { "Type" }
-                            th scope="col" class="col-124" { "Identifier" }
+                            th scope="col" class="col-72" { "Type" }
+                            th scope="col" class="col-104" { "Identifier" }
                             th scope="col" class="col-72" { "Scope" }
                             th scope="col" class="col-124" { "Expires" }
                             th scope="col" class="col-124" { "Last used" }
                             th scope="col" class="col-84" { "Status" }
-                            th scope="col" class="col-124 cell-end" { "Actions" }
+                            th scope="col" class="col-56 cell-end" { "Actions" }
                         } }
                         tbody { @for row in page.rows { (table_row(context, view, row)) } }
                     }
