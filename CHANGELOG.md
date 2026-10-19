@@ -13,6 +13,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 - The image runs npm MCPs with Node.js 24.22.0, up from 24.21.0, and the server is built with Rust 1.99.1, up from 1.98.1, in the image and in CI.
 - Updated the Rust dependencies to their latest compatible releases, among them tokio 1.53.3, serde_json 1.0.154, aws-lc-rs 1.18.2, and uuid 1.28.0, and the GitHub Actions that install CI tools and run CodeQL.
 
+### Fixed
+
+- The table of **Access tokens** no longer spills out of its card. The actions of each row (**Edit**, **Remove MCP management**, **Revoke**, **Delete**) are in a **…** menu at the right edge of the row, as in the list shown on phones, and the table scrolls inside its card when the window is too narrow instead of shrinking the **Name** column to nothing. **Manages MCPs** is a line under the connection's name, no longer a second badge cut short in the **Type** column.
+
 ## 2026-10-18
 
 ### Added

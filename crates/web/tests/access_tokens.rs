@@ -735,10 +735,19 @@ async fn removes_the_permission_to_manage_mcps_and_keeps_the_connection() {
     // Only the connection that holds the permission says so, and offers to remove it.
     let page = app.get("/tokens").login_as(&admin).send().await.text();
     let managing_row = table_row(&page, "Managing agent");
+    // A line under the name: the Type column keeps a single badge.
     assert!(
-        managing_row
-            .contains("<span class=\"badge badge--warning badge--no-dot\">Manages MCPs</span>")
+        managing_row.contains("<span class=\"cell-sub cell-sub--warning\">Manages MCPs</span>")
     );
+    // Every action of a row is in its menu, so the column never outgrows the table.
+    assert!(managing_row.contains(&format!(
+        "popovertarget=\"token-{}-actions\"",
+        managing.token.id
+    )));
+    assert!(managing_row.contains(&format!(
+        "<button type=\"submit\" class=\"menu__item\" role=\"menuitem\" form=\"remove-mcp-management-{}\">",
+        managing.token.id
+    )));
     assert!(page.contains(&format!(
         "<form id=\"remove-mcp-management-{}\" method=\"post\" action=\"/tokens/{}/remove-mcp-management\"",
         managing.token.id, managing.token.id
@@ -1171,8 +1180,11 @@ async fn offers_selection_and_confirmation_where_tokens_can_be_deleted() {
     assert!(
         expired_row.contains("data-confirm-label=\"Delete tokens\" data-confirm-tone=\"critical\"")
     );
-    // Row actions are quiet buttons: the destructive one is in the prompt.
-    assert!(expired_row.contains("<button type=\"submit\" class=\"button\">Delete</button>"));
+    // Row actions are in the row menu: the destructive button is in the prompt.
+    assert!(expired_row.contains(
+        "<button type=\"submit\" class=\"menu__item menu__item--critical\" role=\"menuitem\" form=\"delete-token-"
+    ));
+    assert!(!expired_row.contains("class=\"button"));
     let active_row = table_row(&all, "Active token");
     assert!(active_row.contains("data-confirm-title=\"Revoke Active token?\""));
     assert!(active_row.contains(
@@ -1288,7 +1300,7 @@ async fn edits_active_and_expired_tokens_while_keeping_revoked_tokens_immutable(
     let page = app.get("/tokens").login_as(&admin).send().await.text();
     let editable_row = table_row(&page, "Editable token");
     assert!(editable_row.contains(&format!(
-        "<a class=\"button\" href=\"/tokens/{}/edit\" data-dialog-open=\"#edit-token\" data-dialog-fetch>Edit</a>",
+        "<a class=\"menu__item\" role=\"menuitem\" href=\"/tokens/{}/edit\" data-dialog-open=\"#edit-token\" data-dialog-fetch>",
         editable.id
     )));
     let expired_row = table_row(&page, "Expired token");

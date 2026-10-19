@@ -521,7 +521,7 @@ rest equally and truncate with an ellipsis.
 Cell classes on `<td>`: `.cell-end`, `.cell-secondary`, `.cell-tertiary`, `.cell-strong`,
 `.cell-code`, `.cell-code-strong`, `.cell-wrap`. In a cell: `.cell-media` (tile or avatar and
 text), `.cell-stack` (two lines; `--wrap` when the first is a sentence), `.cell-title`,
-`.cell-sub` (`--code`, `--critical`, `--secondary`), `.row-actions`. Selected row:
+`.cell-sub` (`--code`, `--critical`, `--warning`, `--secondary`), `.row-actions`. Selected row:
 `<tr aria-selected="true">`, or any row that holds an `aria-current="true"` trigger. Under a
 `.card__header` the column titles are 36px high. An empty table is an `.empty-state` in place of
 the `.table-scroll`.
