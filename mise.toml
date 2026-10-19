@@ -1,0 +1,63 @@
+# The tools and commands of a development checkout: `mise install`, then
+# `mise run <task>` (`mise tasks` lists them).
+#
+# The versions are those of the image and of CI: the Rust of the `rust:` tag
+# in the Dockerfile and of RUST_TOOLCHAIN in the workflows, and the Node.js of
+# the `node:` tag and NODE_VERSION. A bump changes them all together;
+# crates/xtask/tests/container_image.rs fails until they agree.
+
+[tools]
+rust = { version = "1.99.1", profile = "minimal", components = "clippy,rustfmt" }
+# Runs npm MCPs, and the tests that start a real Node.
+node = "24.22.0"
+# The advisory check of the Security workflow, as the prebuilt binary of its
+# release: nothing is compiled. The repository releases several tools, each
+# under tags of its own.
+"github:rustsec/rustsec" = { version = "0.22.2", version_prefix = "cargo-audit/v", bin = "cargo-audit" }
+
+# The commands CI runs, with the same flags. Arguments after the task name go
+# to cargo: `mise run test -p mymcps-core`. The root manifest is a virtual
+# workspace, so `cargo test` without `-p` is `cargo test --workspace`.
+
+[tasks.dev]
+description = "Start the server with the settings in .env"
+run = "cargo run --bin mymcps"
+
+[tasks.build]
+description = "Build the production binary: target/release/mymcps"
+run = "cargo build --release --locked --bin mymcps"
+
+[tasks.test]
+description = "Run the tests of every crate, or of the crates given with -p"
+run = "cargo test --locked"
+
+[tasks.fmt]
+description = "Check formatting"
+run = "cargo fmt --all --check"
+
+[tasks."fmt:fix"]
+description = "Format the workspace"
+run = "cargo fmt --all"
+
+[tasks.clippy]
+description = "Lint and type-check every target, warnings as errors"
+run = "cargo clippy --workspace --all-targets --locked -- -D warnings"
+
+[tasks.lint]
+description = "Check formatting, then run Clippy"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets --locked -- -D warnings",
+]
+
+[tasks.audit]
+description = "Check Cargo.lock against the RustSec advisory database"
+run = "cargo audit"
+
+[tasks.ci]
+description = "Everything the Quality and Security workflows check"
+depends = ["lint", "audit"]
+run = [
+  "cargo test --workspace --locked",
+  "cargo build --release --locked --bin mymcps",
+]

@@ -17,7 +17,7 @@ env:
   # The Rust toolchain of the project: the one the Dockerfile compiles the
   # image with (crates/xtask checks that they agree). Every job that runs
   # cargo installs it and makes it the default first.
-  RUST_TOOLCHAIN: 1.98.1
+  RUST_TOOLCHAIN: 1.99.1
 
 jobs:
   # Clippy compiles every target of the workspace, tests included, so this is

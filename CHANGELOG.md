@@ -2,6 +2,17 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-19
+
+### Added
+
+- Added `mise.toml`: `mise install` sets up the Rust, Node.js, and cargo-audit versions the releases are built and checked with, and `mise run dev`, `test`, `lint`, `audit`, `build`, and `ci` run the commands of the Quality and Security workflows.
+
+### Changed
+
+- The image runs npm MCPs with Node.js 24.22.0, up from 24.21.0, and the server is built with Rust 1.99.1, up from 1.98.1, in the image and in CI.
+- Updated the Rust dependencies to their latest compatible releases, among them tokio 1.53.3, serde_json 1.0.154, aws-lc-rs 1.18.2, and uuid 1.28.0, and the GitHub Actions that install CI tools and run CodeQL.
+
 ## 2026-10-18
 
 ### Added

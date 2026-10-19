@@ -277,6 +277,58 @@ fn node_version_matches_the_pinned_node_image() {
     assert!(runtime.contains("  NODE_BINARY=/usr/local/bin/node \\\n"));
 }
 
+/// The version mise.toml gives `tool` in its `[tools]` table: a string, or
+/// the `version` of an inline table.
+fn mise_tool_version<'a>(mise: &'a str, tool: &str) -> &'a str {
+    let tools = mise.split_once("\n[tools]\n").expect("a [tools] table").1;
+    let tools = tools.split("\n[").next().unwrap();
+    let prefix = format!("{tool} = ");
+    let value = tools
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap_or_else(|| panic!("mise.toml to pin {tool}"));
+    let value = value.strip_prefix("{ version = ").unwrap_or(value);
+    let value = value.strip_prefix('"').expect("a quoted version");
+    &value[..value.find('"').expect("a quoted version")]
+}
+
+#[test]
+fn mise_installs_the_toolchains_of_the_image_and_runs_the_commands_of_ci() {
+    let dockerfile = read_repository_file("Dockerfile");
+    let mise = read_repository_file("mise.toml");
+
+    let rust = tag_of(&dockerfile, "rust").split('-').next().unwrap();
+    assert_eq!(
+        mise_tool_version(&mise, "rust"),
+        rust,
+        "mise.toml must install the Rust of the rust image in the Dockerfile"
+    );
+    let node = tag_of(&dockerfile, "node")
+        .strip_suffix("-trixie-slim")
+        .unwrap();
+    assert_eq!(
+        mise_tool_version(&mise, "node"),
+        node,
+        "mise.toml must install the Node.js of the node image in the Dockerfile"
+    );
+
+    // Its tasks run what the Quality workflow runs, with the same flags. The
+    // tests of xtask are among those of the workspace.
+    let quality = read_repository_file(".github/workflows/quality.yml");
+    let commands: Vec<&str> = quality
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("run: cargo "))
+        .filter(|command| *command != "test --locked -p xtask")
+        .collect();
+    assert_eq!(commands.len(), 4, "{commands:?}");
+    for command in commands {
+        assert!(
+            mise.contains(&format!("\"cargo {command}\"")),
+            "no task of mise.toml runs `cargo {command}`"
+        );
+    }
+}
+
 #[test]
 fn dependabot_updates_the_dockerfile_base_images_cargo_and_the_actions() {
     let dependabot = read_repository_file(".github/dependabot.yml");

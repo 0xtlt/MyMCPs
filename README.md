@@ -29,12 +29,15 @@ Accounts, teams, and permissions work as they do in Coolify, with one difference
 
 ## Run locally
 
-You need a stable [Rust](https://rustup.rs/) toolchain with a C compiler (releases are built with Rust 1.98), and [Node.js](https://nodejs.org/) with its npm if you want to run npm-based MCPs.
+You need a C compiler, and [mise](https://mise.jdx.dev/) with [rustup](https://rustup.rs/): `mise install` sets up the versions the releases are built with, listed in `mise.toml` (Rust 1.99.1, Node.js 24.22.0 for npm-based MCPs, and cargo-audit).
 
 ```bash
+mise install
 cp .env.example .env
-cargo run --bin mymcps
+mise run dev
 ```
+
+Without mise, use Rust 1.99.1 and, to run npm-based MCPs, Node.js 24 with its npm, and the cargo commands below.
 
 npm-based MCPs run in a sandbox that needs Linux: see [npm MCPs and their sandbox](#npm-mcps-and-their-sandbox). On macOS or Windows, set `NPM_SANDBOX=off` in `.env` to run them without one while you develop.
 
@@ -110,14 +113,15 @@ The Coolify profile sets `TRUST_PROXY=loopback,uniquelocal`: the app accepts a f
 ## Useful commands
 
 ```bash
-cargo run --bin mymcps                                 # Start the server with the settings in .env
-cargo test --workspace                                 # Run all tests
-cargo fmt --all --check                                # Check formatting
-cargo clippy --workspace --all-targets -- -D warnings  # Lint and type-check
-cargo build --release --bin mymcps                     # Create a production build: target/release/mymcps
+mise run dev    # Start the server with the settings in .env: cargo run --bin mymcps
+mise run test   # Run all tests: cargo test --locked (add -p <crate> for one crate)
+mise run lint   # Check formatting and lint: cargo fmt --all --check, then cargo clippy --workspace --all-targets --locked -- -D warnings
+mise run audit  # Check dependencies against the RustSec advisories: cargo audit
+mise run build  # Create a production build, target/release/mymcps: cargo build --release --locked --bin mymcps
+mise run ci     # All of the above but dev, as CI runs them
 ```
 
-Pull requests and pushes to `main` run the same format check, lint, tests, and production build in the **Quality** workflow.
+`mise tasks` lists every task. Pull requests and pushes to `main` run the same format check, lint, tests, and production build in the **Quality** workflow, and the dependency audit in the **Security** workflow.
 
 ### Reset a user password
 
