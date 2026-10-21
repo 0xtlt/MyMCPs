@@ -16,7 +16,7 @@
 # Official Node.js image (multi-arch), for its `node` binary and its npm. It is
 # built on the Debian release of the runtime stage, whose C++ library the
 # binary loads.
-FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS node
+FROM node:24.22.0-trixie-slim@sha256:a6155384446670e9719bdc4fd0ebe4d4b29fb32a8d6aa523da3547a6cfbcf22c AS node
 
 # ---------------------------------------------------------------------------
 # Compile the server
@@ -27,7 +27,7 @@ FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e
 # The Rust version in this tag is the toolchain of the project: the workflows
 # install the same one (crates/xtask/tests/container_image.rs checks it), and
 # its Debian release is the one the runtime stage runs on.
-FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-trixie@sha256:4df2ae8cfdfebdfc13a65da7f253b73d68983dc0339f2719bc17a279c913b13d AS build
+FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-trixie@sha256:e6cd1d294a300601eaaa4a294b337e5f0826f427fb2d481e9f76e69e7981e244 AS build
 
 ARG TARGETARCH
 
@@ -78,7 +78,7 @@ RUN --mount=type=cache,id=mymcps-cargo-registry,target=/usr/local/cargo/registry
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 
 # NODE_VERSION must name the version in the node tag above; Dependabot only
 # edits the FROM line (crates/xtask/tests/container_image.rs checks it).
