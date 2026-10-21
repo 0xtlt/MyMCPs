@@ -6,6 +6,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
+- Released version [0.4.2](https://github.com/0xtlt/MyMCPs/releases/tag/v0.4.2).
+
 - Refreshed the pinned base images of the Docker image to the current builds of Node.js 24.22.0, Rust 1.99.1, and Debian trixie-slim.
 - Updated the Rust dependencies within their semver ranges, among them tokio 1.54.0, rustls-webpki 0.103.16, and cc 1.9.0.
 
