@@ -2,6 +2,12 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-21
+
+### Changed
+
+- Refreshed the pinned base images of the Docker image (Node.js 24.22.0, Rust 1.99.1, and Debian trixie-slim) to their latest builds, and updated the Rust dependencies to their latest compatible releases, among them tokio 1.54.0, rustls-webpki 0.103.16, and cc 1.9.0.
+
 ## 2026-10-19
 
 ### Added
