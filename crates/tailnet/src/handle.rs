@@ -47,7 +47,10 @@ impl TailnetHandle {
     }
 
     /// A TCP connection to `address` through the tailnet. The address is one
-    /// [`route`](Self::route) returned: the daemon is asked for no other.
+    /// [`route`](Self::route) returned: the daemon is asked for no other. It
+    /// is checked once more against the status of the daemon right before the
+    /// dial, so that an address which became (or always was) one of this
+    /// node's own, or which no peer routes any more, is refused.
     pub async fn dial(
         &self,
         address: SocketAddr,
@@ -56,6 +59,16 @@ impl TailnetHandle {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 format!("{address} is not an address a tailnet routes"),
+            ));
+        }
+        let status = self.client.cached_status().await?;
+        let routed = status.backend_state == "Running"
+            && route::resolve(&status, &address.ip().to_string())
+                == Some(address.ip().to_canonical());
+        if !routed {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("{address} is not routed by the tailnet"),
             ));
         }
         Ok(self.client.dial(address).await?)

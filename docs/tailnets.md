@@ -53,7 +53,7 @@ Deleting a team, or a user whose personal team goes with them, does the same for
 
 ## What an MCP can reach
 
-An MCP that has a tailnet reaches the devices of that tailnet and the subnet routes its devices advertise, and nothing else through it: a host that is neither is refused, and so is a name that is not one of the tailnet's, rather than sent to the internet. The device only dials out; it accepts no connection from the tailnet. It does not use an exit node.
+An MCP that has a tailnet reaches the devices of that tailnet and the subnet routes its devices advertise, and nothing else through it: a host that is neither is refused, and so is a name that is not one of the tailnet's, rather than sent to the internet. The device only dials out; it accepts no connection from the tailnet. It does not use an exit node. The addresses of MyMCPs' own device are never reachable either, even when a subnet route of the tailnet covers them: an MCP cannot loop back to the server through its own tailnet address.
 
 Two things to keep in mind:
 

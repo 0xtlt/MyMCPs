@@ -131,6 +131,20 @@ impl Status {
             .or(self.tailscale_ips.as_ref());
         parse_ips(own)
     }
+
+    /// Whether `address` is one of this node's own Tailscale addresses, as
+    /// either part of the status lists it. The netstack of the daemon answers
+    /// such an address by forwarding to the host's loopback: it is never a
+    /// peer, whatever a peer advertises.
+    pub(crate) fn is_own_address(&self, address: IpAddr) -> bool {
+        let address = address.to_canonical();
+        let listed = self
+            .self_node
+            .iter()
+            .filter_map(|node| node.tailscale_ips.as_ref())
+            .chain(self.tailscale_ips.as_ref());
+        parse_ips_of(listed).any(|own| own.to_canonical() == address)
+    }
 }
 
 impl PeerStatus {
@@ -150,6 +164,10 @@ impl PeerStatus {
     pub(crate) fn fqdn(&self) -> String {
         self.dns_name.trim_end_matches('.').to_ascii_lowercase()
     }
+}
+
+fn parse_ips_of<'a>(lists: impl Iterator<Item = &'a Vec<String>>) -> impl Iterator<Item = IpAddr> {
+    lists.flatten().filter_map(|ip| ip.parse::<IpAddr>().ok())
 }
 
 fn parse_ips(ips: Option<&Vec<String>>) -> Vec<IpAddr> {

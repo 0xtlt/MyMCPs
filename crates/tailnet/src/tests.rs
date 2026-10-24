@@ -887,6 +887,43 @@ mod route_and_dial {
     }
 
     #[tokio::test]
+    async fn an_address_of_this_node_is_neither_routed_nor_dialled_even_inside_a_subnet() {
+        let fixture = Fixture::new(0);
+        let mut status = running_status();
+        status["Peer"]["nodekey:bbbb"]["PrimaryRoutes"] =
+            json!(["100.64.0.0/10", "192.168.1.0/24"]);
+        let api = fixture.with_api(1, status).await;
+        let handle = fixture.tailnets.handle(1).unwrap();
+
+        assert_eq!(handle.route("100.64.0.1", 8080).await.unwrap(), None);
+        assert_eq!(handle.route("fd7a:115c:a1e0::1", 8080).await.unwrap(), None);
+        assert!(handle.route("100.64.0.50", 8080).await.unwrap().is_some());
+        for address in ["100.64.0.1:8080", "[fd7a:115c:a1e0::1]:8080"] {
+            let error = handle.dial(address.parse().unwrap()).await.err().unwrap();
+            assert_eq!(
+                error.kind(),
+                std::io::ErrorKind::PermissionDenied,
+                "{address}"
+            );
+        }
+        assert!(api.requests_to("/localapi/v0/dial").is_empty());
+    }
+
+    #[tokio::test]
+    async fn dial_checks_the_address_again_against_the_status() {
+        let fixture = Fixture::new(0);
+        let (api, handle) = running(&fixture).await;
+        // Never routed: no peer has it.
+        let error = handle
+            .dial("100.64.0.99:80".parse().unwrap())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(api.requests_to("/localapi/v0/dial").is_empty());
+    }
+
+    #[tokio::test]
     async fn dial_refuses_an_address_the_daemon_would_have_dialled_directly() {
         let fixture = Fixture::new(0);
         let (api, handle) = running(&fixture).await;

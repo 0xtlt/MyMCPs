@@ -21,6 +21,11 @@ pub(crate) fn is_forbidden(address: IpAddr) -> bool {
 }
 
 /// The Tailscale address to dial for `host`, or `None` when it is not a peer.
+///
+/// The addresses of this node are never routed, on any path: a subnet router
+/// of a hostile control server can advertise a prefix that covers them, and
+/// the netstack of the daemon forwards a connection to its own address to the
+/// loopback of the host.
 pub(crate) fn resolve(status: &Status, host: &str) -> Option<IpAddr> {
     let host = host.trim();
     let host = host
@@ -35,7 +40,7 @@ pub(crate) fn resolve(status: &Status, host: &str) -> Option<IpAddr> {
 
 fn resolve_address(status: &Status, address: IpAddr) -> Option<IpAddr> {
     let address = address.to_canonical();
-    if is_forbidden(address) {
+    if is_forbidden(address) || status.is_own_address(address) {
         return None;
     }
     let reachable = status.peers().any(|peer| {
@@ -61,7 +66,7 @@ fn resolve_name(status: &Status, host: &str) -> Option<IpAddr> {
     status
         .peers()
         .filter(|peer| names_peer(peer, &name, &suffix))
-        .find_map(preferred_address)
+        .find_map(|peer| preferred_address(status, peer))
 }
 
 fn names_peer(peer: &PeerStatus, name: &str, suffix: &str) -> bool {
@@ -81,13 +86,14 @@ fn names_peer(peer: &PeerStatus, name: &str, suffix: &str) -> bool {
     !name.contains('.') && in_tailnet && fqdn.split('.').next() == Some(name)
 }
 
-/// IPv4 first: it is the one every service listens on.
-fn preferred_address(peer: &PeerStatus) -> Option<IpAddr> {
+/// IPv4 first: it is the one every service listens on. An address of this
+/// node, that a peer lists as its own, is not one.
+fn preferred_address(status: &Status, peer: &PeerStatus) -> Option<IpAddr> {
     let usable: Vec<IpAddr> = peer
         .addresses()
         .into_iter()
         .map(|address| address.to_canonical())
-        .filter(|address| !is_forbidden(*address))
+        .filter(|address| !is_forbidden(*address) && !status.is_own_address(*address))
         .collect();
     usable
         .iter()
@@ -292,6 +298,78 @@ mod tests {
         .unwrap();
         assert_eq!(status.magic_dns_suffix(), "tail1234.ts.net");
         assert_eq!(resolve(&status, "nas"), ip("100.64.0.2"));
+    }
+
+    /// A hostile control server: a peer routes the prefixes that hold the
+    /// addresses of this node, and another lists one of them as its own.
+    fn status_with_a_subnet_over_this_node() -> Status {
+        serde_json::from_value(json!({
+            "BackendState": "Running",
+            "TailscaleIPs": ["100.64.0.1", "fd7a:115c:a1e0::1"],
+            "Self": {"DNSName": "mymcps.tail1234.ts.net.", "TailscaleIPs": ["100.64.0.1", "fd7a:115c:a1e0::1"]},
+            "MagicDNSSuffix": "tail1234.ts.net",
+            "Peer": {
+                "nodekey:aaaa": {
+                    "DNSName": "router.tail1234.ts.net.",
+                    "TailscaleIPs": ["100.64.0.3"],
+                    "PrimaryRoutes": ["100.64.0.0/10", "fd7a:115c:a1e0::/48", "192.168.1.0/24"]
+                },
+                "nodekey:bbbb": {
+                    "DNSName": "twin.tail1234.ts.net.",
+                    "TailscaleIPs": ["100.64.0.1", "fd7a:115c:a1e0::1"]
+                },
+                "nodekey:cccc": {
+                    "DNSName": "half.tail1234.ts.net.",
+                    "TailscaleIPs": ["100.64.0.1", "100.64.0.9"]
+                }
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_subnet_route_never_reaches_the_addresses_of_this_node() {
+        let status = status_with_a_subnet_over_this_node();
+        for host in [
+            "100.64.0.1",
+            "fd7a:115c:a1e0::1",
+            "[fd7a:115c:a1e0::1]",
+            "::ffff:100.64.0.1",
+            "FD7A:115C:A1E0:0:0:0:0:1",
+        ] {
+            assert_eq!(resolve(&status, host), None, "{host}");
+        }
+        // The rest of the prefix is still the router's.
+        assert_eq!(resolve(&status, "100.64.0.77"), ip("100.64.0.77"));
+        assert_eq!(
+            resolve(&status, "fd7a:115c:a1e0::77"),
+            ip("fd7a:115c:a1e0::77")
+        );
+        assert_eq!(resolve(&status, "192.168.1.5"), ip("192.168.1.5"));
+    }
+
+    #[test]
+    fn a_peer_that_lists_an_address_of_this_node_is_not_dialled_there() {
+        let status = status_with_a_subnet_over_this_node();
+        // `twin` has nothing but this node's addresses: nothing to dial.
+        assert_eq!(resolve(&status, "twin"), None);
+        assert_eq!(resolve(&status, "twin.tail1234.ts.net"), None);
+        // `half` keeps its own address.
+        assert_eq!(resolve(&status, "half"), ip("100.64.0.9"));
+        // The other peers are not affected.
+        assert_eq!(resolve(&status, "router"), ip("100.64.0.3"));
+    }
+
+    #[test]
+    fn the_addresses_of_this_node_are_read_from_both_parts_of_the_status() {
+        let top: Status = serde_json::from_value(json!({"TailscaleIPs": ["100.64.0.1"]})).unwrap();
+        let node: Status =
+            serde_json::from_value(json!({"Self": {"TailscaleIPs": ["fd7a:115c:a1e0::1"]}}))
+                .unwrap();
+        assert!(top.is_own_address("100.64.0.1".parse().unwrap()));
+        assert!(node.is_own_address("fd7a:115c:a1e0::1".parse().unwrap()));
+        assert!(!top.is_own_address("100.64.0.2".parse().unwrap()));
+        assert!(!node.is_own_address("100.64.0.1".parse().unwrap()));
     }
 
     #[test]
