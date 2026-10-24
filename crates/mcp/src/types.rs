@@ -165,6 +165,12 @@ impl McpError {
             data: Some(json!({ "timeout": timeout.as_millis() as u64 })),
         }
     }
+
+    /// Whether this is the error a request of the client fails with when it
+    /// got no answer within `timeout`, rather than an error the server sent.
+    pub fn is_timeout_after(&self, timeout: Duration) -> bool {
+        *self == Self::request_timeout(timeout)
+    }
 }
 
 impl From<JsonRpcError> for McpError {

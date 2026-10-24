@@ -58,7 +58,7 @@ fn is_set(column: &Option<String>) -> bool {
 }
 
 /// The fields of the form under the names the tools give them.
-const ARGUMENT_NAMES: [(&str, &str); 9] = [
+const ARGUMENT_NAMES: [(&str, &str); 10] = [
     ("httpUrl", "url"),
     ("npmPackage", "npm_package"),
     ("npmVersion", "npm_version"),
@@ -68,6 +68,7 @@ const ARGUMENT_NAMES: [(&str, &str); 9] = [
     ("authBearer", "bearer_token"),
     ("authHeaderName", "header_name"),
     ("authHeaderValue", "header_value"),
+    ("toolTimeoutSeconds", "timeout_seconds"),
 ];
 
 fn argument_names(text: &str) -> String {
@@ -192,6 +193,7 @@ fn form_input(saved: Option<&Mcp>, fields: &McpFields) -> Map<String, Value> {
                 json!(mcp.auth_header_name.clone().unwrap_or_default()),
             );
             put("enabled", json!(mcp.enabled));
+            put("toolTimeoutSeconds", json!(mcp.tool_timeout_seconds));
         }
         None => {
             put("authType", json!("auto"));
@@ -223,6 +225,9 @@ fn form_input(saved: Option<&Mcp>, fields: &McpFields) -> Map<String, Value> {
     given(&mut put, "authHeaderValue", &fields.header_value);
     if let Some(enabled) = fields.enabled {
         put("enabled", json!(enabled));
+    }
+    if let Some(seconds) = fields.timeout_seconds {
+        put("toolTimeoutSeconds", json!(seconds));
     }
 
     // The environment is the whole list, as in the form: a variable without
@@ -346,6 +351,8 @@ impl WebMcpRegistry {
             "oauth_connected": uses_oauth(&self.upstream, mcp) && view.is_connected(),
             "oauth_required": mcp.oauth_required,
             "tool_count": view.tool_count,
+            // What a tool call waits, the default included.
+            "timeout_seconds": (!builtin).then(|| mcp.tool_timeout().as_secs()),
         })
     }
 

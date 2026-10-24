@@ -82,6 +82,35 @@ fn mcp_endpoint_url() -> vine::Rule {
     })
 }
 
+/// The tool call timeout of an MCP stays within what its transport allows:
+/// an npm MCP is a process this server runs for the whole call.
+fn tool_timeout_within_transport() -> vine::Rule {
+    vine::rule(|value, field| {
+        let Some(seconds) = value.as_f64() else {
+            return;
+        };
+        let transport = field
+            .parent_get("transport")
+            .and_then(Value::as_str)
+            .and_then(McpTransport::parse);
+        let Some(transport) = transport else {
+            return;
+        };
+        let Some(max) = transport.max_tool_timeout_seconds() else {
+            return;
+        };
+        if seconds > max as f64 {
+            let message = match transport {
+                McpTransport::Npm => format!(
+                    "An npm MCP waits at most {max} seconds for a tool call: its package runs on this server for the whole call"
+                ),
+                _ => format!("A remote MCP waits at most {max} seconds for a tool call"),
+            };
+            field.report(&message, "toolTimeoutMax");
+        }
+    })
+}
+
 /// RFC 9110 token for custom header names.
 fn header_name() -> vine::VineString {
     vine::string()
@@ -150,6 +179,12 @@ fn mcp_payload() -> vine::VineObject {
             .optional()
             .transform(|value, _| words(&value, false)),
         "npmEnv" => npm_environment(),
+        // Seconds. Left blank, a tool call waits the default.
+        "toolTimeoutSeconds" => vine::number()
+            .without_decimals()
+            .min(1)
+            .use_rule(tool_timeout_within_transport())
+            .optional(),
         "builtinKey" => vine::enum_(BUILTIN_MCP_KEYS.iter().copied())
             .optional()
             .required_when("transport", Operator::Eq, "builtin"),
@@ -191,13 +226,30 @@ fn mcp_payload() -> vine::VineObject {
     }
 }
 
+/// What the form says of a timeout it cannot take, where Vine would name
+/// the field by its key.
+fn mcp_messages() -> vine::SimpleMessagesProvider {
+    const WHOLE_SECONDS: &str = "Enter a whole number of seconds, 1 or more";
+    vine::SimpleMessagesProvider::new([
+        ("toolTimeoutSeconds.number", WHOLE_SECONDS),
+        ("toolTimeoutSeconds.withoutDecimals", WHOLE_SECONDS),
+        ("toolTimeoutSeconds.min", WHOLE_SECONDS),
+    ])
+}
+
 /// Create an upstream MCP registration.
-pub static CREATE_MCP_VALIDATOR: LazyLock<vine::Validator> =
-    LazyLock::new(|| vine::global().create(mcp_payload()));
+pub static CREATE_MCP_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global()
+        .create(mcp_payload())
+        .messages_provider(mcp_messages())
+});
 
 /// Update an upstream MCP registration.
-pub static UPDATE_MCP_VALIDATOR: LazyLock<vine::Validator> =
-    LazyLock::new(|| vine::global().create(mcp_payload()));
+pub static UPDATE_MCP_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+    vine::global()
+        .create(mcp_payload())
+        .messages_provider(mcp_messages())
+});
 
 /// One environment variable of the form. A blank value keeps the saved one.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -228,6 +280,8 @@ pub struct McpPayload {
     pub npm_args: Option<Vec<String>>,
     #[serde(default)]
     pub npm_env: Option<Vec<NpmEnvEntry>>,
+    #[serde(default)]
+    pub tool_timeout_seconds: Option<i64>,
     #[serde(default)]
     pub builtin_key: Option<String>,
     #[serde(default)]
@@ -585,6 +639,85 @@ mod tests {
                     "authType": "auto",
                 }))
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn takes_a_tool_call_timeout_within_what_the_transport_allows() {
+        let npm = || json!({ "name": "Package", "transport": "npm", "npmPackage": "a", "authType": "auto" });
+        let remote = || with(http(), json!({ "httpUrl": "https://x.test/mcp" }));
+        let timeout = |base: Value, seconds: Value| {
+            CREATE_MCP_VALIDATOR
+                .validate_as::<McpPayload>(&with(base, json!({ "toolTimeoutSeconds": seconds })))
+                .map(|payload| payload.tool_timeout_seconds)
+        };
+
+        // As the form sends it: text, and blank for the default.
+        assert_eq!(timeout(remote(), json!("240")).unwrap(), Some(240));
+        assert_eq!(timeout(remote(), json!("300")).unwrap(), Some(300));
+        assert_eq!(timeout(npm(), json!("120")).unwrap(), Some(120));
+        assert_eq!(timeout(remote(), json!("")).unwrap(), None);
+        assert_eq!(timeout(remote(), Value::Null).unwrap(), None);
+        assert_eq!(
+            CREATE_MCP_VALIDATOR
+                .validate_as::<McpPayload>(&remote())
+                .unwrap()
+                .tool_timeout_seconds,
+            None
+        );
+
+        let refused = |base: Value, seconds: Value| {
+            let error = CREATE_MCP_VALIDATOR
+                .validate(&with(base, json!({ "toolTimeoutSeconds": seconds })))
+                .unwrap_err();
+            messages(&error)
+                .into_iter()
+                .map(|(field, message, rule)| {
+                    (field.to_owned(), message.to_owned(), rule.to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        let one = |message: &str, rule: &str| {
+            vec![(
+                "toolTimeoutSeconds".to_owned(),
+                message.to_owned(),
+                rule.to_owned(),
+            )]
+        };
+        assert_eq!(
+            refused(remote(), json!("301")),
+            one(
+                "A remote MCP waits at most 300 seconds for a tool call",
+                "toolTimeoutMax"
+            )
+        );
+        assert_eq!(
+            refused(npm(), json!("121")),
+            one(
+                "An npm MCP waits at most 120 seconds for a tool call: its package runs on this server for the whole call",
+                "toolTimeoutMax"
+            )
+        );
+        for (seconds, rule) in [
+            (json!("0"), "min"),
+            (json!("-3"), "min"),
+            (json!("1.5"), "withoutDecimals"),
+            (json!("soon"), "number"),
+        ] {
+            assert_eq!(
+                refused(remote(), seconds.clone()),
+                one("Enter a whole number of seconds, 1 or more", rule),
+                "{seconds}"
+            );
+        }
+
+        // A built-in MCP has no limit of its own to check: the value is dropped when saved.
+        assert!(
+            timeout(
+                json!({ "name": "Strava", "transport": "builtin", "builtinKey": "strava", "authType": "auto" }),
+                json!("999")
+            )
+            .is_ok()
         );
     }
 

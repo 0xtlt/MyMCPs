@@ -11,6 +11,7 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use mymcps_core::{Config, Core, Db};
 use mymcps_node::SandboxStatus;
+use mymcps_tailnet::TailnetState;
 use mymcps_upstream::Upstream;
 use mymcps_web::AppState;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -185,6 +186,54 @@ async fn report_npm_sandbox(upstream: &Upstream) {
     }
 }
 
+/// Start the daemon of every tailnet of every team, and say in the log where
+/// each one stands. A node that joined before reconnects by itself; one that
+/// needs a login says so. The server does not wait for any of it.
+fn start_tailnets(upstream: &Arc<Upstream>) -> tokio::task::JoinHandle<()> {
+    let upstream = Arc::clone(upstream);
+    tokio::spawn(async move {
+        if upstream.tailnets().is_none() {
+            tracing::debug!("Tailscale is off: TAILSCALED_BINARY is not set");
+            return;
+        }
+        let starts = match upstream.start_tailnets().await {
+            Ok(starts) => starts,
+            Err(error) => {
+                tracing::error!(%error, "could not list the tailnets to start");
+                return;
+            }
+        };
+        for start in starts {
+            let tailnet = start.tailnet.id;
+            let team = start.tailnet.team_id;
+            let name = start.tailnet.name;
+            match start.state {
+                Ok(TailnetState::Running { dns_name, .. }) => {
+                    tracing::info!(tailnet, team, %name, %dns_name, "tailnet is running");
+                }
+                Ok(TailnetState::Starting) => {
+                    tracing::warn!(tailnet, team, %name, "tailnet is still starting");
+                }
+                Ok(TailnetState::NeedsLogin { .. }) => {
+                    tracing::warn!(tailnet, team, %name, "tailnet needs a login: sign in again on the Tailnets page");
+                }
+                Ok(TailnetState::NeedsMachineAuth) => {
+                    tracing::warn!(tailnet, team, %name, "tailnet waits for an admin to approve this server");
+                }
+                Ok(TailnetState::Stopped) => {
+                    tracing::warn!(tailnet, team, %name, "tailnet is stopped");
+                }
+                Ok(TailnetState::Failed(reason)) => {
+                    tracing::error!(tailnet, team, %name, %reason, "tailnet failed");
+                }
+                Err(error) => {
+                    tracing::error!(tailnet, team, %name, %error, "could not start the tailnet");
+                }
+            }
+        }
+    })
+}
+
 async fn serve() -> CommandResult {
     let config = Config::from_env()?;
     init_logging(&config);
@@ -204,6 +253,7 @@ async fn serve() -> CommandResult {
     // Deletes the expired uploads, including the ones a previous run left.
     let upload_sweeper =
         Arc::new(state.upstream.builtin_env().uploads.clone()).start_sweeper(UPLOAD_SWEEP_INTERVAL);
+    let tailnets_start = start_tailnets(&state.upstream);
     let listener = TcpListener::bind(&address)
         .await
         .map_err(|error| format!("Cannot listen on {}:{}: {error}", address.0, address.1))?;
@@ -217,6 +267,7 @@ async fn serve() -> CommandResult {
         tracing::error!(%error, "Could not schedule the automatic updates of npm MCPs");
     }
 
+    let upstream = Arc::clone(&state.upstream);
     let service = mymcps_web::app::service(state);
     server::serve(
         listener,
@@ -228,6 +279,10 @@ async fn serve() -> CommandResult {
 
     mcp_gateway.auto_update.stop();
     upload_sweeper.abort();
+    // A start that is still waiting for its daemon must not outlive the stop.
+    tailnets_start.abort();
+    let _ = tailnets_start.await;
+    upstream.stop_tailnets().await;
     core.db.close().await;
     Ok(ExitCode::SUCCESS)
 }

@@ -88,6 +88,8 @@ pub struct McpView {
     pub npm_args: String,
     /// The names of the saved environment variables.
     pub npm_env: Vec<String>,
+    /// The tool call timeout saved for it, in seconds. `None` waits the default.
+    pub tool_timeout_seconds: Option<i64>,
     pub has_auth_bearer: bool,
     pub has_auth_header_value: bool,
     pub has_oauth_access_token: bool,
@@ -133,6 +135,7 @@ impl McpView {
             enabled: mcp.enabled,
             npm_args: mcp.npm_args_list().join(" "),
             npm_env: mcp.npm_env_names(),
+            tool_timeout_seconds: mcp.tool_timeout_seconds,
             has_auth_bearer: is_set(&mcp.auth_bearer),
             has_auth_header_value: is_set(&mcp.auth_header_value),
             has_oauth_access_token: is_set(&mcp.oauth_access_token),

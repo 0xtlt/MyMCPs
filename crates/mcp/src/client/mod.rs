@@ -369,13 +369,26 @@ impl Client {
         name: &str,
         arguments: Option<Map<String, Value>>,
     ) -> Result<Value, ClientError> {
+        self.call_tool_within(name, arguments, self.inner.options.request_timeout)
+            .await
+    }
+
+    /// [`call_tool`](Self::call_tool), waiting `timeout` for the answer
+    /// instead of the client's `request_timeout`, as the SDK's
+    /// `client.callTool(params, schema, { timeout })` does.
+    pub async fn call_tool_within(
+        &self,
+        name: &str,
+        arguments: Option<Map<String, Value>>,
+        timeout: Duration,
+    ) -> Result<Value, ClientError> {
         let mut params = Map::new();
         params.insert("name".to_owned(), json!(name));
         if let Some(arguments) = arguments {
             params.insert("arguments".to_owned(), Value::Object(arguments));
         }
         let result = self
-            .request("tools/call", Some(Value::Object(params)))
+            .request_within("tools/call", Some(Value::Object(params)), timeout)
             .await?;
         Ok(CALL_TOOL_RESULT.parse_value(&result)?)
     }
@@ -387,7 +400,18 @@ impl Client {
     /// Send a request and wait for its result, which is returned as the
     /// server sent it.
     pub async fn request(&self, method: &str, params: Option<Value>) -> Result<Value, ClientError> {
-        let timeout = self.inner.options.request_timeout;
+        self.request_within(method, params, self.inner.options.request_timeout)
+            .await
+    }
+
+    /// [`request`](Self::request), waiting `timeout` for the answer instead
+    /// of the client's `request_timeout`.
+    pub async fn request_within(
+        &self,
+        method: &str,
+        params: Option<Value>,
+        timeout: Duration,
+    ) -> Result<Value, ClientError> {
         let (id, mut answer, transport) = {
             let mut state = self.inner.state();
             let transport = state.transport.clone().ok_or(ClientError::NotConnected)?;

@@ -911,7 +911,7 @@ async fn older_database(
 async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
     // Short of the last migrations: no session version on users, no tool
     // approvals or settings on MCPs, no approval requests, no teams, no
-    // sign-in protection, no tailnets.
+    // sign-in protection, no tool call timeout on MCPs, no tailnets.
     let older = MIGRATIONS
         .iter()
         .position(|migration| {
@@ -920,7 +920,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
                 .ends_with("add_session_version_to_users_table")
         })
         .unwrap();
-    assert_eq!(MIGRATIONS.len() - older, 6);
+    assert_eq!(MIGRATIONS.len() - older, 7);
     let old_key = generate_app_key();
     let old_encryption = Encryption::new(&old_key);
     let dir = tempfile::tempdir().unwrap();
@@ -1000,6 +1000,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
     assert_eq!(mcp.slug, "notes");
     assert_eq!(mcp.tool_approvals, None);
     assert_eq!(mcp.builtin_settings, None);
+    assert_eq!(mcp.tool_timeout_seconds, None);
     assert_eq!(
         target
             .core

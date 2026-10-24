@@ -605,6 +605,10 @@ pub async fn assign_mcp_from_payload(
         _ => Vec::new(),
     });
     assign_npm_environment(core, mcp, payload, !credential_target_changed)?;
+    // A built-in MCP has no timeout to set: each request to its provider has its own.
+    mcp.tool_timeout_seconds = payload
+        .tool_timeout_seconds
+        .filter(|_| transport != McpTransport::Builtin);
     // Built-in MCPs sign in the one way their provider supports.
     mcp.auth_type = match transport {
         McpTransport::Builtin => McpAuthType::Auto,
