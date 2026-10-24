@@ -12,6 +12,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - A tool call that runs out of time now tells the agent so, for example "The remote MCP server did not answer within 60 seconds, the tool call timeout of this MCP.", instead of "Upstream tool call failed". The call log records the same sentence instead of "MCP error -32001: Request timed out", and says whether a remote server or an npm package was waited for.
 
+### Security
+
+- Updated tokio to 1.54.1, which fixes a race condition in its interval timer (RUSTSEC-2026-0384), and ctutils to 0.4.5, which fixes mask generation and `u128` comparisons that did not run in constant time (RUSTSEC-2026-0385).
+
 ## 2026-10-21
 
 ### Changed
