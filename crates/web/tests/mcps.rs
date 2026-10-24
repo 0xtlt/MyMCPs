@@ -1332,6 +1332,51 @@ async fn updates_an_mcp_and_tests_it_again() {
     assert_eq!(missing.flashed("error"), Some(json!("MCP not found")));
 }
 
+#[tokio::test]
+async fn saves_how_long_a_tool_call_of_an_mcp_waits() {
+    let (app, _) = app_with_mcp_servers().await;
+    let admin = create_admin(&app).await;
+    let mcp = create_mcp(&app, admin.id, |mcp| {
+        mcp.name = "Docs".into();
+        mcp.slug = "docs".into();
+        mcp.http_url = Some("https://docs.example/mcp".into());
+    })
+    .await;
+    let save = |seconds: &'static str| {
+        from_script(app.put(&format!("/mcps/{}", mcp.id)))
+            .login_as(&admin)
+            .csrf()
+            .form(&http_form(&[("toolTimeoutSeconds", seconds)]))
+            .send()
+    };
+
+    // A new form waits the default, and says how long that is and what the limits are.
+    let dialog = page(&app, &admin, &format!("/mcps/{}/edit", mcp.id))
+        .await
+        .text();
+    assert!(dialog.contains("name=\"toolTimeoutSeconds\" type=\"number\" inputmode=\"numeric\" min=\"1\" max=\"300\" step=\"1\" placeholder=\"60\""));
+    assert!(dialog.contains("At most 300 for a remote server."));
+    assert!(dialog.contains("At most 120: the package runs on this server for the whole call."));
+
+    assert_eq!(save("240").await.status, StatusCode::NO_CONTENT);
+    assert_eq!(find_mcp(&app, mcp.id).await.tool_timeout_seconds, Some(240));
+    let dialog = page(&app, &admin, &format!("/mcps/{}/edit", mcp.id))
+        .await
+        .text();
+    assert!(dialog.contains("placeholder=\"60\" value=\"240\""));
+
+    // Above what a remote MCP may wait: refused, and nothing changes.
+    let refused = save("301").await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(refused.text().contains("<p class=\"field__error\" id=\"edit-mcp-tool-timeout-error\">A remote MCP waits at most 300 seconds for a tool call</p>"));
+    assert!(refused.text().contains("value=\"301\""));
+    assert_eq!(find_mcp(&app, mcp.id).await.tool_timeout_seconds, Some(240));
+
+    // Left blank, it waits the default again.
+    assert_eq!(save("").await.status, StatusCode::NO_CONTENT);
+    assert_eq!(find_mcp(&app, mcp.id).await.tool_timeout_seconds, None);
+}
+
 // --- the environment of an npm MCP (tests/browser/mcp_environment.spec.ts) ---
 
 /// The app around an upstream whose Node.js is never found: saving probes the

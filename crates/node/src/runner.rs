@@ -481,7 +481,8 @@ impl NodeRunner {
 
     /// Call one tool of an npm MCP: start it, call, end it. The result is the
     /// one of the MCP client's `call_tool`: a result with `isError: true` is
-    /// a result, not an error.
+    /// a result, not an error. The call waits [`Mcp::tool_timeout`] for its
+    /// answer, then the process is ended.
     pub async fn call_tool(
         &self,
         mcp: &Mcp,
@@ -489,7 +490,10 @@ impl NodeRunner {
         arguments: Map<String, Value>,
     ) -> Result<Value, NodeError> {
         let connected = self.connect(mcp).await?;
-        let result = connected.client.call_tool(name, Some(arguments)).await;
+        let result = connected
+            .client
+            .call_tool_within(name, Some(arguments), mcp.tool_timeout())
+            .await;
         connected.close().await;
         Ok(result?)
     }

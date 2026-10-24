@@ -16,7 +16,7 @@ use vine::{FieldRef, MessagesProvider, Rule, Validator};
 
 /// The arguments the create and update tools share, besides `name` and
 /// `transport`, which only the first requires.
-const SHARED_ARGUMENTS: [&str; 11] = [
+const SHARED_ARGUMENTS: [&str; 12] = [
     "description",
     "url",
     "npm_package",
@@ -28,6 +28,7 @@ const SHARED_ARGUMENTS: [&str; 11] = [
     "header_name",
     "header_value",
     "enabled",
+    "timeout_seconds",
 ];
 
 /// An agent that gets an argument wrong reads one sentence saying what that
@@ -146,6 +147,16 @@ fn fields(create: bool) -> Vec<(&'static str, vine::Schema)> {
             vine::string().trim().max_length(4000).optional().into(),
         ),
         ("enabled", vine::boolean().strict().optional().into()),
+        (
+            "timeout_seconds",
+            vine::number()
+                .strict()
+                .without_decimals()
+                .min(1)
+                .nullable()
+                .optional()
+                .into(),
+        ),
     ]
 }
 
@@ -160,7 +171,7 @@ fn fields_object(create: bool, with_slug: bool) -> vine::VineObject {
     vine::object(properties).use_rule(only_arguments(allowed))
 }
 
-const FIELD_MESSAGES: [(&str, &str); 15] = [
+const FIELD_MESSAGES: [(&str, &str); 16] = [
     (
         "slug",
         "slug must be the slug of an MCP, from mcp_registry_list",
@@ -209,6 +220,10 @@ const FIELD_MESSAGES: [(&str, &str); 15] = [
         "header_value must be a string of at most 4000 characters",
     ),
     ("enabled", "enabled must be true or false"),
+    (
+        "timeout_seconds",
+        "timeout_seconds must be a whole number of seconds, 1 or more, or null for the default",
+    ),
 ];
 
 fn schema(create: bool, with_slug: bool) -> Validator {

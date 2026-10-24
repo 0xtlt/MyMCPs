@@ -1,6 +1,8 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use mymcps_builtin::BuiltinError;
+use mymcps_core::models::McpTransport;
 use mymcps_core::public_url::PublicUrlError;
 use mymcps_mcp::client::ClientError;
 use mymcps_net::{HttpUrlError, RestrictedEndpointError};
@@ -34,6 +36,15 @@ pub enum UpstreamError {
     /// An npm MCP could not be installed or started in its sandbox, or failed once started.
     #[error(transparent)]
     Node(Arc<NodeError>),
+
+    /// A tool call got no answer within the tool call timeout of its MCP.
+    /// The connection is closed, and an npm MCP's process is ended. The
+    /// message says which side was waited for, and holds no secret.
+    #[error("{}", tool_timeout_message(*.transport, *.timeout))]
+    ToolTimeout {
+        transport: McpTransport,
+        timeout: Duration,
+    },
 
     /// A document served by the MCP or by its OAuth provider names an
     /// endpoint inside a network the MCP is not part of.
@@ -75,9 +86,30 @@ pub enum UpstreamError {
     Other(String),
 }
 
+fn tool_timeout_message(transport: McpTransport, timeout: Duration) -> String {
+    let seconds = match timeout.as_secs() {
+        1 => "1 second".to_owned(),
+        seconds => format!("{seconds} seconds"),
+    };
+    match transport {
+        McpTransport::Npm => format!(
+            "The npm package did not answer within {seconds}, the tool call timeout of this MCP. Its process on the MyMCPs server was stopped."
+        ),
+        _ => format!(
+            "The remote MCP server did not answer within {seconds}, the tool call timeout of this MCP."
+        ),
+    }
+}
+
 impl UpstreamError {
     pub(crate) fn other(message: impl Into<String>) -> Self {
         Self::Other(message.into())
+    }
+
+    /// A tool call got no answer within the tool call timeout of its MCP.
+    /// Its message can be shown to the agent that made the call.
+    pub fn is_tool_timeout(&self) -> bool {
+        matches!(self, Self::ToolTimeout { .. })
     }
 
     /// The upstream wants credentials, or refused the ones it got: what the
