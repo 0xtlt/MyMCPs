@@ -20,8 +20,17 @@ Notable project changes are recorded here in English. Sections are organized by 
 - A tool call that runs out of time now tells the agent so, for example "The remote MCP server did not answer within 60 seconds, the tool call timeout of this MCP.", instead of "Upstream tool call failed". The call log records the same sentence instead of "MCP error -32001: Request timed out", and says whether a remote server or an npm package was waited for.
 - Deleting a team, or a user whose personal team goes with them, now also stops the `tailscaled` of its tailnets and deletes their state.
 
+### Fixed
+
+- Tailnets work with the default relative `DATA_DIR=tmp`: the server now gives `tailscaled` absolute paths for its socket and state, instead of paths that only held from the server's own directory.
+- Deleting a tailnet can no longer be undone by a page that was loading at the same time: its daemon is not started again once it was removed, and starting, stopping and deleting a tailnet no longer overlap.
+- The **Connect a tailnet** form no longer empties itself while you fill it on a Tailnets page that refreshes: the button opens the form on its own page there.
+
 ### Security
 
+- Changing the network of an MCP (internet to a tailnet, back, or from one tailnet to another) now clears its saved bearer token, header value and OAuth sign-in, as moving it to another origin does, so they are not sent to another machine behind the same URL. The same holds for `mcp_registry_update`, which lists them in `cleared_secrets`.
+- A tailnet never reaches the address of MyMCPs' own device, even when a subnet route of a peer (or of a hostile Headscale) covers it, so an MCP cannot loop back to the server through it.
+- The sign-in link of a tailnet and the keys of Tailscale are kept out of the debug log of `tailscaled`.
 - Updated tokio to 1.54.1, which fixes a race condition in its interval timer (RUSTSEC-2026-0384), and ctutils to 0.4.5, which fixes mask generation and `u128` comparisons that did not run in constant time (RUSTSEC-2026-0385).
 
 ## 2026-10-21
