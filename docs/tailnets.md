@@ -21,7 +21,7 @@ Only an owner or an admin of the team sees **Tailnets** in the navigation.
    - **Auth key**. Paste a key from the Tailscale admin console (**Settings**, **Keys**, **Generate auth key**). Prefer a one-off key, with a tag (below): it is used once, to join. MyMCPs never stores it, never logs it and never shows it again: the form comes back empty when something is wrong, and the key is typed again.
 4. Leave **Control server URL** empty for Tailscale. For a Headscale, see below.
 
-A team connects up to 5 tailnets. The page refreshes every 5 seconds while a tailnet starts or waits for its sign-in.
+A team connects up to 5 tailnets. The page refreshes every 5 seconds while a tailnet starts or waits for its sign-in; **Connect a tailnet** then opens the form on its own page, which does not refresh, so that nothing typed is lost.
 
 | Status | Meaning |
 | --- | --- |

@@ -210,10 +210,21 @@ impl TailnetsPage<'_> {
     }
 }
 
+/// Whether the page asks for itself again: while a tailnet starts or waits for
+/// its sign-in, unless the dialog is open, where it would lose what is typed.
+fn refreshes(page: &TailnetsPage) -> bool {
+    page.open.is_none() && page.rows.iter().any(TailnetRow::is_settling)
+}
+
 fn connect_button(page: &TailnetsPage, class: &str) -> Markup {
+    // The script opens the dialog on the page it is on. A page that refreshes
+    // every few seconds would reload under the dialog and empty it, so there
+    // the button is a plain link: `/tailnets/new` is the page with the dialog
+    // open and no refresh.
+    let opens_here = !refreshes(page);
     html! {
         @if page.can_connect() {
-            a class=(class) href="/tailnets/new" data-dialog-open=(format!("#{CONNECT_DIALOG_ID}")) {
+            a class=(class) href="/tailnets/new" data-dialog-open=[opens_here.then(|| format!("#{CONNECT_DIALOG_ID}"))] {
                 (icon("plus")) "Connect a tailnet"
             }
         } @else {
@@ -454,9 +465,7 @@ fn connect_dialog(context: &PageContext, page: &TailnetsPage) -> Markup {
 
 /// `GET /tailnets`, and `/tailnets/new`, which has the dialog open.
 pub fn tailnets_page(context: &PageContext, page: &TailnetsPage) -> Markup {
-    // A page that waits for a tailnet to start or to be signed in asks for
-    // itself again, unless a dialog is open: it would lose what is typed.
-    let refresh = page.open.is_none() && page.rows.iter().any(TailnetRow::is_settling);
+    let refresh = refreshes(page);
     let head = html! {
         @if refresh { meta http-equiv="refresh" content=(REFRESH_SECONDS); }
     };

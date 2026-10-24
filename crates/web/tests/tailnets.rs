@@ -304,6 +304,41 @@ async fn refreshes_while_a_tailnet_starts_and_stops_when_all_are_settled() {
 }
 
 #[tokio::test]
+async fn connect_is_a_plain_link_on_a_page_that_refreshes() {
+    // The script would open the dialog on a page that reloads itself every
+    // few seconds, and the reload would empty it while it is being filled.
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let api = lab.daemon(pro.id, status_in("Starting"));
+
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains("http-equiv=\"refresh\""));
+    let buttons: Vec<&str> = page
+        .split("<a ")
+        .filter(|link| link.contains("Connect a tailnet"))
+        .collect();
+    assert!(!buttons.is_empty());
+    for button in &buttons {
+        let link = between(button, "", "</a>");
+        assert!(link.contains("href=\"/tailnets/new\""), "{link}");
+        assert!(!link.contains("data-dialog-open"), "{link}");
+    }
+
+    // The page it leads to has the dialog open, and no refresh.
+    let new = get(&lab.app, &admin, "/tailnets/new").await;
+    assert!(!new.contains("http-equiv"));
+    assert!(between(&new, "id=\"connect-tailnet\"", ">").contains("data-open"));
+
+    // Once everything is settled the page stays, and the script opens the dialog.
+    api.set_status(running_status());
+    tokio::time::sleep(std::time::Duration::from_millis(2200)).await;
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(!page.contains("http-equiv"));
+    assert!(page.contains("href=\"/tailnets/new\" data-dialog-open=\"#connect-tailnet\""));
+}
+
+#[tokio::test]
 async fn links_only_a_web_address_to_sign_in() {
     let lab = Lab::new().await;
     let admin = create_admin(&lab.app).await;
