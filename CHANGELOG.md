@@ -8,6 +8,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Added the data for Tailscale tailnets: a team can have tailnets, and an HTTP MCP can name the one it reaches its upstream through. They are part of backups, and a backup made before this change still imports.
 - The Docker image holds `tailscaled` 1.104.2, copied from the official `tailscale/tailscale` image, and `TAILSCALED_BINARY` names it. On a host install, `TAILSCALED_BINARY` sets the binary; unset, the `tailscaled` of the `PATH` is used, and `off` turns tailnets off.
+- An HTTP MCP that names a tailnet now reaches its upstream through it, OAuth sign-in included, and the server starts the tailnets of every team in the background when it boots. When the tailnet cannot carry the request, the MCP says why: Tailscale is off on the server, the tailnet was deleted, it needs a new sign-in, or the host is not a device or subnet route of it.
 
 ## 2026-10-21
 

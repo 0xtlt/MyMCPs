@@ -33,6 +33,7 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 
 [dev-dependencies]
 mymcps-core = { workspace = true, features = ["test-util"] }
+mymcps-tailnet = { workspace = true, features = ["test-util"] }
 axum = "0.8"
 base64.workspace = true
 regex.workspace = true

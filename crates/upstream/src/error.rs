@@ -64,6 +64,12 @@ pub enum UpstreamError {
     #[error(transparent)]
     Database(Arc<sqlx::Error>),
 
+    /// The MCP reaches its server through a tailnet that cannot carry the
+    /// request: Tailscale is off on this server, the tailnet is gone or not
+    /// running, or the host is not one of its devices. The message says which.
+    #[error("{0}")]
+    Tailnet(String),
+
     /// Anything else, with the message the Node app gave it.
     #[error("{0}")]
     Other(String),
@@ -89,6 +95,12 @@ impl UpstreamError {
     /// (`RestrictedEndpointError`).
     pub fn is_restricted_endpoint(&self) -> bool {
         matches!(self, Self::RestrictedEndpoint(_))
+    }
+
+    /// The MCP's tailnet could not carry the request, see
+    /// [`UpstreamError::Tailnet`].
+    pub fn is_tailnet_error(&self) -> bool {
+        matches!(self, Self::Tailnet(_))
     }
 
     /// The error of a built-in MCP, when that is what failed.

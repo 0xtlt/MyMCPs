@@ -157,6 +157,8 @@ fn oauth_fetch_error(error: FetchError) -> HttpFetchError {
         | FetchError::Offline
         | FetchError::InvalidRedirectUrl
         | FetchError::BodyNotAllowed
+        | FetchError::Overlay { .. }
+        | FetchError::OverlayTerminated { .. }
         | FetchError::InvalidHeader { .. } => HttpFetchError::network(error),
         other => HttpFetchError::other(other),
     }
@@ -169,25 +171,37 @@ fn oauth_fetch_error(error: FetchError) -> HttpFetchError {
 /// MCP's own host pass: the operator entered that one.
 struct OAuthEndpoints {
     fetcher: Fetcher,
-    /// Refuses a discovered URL that leads into a network the MCP is not part of.
-    guard: DiscoveredEndpointGuard,
+    /// Refuses a discovered URL that leads into a network the MCP is not part
+    /// of. `None` for an MCP that is in a private network, as one on a
+    /// tailnet is: nothing is refused, as for an MCP on a private address.
+    guard: Option<DiscoveredEndpointGuard>,
 }
 
 impl OAuthEndpoints {
+    async fn check(&self, target: &Url, label: &str) -> Result<(), RestrictedEndpointError> {
+        match &self.guard {
+            Some(guard) => guard.assert_allowed(target, label).await,
+            None => Ok(()),
+        }
+    }
+
     async fn assert_allowed(&self, target: &Url, label: &str) -> Result<(), UpstreamError> {
-        Ok(self.guard.assert_allowed(target, label).await?)
+        Ok(self.check(target, label).await?)
     }
 }
 
 impl HttpFetch for OAuthEndpoints {
     async fn fetch(&self, request: HttpRequest) -> Result<HttpResponse, HttpFetchError> {
-        self.guard
-            .assert_allowed(&request.url, "OAuth endpoint")
+        self.check(&request.url, "OAuth endpoint")
             .await
             .map_err(HttpFetchError::other)?;
         // The name was checked a moment ago, and is resolved again to
         // connect: whoever answers for it may say something else by then.
-        let fetcher = if self.guard.must_be_public(&request.url).await {
+        let public_only = match &self.guard {
+            Some(guard) => guard.must_be_public(&request.url).await,
+            None => false,
+        };
+        let fetcher = if public_only {
             self.fetcher.public_only()
         } else {
             self.fetcher.clone()
@@ -427,7 +441,7 @@ fn token_expiry(expires_in: Option<f64>) -> Timestamp {
 }
 
 impl Upstream {
-    fn oauth_endpoints_for(&self, mcp: &Mcp) -> Result<OAuthEndpoints, UpstreamError> {
+    async fn oauth_endpoints_for(&self, mcp: &Mcp) -> Result<OAuthEndpoints, UpstreamError> {
         let http_url = present(&mcp.http_url).filter(|_| mcp.transport == McpTransport::Http);
         let Some(http_url) = http_url else {
             return Err(UpstreamError::other(
@@ -435,9 +449,17 @@ impl Upstream {
             ));
         };
         let mcp_url = parse_http_url(http_url, "MCP URL")?;
+        // An MCP on a tailnet is in a private network: its whole flow goes
+        // through the tailnet, which carries what its devices serve.
+        if let Some(fetcher) = self.tailnet_fetcher(mcp, &mcp_url).await? {
+            return Ok(OAuthEndpoints {
+                fetcher,
+                guard: None,
+            });
+        }
         Ok(OAuthEndpoints {
             fetcher: self.fetcher.clone(),
-            guard: self.addresses.discovered_endpoint_guard(&mcp_url),
+            guard: Some(self.addresses.discovered_endpoint_guard(&mcp_url)),
         })
     }
 
@@ -783,7 +805,7 @@ impl Upstream {
             return self.start_builtin_oauth_flow(session, mcp);
         }
 
-        let endpoints = self.oauth_endpoints_for(mcp)?;
+        let endpoints = self.oauth_endpoints_for(mcp).await?;
         let redirect_uri = self.oauth_redirect_uri(mcp)?;
         let context = self.discover_oauth_context(mcp, &endpoints).await?;
         let issuer = authorization_server(&context.authorization_server_url)?;
@@ -956,7 +978,7 @@ impl Upstream {
             ));
         };
 
-        let endpoints = self.oauth_endpoints_for(mcp)?;
+        let endpoints = self.oauth_endpoints_for(mcp).await?;
         let metadata = self
             .metadata_for_authorization_server(mcp, &oauth.authorization_server_url, &endpoints)
             .await?;
@@ -1128,7 +1150,7 @@ impl Upstream {
 
         // The token endpoint is discovered again for every refresh, so it is checked
         // again as well, as is the saved resource indicator.
-        let endpoints = self.oauth_endpoints_for(&mcp)?;
+        let endpoints = self.oauth_endpoints_for(&mcp).await?;
         let metadata = self
             .metadata_for_authorization_server(&mcp, &authorization_server_url, &endpoints)
             .await?;
@@ -1164,6 +1186,18 @@ impl Upstream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_request_an_overlay_could_not_carry_is_a_network_error() {
+        let overlay = || FetchError::Overlay {
+            label: "tailnet \"Office\"".to_owned(),
+            reason: "no connection within 10 s".to_owned(),
+        };
+        assert!(oauth_fetch_error(overlay()).is_network());
+        assert!(oauth_fetch_error(FetchError::Offline).is_network());
+        // A refusal of the gateway's own is not one.
+        assert!(!oauth_fetch_error(FetchError::Timeout).is_network());
+    }
 
     #[test]
     fn writes_an_origin_without_its_trailing_slash() {

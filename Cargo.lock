@@ -1626,6 +1626,7 @@ dependencies = [
  "mymcps-core",
  "mymcps-node",
  "mymcps-sandbox",
+ "mymcps-tailnet",
  "mymcps-upstream",
  "mymcps-web",
  "rpassword",
