@@ -1888,6 +1888,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "mymcps-tailnet"
+version = "0.4.2"
+dependencies = [
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "mymcps-vine",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "mymcps-upstream"
 version = "0.4.2"
 dependencies = [
