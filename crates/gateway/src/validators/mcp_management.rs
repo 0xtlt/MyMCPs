@@ -16,7 +16,7 @@ use vine::{FieldRef, MessagesProvider, Rule, Validator};
 
 /// The arguments the create and update tools share, besides `name` and
 /// `transport`, which only the first requires.
-const SHARED_ARGUMENTS: [&str; 12] = [
+const SHARED_ARGUMENTS: [&str; 13] = [
     "description",
     "url",
     "npm_package",
@@ -29,6 +29,7 @@ const SHARED_ARGUMENTS: [&str; 12] = [
     "header_value",
     "enabled",
     "timeout_seconds",
+    "tailnet",
 ];
 
 /// An agent that gets an argument wrong reads one sentence saying what that
@@ -148,6 +149,15 @@ fn fields(create: bool) -> Vec<(&'static str, vine::Schema)> {
         ),
         ("enabled", vine::boolean().strict().optional().into()),
         (
+            "tailnet",
+            vine::string()
+                .trim()
+                .max_length(40)
+                .nullable()
+                .optional()
+                .into(),
+        ),
+        (
             "timeout_seconds",
             vine::number()
                 .strict()
@@ -171,7 +181,7 @@ fn fields_object(create: bool, with_slug: bool) -> vine::VineObject {
     vine::object(properties).use_rule(only_arguments(allowed))
 }
 
-const FIELD_MESSAGES: [(&str, &str); 16] = [
+const FIELD_MESSAGES: [(&str, &str); 17] = [
     (
         "slug",
         "slug must be the slug of an MCP, from mcp_registry_list",
@@ -220,6 +230,10 @@ const FIELD_MESSAGES: [(&str, &str); 16] = [
         "header_value must be a string of at most 4000 characters",
     ),
     ("enabled", "enabled must be true or false"),
+    (
+        "tailnet",
+        "tailnet must be the name of a tailnet of the team, or null for the internet",
+    ),
     (
         "timeout_seconds",
         "timeout_seconds must be a whole number of seconds, 1 or more, or null for the default",

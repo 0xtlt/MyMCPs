@@ -333,7 +333,7 @@ impl Team {
 
         // Also what the account made in a team it had left since: a row
         // goes with the account that made it.
-        for table in ["mcps", "access_tokens", "invites"] {
+        for table in ["mcps", "access_tokens", "invites", "tailnets"] {
             sqlx::query(sqlx::AssertSqlSafe(format!(
                 "update `{table}` set `created_by` = (\
                    select `team_user`.`user_id` from `team_user` \

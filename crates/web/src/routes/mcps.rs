@@ -11,7 +11,6 @@ use axum::routing::{get, post, put};
 use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use mymcps_builtin::{BuiltinMcpDefinition, BuiltinOauthConfig, BuiltinPasswordConfig};
-use mymcps_core::{Core, Db};
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, Tailnet};
 use mymcps_core::redaction::{
     sanitize_diagnostic, sanitize_diagnostic_with, sanitize_mcp_diagnostic,
@@ -20,6 +19,7 @@ use mymcps_core::redaction::{
 use mymcps_core::secrets::{
     EnvironmentInput, decrypt_environment, environment_has_name, merge_environment,
 };
+use mymcps_core::{Core, Db};
 use mymcps_net::parse_http_url;
 use mymcps_upstream::Upstream;
 use mymcps_upstream::validators::{OAUTH_CALLBACK_VALIDATOR, OAUTH_START_VALIDATOR};
@@ -47,8 +47,7 @@ use crate::validators::route_params::record_id;
 use crate::validators::session::FLASHED_RECORD_ID_VALIDATOR;
 use crate::views::mcps::{
     CreateDialog, Dialog, EDIT_DIALOG_ID, EditDialog, FormValues, McpForm, McpView, McpsPage,
-    TailnetChoice,
-    PublicApp, ROWS_PER_PAGE, create_fragment, edit_fragment, mcps_page,
+    PublicApp, ROWS_PER_PAGE, TailnetChoice, create_fragment, edit_fragment, mcps_page,
 };
 use crate::views::shell::PageContext;
 
@@ -926,8 +925,7 @@ fn refused_create(
     error: &ValidationError,
     tailnets: Vec<TailnetChoice>,
 ) -> Response {
-    let form =
-        McpForm::refused(FormValues::from_input(input), error).with_tailnets(tailnets);
+    let form = McpForm::refused(FormValues::from_input(input), error).with_tailnets(tailnets);
     // The form says which template it started from. A built-in MCP has one
     // of its own whatever the form says.
     let template = match form.values.transport {
@@ -1016,13 +1014,10 @@ fn refused_update(
     session: &Session,
     headers: &HeaderMap,
     mcp: &Mcp,
-    input: &Map<String, Value>,
-    error: &ValidationError,
-    tailnets: Vec<TailnetChoice>,
+    form: McpForm,
 ) -> Response {
     let tool_count = state.known_tool_counts().get(&mcp.id).copied();
-    let view = McpView::of(&state.upstream, mcp, tool_count).through(&tailnets);
-    let form = McpForm::refused(FormValues::from_input(input), error).with_tailnets(tailnets);
+    let view = McpView::of(&state.upstream, mcp, tool_count).through(&form.tailnets);
     let dialog = edit_fragment(
         context,
         &EditDialog {
@@ -1062,8 +1057,10 @@ pub async fn update(
         Ok(payload) => payload,
         Err(error) => {
             let error = refusal(error)?;
+            let form =
+                McpForm::refused(FormValues::from_input(&input), &error).with_tailnets(tailnets);
             return Ok(refused_update(
-                &state, &context, &session, &headers, &saved, &input, &error, tailnets,
+                &state, &context, &session, &headers, &saved, form,
             ));
         }
     };
@@ -1075,8 +1072,10 @@ pub async fn update(
     match assign_mcp_from_payload(&state.upstream, &mut mcp, &payload, Some(saved.id)).await {
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
+            let form =
+                McpForm::refused(FormValues::from_input(&input), &error).with_tailnets(tailnets);
             return Ok(refused_update(
-                &state, &context, &session, &headers, &saved, &input, &error, tailnets,
+                &state, &context, &session, &headers, &saved, form,
             ));
         }
         Err(AssignError::Database(error)) => return Err(error.into()),

@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use mymcps_core::models::{Mcp, McpStatus, McpTransport, Team};
+use mymcps_core::models::{Mcp, McpStatus, McpTransport, Tailnet, Team};
 use mymcps_core::redaction::{sanitize_diagnostic, sanitize_mcp_diagnostic};
 use mymcps_gateway::mcp_management::{
     ManagementActor, ManagementError, McpFields, McpRegistryManager,
@@ -31,6 +31,9 @@ const BUILTIN_REFUSAL: &str = "Built-in MCPs cannot be created or changed with t
 const NPM_REFUSAL: &str = "Adding an npm MCP, or changing the package, version, arguments or environment variables of one, runs code on the server, so it is not done through these tools. Ask the user to do it on the MCPs page of MyMCPs. You can still list, rename, enable, disable, test and delete an npm MCP.";
 
 /// What an agent is told when the address of an MCP is one it may not set.
+/// What an agent is told when it names a tailnet for an MCP that is not an HTTP one.
+const TAILNET_HTTP_ONLY: &str = "Only an HTTP MCP can be reached through a tailnet.";
+
 const PRIVATE_URL_REFUSAL: &str = "Invalid url: the host is a loopback, private or link-local address, or a name that resolves to one. Ask the user to add an MCP on such an address on the MCPs page of MyMCPs.";
 
 /// The MCPs of a team, managed by the agent of an access token.
@@ -164,7 +167,11 @@ fn changes_package(saved: &Mcp, fields: &McpFields) -> bool {
 /// The form of the MCPs page, filled in from what the agent gave over what
 /// is saved. A new MCP signs in with `auto` and is enabled, as the create
 /// form starts.
-fn form_input(saved: Option<&Mcp>, fields: &McpFields) -> Map<String, Value> {
+fn form_input(
+    saved: Option<&Mcp>,
+    fields: &McpFields,
+    tailnet_id: Option<i64>,
+) -> Map<String, Value> {
     let mut input = Map::new();
     let mut put = |name: &str, value: Value| {
         input.insert(name.to_owned(), value);
@@ -200,6 +207,10 @@ fn form_input(saved: Option<&Mcp>, fields: &McpFields) -> Map<String, Value> {
             put("enabled", json!(true));
         }
     }
+
+    // The tailnet the caller settled on, the saved one when the agent left
+    // it out: the form names it by its id, as its Network field does.
+    put("tailnetId", json!(tailnet_id));
 
     let given = |put: &mut dyn FnMut(&str, Value), name: &str, value: &Option<String>| {
         if let Some(value) = value {
@@ -307,6 +318,42 @@ impl WebMcpRegistry {
         Ok(())
     }
 
+    /// The id of the tailnet of the team that an agent names. A blank name is
+    /// the internet. A team's tailnets are the only ones it can name.
+    async fn resolve_tailnet(
+        &self,
+        actor: &ManagementActor,
+        name: &str,
+    ) -> Result<Option<i64>, ManagementError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Ok(None);
+        }
+        let tailnets = Tailnet::of_team(&*self.upstream.core().db, actor.team_id)
+            .await
+            .map_err(failed)?;
+        match tailnets
+            .iter()
+            .find(|tailnet| tailnet.name.eq_ignore_ascii_case(name))
+        {
+            Some(tailnet) => Ok(Some(tailnet.id)),
+            None => Err(refused(if tailnets.is_empty() {
+                format!(
+                    "Tailnet \"{name}\" was not found: this team has no tailnet. The user connects one on the Tailnets page of MyMCPs."
+                )
+            } else {
+                format!(
+                    "Tailnet \"{name}\" was not found in this team. Its tailnets: {}.",
+                    tailnets
+                        .iter()
+                        .map(|tailnet| tailnet.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })),
+        }
+    }
+
     async fn find(&self, actor: &ManagementActor, slug: &str) -> Result<Mcp, ManagementError> {
         let mcp: Option<Mcp> =
             sqlx::query_as("select * from `mcps` where `team_id` = ? and `slug` = ? limit 1")
@@ -323,7 +370,15 @@ impl WebMcpRegistry {
     }
 
     /// What an agent may know of an MCP.
-    fn summary(&self, mcp: &Mcp) -> Value {
+    async fn summary(&self, mcp: &Mcp) -> Value {
+        let tailnet = match mcp.tailnet_id {
+            Some(id) => Tailnet::find(&*self.upstream.core().db, id)
+                .await
+                .ok()
+                .flatten()
+                .map(|tailnet| tailnet.name),
+            None => None,
+        };
         let tool_count = self.upstream.known_tool_counts().get(&mcp.id).copied();
         let view = McpView::of(&self.upstream, mcp, tool_count);
         let builtin = mcp.transport == McpTransport::Builtin;
@@ -351,6 +406,8 @@ impl WebMcpRegistry {
             "oauth_connected": uses_oauth(&self.upstream, mcp) && view.is_connected(),
             "oauth_required": mcp.oauth_required,
             "tool_count": view.tool_count,
+            // The Tailscale tailnet its requests go through, or null for the internet.
+            "tailnet": tailnet,
             // What a tool call waits, the default included.
             "timeout_seconds": (!builtin).then(|| mcp.tool_timeout().as_secs()),
         })
@@ -426,7 +483,11 @@ impl McpRegistryManager for WebMcpRegistry {
         .fetch_all(&*self.upstream.core().db)
         .await
         .map_err(failed)?;
-        Ok(json!({ "mcps": mcps.iter().map(|mcp| self.summary(mcp)).collect::<Vec<_>>() }))
+        let mut summaries = Vec::with_capacity(mcps.len());
+        for mcp in &mcps {
+            summaries.push(self.summary(mcp).await);
+        }
+        Ok(json!({ "mcps": summaries }))
     }
 
     async fn create(
@@ -437,7 +498,11 @@ impl McpRegistryManager for WebMcpRegistry {
         if fields.transport == Some(McpTransport::Npm) || names_npm_setting(&fields) {
             return Err(refused(NPM_REFUSAL));
         }
-        let input = form_input(None, &fields);
+        let tailnet_id = match &fields.tailnet {
+            Some(Some(name)) => self.resolve_tailnet(actor, name).await?,
+            _ => None,
+        };
+        let input = form_input(None, &fields, tailnet_id);
         let payload = validated(&CREATE_MCP_VALIDATOR, &input)?;
         self.ensure_public_url(&payload).await?;
         let mut mcp = Mcp {
@@ -455,7 +520,7 @@ impl McpRegistryManager for WebMcpRegistry {
 
         self.test_row(&mut mcp).await?;
         Ok(json!({
-            "mcp": self.summary(&mcp),
+            "mcp": self.summary(&mcp).await,
             "test": self.test_report(&mcp),
         }))
     }
@@ -481,7 +546,18 @@ impl McpRegistryManager for WebMcpRegistry {
             return Err(refused(NPM_REFUSAL));
         }
 
-        let input = form_input(Some(&saved), &fields);
+        let tailnet_id = match &fields.tailnet {
+            Some(Some(name)) => self.resolve_tailnet(actor, name).await?,
+            Some(None) => None,
+            None => saved.tailnet_id,
+        };
+        let transport = fields.transport.unwrap_or(saved.transport);
+        if transport != McpTransport::Http
+            && matches!(&fields.tailnet, Some(Some(name)) if !name.trim().is_empty())
+        {
+            return Err(refused(TAILNET_HTTP_ONLY));
+        }
+        let input = form_input(Some(&saved), &fields, tailnet_id);
         let payload = validated(&UPDATE_MCP_VALIDATOR, &input)?;
         // The address of an MCP that is left as it is was set by a person.
         if payload.http_url.as_deref().map(str::trim) != saved.http_url.as_deref().map(str::trim)
@@ -540,7 +616,7 @@ impl McpRegistryManager for WebMcpRegistry {
             ));
         }
         Ok(json!({
-            "mcp": self.summary(&mcp),
+            "mcp": self.summary(&mcp).await,
             "test": self.test_report(&mcp),
             "cleared_secrets": cleared,
             "previous_slug": (mcp.slug != saved.slug).then_some(saved.slug),
@@ -565,7 +641,7 @@ impl McpRegistryManager for WebMcpRegistry {
         let mut mcp = self.find(actor, slug).await?;
         self.test_row(&mut mcp).await?;
         let mut report = self.test_report(&mcp);
-        report["mcp"] = self.summary(&mcp);
+        report["mcp"] = self.summary(&mcp).await;
         Ok(report)
     }
 
@@ -587,7 +663,7 @@ impl McpRegistryManager for WebMcpRegistry {
         Ok(json!({
             "mcp": { "id": mcp.id, "name": mcp.name, "slug": mcp.slug },
             "uses_oauth": true,
-            "connected": self.summary(&mcp)["oauth_connected"],
+            "connected": self.summary(&mcp).await["oauth_connected"],
             "auth_link": link,
             "instructions": format!(
                 "Give this link to the user. They must be signed in to MyMCPs with the team {} selected; the link opens the dialog of this MCP, where they press Connect and authorize the access. Once they did, test the MCP again.",

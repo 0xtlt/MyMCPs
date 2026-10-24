@@ -78,9 +78,7 @@ impl TailnetRow {
     /// The name of this server in the tailnet, once it is connected.
     fn device(&self) -> Option<&str> {
         match &self.state {
-            Some(TailnetState::Running { dns_name, .. }) if !dns_name.is_empty() => {
-                Some(dns_name)
-            }
+            Some(TailnetState::Running { dns_name, .. }) if !dns_name.is_empty() => Some(dns_name),
             _ => None,
         }
     }
@@ -174,7 +172,7 @@ impl ConnectForm {
     fn unshown(&self) -> Vec<&str> {
         self.errors
             .iter()
-            .filter(|(field, _)| !["name", "method", "authKey", "controlUrl"].contains(&field.as_str()))
+            .filter(|(field, _)| !["name", "authKey", "controlUrl"].contains(&field.as_str()))
             .map(|(_, message)| message.as_str())
             .collect()
     }
@@ -338,7 +336,12 @@ fn dialog_header(title: &str, subtitle: &str) -> Markup {
     }
 }
 
-fn method_choice(form: &ConnectForm, method: SignInMethod, title: &str, description: &str) -> Markup {
+fn method_choice(
+    form: &ConnectForm,
+    method: SignInMethod,
+    title: &str,
+    description: &str,
+) -> Markup {
     let value = match method {
         SignInMethod::Link => "link",
         SignInMethod::Key => "key",
@@ -474,7 +477,11 @@ mod tests {
         });
         assert!(web.sign_in_url().is_some());
         assert_eq!(web.standing().note, None);
-        for hostile in ["javascript:alert(1)", "data:text/html,x", "file:///etc/passwd"] {
+        for hostile in [
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "file:///etc/passwd",
+        ] {
             let row = row(TailnetState::NeedsLogin {
                 auth_url: Url::parse(hostile).ok(),
             });

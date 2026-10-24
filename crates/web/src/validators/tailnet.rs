@@ -132,7 +132,9 @@ mod tests {
     #[test]
     fn reads_a_tailnet_with_either_sign_in_method() {
         let link = CREATE_TAILNET_VALIDATOR
-            .validate(&json!({ "name": "  pro ", "method": "link", "authKey": null, "controlUrl": null }))
+            .validate(
+                &json!({ "name": "  pro ", "method": "link", "authKey": null, "controlUrl": null }),
+            )
             .unwrap();
         assert_eq!(link["name"], "pro");
         let key: TailnetPayload = CREATE_TAILNET_VALIDATOR

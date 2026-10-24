@@ -93,12 +93,7 @@ async fn rows(state: &AppState, team_id: i64) -> Result<Vec<TailnetRow>, sqlx::E
         names.entry(tailnet_id).or_default().push(name);
     }
     let running = state.upstream.tailnets();
-    let states = join_all(
-        tailnets
-            .iter()
-            .map(|tailnet| state_of(running, tailnet.id)),
-    )
-    .await;
+    let states = join_all(tailnets.iter().map(|tailnet| state_of(running, tailnet.id))).await;
     Ok(tailnets
         .into_iter()
         .zip(states)
@@ -200,7 +195,13 @@ fn form_of(input: &serde_json::Map<String, Value>, errors: Vec<(String, String)>
         "key" => SignInMethod::Key,
         _ => SignInMethod::Link,
     };
-    ConnectForm::refused(&text("name"), method, &text("controlUrl"), errors)
+    // A secret typed into the address is not sent back to the page.
+    let control_url = text("controlUrl");
+    let control_url = match Url::parse(&control_url) {
+        Ok(url) if !url.username().is_empty() || url.password().is_some() => String::new(),
+        _ => control_url,
+    };
+    ConnectForm::refused(&text("name"), method, &control_url, errors)
 }
 
 /// What a person is told of tailscaled failing: its words, without the key
@@ -212,10 +213,14 @@ fn describe(error: &mymcps_tailnet::Error, key: Option<&str>) -> String {
 /// Take back a tailnet that could not be connected: its row, and whatever
 /// its daemon wrote to its directory.
 async fn abandon(state: &AppState, tailnet: &Tailnet) {
+    state.upstream.forget_tailnet(tailnet.id);
     if let Some(tailnets) = state.upstream.tailnets()
         && let Err(error) = tailnets.remove(tailnet.id).await
     {
-        tracing::warn!(tailnet = tailnet.id, "could not clean up a tailnet: {error}");
+        tracing::warn!(
+            tailnet = tailnet.id,
+            "could not clean up a tailnet: {error}"
+        );
     }
     if let Err(error) = tailnet.delete(&*state.core.db).await {
         tracing::warn!(tailnet = tailnet.id, "could not delete a tailnet: {error}");
@@ -234,7 +239,13 @@ pub async fn store(
 ) -> Result<Response, AppError> {
     let team = context.current_team()?;
     let Some(tailnets) = state.upstream.tailnets() else {
-        return Ok(refused_form(&context, &session, &headers, &input, TAILSCALE_OFF));
+        return Ok(refused_form(
+            &context,
+            &session,
+            &headers,
+            &input,
+            TAILSCALE_OFF,
+        ));
     };
     let payload: TailnetPayload =
         match CREATE_TAILNET_VALIDATOR.validate_as(&Value::Object(input.clone())) {
@@ -246,7 +257,12 @@ pub async fn store(
                     .iter()
                     .map(|message| (message.field.clone(), message.message.clone()))
                     .collect();
-                return Ok(refused(&context, &session, &headers, form_of(&input, errors)));
+                return Ok(refused(
+                    &context,
+                    &session,
+                    &headers,
+                    form_of(&input, errors),
+                ));
             }
         };
     // The key is only read for the method that uses it.
@@ -338,7 +354,10 @@ pub async fn store(
     .await;
     if let Err(error) = connected {
         let message = describe(&error, key.as_deref());
-        tracing::warn!(tailnet = tailnet.id, "could not connect a tailnet: {message}");
+        tracing::warn!(
+            tailnet = tailnet.id,
+            "could not connect a tailnet: {message}"
+        );
         abandon(&state, &tailnet).await;
         return Ok(refused_form(
             &context,
@@ -396,7 +415,12 @@ pub async fn destroy(
         return Ok(refuse(NOT_FOUND));
     };
 
-    let users: Vec<String> = tailnet.mcps(db).await?.into_iter().map(|mcp| mcp.name).collect();
+    let users: Vec<String> = tailnet
+        .mcps(db)
+        .await?
+        .into_iter()
+        .map(|mcp| mcp.name)
+        .collect();
     if !users.is_empty() {
         return Ok(refuse(&format!(
             "{} is used by {}. Move {} to another network first.",
@@ -421,6 +445,8 @@ pub async fn destroy(
             tailnet.name
         )));
     }
+    // The connections an MCP kept through it end with it.
+    state.upstream.forget_tailnet(tailnet.id);
     if let Some(tailnets) = state.upstream.tailnets()
         && let Err(error) = tailnets.remove(tailnet.id).await
     {
@@ -459,8 +485,12 @@ pub async fn discard_removed(state: &AppState, before: &BTreeSet<i64>) {
         }
     };
     for id in before.difference(&after) {
+        state.upstream.forget_tailnet(*id);
         if let Err(error) = tailnets.remove(*id).await {
-            tracing::warn!(tailnet = id, "could not delete the state of a tailnet: {error}");
+            tracing::warn!(
+                tailnet = id,
+                "could not delete the state of a tailnet: {error}"
+            );
         }
     }
 }
@@ -478,13 +508,17 @@ mod tests {
         assert_eq!(long.len(), 47);
         for name in ["pro", "a - b", &"abc-".repeat(10)] {
             let hostname = hostname_for(name);
-            assert!(hostname.len() <= 63 && !hostname.ends_with('-'), "{hostname}");
+            assert!(
+                hostname.len() <= 63 && !hostname.ends_with('-'),
+                "{hostname}"
+            );
         }
     }
 
     #[test]
     fn lists_the_mcps_that_keep_a_tailnet() {
-        let names = |count: usize| -> Vec<String> { (1..=count).map(|n| format!("M{n}")).collect() };
+        let names =
+            |count: usize| -> Vec<String> { (1..=count).map(|n| format!("M{n}")).collect() };
         assert_eq!(names_sentence(&names(1)), "M1");
         assert_eq!(names_sentence(&names(2)), "M1 and M2");
         assert_eq!(names_sentence(&names(3)), "M1, M2 and M3");

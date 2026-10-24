@@ -6,7 +6,7 @@
 mod support;
 
 use mymcps_core::models::{
-    McpAuthType, McpStatus, McpTransport, OauthClient, Team, TeamRole, User,
+    McpAuthType, McpStatus, McpTransport, OauthClient, Tailnet, Team, TeamRole, User,
 };
 use mymcps_gateway::access_token::{self, NewOauthGrant};
 use mymcps_gateway::mcp_management::{ManagementActor, ManagementError, McpRegistryManager};
@@ -760,6 +760,149 @@ async fn sets_how_long_a_tool_call_waits_and_keeps_it_when_not_given() {
     .await;
     assert_eq!(result["mcp"]["timeout_seconds"], 60);
     assert_eq!(mcp_named(&gateway, "docs").await.tool_timeout_seconds, None);
+}
+
+/// A tailnet of a team, as if connected earlier.
+async fn tailnet_in(gateway: &TestGateway, team_id: i64, user: &User, name: &str) -> Tailnet {
+    let mut tailnet = Tailnet {
+        team_id,
+        name: name.into(),
+        hostname: format!("mymcps-{}", name.to_lowercase()),
+        created_by: user.id,
+        ..Default::default()
+    };
+    tailnet.insert(&**gateway.db()).await.unwrap();
+    tailnet
+}
+
+#[tokio::test]
+async fn reads_and_sets_the_tailnet_of_an_http_mcp_by_name() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    bearer_mcp(&gateway, &admin).await;
+    let pro = tailnet_in(&gateway, Team::ROOT_ID, &admin, "Pro").await;
+    let other_team = create_team(&gateway, "Other").await;
+    tailnet_in(&gateway, other_team.id, &admin, "Theirs").await;
+
+    let listed = call_ok(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    assert_eq!(listed["mcps"][0]["tailnet"], Value::Null);
+
+    // By name, whatever its case.
+    let result = call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "tailnet": "pro" }),
+    )
+    .await;
+    assert_eq!(result["mcp"]["tailnet"], "Pro");
+    assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, Some(pro.id));
+    let listed = call_ok(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    assert_eq!(listed["mcps"][0]["tailnet"], "Pro");
+
+    // Another change leaves it as it is.
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "description": "New" }),
+    )
+    .await;
+    assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, Some(pro.id));
+
+    // The team's own tailnets only, and the refusal says which they are.
+    for name in ["Theirs", "nope"] {
+        let refused = call_refused(
+            &gateway,
+            &manager,
+            "mcp_registry_update",
+            json!({ "slug": "docs", "tailnet": name }),
+        )
+        .await;
+        assert!(
+            refused.contains(&format!("Tailnet \"{name}\" was not found in this team")),
+            "{refused}"
+        );
+        assert!(refused.contains("Its tailnets: Pro."), "{refused}");
+    }
+    assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, Some(pro.id));
+
+    // A new MCP can name one, and null or an empty name goes back to the internet.
+    let created = call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_create",
+        json!({ "name": "Grafana", "transport": "http", "url": "https://grafana.tail1234.ts.net/mcp", "tailnet": "Pro" }),
+    )
+    .await;
+    assert_eq!(created["mcp"]["tailnet"], "Pro");
+    assert_eq!(
+        mcp_named(&gateway, "grafana").await.tailnet_id,
+        Some(pro.id)
+    );
+    for cleared in [json!(null), json!("")] {
+        call_ok(
+            &gateway,
+            &manager,
+            "mcp_registry_update",
+            json!({ "slug": "docs", "tailnet": cleared }),
+        )
+        .await;
+        assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, None);
+        call_ok(
+            &gateway,
+            &manager,
+            "mcp_registry_update",
+            json!({ "slug": "docs", "tailnet": "Pro" }),
+        )
+        .await;
+    }
+
+    // A tailnet is a name.
+    let refused = call_refused(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "tailnet": 7 }),
+    )
+    .await;
+    assert!(
+        refused.contains("tailnet must be the name of a tailnet of the team"),
+        "{refused}"
+    );
+}
+
+#[tokio::test]
+async fn names_no_tailnet_for_a_team_that_has_none_and_none_for_an_npm_mcp() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    bearer_mcp(&gateway, &admin).await;
+
+    let refused = call_refused(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "tailnet": "pro" }),
+    )
+    .await;
+    assert!(refused.contains("this team has no tailnet"), "{refused}");
+
+    tailnet_in(&gateway, Team::ROOT_ID, &admin, "pro").await;
+    let package = package_mcp(&gateway, &admin).await;
+    let refused = call_refused(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": package.slug, "tailnet": "pro" }),
+    )
+    .await;
+    assert!(
+        refused.contains("Only an HTTP MCP can be reached through a tailnet"),
+        "{refused}"
+    );
+    assert_eq!(mcp_named(&gateway, &package.slug).await.tailnet_id, None);
 }
 
 #[tokio::test]

@@ -29,6 +29,7 @@ use crate::routes::FeatureRoutes;
 use crate::routes::invites::{CREATED_INVITE_KEY, forwarded};
 use crate::routes::logs::{fragment_target, uncached};
 use crate::routes::settings::{PasswordCheck, confirm_current_password, wrong_current_password};
+use crate::routes::tailnets;
 use crate::session::Session;
 use crate::state::AppState;
 use crate::validators::route_params::record_id;
@@ -342,6 +343,7 @@ pub async fn destroy(
         return Ok(refuse("A personal team cannot be deleted"));
     }
 
+    let before = tailnets::all_ids(&state).await?;
     let mut transaction = state.core.db.begin().await?;
     let mcps: i64 = sqlx::query_scalar("select count(*) from `mcps` where `team_id` = ?")
         .bind(team.id())
@@ -352,6 +354,8 @@ pub async fn destroy(
     }
     team.team.delete(&mut *transaction).await?;
     transaction.commit().await?;
+    // Its tailnets went with it: their daemons leave the tailnets too.
+    tailnets::discard_removed(&state, &before).await;
 
     // The next page is drawn in another team of theirs.
     session.forget(crate::auth::TEAM_KEY);
@@ -879,12 +883,17 @@ pub async fn destroy_user(
         PasswordCheck::Limited(response) => return Ok(response),
     }
 
+    let before = tailnets::all_ids(&state).await?;
     let mut transaction = state.core.db.begin().await?;
     if !still_super_admin(&mut transaction, &actor).await? {
         return Ok(refuse(SUPER_ADMIN_REQUIRED));
     }
     match Team::delete_account(&mut transaction, account.id).await? {
-        Ok(()) => transaction.commit().await?,
+        Ok(()) => {
+            transaction.commit().await?;
+            // The teams the account was alone in went with it, tailnets included.
+            tailnets::discard_removed(&state, &before).await;
+        }
         Err(AccountRemovalRefusal::LastSuperAdmin) => return Ok(refuse(LAST_SUPER_ADMIN)),
     }
 
