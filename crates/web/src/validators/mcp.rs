@@ -82,6 +82,34 @@ fn mcp_endpoint_url() -> vine::Rule {
     })
 }
 
+/// Whether the form names a tailnet: the id of one, as a number or as the text
+/// of a select. Blank is the internet.
+fn names_a_tailnet(field: &vine::FieldContext<'_>) -> bool {
+    match field.parent_get("tailnetId") {
+        Some(Value::Number(_)) => true,
+        Some(Value::String(id)) => !id.trim().is_empty(),
+        _ => false,
+    }
+}
+
+/// The URL of an HTTP MCP is a URL, and on the internet its host has a top
+/// level domain. On a tailnet it may be a MagicDNS short name (`http://nas:8080/mcp`):
+/// the tailnet decides which names are its devices, and refuses the others.
+fn mcp_url_shape() -> vine::Rule {
+    vine::rule(|value, field| {
+        let Some(url) = value.as_str() else {
+            return;
+        };
+        let options = vine::UrlOptions {
+            require_tld: !names_a_tailnet(field),
+            ..vine::UrlOptions::default()
+        };
+        if !vine::helpers::is_url(url, &options) {
+            field.report("The {{ field }} field must be a valid URL", "url");
+        }
+    })
+}
+
 /// The tool call timeout of an MCP stays within what its transport allows:
 /// an npm MCP is a process this server runs for the whole call.
 fn tool_timeout_within_transport() -> vine::Rule {
@@ -153,8 +181,8 @@ fn mcp_payload() -> vine::VineObject {
         "transport" => vine::enum_(["http", "npm", "builtin"]),
         "httpUrl" => vine::string()
             .trim()
-            .url()
             .max_length(2048)
+            .use_rule(mcp_url_shape())
             .use_rule(mcp_endpoint_url())
             .optional()
             .required_when("transport", Operator::Eq, "http"),
@@ -416,6 +444,51 @@ mod tests {
                 .validate(&with(http(), json!({ "httpUrl": http_url })))
                 .unwrap();
             assert_eq!(payload["httpUrl"], http_url);
+        }
+    }
+
+    #[test]
+    fn takes_a_magic_dns_short_name_on_a_tailnet_only() {
+        let short = "http://nas:8080/mcp";
+        // On the internet a host needs a top level domain.
+        for payload in [
+            json!({ "httpUrl": short }),
+            json!({ "httpUrl": short, "tailnetId": null }),
+            json!({ "httpUrl": short, "tailnetId": "" }),
+        ] {
+            let error = CREATE_MCP_VALIDATOR
+                .validate(&with(http(), payload))
+                .unwrap_err();
+            assert_eq!(
+                messages(&error),
+                [("httpUrl", "The httpUrl field must be a valid URL", "url")]
+            );
+        }
+        // On a tailnet, the form sends the id as text, the registry tools as a number.
+        for tailnet_id in [json!("3"), json!(3)] {
+            let payload = CREATE_MCP_VALIDATOR
+                .validate(&with(
+                    http(),
+                    json!({ "httpUrl": short, "tailnetId": tailnet_id }),
+                ))
+                .unwrap();
+            assert_eq!(payload["httpUrl"], short);
+        }
+        // The other checks of the endpoint stay.
+        for (http_url, message) in [
+            ("ftp://nas/mcp", "MCP URL must use HTTP or HTTPS"),
+            (
+                "http://nas/mcp#tools",
+                "MCP URL must not include a fragment",
+            ),
+        ] {
+            let error = CREATE_MCP_VALIDATOR
+                .validate(&with(
+                    http(),
+                    json!({ "httpUrl": http_url, "tailnetId": "3" }),
+                ))
+                .unwrap_err();
+            assert_eq!(messages(&error), [("httpUrl", message, "mcpEndpointUrl")]);
         }
     }
 
