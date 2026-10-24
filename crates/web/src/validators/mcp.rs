@@ -129,6 +129,9 @@ fn mcp_payload() -> vine::VineObject {
             .use_rule(mcp_endpoint_url())
             .optional()
             .required_when("transport", Operator::Eq, "http"),
+        // The tailnet an HTTP MCP is reached through: the id of one of the
+        // team's, which the handler looks up. Blank is the internet.
+        "tailnetId" => vine::number().without_decimals().positive().optional(),
         "npmPackage" => vine::string()
             .trim()
             .max_length(254)
@@ -214,6 +217,9 @@ pub struct McpPayload {
     pub transport: McpTransport,
     #[serde(default)]
     pub http_url: Option<String>,
+    /// The tailnet the MCP is reached through, when it is an HTTP one.
+    #[serde(default)]
+    pub tailnet_id: Option<i64>,
     #[serde(default)]
     pub npm_package: Option<String>,
     #[serde(default)]

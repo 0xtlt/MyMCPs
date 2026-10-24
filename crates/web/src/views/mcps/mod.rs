@@ -22,8 +22,8 @@ use crate::views::shell::{PageContext, app_page};
 
 pub use builtin::{SetupGuide, SignIn, builtin_provider_name, builtin_setup_guide};
 pub use form::{
-    CreateDialog, EditDialog, EnvRow, FormValues, McpForm, create_fragment, edit_fragment,
-    keeps_saved_credentials,
+    CreateDialog, EditDialog, EnvRow, FormValues, McpForm, TailnetChoice, create_fragment,
+    edit_fragment, keeps_saved_credentials,
 };
 
 /// How many MCPs a page of the list holds.
@@ -74,6 +74,10 @@ pub struct McpView {
     pub transport: McpTransport,
     pub builtin_key: Option<String>,
     pub http_url: Option<String>,
+    /// The tailnet it is reached through, when it is.
+    pub tailnet_id: Option<i64>,
+    /// Its name, which [`McpView::through`] sets: the row alone does not say.
+    pub tailnet: Option<String>,
     pub npm_package: Option<String>,
     pub npm_version: Option<String>,
     pub auth_type: McpAuthType,
@@ -118,6 +122,8 @@ impl McpView {
             transport: mcp.transport,
             builtin_key: mcp.builtin_key.clone(),
             http_url: mcp.http_url.clone(),
+            tailnet_id: mcp.tailnet_id,
+            tailnet: None,
             npm_package: mcp.npm_package.clone(),
             npm_version: mcp.npm_version.clone(),
             auth_type: mcp.auth_type,
@@ -151,6 +157,15 @@ impl McpView {
             tool_count,
             icon: icon_of(mcp),
         }
+    }
+
+    /// The view with the name of its tailnet, found among the team's.
+    pub fn through(mut self, tailnets: &[TailnetChoice]) -> Self {
+        self.tailnet = self
+            .tailnet_id
+            .and_then(|id| tailnets.iter().find(|choice| choice.id == id))
+            .map(|choice| choice.name.clone());
+        self
     }
 
     /// Where the MCP is reached, as the list writes it.
@@ -213,6 +228,7 @@ impl McpView {
             self.description.as_deref(),
             self.http_url.as_deref(),
             self.npm_package.as_deref(),
+            self.tailnet.as_deref(),
         ]
         .into_iter()
         .flatten()

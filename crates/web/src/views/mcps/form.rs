@@ -21,6 +21,13 @@ use crate::views::shell::PageContext;
 /// The most environment variables an npm MCP takes.
 const MAX_ENVIRONMENT_VARIABLES: usize = 50;
 
+/// A tailnet of the team an HTTP MCP can be reached through.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TailnetChoice {
+    pub id: i64,
+    pub name: String,
+}
+
 /// One row of the environment editor.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EnvRow {
@@ -37,6 +44,8 @@ pub struct FormValues {
     pub description: String,
     pub transport: McpTransport,
     pub http_url: String,
+    /// The id of the chosen tailnet. Empty: the internet.
+    pub tailnet_id: String,
     pub npm_package: String,
     pub npm_version: String,
     pub npm_args: String,
@@ -66,6 +75,7 @@ impl Default for FormValues {
             description: String::new(),
             transport: McpTransport::Http,
             http_url: String::new(),
+            tailnet_id: String::new(),
             npm_package: String::new(),
             npm_version: String::new(),
             npm_args: String::new(),
@@ -144,6 +154,7 @@ impl FormValues {
             description: mcp.description.clone().unwrap_or_default(),
             transport: mcp.transport,
             http_url: mcp.http_url.clone().unwrap_or_default(),
+            tailnet_id: mcp.tailnet_id.map(|id| id.to_string()).unwrap_or_default(),
             npm_package: mcp.npm_package.clone().unwrap_or_default(),
             npm_version: mcp.npm_version.clone().unwrap_or_default(),
             npm_args: mcp.npm_args.clone(),
@@ -203,6 +214,7 @@ impl FormValues {
             description: text(input, "description"),
             transport: McpTransport::parse(&text(input, "transport")).unwrap_or_default(),
             http_url: text(input, "httpUrl"),
+            tailnet_id: text(input, "tailnetId"),
             npm_package: text(input, "npmPackage"),
             npm_version: text(input, "npmVersion"),
             npm_args: text(input, "npmArgs"),
@@ -229,6 +241,8 @@ impl FormValues {
 #[derive(Debug, Clone, Default)]
 pub struct McpForm {
     pub values: FormValues,
+    /// The tailnets of the team, to choose the network of an HTTP MCP from.
+    pub tailnets: Vec<TailnetChoice>,
     /// The first message of each field that was refused, in field order.
     errors: Vec<(String, String)>,
     /// The fields whose message a control has shown. The others are shown
@@ -244,6 +258,12 @@ impl McpForm {
         }
     }
 
+    /// The form with the tailnets its Network field offers.
+    pub fn with_tailnets(mut self, tailnets: Vec<TailnetChoice>) -> Self {
+        self.tailnets = tailnets;
+        self
+    }
+
     /// A form sent back with what is wrong with it.
     pub fn refused(values: FormValues, error: &ValidationError) -> Self {
         let mut errors: Vec<(String, String)> = Vec::new();
@@ -254,6 +274,7 @@ impl McpForm {
         }
         Self {
             values,
+            tailnets: Vec::new(),
             errors,
             shown: RefCell::default(),
         }
@@ -691,6 +712,35 @@ fn env_row(
     }
 }
 
+/// Which network an HTTP MCP is reached over: the internet, or one of the
+/// tailnets of the team. Only drawn once the team has a tailnet.
+fn network_field(prefix: &str, form: &McpForm, http: bool) -> Markup {
+    if form.tailnets.is_empty() {
+        return html! {};
+    }
+    let id = format!("{prefix}-tailnet");
+    let error = form.error("tailnetId");
+    let chosen = form.values.tailnet_id.as_str();
+    let help = format!("{id}-help");
+    html! {
+        div class="field" data-show-when="transport=http" hidden[!http] {
+            label class="field__label" for=(id) { "Network" }
+            div class="select" {
+                select class="input" id=(id) name="tailnetId" aria-invalid=[error.map(|_| "true")]
+                    aria-describedby=(if error.is_some() { format!("{id}-error {help}") } else { help.clone() }) {
+                    option value="" selected[chosen.is_empty()] { "Internet" }
+                    @for tailnet in &form.tailnets {
+                        option value=(tailnet.id) selected[chosen == tailnet.id.to_string()] { "Tailnet: " (tailnet.name) }
+                    }
+                }
+                (icon("chevron-down"))
+            }
+            @if let Some(message) = error { p class="field__error" id=(format!("{id}-error")) { (message) } }
+            p class="field__help" id=(help) { "Requests to the devices and subnet routes of a tailnet go through it." }
+        }
+    }
+}
+
 /// Transport, its fields and Authentication: what a custom MCP chooses.
 fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup {
     let values = &form.values;
@@ -713,6 +763,8 @@ fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup 
             .error(form.error("httpUrl"))
             .show_when("transport=http", http)
             .render())
+
+        (network_field(prefix, form, http))
 
         div class="stack" data-show-when="transport=npm" hidden[http] {
             (Field::new(format!("{prefix}-npm-package"), "npmPackage", html! { "npm package" })

@@ -1971,6 +1971,7 @@ dependencies = [
  "mymcps-net",
  "mymcps-node",
  "mymcps-strava",
+ "mymcps-tailnet",
  "mymcps-upstream",
  "mymcps-vine",
  "mymcps-web",

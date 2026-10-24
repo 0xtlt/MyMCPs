@@ -11,8 +11,8 @@ use axum::routing::{get, post, put};
 use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use mymcps_builtin::{BuiltinMcpDefinition, BuiltinOauthConfig, BuiltinPasswordConfig};
-use mymcps_core::Core;
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::{Core, Db};
+use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, Tailnet};
 use mymcps_core::redaction::{
     sanitize_diagnostic, sanitize_diagnostic_with, sanitize_mcp_diagnostic,
     sanitize_mcp_diagnostic_with,
@@ -47,6 +47,7 @@ use crate::validators::route_params::record_id;
 use crate::validators::session::FLASHED_RECORD_ID_VALIDATOR;
 use crate::views::mcps::{
     CreateDialog, Dialog, EDIT_DIALOG_ID, EditDialog, FormValues, McpForm, McpView, McpsPage,
+    TailnetChoice,
     PublicApp, ROWS_PER_PAGE, create_fragment, edit_fragment, mcps_page,
 };
 use crate::views::shell::PageContext;
@@ -564,6 +565,25 @@ pub async fn assign_mcp_from_payload(
         mcp.auth_header_value = None;
     }
 
+    // Only an HTTP MCP is reached over a network, and a tailnet is only
+    // ever one of the team's, whatever id the form names.
+    mcp.tailnet_id = match (transport, payload.tailnet_id) {
+        (McpTransport::Http, Some(id)) => {
+            match Tailnet::find_in_team(&*core.db, mcp.team_id, id).await? {
+                Some(tailnet) => Some(tailnet.id),
+                None => {
+                    return Err(ValidationError::single(
+                        "tailnetId",
+                        "tailnet",
+                        "Choose a tailnet of this team, or the internet",
+                    )
+                    .into());
+                }
+            }
+        }
+        _ => None,
+    };
+
     mcp.name = payload.name.clone();
     mcp.slug = unique_slug(&*core.db, mcp.team_id, &payload.name, exclude_id).await?;
     mcp.description = payload
@@ -648,6 +668,19 @@ async fn find_mcp(
     Ok(mcp.filter(|mcp| mcp.team_id == team.id()))
 }
 
+/// The tailnets of a team, for the Network field of the form and for the
+/// list to name the one an MCP goes through.
+async fn tailnet_choices(db: &Db, team_id: i64) -> Result<Vec<TailnetChoice>, sqlx::Error> {
+    Ok(Tailnet::of_team(&**db, team_id)
+        .await?
+        .into_iter()
+        .map(|tailnet| TailnetChoice {
+            id: tailnet.id,
+            name: tailnet.name,
+        })
+        .collect())
+}
+
 /// The registry, where every request of this page ends, with the query
 /// string of the request being answered as the Node app's redirects carried it.
 fn registry(uri: &Uri) -> String {
@@ -725,9 +758,12 @@ async fn registry_page(
             .fetch_all(&*state.core.db)
             .await?;
     let tool_counts = state.known_tool_counts();
+    let tailnets = tailnet_choices(&state.core.db, team.team.id).await?;
     let views: Vec<McpView> = mcps
         .iter()
-        .map(|mcp| McpView::of(&state.upstream, mcp, tool_counts.get(&mcp.id).copied()))
+        .map(|mcp| {
+            McpView::of(&state.upstream, mcp, tool_counts.get(&mcp.id).copied()).through(&tailnets)
+        })
         .collect();
 
     let matching: Vec<&McpView> = views.iter().filter(|mcp| keeps(&query, mcp)).collect();
@@ -760,7 +796,8 @@ async fn registry_page(
         Open::Nothing => render(Dialog::None),
         Open::Gallery => render(Dialog::Gallery),
         Open::Create(template) => {
-            let form = McpForm::new(template.map(FormValues::from_template).unwrap_or_default());
+            let form = McpForm::new(template.map(FormValues::from_template).unwrap_or_default())
+                .with_tailnets(tailnets.clone());
             render(Dialog::Create(&CreateDialog {
                 template,
                 form: &form,
@@ -770,7 +807,7 @@ async fn registry_page(
         }
         Open::Edit(id) => match views.iter().find(|mcp| mcp.id == id) {
             Some(mcp) => {
-                let form = McpForm::new(FormValues::from_mcp(mcp));
+                let form = McpForm::new(FormValues::from_mcp(mcp)).with_tailnets(tailnets.clone());
                 render(Dialog::Edit(&EditDialog {
                     mcp,
                     form: &form,
@@ -843,8 +880,9 @@ pub async fn edit(
     }
 
     let tool_count = state.known_tool_counts().get(&mcp.id).copied();
-    let view = McpView::of(&state.upstream, &mcp, tool_count);
-    let form = McpForm::new(FormValues::from_mcp(&view));
+    let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
+    let view = McpView::of(&state.upstream, &mcp, tool_count).through(&tailnets);
+    let form = McpForm::new(FormValues::from_mcp(&view)).with_tailnets(tailnets);
     Ok(fragment(
         StatusCode::OK,
         edit_fragment(
@@ -882,8 +920,10 @@ fn refused_create(
     headers: &HeaderMap,
     input: &Map<String, Value>,
     error: &ValidationError,
+    tailnets: Vec<TailnetChoice>,
 ) -> Response {
-    let form = McpForm::refused(FormValues::from_input(input), error);
+    let form =
+        McpForm::refused(FormValues::from_input(input), error).with_tailnets(tailnets);
     // The form says which template it started from. A built-in MCP has one
     // of its own whatever the form says.
     let template = match form.values.transport {
@@ -922,6 +962,7 @@ pub async fn store(
     Input(mut input): Input,
 ) -> Result<Response, AppError> {
     let team = context.current_team()?;
+    let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
     list_environment_rows(&mut input);
     let payload: McpPayload = match CREATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
@@ -929,7 +970,7 @@ pub async fn store(
         Err(error) => {
             let error = refusal(error)?;
             return Ok(refused_create(
-                &state, &context, &session, &headers, &input, &error,
+                &state, &context, &session, &headers, &input, &error, tailnets,
             ));
         }
     };
@@ -944,7 +985,7 @@ pub async fn store(
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
             return Ok(refused_create(
-                &state, &context, &session, &headers, &input, &error,
+                &state, &context, &session, &headers, &input, &error, tailnets,
             ));
         }
         Err(AssignError::Database(error)) => return Err(error.into()),
@@ -973,10 +1014,11 @@ fn refused_update(
     mcp: &Mcp,
     input: &Map<String, Value>,
     error: &ValidationError,
+    tailnets: Vec<TailnetChoice>,
 ) -> Response {
     let tool_count = state.known_tool_counts().get(&mcp.id).copied();
-    let view = McpView::of(&state.upstream, mcp, tool_count);
-    let form = McpForm::refused(FormValues::from_input(input), error);
+    let view = McpView::of(&state.upstream, mcp, tool_count).through(&tailnets);
+    let form = McpForm::refused(FormValues::from_input(input), error).with_tailnets(tailnets);
     let dialog = edit_fragment(
         context,
         &EditDialog {
@@ -1009,6 +1051,7 @@ pub async fn update(
         return Ok(not_found(&session, &headers, &uri));
     };
 
+    let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
     list_environment_rows(&mut input);
     let payload: McpPayload = match UPDATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
@@ -1016,7 +1059,7 @@ pub async fn update(
         Err(error) => {
             let error = refusal(error)?;
             return Ok(refused_update(
-                &state, &context, &session, &headers, &saved, &input, &error,
+                &state, &context, &session, &headers, &saved, &input, &error, tailnets,
             ));
         }
     };
@@ -1029,7 +1072,7 @@ pub async fn update(
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
             return Ok(refused_update(
-                &state, &context, &session, &headers, &saved, &input, &error,
+                &state, &context, &session, &headers, &saved, &input, &error, tailnets,
             ));
         }
         Err(AssignError::Database(error)) => return Err(error.into()),
