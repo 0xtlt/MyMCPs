@@ -1821,12 +1821,18 @@ dependencies = [
  "bytes",
  "futures",
  "http",
+ "http-body-util",
  "hyper",
+ "hyper-util",
  "reqwest",
+ "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-rustls",
+ "tower-service",
  "url",
 ]
 
