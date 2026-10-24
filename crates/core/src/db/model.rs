@@ -168,9 +168,44 @@ macro_rules! model {
                 let Some(stored) = self.stored.clone() else {
                     return self.insert(db).await;
                 };
+                self.update_changed(db, stored, |_| {}).await.map(|_| ())
+            }
+
+            /// Write the columns that changed since the row was read, only if
+            /// the row still matches what `condition` appends to the `where`
+            /// clause (each part starting with ` and `), in the one `update`
+            /// statement that writes them: nothing can change the row between
+            /// the check and the write. Returns whether the row was written.
+            /// A row that was never stored, or that no longer matches, is
+            /// left alone, and so is this value. Does nothing, and returns
+            /// `true`, when nothing changed.
+            pub async fn save_if<'e, E>(
+                &mut self,
+                db: E,
+                condition: impl FnOnce(&mut sqlx::QueryBuilder<sqlx::Sqlite>),
+            ) -> Result<bool, sqlx::Error>
+            where
+                E: sqlx::sqlite::SqliteExecutor<'e>,
+            {
+                let Some(stored) = self.stored.clone() else {
+                    return Ok(false);
+                };
+                self.update_changed(db, stored, condition).await
+            }
+
+            async fn update_changed<'e, E>(
+                &mut self,
+                db: E,
+                stored: Box<Self>,
+                condition: impl FnOnce(&mut sqlx::QueryBuilder<sqlx::Sqlite>),
+            ) -> Result<bool, sqlx::Error>
+            where
+                E: sqlx::sqlite::SqliteExecutor<'e>,
+            {
                 if true $( && self.$field == stored.$field )+ {
-                    return Ok(());
+                    return Ok(true);
                 }
+                let touched = self.clone();
                 model!(@touch_updated self $updated);
 
                 let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(concat!("update `", $table, "` set "));
@@ -188,9 +223,14 @@ macro_rules! model {
                 let _ = first;
                 query.push(" where `id` = ");
                 query.push_bind(self.id);
-                query.build().execute(db).await?;
-                self.remember();
-                Ok(())
+                condition(&mut query);
+                let written = query.build().execute(db).await?.rows_affected() > 0;
+                if written {
+                    self.remember();
+                } else {
+                    *self = touched;
+                }
+                Ok(written)
             }
 
             pub async fn delete<'e, E>(&self, db: E) -> Result<(), sqlx::Error>

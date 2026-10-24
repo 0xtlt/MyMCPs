@@ -11,7 +11,7 @@ use mymcps_builtin::oauth::{
     parse_oauth_scopes, refresh_builtin_tokens, requested_builtin_scopes,
 };
 use mymcps_core::crypto::random_base64url;
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::models::{Mcp, McpAuthType, McpOauthBasis, McpStatus, McpTransport};
 use mymcps_core::public_url::PublicUrlError;
 use mymcps_core::{Config, Timestamp};
 use mymcps_mcp_auth::{
@@ -817,6 +817,7 @@ impl Upstream {
             return self.start_builtin_oauth_flow(session, mcp);
         }
 
+        let basis = mcp.oauth_basis();
         let endpoints = self.oauth_endpoints_for(mcp).await?;
         let redirect_uri = self.oauth_redirect_uri(mcp)?;
         let context = self.discover_oauth_context(mcp, &endpoints).await?;
@@ -914,7 +915,7 @@ impl Upstream {
         }
 
         self.save_oauth_configuration(mcp, &context, &client, &redirect_uri, registered)?;
-        mcp.save(&*self.core.db).await?;
+        self.save_oauth_step(mcp, &basis).await?;
         start_oauth_session(
             session,
             mcp,
@@ -954,6 +955,7 @@ impl Upstream {
                 "OAuth client information is no longer available",
             ));
         };
+        let basis = mcp.oauth_basis();
 
         if mcp.transport == McpTransport::Builtin {
             let tokens = self
@@ -980,7 +982,7 @@ impl Upstream {
             mcp.oauth_scopes = (!scopes.is_empty()).then(|| scopes.join(" "));
             mcp.status = McpStatus::Ready;
             mcp.last_error = None;
-            mcp.save(&*self.core.db).await?;
+            self.save_oauth_step(mcp, &basis).await?;
             return Ok(());
         }
 
@@ -1022,8 +1024,34 @@ impl Upstream {
         );
         mcp.status = McpStatus::Ready;
         mcp.last_error = None;
-        mcp.save(&*self.core.db).await?;
+        self.save_oauth_step(mcp, &basis).await?;
         Ok(())
+    }
+
+    /// Save what an OAuth step changed, if the MCP is still what the step
+    /// started from (`basis`, taken before its first request).
+    ///
+    /// A step makes requests of its own, to the destination and with the
+    /// sign-in the MCP had then. An admin can move the MCP to another URL or
+    /// network, or clear or redo its sign-in, while they are in flight; what
+    /// they return was issued by, and for, the old one. The check and the
+    /// write are the one `update` statement, so a change cannot slip between
+    /// them, and it compares values, so a change that was undone (a network
+    /// switched and switched back) still shows by the sign-in it cleared.
+    /// When the row moved, nothing is written and the step fails: its tokens
+    /// are dropped, and `mcp` is read again, without them.
+    async fn save_oauth_step(
+        &self,
+        mcp: &mut Mcp,
+        basis: &McpOauthBasis,
+    ) -> Result<(), UpstreamError> {
+        if mcp.save_if_basis_holds(&*self.core.db, basis).await? {
+            return Ok(());
+        }
+        let _ = self.reload(mcp).await;
+        Err(UpstreamError::other(
+            "The MCP was changed while its OAuth sign-in was running (its address, its network or its sign-in), so the result was dropped. Connect it again",
+        ))
     }
 
     /// Read the row again, dropping changes that were not saved.
@@ -1121,6 +1149,7 @@ impl Upstream {
         if mcp.auth_type != McpAuthType::Auto {
             return Ok(());
         }
+        let basis = mcp.oauth_basis();
 
         let refresh = self.core.decrypt_secret(mcp.oauth_refresh_token.as_deref());
         let is_fresh = mcp
@@ -1144,7 +1173,7 @@ impl Upstream {
                     scope: None,
                 },
             );
-            mcp.save(&*self.core.db).await?;
+            self.save_oauth_step(&mut mcp, &basis).await?;
             return Ok(());
         }
 
@@ -1190,7 +1219,7 @@ impl Upstream {
                 scope: tokens.scope,
             },
         );
-        mcp.save(&*self.core.db).await?;
+        self.save_oauth_step(&mut mcp, &basis).await?;
         Ok(())
     }
 }
