@@ -183,14 +183,94 @@ fn spawn(config: &SupervisorConfig) -> std::io::Result<Child> {
     Ok(child)
 }
 
-/// The log of the daemon, line by line, at debug level.
+/// The log of the daemon, line by line, at debug level, with what must not be
+/// kept in a log taken out.
 fn forward(id: i64, stream: impl AsyncRead + Unpin + Send + 'static) {
+    forward_to(stream, move |line| {
+        tracing::debug!(target: "mymcps_tailnet::tailscaled", tailnet = id, "{line}");
+    });
+}
+
+fn forward_to(
+    stream: impl AsyncRead + Unpin + Send + 'static,
+    sink: impl Fn(&str) + Send + 'static,
+) {
     tokio::spawn(async move {
         let mut lines = BufReader::new(stream).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            tracing::debug!(target: "mymcps_tailnet::tailscaled", tailnet = id, "{line}");
+            sink(&redact(&line));
         }
     });
+}
+
+/// Words that name a secret in a `name=value` or `name: value` of a log line.
+const SECRET_NAMES: [&str; 6] = ["key", "token", "secret", "password", "auth", "code"];
+/// What a secret of Tailscale starts with: an auth key, or a key of the node.
+const SECRET_PREFIXES: [&str; 5] = ["tskey-", "nodekey:", "privkey:", "mkey:", "discokey:"];
+
+/// A log line of the daemon without its links and keys. The sign-in link of the
+/// control server (`AuthURL`) is a credential for as long as it lives: whoever
+/// reads it can sign a device in to the tailnet. The daemon logs links in
+/// several shapes, so every URL goes, whatever surrounds it, with the keys of
+/// Tailscale and the value of anything called a key, token, secret, password,
+/// auth or code.
+pub(crate) fn redact(line: &str) -> String {
+    const URL: &str = "<redacted url>";
+    const SECRET: &str = "<redacted>";
+    let mut redacted = String::with_capacity(line.len());
+    let mut hide_next = false;
+    for (index, word) in line.split(' ').enumerate() {
+        if index > 0 {
+            redacted.push(' ');
+        }
+        let lower = word.to_ascii_lowercase();
+        if let Some(start) = lower.find("://") {
+            // The scheme starts after the last character that is not one.
+            let scheme = lower[..start]
+                .rfind(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
+                .map_or(0, |position| position + 1);
+            redacted.push_str(&word[..scheme]);
+            redacted.push_str(URL);
+            hide_next = false;
+            continue;
+        }
+        if let Some(position) = SECRET_PREFIXES
+            .iter()
+            .filter_map(|prefix| lower.find(prefix))
+            .min()
+        {
+            redacted.push_str(&word[..position]);
+            redacted.push_str(SECRET);
+            hide_next = false;
+            continue;
+        }
+        if hide_next {
+            redacted.push_str(SECRET);
+            hide_next = false;
+            continue;
+        }
+        // `name=value`, `"name":"value"`, and `name: value` (the value is the next word).
+        let separator = word.find(['=', ':']);
+        let named = separator.map(|at| (&lower[..at], at));
+        match named {
+            Some((name, at)) if names_a_secret(name) => {
+                if word[at + 1..].is_empty() {
+                    redacted.push_str(word);
+                    hide_next = true;
+                } else {
+                    redacted.push_str(&word[..=at]);
+                    redacted.push_str(SECRET);
+                }
+            }
+            _ => redacted.push_str(word),
+        }
+    }
+    redacted
+}
+
+fn names_a_secret(name: &str) -> bool {
+    let name = name.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+    !name.is_empty() && SECRET_NAMES.iter().any(|secret| name.contains(secret))
 }
 
 async fn terminate(child: &mut Child) {
@@ -211,6 +291,100 @@ async fn terminate(child: &mut Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn links_and_keys_of_the_daemon_log_are_taken_out() {
+        for (line, expected) in [
+            (
+                "AuthURL is https://login.tailscale.com/a/0123456789abcd",
+                "AuthURL is <redacted url>",
+            ),
+            (
+                "To authenticate, visit:\thttps://headscale.example.com/register/mkey:abc123",
+                "To authenticate, visit:\t<redacted url>",
+            ),
+            (
+                "control: AuthURL=\"http://10.0.0.5:8080/register/abc\" state=NeedsLogin",
+                "control: AuthURL=\"<redacted url> state=NeedsLogin",
+            ),
+            (
+                "visit (https://login.tailscale.com/a/xyz) now",
+                "visit (<redacted url> now",
+            ),
+            ("HTTPS://LOGIN.TAILSCALE.COM/A/XYZ", "<redacted url>"),
+            (
+                "using authkey tskey-auth-kS3cr3t-abcdef to join",
+                "using authkey <redacted> to join",
+            ),
+            (
+                "peer nodekey:0123abcd and key=hunter2 token: s3cr3t",
+                "peer <redacted> and key=<redacted> token: <redacted>",
+            ),
+            ("AuthKey=tskey-auth-xyz", "AuthKey=<redacted>"),
+            (
+                "{\"AuthURL\":\"https://login.tailscale.com/a/xyz\",\"x\":1}",
+                "{\"AuthURL\":\"<redacted url>",
+            ),
+        ] {
+            let redacted = redact(line);
+            assert_eq!(redacted, expected, "{line}");
+            for secret in [
+                "a/0123456789abcd",
+                "abc123",
+                "hunter2",
+                "s3cr3t",
+                "kS3cr3t",
+                "0123abcd",
+                "/a/xyz",
+                "register/abc",
+            ] {
+                assert!(!redacted.contains(secret), "{redacted} still has {secret}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_ordinary_line_is_left_as_it_is() {
+        for line in [
+            "",
+            "tailscaled: starting userspace networking",
+            "magicsock: endpoints changed: 192.0.2.1:41641 (stun)",
+            "Switching ipn state NoState -> Starting (WantRunning=true, nm=false)",
+            "health(warnable=login-state): error: You are logged out.",
+            "  indented  line  ",
+        ] {
+            assert_eq!(redact(line), line);
+        }
+    }
+
+    #[tokio::test]
+    async fn the_forwarded_output_has_no_link_in_it() {
+        use tokio::io::AsyncWriteExt;
+
+        let (mut writer, reader) = tokio::io::duplex(1024);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        forward_to(reader, move |line| {
+            let _ = sender.send(line.to_owned());
+        });
+        writer
+            .write_all(
+                b"ipnserver: AuthURL https://login.tailscale.com/a/secretlink1\nplain line\n",
+            )
+            .await
+            .unwrap();
+        drop(writer);
+        let mut seen = Vec::new();
+        while let Some(line) = receiver.recv().await {
+            seen.push(line);
+        }
+        assert_eq!(
+            seen,
+            [
+                "ipnserver: AuthURL <redacted url>".to_owned(),
+                "plain line".to_owned()
+            ]
+        );
+    }
 
     #[test]
     fn the_wait_doubles_up_to_the_maximum() {

@@ -44,7 +44,8 @@
 //! `tailscaled --tun=userspace-networking --statedir=<dir> --socket=<dir>/ts.sock
 //! --port=0 --no-logs-no-support`, with an empty environment but `PATH` and
 //! `HOME`. Its output goes to `tracing` at debug level, target
-//! `mymcps_tailnet::tailscaled`. When it exits it is started again after a
+//! `mymcps_tailnet::tailscaled`, with every link and key taken out (the
+//! sign-in link of the control server is a credential). When it exits it is started again after a
 //! wait that doubles from 500 ms to 30 s; it is stopped with SIGTERM (SIGKILL
 //! after five seconds), and killed when the last [`Tailnets`] is dropped. A
 //! node that joined keeps its state in the directory: after a restart the daemon
