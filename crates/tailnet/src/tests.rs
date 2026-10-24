@@ -270,6 +270,69 @@ mod supervisor {
         drop(dir);
     }
 
+    /// `target`, written relative to the working directory of the test.
+    fn relative_to_the_working_directory(target: &Path) -> PathBuf {
+        let depth = std::env::current_dir().unwrap().components().count() - 1;
+        let mut relative: PathBuf = std::iter::repeat_n("..", depth).collect();
+        relative.push(target.strip_prefix("/").unwrap());
+        relative
+    }
+
+    #[test]
+    fn a_path_is_made_absolute_and_its_dots_are_folded() {
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(crate::tailnets::absolute(Path::new("tmp")), cwd.join("tmp"));
+        assert_eq!(
+            crate::tailnets::absolute(Path::new("./a/../b/./c")),
+            cwd.join("b/c")
+        );
+        assert_eq!(
+            crate::tailnets::absolute(Path::new("/var/../data/./tmp")),
+            Path::new("/data/tmp")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_relative_data_directory_is_made_absolute_for_the_daemon() {
+        // `DATA_DIR=tmp` is the default: the daemon runs in its own directory,
+        // so a relative `--socket` or `--statedir` would not be where the
+        // server looks for them.
+        let dir = tempfile::tempdir().unwrap();
+        let data = relative_to_the_working_directory(&dir.path().join("data"));
+        assert!(data.is_relative());
+        let binary = fake_tailscaled(&dir.path().join("bin"), 0);
+        let tailnets = Tailnets::with_settings(
+            TailnetsConfig {
+                binary,
+                data_dir: data,
+            },
+            FAST,
+            Duration::from_secs(2),
+        );
+
+        tailnets.ensure_running(3).await.unwrap();
+        assert!(eventually(PATIENCE, || has_run(&dir.path().join("bin/runs"))).await);
+        let args = std::fs::read_to_string(dir.path().join("bin/args.1")).unwrap();
+        let arguments: Vec<&str> = args.lines().collect();
+        let statedir = arguments
+            .iter()
+            .find_map(|argument| argument.strip_prefix("--statedir="))
+            .unwrap();
+        let socket = arguments
+            .iter()
+            .find_map(|argument| argument.strip_prefix("--socket="))
+            .unwrap();
+        assert!(Path::new(statedir).is_absolute(), "{statedir}");
+        assert!(Path::new(socket).is_absolute(), "{socket}");
+        assert!(socket.ends_with("data/tailnets/3/ts.sock"), "{socket}");
+        // The server finds the socket where the daemon is told to put it.
+        let _api = FakeLocalApi::bind(Path::new(socket), running_status());
+        assert!(matches!(
+            tailnets.state(3).await,
+            TailnetState::Running { .. }
+        ));
+    }
+
     #[tokio::test]
     async fn a_socket_path_too_long_for_a_unix_socket_is_refused() {
         let dir = tempfile::tempdir().unwrap();

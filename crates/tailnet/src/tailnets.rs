@@ -27,7 +27,10 @@ const READY_TIMEOUT: Duration = Duration::from_secs(15);
 pub struct TailnetsConfig {
     /// The `tailscaled` executable.
     pub binary: PathBuf,
-    /// Holds `tailnets/<id>/` for every tailnet: its state, and its socket.
+    /// Holds `tailnets/<id>/` for every tailnet: its state, and its socket. A
+    /// relative path is made absolute, against the working directory of the
+    /// server, when the registry is built: a daemon runs in the directory of
+    /// its tailnet and would read a relative `--socket` from there.
     pub data_dir: PathBuf,
 }
 
@@ -104,10 +107,11 @@ impl Tailnets {
     }
 
     pub(crate) fn with_settings(
-        config: TailnetsConfig,
+        mut config: TailnetsConfig,
         backoff: Backoff,
         status_ttl: Duration,
     ) -> Self {
+        config.data_dir = absolute(&config.data_dir);
         Tailnets {
             inner: Arc::new(Inner {
                 config,
@@ -326,6 +330,29 @@ impl Drop for Inner {
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
     }
+}
+
+/// `path` as an absolute path, against the working directory of the process,
+/// with its `.` and `..` folded away: the result is the path of a unix socket,
+/// which has little room. A path that cannot be made absolute (no working
+/// directory) is left as it is.
+pub(crate) fn absolute(path: &std::path::Path) -> PathBuf {
+    use std::path::Component;
+
+    let Ok(joined) = std::path::absolute(path) else {
+        return path.to_path_buf();
+    };
+    let mut folded = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                folded.pop();
+            }
+            other => folded.push(other),
+        }
+    }
+    folded
 }
 
 /// A directory only this user can enter: it holds the node key.

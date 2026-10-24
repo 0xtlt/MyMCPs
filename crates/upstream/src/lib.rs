@@ -336,6 +336,9 @@ impl UpstreamBuilder {
             self.core.config.tailscaled().map(|binary| {
                 Tailnets::new(TailnetsConfig {
                     binary,
+                    // `Tailnets` makes a relative `DATA_DIR` (the default is
+                    // `tmp`) absolute: its daemons do not run where the
+                    // server does.
                     data_dir: self.core.config.data_dir.clone(),
                 })
             })
