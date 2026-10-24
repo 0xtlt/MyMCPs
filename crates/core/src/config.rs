@@ -69,6 +69,9 @@ pub struct Config {
     /// `NODE_BINARY`: path to the Node.js binary that runs npm MCPs, when it
     /// is not the `node` of the `PATH`.
     pub node_binary: Option<String>,
+    /// `TAILSCALED_BINARY` as configured: a path, or `off`. Use
+    /// [`Config::tailscaled`] to read it.
+    pub tailscaled_binary: Option<String>,
     /// `NPM_SANDBOX`: whether npm MCPs run in the sandbox of the kernel. On
     /// unless it is `off`; a server that cannot enforce it then starts none.
     pub npm_sandbox: bool,
@@ -140,6 +143,7 @@ impl Config {
             app_url: get("APP_URL").map(str::to_string),
             data_dir,
             node_binary: get("NODE_BINARY").map(str::to_string),
+            tailscaled_binary: get("TAILSCALED_BINARY").map(str::to_string),
             npm_sandbox,
         })
     }
@@ -157,6 +161,8 @@ impl Config {
             app_url: Some("http://localhost:3333".into()),
             data_dir: data_dir.into(),
             node_binary: None,
+            // Whatever the machine has installed, tests join no tailnet.
+            tailscaled_binary: Some("off".into()),
             npm_sandbox: true,
         }
     }
@@ -173,6 +179,13 @@ impl Config {
         self.environment == Environment::Test
     }
 
+    /// The `tailscaled` binary that joins tailnets, or `None` when the
+    /// feature is off: see [`locate_tailscaled`].
+    pub fn tailscaled(&self) -> Option<PathBuf> {
+        let search_path = std::env::var_os("PATH");
+        locate_tailscaled(self.tailscaled_binary.as_deref(), search_path.as_deref())
+    }
+
     /// `db.sqlite3` in the data directory, `test.sqlite3` under test.
     pub fn database_path(&self) -> PathBuf {
         self.data_dir.join(if self.is_test() {
@@ -180,6 +193,56 @@ impl Config {
         } else {
             "db.sqlite3"
         })
+    }
+}
+
+/// The name of the Tailscale daemon.
+const TAILSCALED_NAME: &str = if cfg!(windows) {
+    "tailscaled.exe"
+} else {
+    "tailscaled"
+};
+
+/// Absolute path of `tailscaled`, or `None` when tailnets are off.
+///
+/// `TAILSCALED_BINARY` (`configured`) decides: `off` turns the feature off,
+/// a path is the binary, and when it is unset the first `tailscaled` on
+/// `search_path` is. A path that is not an executable file turns the
+/// feature off, as does no `tailscaled` on the `PATH`.
+///
+/// The result is always absolute: a bare name must never reach spawn, where
+/// the child's own `PATH` would decide what it is. Relative entries of the
+/// `PATH` are skipped for the same reason.
+pub fn locate_tailscaled(
+    configured: Option<&str>,
+    search_path: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let configured = configured.map(str::trim).filter(|value| !value.is_empty());
+    if configured.is_some_and(|value| value.eq_ignore_ascii_case("off")) {
+        return None;
+    }
+    if let Some(path) = configured {
+        let path = std::path::absolute(path).ok()?;
+        return is_executable_file(&path).then_some(path);
+    }
+    std::env::split_paths(search_path?)
+        .filter(|directory| directory.is_absolute())
+        .map(|directory| directory.join(TAILSCALED_NAME))
+        .find(|candidate| is_executable_file(candidate))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        metadata.is_file()
     }
 }
 
@@ -376,6 +439,89 @@ mod tests {
             );
         }
         assert!(Config::for_tests("tmp").npm_sandbox);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn finds_tailscaled_unless_it_is_off() {
+        use std::ffi::OsString;
+        use std::os::unix::fs::PermissionsExt;
+
+        let write = |directory: &Path, name: &str, mode: u32| {
+            let path = directory.join(name);
+            fs::write(&path, b"#!/bin/sh\n").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+            path
+        };
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let first_binary = write(first.path(), "tailscaled", 0o755);
+        let second_binary = write(second.path(), "tailscaled", 0o755);
+        let search = |directories: &[&Path]| -> OsString {
+            std::env::join_paths(directories.iter().map(|directory| directory.as_os_str())).unwrap()
+        };
+        let both = search(&[first.path(), second.path()]);
+
+        // Unset: the first one of the PATH.
+        assert_eq!(
+            locate_tailscaled(None, Some(&both)),
+            Some(first_binary.clone())
+        );
+        assert_eq!(
+            locate_tailscaled(Some("  "), Some(&both)),
+            Some(first_binary)
+        );
+        // None on the PATH, or no PATH: off.
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(
+            locate_tailscaled(None, Some(&search(&[empty.path()]))),
+            None
+        );
+        assert_eq!(locate_tailscaled(None, None), None);
+        // A file that is not executable is not found, and the search goes on.
+        let locked = tempfile::tempdir().unwrap();
+        write(locked.path(), "tailscaled", 0o644);
+        assert_eq!(
+            locate_tailscaled(None, Some(&search(&[locked.path(), second.path()]))),
+            Some(second_binary.clone())
+        );
+        // A relative entry of the PATH is never searched.
+        assert_eq!(
+            locate_tailscaled(None, Some(std::ffi::OsStr::new("relative/bin"))),
+            None
+        );
+
+        // A path is the binary, wherever the PATH points.
+        assert_eq!(
+            locate_tailscaled(second_binary.to_str(), Some(&both)),
+            Some(second_binary.clone())
+        );
+        let missing = first.path().join("missing");
+        assert_eq!(locate_tailscaled(missing.to_str(), Some(&both)), None);
+        let locked_binary = locked.path().join("tailscaled");
+        assert_eq!(locate_tailscaled(locked_binary.to_str(), Some(&both)), None);
+
+        // `off` is off, whatever else is there.
+        for off in ["off", "OFF", " Off "] {
+            assert_eq!(locate_tailscaled(Some(off), Some(&both)), None, "{off}");
+        }
+    }
+
+    #[test]
+    fn reads_tailscaled_binary_from_the_environment() {
+        let config = |value: Option<&str>| {
+            let mut pairs = vec![("NODE_ENV", "test"), ("APP_KEY", TEST_APP_KEY)];
+            pairs.extend(value.map(|value| ("TAILSCALED_BINARY", value)));
+            Config::from_vars(&vars(&pairs)).unwrap()
+        };
+        assert_eq!(config(None).tailscaled_binary, None);
+        assert_eq!(config(Some("")).tailscaled_binary, None);
+        assert_eq!(
+            config(Some(" /usr/local/bin/tailscaled ")).tailscaled_binary,
+            Some("/usr/local/bin/tailscaled".to_string())
+        );
+        assert_eq!(config(Some("off")).tailscaled(), None);
+        assert_eq!(Config::for_tests("tmp").tailscaled(), None);
     }
 
     #[test]

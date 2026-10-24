@@ -2,6 +2,13 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-24
+
+### Added
+
+- Added the data for Tailscale tailnets: a team can have tailnets, and an HTTP MCP can name the one it reaches its upstream through. They are part of backups, and a backup made before this change still imports.
+- The Docker image holds `tailscaled` 1.104.2, copied from the official `tailscale/tailscale` image, and `TAILSCALED_BINARY` names it. On a host install, `TAILSCALED_BINARY` sets the binary; unset, the `tailscaled` of the `PATH` is used, and `off` turns tailnets off.
+
 ## 2026-10-21
 
 ### Changed

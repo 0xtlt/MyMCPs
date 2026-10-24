@@ -175,6 +175,9 @@ jobs:
             if [[ "$arch" == "amd64" ]]; then
               docker exec "$container_name" sh -eu -c '"$NODE_BINARY" --version | grep -q "^v$NODE_VERSION$"' \
                 || fail "The image does not hold the runtime of package MCPs at NODE_VERSION."
+              # The daemon of tailnets is a static binary, run as uid 1000.
+              docker exec "$container_name" sh -eu -c '"$TAILSCALED_BINARY" --version | head -n 1 | grep -qx "$TAILSCALE_VERSION"' \
+                || fail "The image does not hold the daemon of tailnets at TAILSCALE_VERSION."
               docker logs "$container_name" 2>&1 | grep -q '"enforced":"Landlock ABI ' \
                 || fail "The server does not sandbox package MCPs in a container without capabilities."
             fi

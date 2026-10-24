@@ -92,6 +92,9 @@ model! {
         pub builtin_settings: Option<String>,
         /// The team the MCP belongs to. Its slug is unique there.
         pub team_id: i64,
+        /// The tailnet of its team that an HTTP MCP reaches its upstream
+        /// through. `None`: the direct network.
+        pub tailnet_id: Option<i64>,
     }
 }
 

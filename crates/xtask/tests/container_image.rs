@@ -99,7 +99,7 @@ fn every_base_image_is_pinned_by_tag_and_digest_in_its_from_line() {
     let dockerfile = read_repository_file("Dockerfile");
     let images = base_images(&dockerfile);
 
-    assert_eq!(images.len(), 3, "{images:?}");
+    assert_eq!(images.len(), 4, "{images:?}");
     for image in images {
         // Dependabot can only update a tag and digest it reads in the FROM
         // line itself, so neither may come from an ARG.
@@ -275,6 +275,65 @@ fn node_version_matches_the_pinned_node_image() {
         "\nCOPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm\n"
     ));
     assert!(runtime.contains("  NODE_BINARY=/usr/local/bin/node \\\n"));
+}
+
+#[test]
+fn tailscaled_comes_from_the_pinned_tailscale_image_and_nothing_else_of_it_does() {
+    let dockerfile = read_repository_file("Dockerfile");
+
+    // The official image, by version tag and index digest, in a stage of its
+    // own that is not the one the image is made of.
+    let image = dockerfile
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("FROM tailscale/tailscale:")?
+                .strip_suffix(" AS tailscale")
+        })
+        .expect("a tailscale/tailscale:<version> stage called tailscale");
+    assert!(is_pinned(&format!("tailscale/tailscale:{image}")));
+    let tag = &image[..image.find('@').unwrap()];
+    let version = tag.strip_prefix('v').expect("a release tag: v<version>");
+    assert!(
+        version.split('.').count() == 3
+            && version
+                .split('.')
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())),
+        "an exact release, not a moving or an unstable tag: {tag}"
+    );
+    assert_eq!(
+        from_lines(&dockerfile)
+            .iter()
+            .find(|from| from.stage == Some("tailscale"))
+            .unwrap()
+            .flags,
+        Vec::<&str>::new()
+    );
+
+    let variable = dockerfile
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("TAILSCALE_VERSION="))
+        .and_then(|value| value.split_whitespace().next())
+        .expect("the runtime stage to set TAILSCALE_VERSION");
+    assert_eq!(
+        variable, version,
+        "TAILSCALE_VERSION must be updated together with the tailscale image tag"
+    );
+
+    // Only the daemon is copied, to where TAILSCALED_BINARY says it is: not
+    // the `tailscale` command, not the container entrypoint of the image.
+    let runtime = runtime_stage(&dockerfile);
+    assert!(
+        runtime.contains(
+            "\nCOPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscaled\n"
+        )
+    );
+    assert!(runtime.contains("  TAILSCALED_BINARY=/usr/local/bin/tailscaled \\\n"));
+    let copies: Vec<&str> = dockerfile
+        .lines()
+        .filter(|line| line.starts_with("COPY --from=tailscale "))
+        .collect();
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    assert!(!without_comments(&dockerfile).contains("containerboot"));
 }
 
 /// The version mise.toml gives `tool` in its `[tools]` table: a string, or
@@ -472,6 +531,7 @@ fn the_deployment_files_keep_the_container_restricted_and_the_checks_of_earlier_
     assert!(compose.contains("      APP_URL: ${APP_URL:-}\n"));
     // Where Node.js is, and whether npm MCPs are sandboxed, is the image's to say.
     assert!(!compose.contains("NODE_BINARY"));
+    assert!(!compose.contains("TAILSCALED_BINARY"));
     assert!(!compose.contains("NPM_SANDBOX"));
 
     let local = read_repository_file("docker-compose.local.yml");
