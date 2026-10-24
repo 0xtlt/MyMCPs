@@ -12,6 +12,11 @@ pub enum Error {
     /// The tailnet has no supervised `tailscaled`: call `ensure_running` first.
     #[error("tailnet {0} is not running")]
     NotRunning(i64),
+    /// The tailnet was removed: its daemon is not started again, whatever asks
+    /// (a request that was already under way, for one). See
+    /// [`Tailnets::forget_removal`](crate::Tailnets::forget_removal).
+    #[error("tailnet {0} was removed")]
+    Removed(i64),
     /// The path of the LocalAPI socket does not fit in `sockaddr_un`.
     #[error("the socket path {0} is too long for a unix socket; use a shorter data directory")]
     SocketPathTooLong(String),
@@ -33,7 +38,9 @@ impl From<Error> for io::Error {
     fn from(error: Error) -> Self {
         let kind = match &error {
             Error::Io(inner) => inner.kind(),
-            Error::NotRunning(_) | Error::Unreachable(_) => io::ErrorKind::NotConnected,
+            Error::NotRunning(_) | Error::Removed(_) | Error::Unreachable(_) => {
+                io::ErrorKind::NotConnected
+            }
             Error::InvalidOptions(_) => io::ErrorKind::InvalidInput,
             Error::LocalApi { status: 403, .. } => io::ErrorKind::PermissionDenied,
             Error::LocalApi { .. } | Error::Protocol(_) | Error::SocketPathTooLong(_) => {

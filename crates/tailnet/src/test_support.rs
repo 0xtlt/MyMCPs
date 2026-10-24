@@ -310,7 +310,7 @@ exec sleep 600
 /// `exec` then fails with ETXTBSY ("Text file busy"): the daemon of a test
 /// would not start, or would start late. Once the script has run, no process
 /// holds it for writing any more, and none gets to.
-fn wait_until_executable(path: &Path) {
+pub(crate) fn wait_until_executable(path: &Path) {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         match std::process::Command::new(path).arg("--probe").status() {

@@ -341,6 +341,9 @@ pub async fn store(
     }
 
     let connected = async {
+        // A new row never has the id of a removed tailnet, but a daemon that
+        // is refused for one would be a login that never comes.
+        tailnets.forget_removal(tailnet.id);
         tailnets.ensure_running(tailnet.id).await?;
         tailnets
             .connect(

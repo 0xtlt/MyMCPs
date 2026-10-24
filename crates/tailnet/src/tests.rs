@@ -762,6 +762,136 @@ mod remove {
     }
 }
 
+mod lifecycle {
+    use super::*;
+
+    /// A fixture whose daemon takes a second to stop once asked to, as a real
+    /// one does while it saves its state.
+    fn slow_to_stop() -> Fixture {
+        let mut fixture = Fixture::new(0);
+        let script = std::fs::read_to_string(fixture.bin("tailscaled")).unwrap();
+        let script = script.replace(
+            "exec sleep 600",
+            "trap 'kill $child; sleep 1; exit 0' TERM\nsleep 600 &\nchild=$!\nwait $child",
+        );
+        let binary = fixture.bin("slow-tailscaled");
+        std::fs::write(&binary, script).unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::test_support::wait_until_executable(&binary);
+        fixture.tailnets = Tailnets::with_settings(
+            TailnetsConfig {
+                binary,
+                data_dir: fixture.dir.path().join("data"),
+            },
+            FAST,
+            Duration::from_secs(2),
+        );
+        fixture
+    }
+
+    #[tokio::test]
+    async fn a_request_that_comes_during_a_removal_does_not_start_the_tailnet_again() {
+        let fixture = slow_to_stop();
+        let _api = fixture.with_api(1, running_status()).await;
+        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
+        let pid = fixture.pid().unwrap();
+
+        let removal = tokio::spawn({
+            let tailnets = fixture.tailnets.clone();
+            async move { tailnets.remove(1).await }
+        });
+        // The list of a page, asking again and again while the daemon is
+        // being stopped: every answer is a refusal, none a new daemon.
+        let mut refused = 0;
+        while !removal.is_finished() {
+            match fixture.tailnets.ensure_running(1).await {
+                Err(Error::Removed(1)) => refused += 1,
+                Ok(()) => assert!(!alive_runs_again(&fixture), "a second daemon started"),
+                Err(other) => panic!("{other}"),
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        removal.await.unwrap().unwrap();
+
+        assert!(refused > 0, "no request came in while the removal ran");
+        assert!(eventually(PATIENCE, || !alive(&pid)).await);
+        assert_eq!(fixture.runs(), 1, "the daemon was started again");
+        assert!(fixture.tailnets.handle(1).is_none());
+        assert!(!fixture.tailnet_dir(1).exists());
+        // And later requests find it removed too.
+        assert!(matches!(
+            fixture.tailnets.ensure_running(1).await,
+            Err(Error::Removed(1))
+        ));
+        assert!(!fixture.tailnet_dir(1).exists());
+        assert_eq!(fixture.tailnets.state(1).await, TailnetState::Stopped);
+    }
+
+    fn alive_runs_again(fixture: &Fixture) -> bool {
+        fixture.runs() > 1
+    }
+
+    #[tokio::test]
+    async fn the_id_of_a_removed_tailnet_can_be_started_once_it_is_forgotten() {
+        let fixture = Fixture::new(0);
+        let _api = fixture.with_api(1, running_status()).await;
+        assert!(eventually(PATIENCE, || fixture.runs() == 1).await);
+        fixture.tailnets.remove(1).await.unwrap();
+        assert!(matches!(
+            fixture.tailnets.ensure_running(1).await,
+            Err(Error::Removed(1))
+        ));
+        // Another id is not affected.
+        fixture.tailnets.ensure_running(2).await.unwrap();
+        // The fake counts its runs in a file: one run at a time.
+        assert!(eventually(PATIENCE, || fixture.runs() == 2).await);
+
+        fixture.tailnets.forget_removal(1);
+        fixture.tailnets.ensure_running(1).await.unwrap();
+        assert!(fixture.tailnets.handle(1).is_some());
+        assert!(
+            eventually(PATIENCE, || fixture.runs() >= 3).await,
+            "runs {}",
+            fixture.runs()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_start_that_comes_during_a_stop_waits_for_it_and_runs_one_daemon() {
+        let fixture = slow_to_stop();
+        fixture.tailnets.ensure_running(1).await.unwrap();
+        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
+        let first = fixture.pid().unwrap();
+
+        let stop = tokio::spawn({
+            let tailnets = fixture.tailnets.clone();
+            async move { tailnets.stop(1).await }
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        // A plain stop keeps the tailnet: the request starts it again, but
+        // only once the first daemon is gone.
+        fixture.tailnets.ensure_running(1).await.unwrap();
+        assert!(stop.is_finished(), "the start did not wait for the stop");
+        stop.await.unwrap();
+        assert!(!alive(&first));
+        assert!(eventually(PATIENCE, || fixture.runs() == 2).await);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(fixture.runs(), 2);
+        assert!(alive(&fixture.pid().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn two_removals_at_once_leave_nothing_behind() {
+        let fixture = Fixture::new(0);
+        let _api = fixture.with_api(1, running_status()).await;
+        let (first, second) = tokio::join!(fixture.tailnets.remove(1), fixture.tailnets.remove(1));
+        first.unwrap();
+        second.unwrap();
+        assert!(fixture.tailnets.handle(1).is_none());
+        assert!(!fixture.tailnet_dir(1).exists());
+    }
+}
+
 mod route_and_dial {
     use super::*;
 

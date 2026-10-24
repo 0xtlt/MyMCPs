@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
@@ -94,6 +94,13 @@ struct Inner {
     backoff: Backoff,
     status_ttl: Duration,
     entries: Mutex<HashMap<i64, Entry>>,
+    /// One turn at a time for the lifecycle of a tailnet (start, stop,
+    /// remove): `stop` takes the daemon out of `entries` before it is gone, and
+    /// a start that came in meanwhile would run a second one.
+    turns: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>,
+    /// The tailnets that were removed. A request that began before the removal
+    /// (the list of a page, say) must not start one of them again.
+    removed: Mutex<HashSet<i64>>,
 }
 
 struct Entry {
@@ -118,6 +125,8 @@ impl Tailnets {
                 backoff,
                 status_ttl,
                 entries: Mutex::new(HashMap::new()),
+                turns: Mutex::new(HashMap::new()),
+                removed: Mutex::new(HashSet::new()),
             }),
         }
     }
@@ -127,6 +136,35 @@ impl Tailnets {
             .entries
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The turn of tailnet `id`: held while its daemon is started, stopped or
+    /// removed, so that these never overlap.
+    async fn turn(&self, id: i64) -> tokio::sync::OwnedMutexGuard<()> {
+        let turn = Arc::clone(
+            self.inner
+                .turns
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(id)
+                .or_default(),
+        );
+        turn.lock_owned().await
+    }
+
+    fn removed(&self) -> std::sync::MutexGuard<'_, HashSet<i64>> {
+        self.inner
+            .removed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Allows tailnet `id` to be started again after `remove`. A removed id is
+    /// never started, so that a request that was already under way cannot
+    /// bring a deleted tailnet back; call this when the id is given to a tailnet
+    /// again (a restored database, a new row), before `ensure_running`.
+    pub fn forget_removal(&self, id: i64) {
+        self.removed().remove(&id);
     }
 
     fn tailnet_dir(&self, id: i64) -> PathBuf {
@@ -140,7 +178,19 @@ impl Tailnets {
     /// Starts the daemon of tailnet `id` if it is not running. It returns once
     /// the process is spawned, not once it answers: `state` tells. It is kept
     /// alive until `stop`, `remove`, or the drop of the last `Tailnets`.
+    ///
+    /// It waits for a `stop` or a `remove` of the tailnet that is under way,
+    /// and fails with [`Error::Removed`] for a tailnet that was removed.
     pub async fn ensure_running(&self, id: i64) -> Result<(), Error> {
+        let _turn = self.turn(id).await;
+        if self.removed().contains(&id) {
+            return Err(Error::Removed(id));
+        }
+        self.start(id).await
+    }
+
+    /// `ensure_running`, with the turn of `id` already held.
+    async fn start(&self, id: i64) -> Result<(), Error> {
         if self.is_supervised(id) {
             return Ok(());
         }
@@ -287,6 +337,12 @@ impl Tailnets {
     /// Stops the daemon of tailnet `id`, and keeps its state: `ensure_running`
     /// brings the node back without a login.
     pub async fn stop(&self, id: i64) {
+        let _turn = self.turn(id).await;
+        self.stop_daemon(id).await;
+    }
+
+    /// `stop`, with the turn of `id` already held.
+    async fn stop_daemon(&self, id: i64) {
         let entry = self.entries().remove(&id);
         if let Some(entry) = entry {
             entry.supervisor.stop().await;
@@ -297,12 +353,20 @@ impl Tailnets {
     /// directory. The node is gone from the tailnet unless the logout failed,
     /// which is logged: the removal goes on, an unreachable control server must
     /// not keep a tailnet from being deleted.
+    ///
+    /// The tailnet stays removed: `ensure_running` refuses it until
+    /// [`forget_removal`](Self::forget_removal). Whatever was waiting for its
+    /// turn finds it removed, and so does a request that comes later.
     pub async fn remove(&self, id: i64) -> Result<(), Error> {
+        // Before the turn: what is queued behind this removal, and what is
+        // queued before it, must not start a daemon once it has run.
+        self.removed().insert(id);
+        let _turn = self.turn(id).await;
         let dir = self.tailnet_dir(id);
         if !self.is_supervised(id) && dir.join("tailscaled.state").exists() {
             // A node that was joined before this process started: the daemon
             // has to run to log it out.
-            self.ensure_running(id).await?;
+            self.start(id).await?;
         }
         if let Some((client, _)) = self.lookup(id) {
             let logout = async {
@@ -313,7 +377,7 @@ impl Tailnets {
                 tracing::warn!(tailnet = id, "could not log the node out: {error}");
             }
         }
-        self.stop(id).await;
+        self.stop_daemon(id).await;
         match tokio::fs::remove_dir_all(&dir).await {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
