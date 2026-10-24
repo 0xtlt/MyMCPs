@@ -8,6 +8,9 @@
 //! operator, who may point it at a private address; only the endpoints a remote
 //! document names are checked, by the caller, before they are fetched.
 //!
+//! A fetcher can also send the requests of one MCP through a private network,
+//! such as a tailnet ([`Fetcher::through`], [`OverlayNetwork`]).
+//!
 //! Code that fetches takes a [`Fetcher`], and code that checks discovered
 //! endpoints an [`AddressGuard`], rather than reaching for a global: the
 //! application passes [`Fetcher::shared`] and [`AddressGuard::system`], and a
@@ -183,6 +186,7 @@
 
 mod address_guard;
 mod http_url;
+mod overlay;
 mod safe_fetch;
 
 pub use address_guard::{
@@ -190,6 +194,7 @@ pub use address_guard::{
     SystemResolver, is_restricted_address, is_restricted_ip,
 };
 pub use http_url::{HttpUrlError, parse_http_url};
+pub use overlay::{Overlay, OverlayIo, OverlayNetwork, OverlayStream};
 pub use safe_fetch::{
     BodyStream, CannedResponse, DEFAULT_USER_AGENT, FetchError, FetchRequest, FetchResponse,
     Fetcher, MAX_UPSTREAM_ERROR_RESPONSE_BYTES, MAX_UPSTREAM_RESPONSE_BYTES, SentRequest,

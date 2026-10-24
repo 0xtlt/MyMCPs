@@ -23,7 +23,16 @@ thiserror.workspace = true
 base64.workspace = true
 # Only for the reason phrase a server sent, which reqwest keeps as a hyper extension.
 hyper = { version = "1", default-features = false, features = ["http1"] }
+# The overlay transport: a pooled HTTP/1.1 client on streams the overlay dials,
+# and TLS over them, checked by the platform as reqwest checks it.
+hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "http1", "tokio"] }
+http-body-util = "0.1"
+tower-service = "0.3"
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs", "tls12"] }
+rustls-platform-verifier = "0.7"
 
 [dev-dependencies]
 axum = "0.8"
+hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 tokio = { workspace = true, features = ["test-util"] }
