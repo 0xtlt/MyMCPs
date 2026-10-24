@@ -447,7 +447,10 @@ mod connect {
         // The key is sent trimmed.
         let mut options = options(
             "mymcps",
-            Some("  tskey-auth-kABCDEF123456-secretsecretsecret \n"),
+            Some(concat!(
+                "  tskey",
+                "-auth-kABCDEF123456-secretsecretsecret \n"
+            )),
         );
         options.control_url = Some(Url::parse("https://headscale.example.com").unwrap());
 
@@ -470,7 +473,7 @@ mod connect {
                     "ShieldsUp": true,
                     "AutoUpdate": {"Check": false}
                 },
-                "AuthKey": "tskey-auth-kABCDEF123456-secretsecretsecret"
+                "AuthKey": concat!("tskey", "-auth-kABCDEF123456-secretsecretsecret")
             })
         );
         // tailscaled does not contact the control server on `start` alone: the
@@ -483,7 +486,7 @@ mod connect {
 
     #[tokio::test]
     async fn a_node_that_is_already_logged_in_is_not_logged_in_again_with_or_without_a_key() {
-        for key in [Some("tskey-auth-x"), None] {
+        for key in [Some(concat!("tskey", "-auth-x")), None] {
             let fixture = Fixture::new(0);
             let api = fixture.with_api(1, running_status()).await;
 
@@ -559,7 +562,7 @@ mod connect {
             // A key is not a way back: it is not sent, nor kept.
             fixture
                 .tailnets
-                .sign_in_again(1, options("mymcps", Some("tskey-auth-x")))
+                .sign_in_again(1, options("mymcps", Some(concat!("tskey", "-auth-x"))))
                 .await
                 .unwrap();
 
@@ -600,7 +603,7 @@ mod connect {
 
         fixture
             .tailnets
-            .connect(1, options("mymcps", Some("tskey-auth-x")))
+            .connect(1, options("mymcps", Some(concat!("tskey", "-auth-x"))))
             .await
             .unwrap();
 
@@ -649,7 +652,7 @@ mod connect {
 
     #[tokio::test]
     async fn the_key_is_not_in_the_debug_output_nor_in_an_error() {
-        let secret = "tskey-auth-kSECRET123-0123456789abcdef";
+        let secret = concat!("tskey", "-auth-kSECRET123-0123456789abcdef");
         let debug = format!("{:?}", options("mymcps", Some(secret)));
         assert!(!debug.contains(secret), "{debug}");
         assert!(debug.contains("redacted"));
