@@ -160,6 +160,12 @@ fn oauth_fetch_error(error: FetchError) -> HttpFetchError {
         | FetchError::Overlay { .. }
         | FetchError::OverlayTerminated { .. }
         | FetchError::InvalidHeader { .. } => HttpFetchError::network(error),
+        // The public network refused an address in the URL: the same refusal
+        // as the check of a discovered endpoint, wherever it surfaces.
+        FetchError::RestrictedAddress { host } => HttpFetchError::other(RestrictedEndpointError {
+            label: "OAuth endpoint".to_owned(),
+            hostname: host,
+        }),
         other => HttpFetchError::other(other),
     }
 }
@@ -173,7 +179,11 @@ struct OAuthEndpoints {
     fetcher: Fetcher,
     /// Refuses a discovered URL that leads into a network the MCP is not part
     /// of. `None` for an MCP that is in a private network, as one on a
-    /// tailnet is: nothing is refused, as for an MCP on a private address.
+    /// tailnet is: nothing is refused by name, as for an MCP on a private
+    /// address, and the fetcher carries the rule instead: what the tailnet
+    /// does not route goes to the public network, which refuses an IP address
+    /// of a restricted network and every name that resolves to one, and a host
+    /// that is only the tailnet's never gets there.
     guard: Option<DiscoveredEndpointGuard>,
 }
 
@@ -1199,6 +1209,16 @@ mod tests {
         assert!(oauth_fetch_error(FetchError::Offline).is_network());
         // A refusal of the gateway's own is not one.
         assert!(!oauth_fetch_error(FetchError::Timeout).is_network());
+    }
+
+    #[test]
+    fn an_address_the_public_network_refused_is_a_restricted_endpoint() {
+        let error = oauth_fetch_error(FetchError::RestrictedAddress {
+            host: "169.254.169.254".to_owned(),
+        });
+        assert!(!error.is_network());
+        let message = error.to_string();
+        assert!(message.contains("169.254.169.254"), "{message}");
     }
 
     #[test]

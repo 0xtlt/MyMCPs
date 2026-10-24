@@ -106,7 +106,9 @@ pub trait Overlay: Send + Sync + 'static {
     /// Where the overlay reaches `host`, or `None` when it does not carry the
     /// traffic to it and the request goes where it would have gone without
     /// the overlay. `host` is the host of the URL in lowercase, an IPv6 address
-    /// without brackets.
+    /// without brackets. An error fails the request, and it is never sent
+    /// anywhere else: return one, rather than `None`, for a host that only the
+    /// overlay may carry.
     async fn route(&self, host: &str, port: u16) -> io::Result<Option<SocketAddr>>;
 
     /// Open a connection to an address `route` returned.

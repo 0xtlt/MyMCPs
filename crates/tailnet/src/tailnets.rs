@@ -177,11 +177,7 @@ impl Tailnets {
     }
 
     fn tailnet_dir(&self, id: i64) -> PathBuf {
-        self.inner
-            .config
-            .data_dir
-            .join("tailnets")
-            .join(id.to_string())
+        state_dir(&self.inner.config.data_dir, id)
     }
 
     /// Starts the daemon of tailnet `id` if it is not running. It returns once
@@ -409,6 +405,27 @@ impl Tailnets {
         self.stop_daemon(id).await;
         remove_dir(&self.tailnet_dir(id)).await
     }
+}
+
+/// Where tailnet `id` keeps its state under `data_dir`: its node key and the
+/// socket of its daemon, `tailnets/<id>/`. The path is made absolute as
+/// [`Tailnets`] makes its own, so the two never name different directories for
+/// a relative `data_dir`. It needs no running [`Tailnets`]: it is how the
+/// state of a tailnet is found when Tailscale is turned off on the server.
+pub fn state_dir(data_dir: &std::path::Path, id: i64) -> PathBuf {
+    absolute(data_dir).join("tailnets").join(id.to_string())
+}
+
+/// Deletes the state of tailnet `id` under `data_dir` (see [`state_dir`]),
+/// without a daemon: nothing is logged out and no control server is
+/// contacted. For a server where Tailscale is off, which has no [`Tailnets`]
+/// to [`remove`](Tailnets::remove) a tailnet with and would otherwise leave
+/// its node key behind. Returns whether there was a state to delete.
+pub async fn delete_state(data_dir: &std::path::Path, id: i64) -> Result<bool, Error> {
+    let dir = state_dir(data_dir, id);
+    let existed = tokio::fs::try_exists(&dir).await?;
+    remove_dir(&dir).await?;
+    Ok(existed)
 }
 
 /// Deletes `dir` and what is in it; a directory that is not there is done.

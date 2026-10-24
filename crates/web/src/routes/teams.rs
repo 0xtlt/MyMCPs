@@ -357,11 +357,11 @@ pub async fn destroy(
     team.team.delete(&mut *transaction).await?;
     transaction.commit().await?;
     // Its tailnets went with it: their daemons leave the tailnets too.
-    tailnets::discard_removed(&state, &before).await;
+    let left = tailnets::discard_removed(&state, &before).await;
 
     // The next page is drawn in another team of theirs.
     session.forget(crate::auth::TEAM_KEY);
-    session.flash("success", "Team deleted");
+    session.flash("success", tailnets::with_logout_note("Team deleted", left));
     Ok(navigate(&headers, "/"))
 }
 
@@ -891,15 +891,15 @@ pub async fn destroy_user(
     if !still_super_admin(&mut transaction, &actor).await? {
         return Ok(refuse(SUPER_ADMIN_REQUIRED));
     }
-    match Team::delete_account(&mut transaction, account.id).await? {
+    let left = match Team::delete_account(&mut transaction, account.id).await? {
         Ok(()) => {
             transaction.commit().await?;
             // The teams the account was alone in went with it, tailnets included.
-            tailnets::discard_removed(&state, &before).await;
+            tailnets::discard_removed(&state, &before).await
         }
         Err(AccountRemovalRefusal::LastSuperAdmin) => return Ok(refuse(LAST_SUPER_ADMIN)),
-    }
+    };
 
-    session.flash("success", "User deleted");
+    session.flash("success", tailnets::with_logout_note("User deleted", left));
     Ok(navigate(&headers, "/users"))
 }

@@ -29,8 +29,16 @@ impl TailnetHandle {
     /// The address to [`dial`](Self::dial) for `host:port`, if `host` is a peer
     /// of the tailnet: its MagicDNS name (in full, or its first label, in any
     /// case), one of its Tailscale addresses, or an address inside a subnet it
-    /// routes. `None` for any other host, and always for loopback, link-local,
-    /// unspecified and multicast addresses.
+    /// routes.
+    ///
+    /// A host that is the tailnet's or nobody's is never left to another
+    /// network: an IP address, a name of one label, a name under `.ts.net` and
+    /// a name under the MagicDNS suffix of this tailnet that no peer carries
+    /// fail with a [`NotRouted`](crate::NotRouted) error (see
+    /// [`is_not_routed`](crate::is_not_routed)). That is the case, always, of
+    /// loopback, link-local, unspecified and multicast addresses, and of the
+    /// addresses of this node. `None` only for another DNS name, which the
+    /// caller may send over a network that resolves it.
     ///
     /// It reads the status of the daemon, at most two seconds old. An error
     /// means the tailnet cannot be asked: the daemon does not answer, or the
@@ -43,7 +51,16 @@ impl TailnetHandle {
                 format!("the tailnet is not running: {}", status.backend_state),
             ));
         }
-        Ok(route::resolve(&status, host).map(|address| SocketAddr::new(address, port)))
+        match route::resolve(&status, host) {
+            Some(address) => Ok(Some(SocketAddr::new(address, port))),
+            None if route::is_tailnet_only(&status, host) => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                crate::NotRouted {
+                    host: host.trim().to_owned(),
+                },
+            )),
+            None => Ok(None),
+        }
     }
 
     /// A TCP connection to `address` through the tailnet. The address is one

@@ -90,6 +90,9 @@ type Handshake = (Option<String>, Option<Vec<u8>>);
 /// server in the same process, over a pipe, and records what it was asked.
 struct Memory {
     hosts: Mutex<Vec<&'static str>>,
+    /// Hosts the overlay answers for with an error when it does not carry
+    /// them, instead of `None`.
+    overlay_only: Vec<&'static str>,
     handler: Handler,
     received: Arc<Mutex<Vec<Received>>>,
     routed: Mutex<Vec<(String, u16)>>,
@@ -108,6 +111,7 @@ impl Memory {
     ) -> Self {
         Self {
             hosts: Mutex::new(hosts.to_vec()),
+            overlay_only: Vec::new(),
             handler: Arc::new(handler),
             received: Arc::default(),
             routed: Mutex::default(),
@@ -118,6 +122,13 @@ impl Memory {
             tls: None,
             handshakes: Arc::default(),
         }
+    }
+
+    /// `hosts` are the overlay's alone: when it does not carry one, the route
+    /// is an error, not `None`.
+    fn refusing(mut self, hosts: &[&'static str]) -> Self {
+        self.overlay_only = hosts.to_vec();
+        self
     }
 
     fn serving_tls(mut self) -> Self {
@@ -171,12 +182,14 @@ impl Overlay for Memory {
     async fn route(&self, host: &str, port: u16) -> io::Result<Option<SocketAddr>> {
         self.routed.lock().unwrap().push((host.to_owned(), port));
         tokio::time::sleep(self.route_delay).await;
-        Ok(self
-            .hosts
-            .lock()
-            .unwrap()
-            .contains(&host)
-            .then(|| SocketAddr::new(TAILNET_ADDRESS.parse().unwrap(), port)))
+        let carried = self.hosts.lock().unwrap().contains(&host);
+        if !carried && self.overlay_only.contains(&host) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("\"{host}\" is not carried"),
+            ));
+        }
+        Ok(carried.then(|| SocketAddr::new(TAILNET_ADDRESS.parse().unwrap(), port)))
     }
 
     async fn dial(&self, address: SocketAddr) -> io::Result<OverlayStream> {
@@ -515,6 +528,131 @@ async fn leaves_a_url_that_is_not_http_to_the_rest() {
 
     assert!(matches!(error, FetchError::Offline), "{error}");
     assert!(overlay.routed().is_empty());
+}
+
+/// A server on this machine that counts the connections it is given.
+async fn counting_local_server() -> (u16, Arc<AtomicUsize>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&accepted);
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request).await;
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok")
+                .await;
+        }
+    });
+    (port, accepted)
+}
+
+#[tokio::test]
+async fn the_public_network_refuses_restricted_ip_addresses_before_sending() {
+    let (port, accepted) = counting_local_server().await;
+    // The overlay carries nothing here: everything falls to the network.
+    let overlay = Arc::new(Memory::new(&[], |_| Reply::text("overlay")));
+    let fetcher = Fetcher::shared().through(&network(&overlay)).public_only();
+
+    // Every way to write an address of this machine, of a private network,
+    // of the metadata service of a cloud, and the IPv6 forms.
+    for host in [
+        format!("127.0.0.1:{port}"),
+        format!("127.1:{port}"),
+        format!("0x7f.0.0.1:{port}"),
+        format!("2130706433:{port}"),
+        format!("[::1]:{port}"),
+        format!("[::ffff:127.0.0.1]:{port}"),
+        format!("[::ffff:7f00:1]:{port}"),
+        format!("0.0.0.0:{port}"),
+        format!("10.0.0.5:{port}"),
+        format!("172.16.0.1:{port}"),
+        format!("192.168.1.10:{port}"),
+        format!("100.64.0.9:{port}"),
+        format!("169.254.169.254:{port}"),
+        format!("[fe80::1]:{port}"),
+        format!("[fc00::1]:{port}"),
+        format!("[fd7a:115c:a1e0::2]:{port}"),
+        format!("[::ffff:169.254.169.254]:{port}"),
+        format!("[64:ff9b::a00:1]:{port}"),
+    ] {
+        let error = get(&fetcher, &format!("http://{host}/token"))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, FetchError::RestrictedAddress { .. }),
+            "{host}: {error}"
+        );
+        // The credentials are not sent either.
+        let request = FetchRequest::post(url(&format!("http://{host}/token")))
+            .header("Authorization", "Bearer secret")
+            .unwrap()
+            .body("code=secret");
+        let error = fetch(&fetcher, request).await.unwrap_err();
+        assert!(
+            matches!(error, FetchError::RestrictedAddress { .. }),
+            "{host}: {error}"
+        );
+    }
+    assert_eq!(accepted.load(Ordering::SeqCst), 0);
+    assert!(overlay.requests().is_empty());
+
+    // The refusal is the one of the public client, not of the network: the
+    // same address is reached without the restriction, and an address the
+    // overlay carries still goes through it.
+    let mut response = get(
+        &Fetcher::shared().through(&network(&overlay)),
+        &format!("http://127.0.0.1:{port}/"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.text().await.unwrap(), "ok");
+    assert_eq!(accepted.load(Ordering::SeqCst), 1);
+
+    let overlay = Arc::new(Memory::new(&["192.168.1.10", "fd7a:115c:a1e0::2"], |_| {
+        Reply::text("overlay")
+    }));
+    let fetcher = Fetcher::shared().through(&network(&overlay)).public_only();
+    for host in ["192.168.1.10", "[fd7a:115c:a1e0::2]"] {
+        let mut response = get(&fetcher, &format!("http://{host}:{port}/"))
+            .await
+            .unwrap();
+        assert_eq!(response.text().await.unwrap(), "overlay", "{host}");
+    }
+    assert_eq!(accepted.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn an_error_of_the_overlay_route_never_falls_back_to_the_network() {
+    let overlay = Arc::new(
+        Memory::new(&[], |_| Reply::text("overlay"))
+            .refusing(&["192.168.1.10", "gone.tailnet.test"]),
+    );
+    let fallback = Arc::new(AtomicUsize::new(0));
+    let fetcher = counting_fallback(&fallback).through(&network(&overlay));
+
+    for same in [
+        "http://192.168.1.10/token",
+        "https://gone.tailnet.test/token",
+    ] {
+        let error = get(&fetcher, same).await.unwrap_err();
+        assert!(
+            matches!(error, FetchError::Overlay { .. }),
+            "{same}: {error}"
+        );
+    }
+    assert_eq!(fallback.load(Ordering::SeqCst), 0);
+
+    // `None` is what lets a host go on to the network.
+    let mut response = get(&fetcher, "https://auth.example/token").await.unwrap();
+    assert_eq!(response.text().await.unwrap(), "fallback");
+    assert_eq!(fallback.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

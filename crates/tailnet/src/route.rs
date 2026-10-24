@@ -20,6 +20,48 @@ pub(crate) fn is_forbidden(address: IpAddr) -> bool {
     address.is_loopback() || address.is_unspecified() || address.is_multicast() || link_local
 }
 
+/// Whether `host` is the tailnet's to answer for, or nobody's: an IP literal,
+/// a name of one label (`nas`, `localhost`), and a name under `.ts.net` or
+/// under the MagicDNS suffix of this tailnet, which a Headscale chooses
+/// itself. None of these names is a host of the public internet, so a host of
+/// this kind that no peer carries must never be sent there instead: an address
+/// literal is a machine of some network, which the tailnet's routes withdrawn
+/// would turn into one of the network the server runs in, and a name of the
+/// tailnet is a device that is gone. Only another DNS name may be left to a
+/// network that resolves it.
+pub(crate) fn is_tailnet_only(status: &Status, host: &str) -> bool {
+    let host = host.trim();
+    let host = host
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(host);
+    if host.parse::<IpAddr>().is_ok() {
+        return true;
+    }
+    let name = host.trim_end_matches('.').to_ascii_lowercase();
+    if name.is_empty() || !name.contains('.') || under(&name, "ts.net") {
+        return true;
+    }
+    let own = status
+        .self_node
+        .as_ref()
+        .map(PeerStatus::fqdn)
+        .and_then(|fqdn| fqdn.split_once('.').map(|(_, suffix)| suffix.to_owned()));
+    [Some(status.magic_dns_suffix().to_ascii_lowercase()), own]
+        .into_iter()
+        .flatten()
+        .filter(|suffix| !suffix.is_empty())
+        .any(|suffix| under(&name, &suffix))
+}
+
+/// Whether `name` is `suffix` or a name below it.
+fn under(name: &str, suffix: &str) -> bool {
+    name == suffix
+        || name
+            .strip_suffix(suffix)
+            .is_some_and(|label| label.ends_with('.'))
+}
+
 /// The Tailscale address to dial for `host`, or `None` when it is not a peer.
 ///
 /// The addresses of this node are never routed, on any path: a subnet router
@@ -268,6 +310,64 @@ mod tests {
         ] {
             assert_eq!(resolve(&status, host), None, "{host}");
         }
+    }
+
+    #[test]
+    fn the_hosts_only_the_tailnet_answers_for() {
+        let status = status();
+        for host in [
+            "127.0.0.1",
+            "8.8.8.8",
+            "192.168.2.50",
+            "::1",
+            "[fd01::1]",
+            "::ffff:8.8.8.8",
+            "nas",
+            "localhost",
+            "NAS",
+            "gone.tail1234.ts.net",
+            "gone.tail1234.ts.net.",
+            "mymcps.tail1234.ts.net",
+            "x.other-tailnet.ts.net",
+            "TS.NET",
+            "ts.net",
+            "",
+            ".",
+        ] {
+            assert!(is_tailnet_only(&status, host), "{host:?}");
+        }
+        for host in [
+            "example.com",
+            "auth.example.com",
+            "nas.tail1234.ts.net.example.com",
+            "tail1234.ts.net.evil.io",
+            "notts.net",
+            "evil-tail1234.ts.net.example",
+        ] {
+            assert!(!is_tailnet_only(&status, host), "{host:?}");
+        }
+    }
+
+    #[test]
+    fn the_magic_dns_suffix_of_a_headscale_is_the_tailnets_too() {
+        let status: Status = serde_json::from_value(json!({
+            "MagicDNSSuffix": "tailnet.corp.example",
+            "Self": {"DNSName": "mymcps.tailnet.corp.example."},
+            "Peer": {}
+        }))
+        .unwrap();
+        assert!(is_tailnet_only(&status, "gone.tailnet.corp.example"));
+        assert!(is_tailnet_only(&status, "tailnet.corp.example"));
+        assert!(!is_tailnet_only(&status, "corp.example"));
+        assert!(!is_tailnet_only(&status, "auth.example.com"));
+        assert!(!is_tailnet_only(&status, "xtailnet.corp.example"));
+        // Without a suffix in the status, the one of this node's own name.
+        let status: Status = serde_json::from_value(json!({
+            "Self": {"DNSName": "mymcps.hs.example."}
+        }))
+        .unwrap();
+        assert!(is_tailnet_only(&status, "gone.hs.example"));
+        assert!(!is_tailnet_only(&status, "auth.example.com"));
     }
 
     #[test]

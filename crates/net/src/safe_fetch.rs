@@ -92,6 +92,13 @@ pub enum FetchError {
     /// The response broke off while its body was read.
     #[error("terminated")]
     Terminated(#[source] Arc<reqwest::Error>),
+    /// A [`Fetcher::public_only`] was asked for an IP address that is a
+    /// loopback, private, link-local or otherwise restricted one. Nothing was
+    /// sent.
+    #[error(
+        "{host} is a loopback, private or link-local address, which this request may not reach"
+    )]
+    RestrictedAddress { host: String },
     /// A [`Fetcher::offline`] was left with a request no answer was given for.
     #[error("fetch failed")]
     Offline,
@@ -365,6 +372,23 @@ impl reqwest::dns::Resolve for PublicOnlyResolver {
     }
 }
 
+/// Refuses a URL whose host is an IP address in a restricted network. The
+/// URL type has already read every spelling of an address (`0x7f.1`,
+/// `2130706433`, `[::ffff:127.0.0.1]`) as the address it is.
+fn refuse_restricted_literal(url: &Url) -> Result<(), FetchError> {
+    let address = match url.host() {
+        Some(url::Host::Ipv4(address)) => std::net::IpAddr::V4(address),
+        Some(url::Host::Ipv6(address)) => std::net::IpAddr::V6(address),
+        _ => return Ok(()),
+    };
+    if crate::address_guard::is_restricted_ip(address) {
+        return Err(FetchError::RestrictedAddress {
+            host: address.to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// The client of the requests that must not reach the network the instance
 /// runs in, see [`Fetcher::public_only`]. Apart from where it connects, it
 /// is [`shared_client`].
@@ -513,6 +537,9 @@ impl Transport {
                     return Ok(RawResponse::from_network(response));
                 }
                 Transport::PublicNetwork => {
+                    // The resolver below only sees names: an address in the URL
+                    // is connected to as it is, so it is checked here.
+                    refuse_restricted_literal(&request.url)?;
                     let mut hop =
                         reqwest::Request::new(request.method.clone(), request.url.clone());
                     *hop.headers_mut() = request.headers.clone();
@@ -810,9 +837,12 @@ impl Fetcher {
     /// The same fetcher, for a URL that must not lead into the network the
     /// instance runs in: over the network, the name is resolved where the
     /// connection is made, and a name that resolves to a loopback, private
-    /// or link-local address is not connected to. A check of the name made
-    /// before the request says nothing of what it resolves to by then. A
-    /// fetcher that does not use the network is returned as it is.
+    /// or link-local address is not connected to. A URL that names an IP
+    /// address instead of a name is refused, before anything is sent, when
+    /// the address is in such a network ([`FetchError::RestrictedAddress`]).
+    /// A check of the name made before the request says nothing of what it
+    /// resolves to by then. A fetcher that does not use the network is
+    /// returned as it is.
     ///
     /// Over an overlay network ([`through`](Self::through)), what the overlay
     /// routes still goes through it, since an operator chose that network for

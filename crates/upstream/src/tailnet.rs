@@ -11,9 +11,12 @@
 //! off the public network is that every later request to its origin requires
 //! the tailnet too: when the tailnet stops routing the host in the middle of a
 //! session (a subnet route is withdrawn, the device left), the request fails
-//! and is never sent anywhere else. Only the other origins of the OAuth flow,
-//! such as a provider on the internet, go to the public network, and only to
-//! public addresses.
+//! and is never sent anywhere else. Only the other origins of the OAuth flow
+//! go to the public network, and only the ones that are named by a DNS name
+//! of the internet, at public addresses: an IP address, a name of one label
+//! and a name of the tailnet are the tailnet's or nobody's (see
+//! [`mymcps_tailnet::TailnetHandle::route`]), so when it stops routing one of
+//! them the request fails like the ones to the MCP's own origin.
 //!
 //! There is one [`OverlayNetwork`] per tailnet, kept by the [`Upstream`], so
 //! the connections to the devices of a tailnet are pooled across requests.
@@ -63,6 +66,9 @@ impl Overlay for TailnetOverlay {
         self.label.clone()
     }
 
+    /// The tailnet's route: an error, never `None`, for a host that is the
+    /// tailnet's or nobody's (an address, a single-label name, a name of the
+    /// tailnet), so that such a request never reaches the fallback network.
     async fn route(&self, host: &str, port: u16) -> io::Result<Option<SocketAddr>> {
         self.handle()?.route(host, port).await
     }
@@ -169,7 +175,16 @@ impl Upstream {
         };
         match routed {
             Ok(Some(_)) => {}
+            // `None` is another DNS name, and the error of a host that is the
+            // tailnet's or nobody's: for the MCP's own host both say it is
+            // not carried.
             Ok(None) => {
+                return Err(refusal(format!(
+                    "\"{host}\" is not a device or a subnet route of tailnet \"{}\"",
+                    tailnet.name
+                )));
+            }
+            Err(error) if mymcps_tailnet::is_not_routed(&error) => {
                 return Err(refusal(format!(
                     "\"{host}\" is not a device or a subnet route of tailnet \"{}\"",
                     tailnet.name

@@ -255,8 +255,9 @@ impl TailnetsPage<'_> {
     }
 }
 
-/// Whether the page asks for itself again: while a tailnet starts or waits for
-/// its sign-in, unless the dialog is open, where it would lose what is typed.
+/// Whether the page asks for itself again: while a tailnet starts, needs a
+/// sign-in or needs an approval, unless the dialog is open, where it would
+/// lose what is typed.
 fn refreshes(page: &TailnetsPage) -> bool {
     page.open.is_none() && page.rows.iter().any(TailnetRow::is_settling)
 }

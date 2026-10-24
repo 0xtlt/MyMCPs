@@ -1891,6 +1891,183 @@ async fn deleting_a_user_starts_no_daemon_for_a_control_server_that_is_no_longer
     assert!(!lab.tailnet_dir(mine.id).exists());
 }
 
+// --- deleting while Tailscale is off ---
+
+/// A server where Tailscale is off (`TAILSCALED_BINARY=off`), with tailnets
+/// that were joined before it was turned off: their rows and the state of
+/// their nodes.
+struct Off {
+    app: TestApp,
+}
+
+impl Off {
+    async fn new() -> Self {
+        Self {
+            app: TestApp::with_upstream(|upstream| upstream.tailnets(None)).await,
+        }
+    }
+
+    fn state_dir(&self, id: i64) -> PathBuf {
+        self.app
+            .core
+            .config
+            .data_dir
+            .join("tailnets")
+            .join(id.to_string())
+    }
+
+    /// A tailnet row, and the node key of the device it joined.
+    async fn joined(&self, team_id: i64, created_by: i64, name: &str) -> Tailnet {
+        let mut tailnet = Tailnet {
+            team_id,
+            name: name.into(),
+            hostname: format!("mymcps-{}", name.to_lowercase()),
+            created_by,
+            ..Default::default()
+        };
+        tailnet.insert(&*self.app.core.db).await.unwrap();
+        let state = self.state_dir(tailnet.id);
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("tailscaled.state"), "{\"node-key\":1}").unwrap();
+        tailnet
+    }
+}
+
+fn says_the_device_stays(message: &str) {
+    assert!(message.contains("Tailscale is off"), "{message}");
+    assert!(message.contains("could not be logged out"), "{message}");
+    assert!(message.contains("admin console"), "{message}");
+}
+
+#[tokio::test]
+async fn deleting_a_tailnet_while_tailscale_is_off_deletes_its_state_and_says_the_device_stays() {
+    let off = Off::new().await;
+    let admin = create_admin(&off.app).await;
+    let pro = off.joined(Team::ROOT_ID, admin.id, "pro").await;
+    let kept = off.joined(Team::ROOT_ID, admin.id, "kept").await;
+    assert!(off.state_dir(pro.id).join("tailscaled.state").exists());
+
+    let deleted = off
+        .app
+        .post(&format!("/tailnets/{}?_method=DELETE", pro.id))
+        .login_as(&admin)
+        .csrf()
+        .send()
+        .await;
+
+    assert_redirect(&deleted, "/tailnets");
+    let message = flash(&deleted, "success").unwrap();
+    assert!(message.starts_with("Tailnet deleted."), "{message}");
+    says_the_device_stays(&message);
+    assert!(!off.state_dir(pro.id).exists(), "the node key is gone");
+    assert!(
+        Tailnet::find(&*off.app.core.db, pro.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    // Another tailnet's state is not touched.
+    assert!(off.state_dir(kept.id).join("tailscaled.state").exists());
+}
+
+#[tokio::test]
+async fn deleting_a_team_while_tailscale_is_off_deletes_the_state_of_its_tailnets() {
+    let off = Off::new().await;
+    let root_owner = create_super_admin(&off.app).await;
+    let team = create_team(&off.app, "Research").await;
+    let owner = create_account(&off.app, None).await;
+    join_team(&off.app, team.id, &owner, TeamRole::Owner).await;
+    let first = off.joined(team.id, owner.id, "first").await;
+    let second = off.joined(team.id, owner.id, "second").await;
+    let kept = off.joined(Team::ROOT_ID, root_owner.id, "kept").await;
+
+    let deleted = off
+        .app
+        .post("/team?_method=DELETE")
+        .login_as(&owner)
+        .in_team(team.id)
+        .csrf()
+        .send()
+        .await;
+
+    assert_redirect(&deleted, "/");
+    let message = flash(&deleted, "success").unwrap();
+    assert!(message.starts_with("Team deleted."), "{message}");
+    says_the_device_stays(&message);
+    assert!(message.contains("2 tailnets"), "{message}");
+    assert!(!off.state_dir(first.id).exists());
+    assert!(!off.state_dir(second.id).exists());
+    assert!(off.state_dir(kept.id).exists());
+}
+
+#[tokio::test]
+async fn deleting_a_user_while_tailscale_is_off_deletes_the_state_of_their_personal_tailnet() {
+    let off = Off::new().await;
+    let actor = create_super_admin(&off.app).await;
+    let outsider = create_account(&off.app, None).await;
+    let mut transaction = off.app.core.db.begin().await.unwrap();
+    let personal = Team::create_personal(&mut transaction, &outsider)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    // A team they leave behind keeps its tailnet, and so its state.
+    let shared = create_team(&off.app, "Shared").await;
+    join_team(&off.app, shared.id, &outsider, TeamRole::Admin).await;
+    join_team(&off.app, shared.id, &actor, TeamRole::Owner).await;
+    let mine = off.joined(personal.id, outsider.id, "mine").await;
+    let common = off.joined(shared.id, outsider.id, "common").await;
+
+    let deleted = off
+        .app
+        .post(&format!("/users/{}?_method=DELETE", outsider.id))
+        .login_as(&actor)
+        .csrf()
+        .form(&[("currentPassword", PASSWORD)])
+        .send()
+        .await;
+
+    assert_redirect(&deleted, "/users");
+    let message = flash(&deleted, "success").unwrap();
+    assert!(message.starts_with("User deleted."), "{message}");
+    says_the_device_stays(&message);
+    assert!(!off.state_dir(mine.id).exists());
+    assert!(off.state_dir(common.id).exists());
+    assert!(
+        Tailnet::find(&*off.app.core.db, common.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn deleting_with_tailscale_off_says_nothing_of_a_logout_when_no_device_joined_here() {
+    let off = Off::new().await;
+    let admin = create_admin(&off.app).await;
+    let mut tailnet = Tailnet {
+        team_id: Team::ROOT_ID,
+        name: "restored".into(),
+        hostname: "mymcps-restored".into(),
+        created_by: admin.id,
+        ..Default::default()
+    };
+    tailnet.insert(&*off.app.core.db).await.unwrap();
+    assert!(!off.state_dir(tailnet.id).exists());
+
+    let deleted = off
+        .app
+        .post(&format!("/tailnets/{}?_method=DELETE", tailnet.id))
+        .login_as(&admin)
+        .csrf()
+        .send()
+        .await;
+
+    assert_eq!(
+        flash(&deleted, "success").as_deref(),
+        Some("Tailnet deleted")
+    );
+}
+
 #[tokio::test]
 async fn keeps_the_mcp_a_team_had_through_a_tailnet_on_the_internet_when_it_goes() {
     // `on delete set null`: deleting the row never leaves an MCP pointing at nothing.

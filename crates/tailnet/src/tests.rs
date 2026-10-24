@@ -713,6 +713,42 @@ mod connect {
 mod remove {
     use super::*;
 
+    #[test]
+    fn the_state_directory_is_the_one_the_registry_uses_and_is_absolute() {
+        let fixture = Fixture::new(0);
+        let data = fixture.dir.path().join("data");
+        assert_eq!(crate::state_dir(&data, 1), fixture.tailnet_dir(1));
+
+        // A relative data directory is made absolute, with its dots folded,
+        // as the registry does it.
+        let here = std::env::current_dir().unwrap();
+        let relative = crate::state_dir(std::path::Path::new("tmp/../data/."), 7);
+        assert!(relative.is_absolute(), "{}", relative.display());
+        assert_eq!(relative, here.join("data").join("tailnets").join("7"));
+    }
+
+    #[tokio::test]
+    async fn the_state_is_deleted_without_a_registry_or_a_daemon() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = crate::state_dir(dir.path(), 4);
+        std::fs::create_dir_all(state.join("nested")).unwrap();
+        std::fs::write(state.join("tailscaled.state"), "{}").unwrap();
+        let other = crate::state_dir(dir.path(), 5);
+        std::fs::create_dir_all(&other).unwrap();
+
+        assert!(crate::delete_state(dir.path(), 4).await.unwrap());
+        assert!(!state.exists());
+        // Another tailnet's state is not touched, and nothing is left to
+        // delete the second time.
+        assert!(other.exists());
+        assert!(!crate::delete_state(dir.path(), 4).await.unwrap());
+        assert!(
+            !crate::delete_state(&dir.path().join("missing"), 4)
+                .await
+                .unwrap()
+        );
+    }
+
     #[tokio::test]
     async fn it_logs_out_stops_the_daemon_and_deletes_the_directory() {
         let fixture = Fixture::new(0);
@@ -981,10 +1017,27 @@ mod route_and_dial {
             handle.route("192.168.1.20", 22).await.unwrap(),
             expected("192.168.1.20", 22)
         );
+        // Another DNS name is not the tailnet's: the caller may send it elsewhere.
         assert_eq!(handle.route("example.com", 443).await.unwrap(), None);
-        assert_eq!(handle.route("192.168.2.20", 22).await.unwrap(), None);
-        assert_eq!(handle.route("127.0.0.1", 22).await.unwrap(), None);
-        assert_eq!(handle.route("169.254.169.254", 80).await.unwrap(), None);
+        assert_eq!(handle.route("nas.example.com", 443).await.unwrap(), None);
+        // Everything that is the tailnet's or nobody's fails instead, so that
+        // it is never left to another network.
+        for host in [
+            "192.168.2.20",
+            "127.0.0.1",
+            "169.254.169.254",
+            "8.8.8.8",
+            "::1",
+            "[fd00::1]",
+            "localhost",
+            "printer",
+            "gone.tail1234.ts.net",
+            "mymcps.tail1234.ts.net",
+            "someone.else.ts.net",
+        ] {
+            let error = handle.route(host, 22).await.unwrap_err();
+            assert!(crate::is_not_routed(&error), "{host}: {error}");
+        }
 
         let status_requests = api.requests_to("/localapi/v0/status");
         assert_eq!(status_requests.len(), 1, "the status is cached");
@@ -995,6 +1048,35 @@ mod route_and_dial {
         );
         assert!(status_requests[0].header("origin").is_none());
         assert!(status_requests[0].header("referer").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_host_of_the_tailnet_that_no_peer_carries_is_an_error_not_none() {
+        let fixture = Fixture::new(0);
+        let (api, handle) = running(&fixture).await;
+        assert!(handle.route("192.168.1.20", 22).await.unwrap().is_some());
+        let mut status = running_status();
+        status["Peer"]["nodekey:bbbb"]["PrimaryRoutes"] = json!([]);
+        status["Peer"]["nodekey:aaaa"]["TailscaleIPs"] = json!(["100.64.0.2/32"]);
+        api.set_status(status);
+        tokio::time::sleep(Duration::from_millis(2100)).await;
+
+        // The subnet route was withdrawn: the address is still the tailnet's.
+        let error = handle.route("192.168.1.20", 22).await.unwrap_err();
+        assert!(crate::is_not_routed(&error), "{error}");
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(error.to_string().contains("192.168.1.20"), "{error}");
+        // A tailnet that cannot be asked is another error.
+        let down = fixture.with_api(2, status_in("NeedsLogin")).await;
+        let error = fixture
+            .tailnets
+            .handle(2)
+            .unwrap()
+            .route("192.168.1.20", 22)
+            .await
+            .unwrap_err();
+        assert!(!crate::is_not_routed(&error), "{error}");
+        drop(down);
     }
 
     #[tokio::test]
@@ -1012,7 +1094,9 @@ mod route_and_dial {
             "TailscaleIPs": ["100.64.0.9"]
         });
         api.set_status(status);
-        assert_eq!(handle.route("printer", 80).await.unwrap(), None);
+        assert!(crate::is_not_routed(
+            &handle.route("printer", 80).await.unwrap_err()
+        ));
         assert_eq!(api.requests_to("/localapi/v0/status").len(), 1);
 
         tokio::time::sleep(Duration::from_millis(2100)).await;
@@ -1144,8 +1228,10 @@ mod route_and_dial {
         let api = fixture.with_api(1, status).await;
         let handle = fixture.tailnets.handle(1).unwrap();
 
-        assert_eq!(handle.route("100.64.0.1", 8080).await.unwrap(), None);
-        assert_eq!(handle.route("fd7a:115c:a1e0::1", 8080).await.unwrap(), None);
+        for own in ["100.64.0.1", "fd7a:115c:a1e0::1"] {
+            let error = handle.route(own, 8080).await.unwrap_err();
+            assert!(crate::is_not_routed(&error), "{own}: {error}");
+        }
         assert!(handle.route("100.64.0.50", 8080).await.unwrap().is_some());
         for address in ["100.64.0.1:8080", "[fd7a:115c:a1e0::1]:8080"] {
             let error = handle.dial(address.parse().unwrap()).await.err().unwrap();

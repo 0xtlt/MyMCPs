@@ -65,7 +65,8 @@
 //!
 //! A host is a peer when the status of the daemon says so, never by a lookup of
 //! the machine's DNS: see [`TailnetHandle::route`]. A host that is not a peer
-//! is not dialled through the tailnet.
+//! is not dialled through the tailnet, and an address, a single-label name or
+//! a name of the tailnet that is not a peer is an error, never "not mine".
 //!
 //! The crate is unix only: it is empty elsewhere.
 #![cfg(unix)]
@@ -84,6 +85,8 @@ pub mod test_support;
 #[cfg(test)]
 mod tests;
 
-pub use error::Error;
+pub use error::{Error, NotRouted, is_not_routed};
 pub use handle::TailnetHandle;
-pub use tailnets::{ConnectOptions, TailnetState, Tailnets, TailnetsConfig};
+pub use tailnets::{
+    ConnectOptions, TailnetState, Tailnets, TailnetsConfig, delete_state, state_dir,
+};

@@ -480,8 +480,11 @@ pub async fn destroy(
     }
     // The connections an MCP kept through it end with it.
     state.upstream.forget_tailnet(tailnet.id);
-    remove_node(&state, tailnet.id, tailnet.control_url.as_deref()).await;
-    session.flash("success", "Tailnet deleted");
+    let left = remove_node(&state, tailnet.id, tailnet.control_url.as_deref()).await;
+    session.flash(
+        "success",
+        with_logout_note("Tailnet deleted", usize::from(left == Node::LeftLoggedIn)),
+    );
     Ok(navigate(&headers, &list(&uri)))
 }
 
@@ -569,14 +572,41 @@ pub async fn sign_in_again(
     ))
 }
 
+/// What became of the node of a tailnet that was taken out of this server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Node {
+    /// Nothing is left of it here, and it logged out of its tailnet where it
+    /// could (a control server that does not answer is only logged).
+    Removed,
+    /// Its state is deleted, but Tailscale is off on this server, so no daemon
+    /// could log it out: the device stays in the admin console of its
+    /// tailnet. Only said for a node that had a state here.
+    LeftLoggedIn,
+}
+
 /// Takes the node of a tailnet out of this server. The node logs out of its
 /// tailnet, unless the control server it was connected to is not allowed any
 /// more (`TAILNET_CONTROL_URLS`): the logout needs a daemon, which that server
 /// would steer, so the daemon is then never started and the state is only
 /// deleted. `control_url` is the one the row had.
-async fn remove_node(state: &AppState, id: i64, control_url: Option<&str>) {
+///
+/// When Tailscale is off on this server (`TAILSCALED_BINARY=off`) there is no
+/// daemon to ask either, and the state directory, with the key of the node,
+/// is deleted all the same: the key of a device that was joined before the
+/// feature was turned off must not stay behind a tailnet that is gone.
+async fn remove_node(state: &AppState, id: i64, control_url: Option<&str>) -> Node {
     let Some(tailnets) = state.upstream.tailnets() else {
-        return;
+        return match mymcps_tailnet::delete_state(&state.core.config.data_dir, id).await {
+            Ok(true) => Node::LeftLoggedIn,
+            Ok(false) => Node::Removed,
+            Err(error) => {
+                tracing::warn!(
+                    tailnet = id,
+                    "could not delete the state of a tailnet: {error}"
+                );
+                Node::LeftLoggedIn
+            }
+        };
     };
     let result = match state.upstream.control_url_refusal(control_url) {
         Some(_) => tailnets.discard(id).await,
@@ -589,6 +619,21 @@ async fn remove_node(state: &AppState, id: i64, control_url: Option<&str>) {
             tailnet = id,
             "could not delete the state of a tailnet: {error}"
         );
+    }
+    Node::Removed
+}
+
+/// `message`, and what a person has to do when the device of `devices`
+/// tailnets of a deletion could not be logged out remotely.
+pub fn with_logout_note(message: &str, devices: usize) -> String {
+    match devices {
+        0 => message.to_owned(),
+        1 => format!(
+            "{message}. Tailscale is off on this server, so its device could not be logged out of the tailnet: remove it in the admin console of the tailnet."
+        ),
+        many => format!(
+            "{message}. Tailscale is off on this server, so the devices of {many} tailnets could not be logged out: remove them in the admin console of each tailnet."
+        ),
     }
 }
 
@@ -614,25 +659,29 @@ pub async fn all_control_urls<'e>(
 /// Stop the daemons of the tailnets that were in `before` (read with
 /// [`all_control_urls`] inside the deletion's transaction) and are no more:
 /// the ones a deleted team, or the personal team of a deleted account, had.
-/// A daemon that cannot be stopped is logged: the deletion is done.
-pub async fn discard_removed(state: &AppState, before: &BTreeMap<i64, Option<String>>) {
-    if state.upstream.tailnets().is_none() {
-        return;
-    }
+/// A daemon that cannot be stopped is logged: the deletion is done. When
+/// Tailscale is off the state of each is deleted all the same; the count that
+/// comes back is the one of the devices that could not be logged out for
+/// that reason, for [`with_logout_note`].
+pub async fn discard_removed(state: &AppState, before: &BTreeMap<i64, Option<String>>) -> usize {
     let after = match all_control_urls(&*state.core.db).await {
         Ok(after) => after,
         Err(error) => {
             tracing::warn!("could not list the tailnets that remain: {error}");
-            return;
+            return 0;
         }
     };
+    let mut left = 0;
     for (id, control_url) in before {
         if after.contains_key(id) {
             continue;
         }
         state.upstream.forget_tailnet(*id);
-        remove_node(state, *id, control_url.as_deref()).await;
+        if remove_node(state, *id, control_url.as_deref()).await == Node::LeftLoggedIn {
+            left += 1;
+        }
     }
+    left
 }
 
 #[cfg(test)]

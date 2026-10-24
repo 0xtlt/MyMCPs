@@ -68,3 +68,19 @@ impl Error {
         }
     }
 }
+
+/// A host that only the tailnet answers for (see
+/// [`TailnetHandle::route`](crate::TailnetHandle::route)) and that no device of
+/// it carries: the error of a route that must not fall back to another network.
+#[derive(Debug, thiserror::Error)]
+#[error("\"{host}\" is not a device or a subnet route of the tailnet")]
+pub struct NotRouted {
+    pub host: String,
+}
+
+/// Whether an error of [`TailnetHandle::route`](crate::TailnetHandle::route)
+/// says the host is the tailnet's alone and is not carried, as opposed to the
+/// tailnet not being able to answer.
+pub fn is_not_routed(error: &io::Error) -> bool {
+    error.get_ref().is_some_and(|inner| inner.is::<NotRouted>())
+}
