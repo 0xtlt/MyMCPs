@@ -1,0 +1,1018 @@
+//! The Tailnets page and the Network field of the MCP form: listing, connecting
+//! with either sign-in method (against the fake `tailscaled` and LocalAPI of
+//! `mymcps-tailnet`), what is refused, deleting, and what deleting a team or a
+//! user does to the daemons of its tailnets.
+#![cfg(unix)]
+
+mod mcps_support;
+
+use std::path::PathBuf;
+
+use http::StatusCode;
+use mcps_support::*;
+use mymcps_core::models::{Mcp, McpTransport, Tailnet, Team, TeamRole, User};
+use mymcps_tailnet::test_support::{FakeLocalApi, fake_tailscaled, running_status, status_in};
+use mymcps_tailnet::{Tailnets, TailnetsConfig};
+use mymcps_web::testing::factories::{
+    PASSWORD, create_account, create_admin, create_mcp, create_member, create_super_admin,
+    create_team, join_team,
+};
+use mymcps_web::testing::{TestApp, TestResponse};
+use serde_json::{Value, json};
+use tempfile::TempDir;
+
+const KEY: &str = "tskey-auth-kS3cr3tK3y-abcdef";
+const LOGIN_URL: &str = "https://login.tailscale.com/a/abc123";
+
+/// An app whose tailnets are run by a fake `tailscaled`: each tailnet that
+/// a test connects needs a fake LocalAPI on its socket, which [`Lab::daemon`]
+/// binds before the request that starts it.
+struct Lab {
+    app: TestApp,
+    tailnets: Tailnets,
+    dir: TempDir,
+}
+
+impl Lab {
+    async fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let binary = fake_tailscaled(&dir.path().join("bin"), 0);
+        let tailnets = Tailnets::new(TailnetsConfig {
+            binary,
+            data_dir: dir.path().join("data"),
+        });
+        let (fetcher, _calls) = mock_fetch(|call| mcp_answer(call, &json!([])));
+        let app = TestApp::with_upstream({
+            let tailnets = tailnets.clone();
+            move |upstream| {
+                upstream
+                    .fetcher(fetcher)
+                    .address_guard(public_names())
+                    .tailnets(Some(tailnets))
+            }
+        })
+        .await;
+        Self { app, tailnets, dir }
+    }
+
+    fn tailnet_dir(&self, id: i64) -> PathBuf {
+        self.dir.path().join("data/tailnets").join(id.to_string())
+    }
+
+    /// A fake LocalAPI where the daemon of tailnet `id` will have its socket.
+    fn daemon(&self, id: i64, status: Value) -> FakeLocalApi {
+        let directory = self.tailnet_dir(id);
+        std::fs::create_dir_all(&directory).unwrap();
+        FakeLocalApi::bind(&directory.join("ts.sock"), status)
+    }
+
+    /// A tailnet row, as if connected earlier.
+    async fn row(&self, team_id: i64, created_by: i64, name: &str) -> Tailnet {
+        let mut tailnet = Tailnet {
+            team_id,
+            name: name.into(),
+            hostname: format!("mymcps-{}", name.to_lowercase()),
+            created_by,
+            ..Default::default()
+        };
+        tailnet.insert(&*self.app.core.db).await.unwrap();
+        tailnet
+    }
+}
+
+fn needs_login() -> Value {
+    json!({ "Version": "1.104.2", "BackendState": "NeedsLogin", "AuthURL": LOGIN_URL })
+}
+
+/// The rows of the table, one piece of the page for each.
+fn table_rows(page: &str) -> Vec<&str> {
+    between(page, "<tbody>", "</tbody>")
+        .split("<tr>")
+        .skip(1)
+        .collect()
+}
+
+fn flash(response: &TestResponse, key: &str) -> Option<String> {
+    response
+        .flashed(key)
+        .and_then(|value| value.as_str().map(str::to_string))
+}
+
+async fn tailnets_of(app: &TestApp, team_id: i64) -> Vec<Tailnet> {
+    Tailnet::of_team(&*app.core.db, team_id).await.unwrap()
+}
+
+async fn get(app: &TestApp, user: &User, path: &str) -> String {
+    let response = app.get(path).login_as(user).send().await;
+    assert_eq!(response.status, StatusCode::OK, "{path}");
+    response.text()
+}
+
+fn connect<'a>(
+    app: &'a TestApp,
+    user: &User,
+    form: &[(&str, &str)],
+) -> mymcps_web::testing::TestRequest<'a> {
+    app.post("/tailnets").login_as(user).csrf().form(form)
+}
+
+// --- who sees the page ---
+
+#[tokio::test]
+async fn is_for_the_admins_of_a_team() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let member = create_member(&lab.app).await;
+
+    assert_redirect(&lab.app.get("/tailnets").send().await, "/login");
+    assert_redirect(&lab.app.get("/tailnets/new").send().await, "/login");
+    for path in ["/tailnets", "/tailnets/new"] {
+        let refused = lab.app.get(path).login_as(&member).send().await;
+        assert_redirect(&refused, "/");
+    }
+    let refused = connect(&lab.app, &member, &[("name", "pro"), ("method", "link")])
+        .send()
+        .await;
+    assert_redirect(&refused, "/");
+    let refused = lab
+        .app
+        .post("/tailnets/1?_method=DELETE")
+        .login_as(&member)
+        .csrf()
+        .send()
+        .await;
+    assert_redirect(&refused, "/");
+    assert!(tailnets_of(&lab.app, Team::ROOT_ID).await.is_empty());
+
+    // The navigation offers it to those who may use it.
+    let nav = r#"<a class="nav-item" href="/tailnets""#;
+    assert!(get(&lab.app, &admin, "/mcps").await.contains(nav));
+    assert!(!get(&lab.app, &member, "/mcps").await.contains(nav));
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains(r#"aria-current="page"><svg"#));
+}
+
+// --- listing ---
+
+#[tokio::test]
+async fn invites_to_connect_a_first_tailnet() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains("<h1 class=\"page-header__title\">Tailnets</h1>"));
+    assert!(page.contains("No tailnet yet"));
+    assert!(page.contains(
+        "Connect a Tailscale network, then choose it on an HTTP MCP to reach its devices."
+    ));
+    assert!(!page.contains("<table"));
+    assert!(!page.contains("http-equiv=\"refresh\""));
+    assert!(!page.contains("Tailscale is off"));
+    // The button, and the dialog it opens.
+    assert!(page.contains(r#"href="/tailnets/new" data-dialog-open="#));
+    assert!(page.contains(r#"<dialog class="dialog" id="connect-tailnet""#));
+    assert!(!page.contains("id=\"connect-tailnet\" aria-labelledby=\"connect-tailnet-title\" data-dialog-static data-dialog-reset data-dialog-return=\"/tailnets\" data-open"));
+
+    // The address that opens the dialog has it open on load, and no refresh.
+    let opened = get(&lab.app, &admin, "/tailnets/new").await;
+    assert!(opened.contains("data-dialog-return=\"/tailnets\" data-open>"));
+    assert!(opened.contains("name=\"method\" value=\"link\" checked"));
+    assert!(opened.contains("name=\"authKey\" type=\"password\""));
+    assert!(!opened.contains("value=\"tskey"));
+}
+
+#[tokio::test]
+async fn warns_that_tailscale_is_off_and_connects_nothing() {
+    let app = TestApp::with_upstream(|upstream| upstream.tailnets(None)).await;
+    let admin = create_admin(&app).await;
+
+    let page = get(&app, &admin, "/tailnets").await;
+    assert!(page.contains("Tailscale is off on this server"));
+    assert!(page.contains("TAILSCALED_BINARY"));
+    assert!(page.contains("aria-disabled=\"true\""));
+    assert!(!page.contains("<dialog class=\"dialog\" id=\"connect-tailnet\""));
+
+    let refused = from_script(connect(
+        &app,
+        &admin,
+        &[("name", "pro"), ("method", "link")],
+    ))
+    .send()
+    .await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(refused.text().contains("Tailscale is off on this server"));
+    assert!(tailnets_of(&app, Team::ROOT_ID).await.is_empty());
+
+    // A row that exists is still listed, and can be deleted.
+    let mut tailnet = Tailnet {
+        team_id: Team::ROOT_ID,
+        name: "pro".into(),
+        hostname: "mymcps-pro".into(),
+        created_by: admin.id,
+        ..Default::default()
+    };
+    tailnet.insert(&*app.core.db).await.unwrap();
+    let page = get(&app, &admin, "/tailnets").await;
+    assert!(page.contains("badge--neutral\">Unavailable"));
+    let deleted = app
+        .post(&format!("/tailnets/{}?_method=DELETE", tailnet.id))
+        .login_as(&admin)
+        .csrf()
+        .send()
+        .await;
+    assert_eq!(
+        flash(&deleted, "success").as_deref(),
+        Some("Tailnet deleted")
+    );
+    assert!(tailnets_of(&app, Team::ROOT_ID).await.is_empty());
+}
+
+#[tokio::test]
+async fn lists_the_tailnets_of_the_team_with_where_each_stands() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let other_team = create_team(&lab.app, "Other").await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let perso = lab.row(Team::ROOT_ID, admin.id, "perso").await;
+    let elsewhere = lab.row(other_team.id, admin.id, "elsewhere").await;
+    let _pro = lab.daemon(pro.id, running_status());
+    let _perso = lab.daemon(perso.id, needs_login());
+    let _elsewhere = lab.daemon(elsewhere.id, running_status());
+    for name in ["Grafana", "Home"] {
+        create_mcp(&lab.app, admin.id, |mcp| {
+            mcp.name = name.into();
+            mcp.slug = name.to_lowercase();
+            mcp.tailnet_id = Some(pro.id);
+        })
+        .await;
+    }
+    create_mcp(&lab.app, admin.id, |mcp| mcp.tailnet_id = Some(perso.id)).await;
+
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    // Tailnets of another team are not shown.
+    assert!(!page.contains("elsewhere"));
+    let rows = table_rows(&page);
+    assert_eq!(rows.len(), 2);
+    // By name: perso, pro.
+    let (perso_row, pro_row) = (rows[0], rows[1]);
+    assert!(pro_row.contains("cell-title\">pro<"));
+    assert!(pro_row.contains("badge badge--success\">Connected"));
+    assert!(pro_row.contains("<td class=\"cell-code\">mymcps.tail1234.ts.net</td>"));
+    assert!(pro_row.contains("title=\"Grafana, Home\">2 MCPs"));
+    assert!(!pro_row.contains("Sign in"));
+    assert!(pro_row.contains(&format!("action=\"/tailnets/{}?_method=DELETE\"", pro.id)));
+
+    assert!(perso_row.contains("badge badge--warning\">Needs sign-in"));
+    assert!(perso_row.contains("<td class=\"cell-tertiary\">—</td>"));
+    assert!(perso_row.contains("1 MCP<"));
+    assert!(perso_row.contains(&format!(
+        "<a class=\"button button--secondary\" href=\"{LOGIN_URL}\" target=\"_blank\" rel=\"noopener noreferrer\">Sign in</a>"
+    )));
+    // A tailnet that waits for its sign-in asks for the page again.
+    assert!(page.contains("<meta http-equiv=\"refresh\" content=\"5\">"));
+}
+
+#[tokio::test]
+async fn refreshes_while_a_tailnet_starts_and_stops_when_all_are_settled() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let api = lab.daemon(pro.id, status_in("Starting"));
+
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains("badge badge--neutral\">Starting"));
+    assert!(page.contains("http-equiv=\"refresh\""));
+    // Never with the dialog open: what is typed would be lost.
+    assert!(
+        !get(&lab.app, &admin, "/tailnets/new")
+            .await
+            .contains("http-equiv")
+    );
+
+    api.set_status(running_status());
+    // The status is cached for a moment: wait for it to be read again.
+    tokio::time::sleep(std::time::Duration::from_millis(2200)).await;
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains("badge badge--success\">Connected"));
+    assert!(!page.contains("http-equiv"));
+
+    api.set_status(json!({ "Version": "1.104.2", "BackendState": "NeedsMachineAuth" }));
+    tokio::time::sleep(std::time::Duration::from_millis(2200)).await;
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains("Needs approval"));
+    assert!(page.contains("http-equiv"));
+}
+
+#[tokio::test]
+async fn links_only_a_web_address_to_sign_in() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let _api = lab.daemon(
+        pro.id,
+        json!({ "BackendState": "NeedsLogin", "AuthURL": "javascript:alert(1)" }),
+    );
+
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains("Needs sign-in"));
+    assert!(page.contains("Waiting for the sign-in link"));
+    assert!(!page.contains("javascript:"));
+}
+
+// --- connecting ---
+
+#[tokio::test]
+async fn connects_a_tailnet_with_a_sign_in_link() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let api = lab.daemon(1, needs_login());
+
+    let response = connect(
+        &lab.app,
+        &admin,
+        &[("name", "  pro "), ("method", "link"), ("controlUrl", "")],
+    )
+    .send()
+    .await;
+    assert_redirect(&response, "/tailnets");
+    assert_eq!(
+        flash(&response, "success").as_deref(),
+        Some("Tailnet added: use its Sign in link to finish")
+    );
+
+    let saved = tailnets_of(&lab.app, Team::ROOT_ID).await;
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].id, 1);
+    assert_eq!(saved[0].name, "pro");
+    assert_eq!(saved[0].hostname, "mymcps-pro");
+    assert_eq!(saved[0].control_url, None);
+    assert_eq!(saved[0].created_by, admin.id);
+
+    // The node was asked to join as `mymcps-pro`, with no key, and to log in.
+    let start = &api.requests_to("/localapi/v0/start")[0].json();
+    assert_eq!(start["UpdatePrefs"]["Hostname"], "mymcps-pro");
+    assert_eq!(start["UpdatePrefs"]["ControlURL"], "");
+    assert!(start.get("AuthKey").is_none());
+    assert_eq!(api.requests_to("/localapi/v0/login-interactive").len(), 1);
+
+    // The page then offers the link.
+    let page = lab
+        .app
+        .get("/tailnets")
+        .login_as(&admin)
+        .session(response.session())
+        .send()
+        .await
+        .text();
+    assert!(page.contains(&format!("href=\"{LOGIN_URL}\" target=\"_blank\"")));
+}
+
+#[tokio::test]
+async fn connects_a_headscale_tailnet_with_an_auth_key_that_is_kept_nowhere() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let api = lab.daemon(1, running_status());
+
+    let response = from_script(connect(
+        &lab.app,
+        &admin,
+        &[
+            ("name", "Home lab"),
+            ("method", "key"),
+            ("authKey", KEY),
+            ("controlUrl", "https://headscale.example.com"),
+        ],
+    ))
+    .send()
+    .await;
+    // The script is sent to the list, with the confirmation flashed.
+    assert_eq!(response.status, StatusCode::NO_CONTENT);
+    assert_eq!(response.header("x-location"), Some("/tailnets"));
+    assert_eq!(
+        flash(&response, "success").as_deref(),
+        Some("Tailnet connected")
+    );
+    assert!(!format!("{:?}", response.session()).contains(KEY));
+
+    let saved = &tailnets_of(&lab.app, Team::ROOT_ID).await[0];
+    assert_eq!(saved.name, "Home lab");
+    assert_eq!(saved.hostname, "mymcps-home-lab");
+    assert_eq!(
+        saved.control_url.as_deref(),
+        Some("https://headscale.example.com/")
+    );
+
+    // The key went to the daemon, once, and no login was asked for.
+    let start = &api.requests_to("/localapi/v0/start")[0].json();
+    assert_eq!(start["AuthKey"], KEY);
+    assert_eq!(start["UpdatePrefs"]["Hostname"], "mymcps-home-lab");
+    assert_eq!(
+        start["UpdatePrefs"]["ControlURL"],
+        "https://headscale.example.com/"
+    );
+    assert!(api.requests_to("/localapi/v0/login-interactive").is_empty());
+
+    // Nothing the server shows or stores holds it.
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains("Headscale · headscale.example.com"));
+    assert!(!page.contains(KEY));
+    let dump: Vec<String> = sqlx::query_scalar(
+        "select `name` || `hostname` || ifnull(`control_url`, '') from `tailnets`",
+    )
+    .fetch_all(&*lab.app.core.db)
+    .await
+    .unwrap();
+    assert!(dump.iter().all(|row| !row.contains(KEY)));
+}
+
+#[tokio::test]
+async fn gives_a_refused_form_back_with_what_is_wrong_and_never_the_key() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+
+    let refuse = async |form: &[(&str, &str)]| {
+        let scripted = from_script(connect(&lab.app, &admin, form)).send().await;
+        assert_eq!(
+            scripted.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{form:?}"
+        );
+        let text = scripted.text();
+        // The dialog comes back with what was typed, and without the key.
+        assert!(!text.contains(KEY), "{text}");
+        text
+    };
+
+    let text = refuse(&[("name", ""), ("method", "key"), ("authKey", KEY)]).await;
+    assert!(text.contains("aria-invalid=\"true\""));
+    assert!(text.contains("field__error"));
+    assert!(text.contains("name=\"method\" value=\"key\" checked"));
+
+    let text = refuse(&[("name", "-pro"), ("method", "link")]).await;
+    assert!(text.contains("id=\"connect-tailnet-name-error\""));
+    assert!(text.contains("value=\"-pro\""));
+
+    let text = refuse(&[("name", "pro"), ("method", "key")]).await;
+    assert!(text.contains("id=\"connect-tailnet-key-error\""));
+
+    // What no field says is said above the form.
+    let text = refuse(&[("name", "pro"), ("method", "carrier-pigeon")]).await;
+    assert!(text.contains("This tailnet could not be connected"));
+
+    let text = refuse(&[
+        ("name", "pro"),
+        ("method", "key"),
+        ("authKey", KEY),
+        ("controlUrl", "ftp://headscale.example.com"),
+    ])
+    .await;
+    assert!(text.contains("Control server URL must use HTTP or HTTPS"));
+    assert!(text.contains("value=\"ftp://headscale.example.com\""));
+
+    let text = refuse(&[
+        ("name", "pro"),
+        ("method", "key"),
+        ("authKey", KEY),
+        ("controlUrl", "https://user:pw@headscale.example.com"),
+    ])
+    .await;
+    assert!(text.contains("must not include a user name or a password"));
+    assert!(!text.contains("pw@"));
+
+    // A plain post goes back to the list with the first error, the key is
+    // not kept in the session.
+    let plain = connect(
+        &lab.app,
+        &admin,
+        &[
+            ("name", "pro"),
+            ("method", "key"),
+            ("authKey", &"k".repeat(2000)),
+        ],
+    )
+    .send()
+    .await;
+    assert_redirect(&plain, "/tailnets");
+    assert!(flash(&plain, "error").is_some());
+    assert!(!format!("{:?}", plain.session()).contains("kkkkkkkk"));
+
+    // Without a token, nothing happens.
+    let forged = lab
+        .app
+        .post("/tailnets")
+        .login_as(&admin)
+        .form(&[("name", "pro"), ("method", "link")])
+        .send()
+        .await;
+    assert_ne!(forged.status, StatusCode::NO_CONTENT);
+    assert!(tailnets_of(&lab.app, Team::ROOT_ID).await.is_empty());
+}
+
+#[tokio::test]
+async fn refuses_a_name_the_team_already_uses_whatever_its_case() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let other_team = create_team(&lab.app, "Other").await;
+    lab.row(Team::ROOT_ID, admin.id, "Pro").await;
+    // Another team's tailnet of that name is no obstacle.
+    lab.row(other_team.id, admin.id, "work").await;
+
+    let duplicate = from_script(connect(
+        &lab.app,
+        &admin,
+        &[("name", "pro"), ("method", "link")],
+    ))
+    .send()
+    .await;
+    assert_eq!(duplicate.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        duplicate
+            .text()
+            .contains("This team already has a tailnet with this name")
+    );
+    assert_eq!(tailnets_of(&lab.app, Team::ROOT_ID).await.len(), 1);
+
+    let api = lab.daemon(3, needs_login());
+    let allowed = connect(&lab.app, &admin, &[("name", "work"), ("method", "link")])
+        .send()
+        .await;
+    assert_redirect(&allowed, "/tailnets");
+    drop(api);
+    assert_eq!(tailnets_of(&lab.app, Team::ROOT_ID).await.len(), 2);
+}
+
+#[tokio::test]
+async fn connects_at_most_five_tailnets_to_a_team() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let other_team = create_team(&lab.app, "Other").await;
+    join_team(&lab.app, other_team.id, &admin, TeamRole::Owner).await;
+    for name in ["a", "b", "c", "d", "e"] {
+        lab.row(Team::ROOT_ID, admin.id, name).await;
+    }
+
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(page.contains("title=\"A team can connect up to 5 tailnets\""));
+    assert!(!page.contains("id=\"connect-tailnet\""));
+
+    let refused = from_script(connect(
+        &lab.app,
+        &admin,
+        &[("name", "f"), ("method", "link")],
+    ))
+    .send()
+    .await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        refused
+            .text()
+            .contains("A team can connect up to 5 tailnets")
+    );
+    assert_eq!(tailnets_of(&lab.app, Team::ROOT_ID).await.len(), 5);
+
+    // The limit is the team's: another team of the same person connects its own.
+    let _api = lab.daemon(6, needs_login());
+    let allowed = lab
+        .app
+        .post("/tailnets")
+        .login_as(&admin)
+        .in_team(other_team.id)
+        .csrf()
+        .form(&[("name", "f"), ("method", "link")])
+        .send()
+        .await;
+    assert_redirect(&allowed, "/tailnets");
+    assert_eq!(tailnets_of(&lab.app, other_team.id).await.len(), 1);
+}
+
+#[tokio::test]
+async fn takes_the_tailnet_back_when_the_daemon_refuses_to_join() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let api = lab.daemon(1, status_in("NoState"));
+    api.force("/localapi/v0/start", 500, &format!("invalid key {KEY}"));
+
+    let refused = from_script(connect(
+        &lab.app,
+        &admin,
+        &[("name", "pro"), ("method", "key"), ("authKey", KEY)],
+    ))
+    .send()
+    .await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let text = refused.text();
+    assert!(text.contains("Could not connect"), "{text}");
+    assert!(!text.contains(KEY), "{text}");
+    // No row is left, and nothing of the daemon.
+    assert!(tailnets_of(&lab.app, Team::ROOT_ID).await.is_empty());
+    assert!(!lab.tailnet_dir(1).exists());
+}
+
+// --- deleting ---
+
+#[tokio::test]
+async fn refuses_to_delete_a_tailnet_that_mcps_use_and_names_them() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let api = lab.daemon(pro.id, running_status());
+    let grafana = create_mcp(&lab.app, admin.id, |mcp| {
+        mcp.name = "Grafana".into();
+        mcp.slug = "grafana".into();
+        mcp.tailnet_id = Some(pro.id);
+    })
+    .await;
+    create_mcp(&lab.app, admin.id, |mcp| {
+        mcp.name = "Home".into();
+        mcp.slug = "home".into();
+        mcp.tailnet_id = Some(pro.id);
+    })
+    .await;
+    let delete = async || {
+        lab.app
+            .post(&format!("/tailnets/{}?_method=DELETE", pro.id))
+            .login_as(&admin)
+            .csrf()
+            .send()
+            .await
+    };
+
+    let refused = delete().await;
+    assert_redirect(&refused, "/tailnets");
+    assert_eq!(
+        flash(&refused, "error").as_deref(),
+        Some("pro is used by Grafana and Home. Move them to another network first.")
+    );
+    assert_eq!(tailnets_of(&lab.app, Team::ROOT_ID).await.len(), 1);
+    assert!(api.requests_to("/localapi/v0/logout").is_empty());
+
+    // Once they use another network, the tailnet goes: the node leaves it,
+    // its daemon stops, its directory is gone.
+    lab.tailnets.ensure_running(pro.id).await.unwrap();
+    sqlx::query("update `mcps` set `tailnet_id` = null where `id` = ?")
+        .bind(grafana.id)
+        .execute(&*lab.app.core.db)
+        .await
+        .unwrap();
+    let still = delete().await;
+    assert_eq!(
+        flash(&still, "error").as_deref(),
+        Some("pro is used by Home. Move it to another network first.")
+    );
+    sqlx::query("update `mcps` set `tailnet_id` = null")
+        .execute(&*lab.app.core.db)
+        .await
+        .unwrap();
+
+    let deleted = delete().await;
+    assert_redirect(&deleted, "/tailnets");
+    assert_eq!(
+        flash(&deleted, "success").as_deref(),
+        Some("Tailnet deleted")
+    );
+    assert!(tailnets_of(&lab.app, Team::ROOT_ID).await.is_empty());
+    assert_eq!(api.requests_to("/localapi/v0/logout").len(), 1);
+    assert!(!lab.tailnet_dir(pro.id).exists());
+    // The MCPs are still there, on the internet.
+    assert_eq!(count_mcps(&lab.app).await, 2);
+}
+
+#[tokio::test]
+async fn deletes_only_a_tailnet_of_the_team() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let other_team = create_team(&lab.app, "Other").await;
+    let theirs = lab.row(other_team.id, admin.id, "theirs").await;
+
+    for id in [theirs.id.to_string(), "999".into(), "abc".into()] {
+        let refused = lab
+            .app
+            .post(&format!("/tailnets/{id}?_method=DELETE"))
+            .login_as(&admin)
+            .csrf()
+            .send()
+            .await;
+        assert_redirect(&refused, "/tailnets");
+        assert_eq!(
+            flash(&refused, "error").as_deref(),
+            Some("Tailnet not found"),
+            "{id}"
+        );
+    }
+    assert_eq!(tailnets_of(&lab.app, other_team.id).await.len(), 1);
+}
+
+// --- the Network field of the MCP form ---
+
+fn mcp_form<'a>(fields: &[(&'a str, &'a str)]) -> Vec<(&'a str, &'a str)> {
+    let mut form = vec![
+        ("name", "Grafana"),
+        ("description", ""),
+        ("transport", "http"),
+        ("httpUrl", "https://grafana.tail1234.ts.net/mcp"),
+        ("authType", "auto"),
+        ("enabled", "on"),
+    ];
+    for (name, value) in fields {
+        form.retain(|(existing, _)| existing != name);
+        form.push((name, value));
+    }
+    form
+}
+
+#[tokio::test]
+async fn offers_the_tailnets_of_the_team_on_an_http_mcp() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let other_team = create_team(&lab.app, "Other").await;
+    lab.row(other_team.id, admin.id, "theirs").await;
+
+    // No tailnet in the team: no field.
+    assert!(
+        !get(&lab.app, &admin, "/mcps/new?template=custom")
+            .await
+            .contains("tailnetId")
+    );
+
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    lab.row(Team::ROOT_ID, admin.id, "Lab").await;
+    let form = get(&lab.app, &admin, "/mcps/new?template=custom").await;
+    let network = between(&form, "for=\"new-mcp-tailnet\"", "</select>");
+    assert!(network.contains(">Network</label>"));
+    assert!(network.contains("<option value=\"\" selected>Internet</option>"));
+    // By name, and no tailnet of another team.
+    assert!(network.find("Tailnet: Lab").unwrap() < network.find("Tailnet: pro").unwrap());
+    assert!(!network.contains("theirs"));
+    assert!(form.contains("data-show-when=\"transport=http\""));
+
+    // An MCP that has one is shown with it selected, and in the list.
+    let mcp = create_mcp(&lab.app, admin.id, |mcp| mcp.tailnet_id = Some(pro.id)).await;
+    let edit = get(&lab.app, &admin, &format!("/mcps/{}/edit", mcp.id)).await;
+    assert!(edit.contains(&format!(
+        "<option value=\"{}\" selected>Tailnet: pro</option>",
+        pro.id
+    )));
+    let list = get(&lab.app, &admin, "/mcps").await;
+    assert!(list.contains("via tailnet pro"));
+    assert!(!between(&list, "<tbody>", "</tbody>").contains("theirs"));
+    // A search finds it by its tailnet.
+    let found = get(&lab.app, &admin, "/mcps?q=pro").await;
+    assert!(found.contains("via tailnet pro"));
+}
+
+#[tokio::test]
+async fn saves_the_network_of_an_http_mcp_and_clears_it_for_the_others() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let id = pro.id.to_string();
+
+    let created = connect_mcp(&lab, &admin, &mcp_form(&[("tailnetId", &id)])).await;
+    assert_redirect(&created, "/mcps");
+    let mcp = mcp_by_slug(&lab.app, "grafana").await.unwrap();
+    assert_eq!(mcp.tailnet_id, Some(pro.id));
+
+    // Back to the internet with the blank option.
+    let updated = lab
+        .app
+        .post(&format!("/mcps/{}?_method=PUT", mcp.id))
+        .login_as(&admin)
+        .csrf()
+        .form(&mcp_form(&[("tailnetId", "")]))
+        .send()
+        .await;
+    assert_redirect(&updated, "/mcps");
+    assert_eq!(find_mcp(&lab.app, mcp.id).await.tailnet_id, None);
+
+    // An npm MCP is not reached over a network: whatever the form says, it has none.
+    let npm = lab
+        .app
+        .post("/mcps")
+        .login_as(&admin)
+        .csrf()
+        .form(&[
+            ("name", "Package"),
+            ("transport", "npm"),
+            ("npmPackage", "@example/mcp"),
+            ("authType", "auto"),
+            ("tailnetId", &id),
+        ])
+        .send()
+        .await;
+    assert_redirect(&npm, "/mcps");
+    assert_eq!(
+        mcp_by_slug(&lab.app, "package").await.unwrap().tailnet_id,
+        None
+    );
+    assert_eq!(
+        mcp_by_slug(&lab.app, "package").await.unwrap().transport,
+        McpTransport::Npm
+    );
+
+    // And one that moves from HTTP to npm forgets it.
+    let again = connect_mcp(
+        &lab,
+        &admin,
+        &mcp_form(&[("name", "Second"), ("tailnetId", &id)]),
+    )
+    .await;
+    assert_redirect(&again, "/mcps");
+    let second = mcp_by_slug(&lab.app, "second").await.unwrap();
+    assert_eq!(second.tailnet_id, Some(pro.id));
+    let moved = lab
+        .app
+        .post(&format!("/mcps/{}?_method=PUT", second.id))
+        .login_as(&admin)
+        .csrf()
+        .form(&[
+            ("name", "Second"),
+            ("transport", "npm"),
+            ("npmPackage", "@example/mcp"),
+            ("authType", "auto"),
+            ("tailnetId", &id),
+        ])
+        .send()
+        .await;
+    assert_redirect(&moved, "/mcps");
+    assert_eq!(find_mcp(&lab.app, second.id).await.tailnet_id, None);
+}
+
+async fn connect_mcp(lab: &Lab, user: &User, form: &[(&str, &str)]) -> TestResponse {
+    lab.app
+        .post("/mcps")
+        .login_as(user)
+        .csrf()
+        .form(form)
+        .send()
+        .await
+}
+
+#[tokio::test]
+async fn refuses_the_tailnet_of_another_team_or_one_that_does_not_exist() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let other_team = create_team(&lab.app, "Other").await;
+    let theirs = lab.row(other_team.id, admin.id, "theirs").await;
+    lab.row(Team::ROOT_ID, admin.id, "pro").await;
+
+    for id in [theirs.id.to_string(), "999".to_string()] {
+        let refused = from_script(
+            lab.app
+                .post("/mcps")
+                .login_as(&admin)
+                .csrf()
+                .form(&mcp_form(&[("tailnetId", &id)])),
+        )
+        .send()
+        .await;
+        assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY, "{id}");
+        let text = refused.text();
+        assert!(text.contains("Choose a tailnet of this team, or the internet"));
+        assert!(text.contains("id=\"new-mcp-tailnet-error\""));
+        // The field comes back with the choices of the team only.
+        assert!(!text.contains("theirs"));
+    }
+    assert_eq!(count_mcps(&lab.app).await, 0);
+
+    // The same on an edit: the MCP stays as it was.
+    let mcp = create_mcp(&lab.app, admin.id, |_| {}).await;
+    let refused = lab
+        .app
+        .post(&format!("/mcps/{}?_method=PUT", mcp.id))
+        .login_as(&admin)
+        .csrf()
+        .form(&mcp_form(&[("tailnetId", &theirs.id.to_string())]))
+        .send()
+        .await;
+    assert_redirect(&refused, "/mcps");
+    assert!(
+        flash(&refused, "error")
+            .unwrap()
+            .contains("Choose a tailnet of this team")
+    );
+    assert_eq!(find_mcp(&lab.app, mcp.id).await.tailnet_id, None);
+    assert_ne!(find_mcp(&lab.app, mcp.id).await.name, "Grafana");
+
+    // A value that is no id at all.
+    let refused = from_script(
+        lab.app
+            .post("/mcps")
+            .login_as(&admin)
+            .csrf()
+            .form(&mcp_form(&[("tailnetId", "pro")])),
+    )
+    .send()
+    .await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(count_mcps(&lab.app).await, 1);
+}
+
+// --- what deleting a team or a user takes with it ---
+
+#[tokio::test]
+async fn stops_the_daemons_of_a_team_that_is_deleted() {
+    let lab = Lab::new().await;
+    let root_owner = create_super_admin(&lab.app).await;
+    let team = create_team(&lab.app, "Research").await;
+    let owner = create_account(&lab.app, None).await;
+    join_team(&lab.app, team.id, &owner, TeamRole::Owner).await;
+    let theirs = lab.row(team.id, owner.id, "theirs").await;
+    let kept = lab.row(Team::ROOT_ID, root_owner.id, "kept").await;
+    let theirs_api = lab.daemon(theirs.id, running_status());
+    let kept_api = lab.daemon(kept.id, running_status());
+    lab.tailnets.ensure_running(theirs.id).await.unwrap();
+    lab.tailnets.ensure_running(kept.id).await.unwrap();
+
+    let deleted = lab
+        .app
+        .post("/team?_method=DELETE")
+        .login_as(&owner)
+        .in_team(team.id)
+        .csrf()
+        .send()
+        .await;
+    assert_redirect(&deleted, "/");
+    assert_eq!(flash(&deleted, "success").as_deref(), Some("Team deleted"));
+
+    // Its tailnet is gone with the team, and its node left the tailnet.
+    assert!(
+        Tailnet::find(&*lab.app.core.db, theirs.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(theirs_api.requests_to("/localapi/v0/logout").len(), 1);
+    assert!(!lab.tailnet_dir(theirs.id).exists());
+    assert!(lab.tailnets.handle(theirs.id).is_none());
+    // Another team's is not touched.
+    assert!(
+        Tailnet::find(&*lab.app.core.db, kept.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(kept_api.requests_to("/localapi/v0/logout").is_empty());
+    assert!(lab.tailnets.handle(kept.id).is_some());
+}
+
+#[tokio::test]
+async fn stops_the_daemons_of_a_user_deleted_with_their_personal_team() {
+    let lab = Lab::new().await;
+    let actor = create_super_admin(&lab.app).await;
+    let outsider = create_account(&lab.app, None).await;
+    let mut transaction = lab.app.core.db.begin().await.unwrap();
+    let personal = Team::create_personal(&mut transaction, &outsider)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    // A team they leave behind keeps its tailnet.
+    let shared = create_team(&lab.app, "Shared").await;
+    join_team(&lab.app, shared.id, &outsider, TeamRole::Admin).await;
+    join_team(&lab.app, shared.id, &actor, TeamRole::Owner).await;
+
+    let mine = lab.row(personal.id, outsider.id, "mine").await;
+    let common = lab.row(shared.id, outsider.id, "common").await;
+    let mine_api = lab.daemon(mine.id, running_status());
+    let common_api = lab.daemon(common.id, running_status());
+    lab.tailnets.ensure_running(mine.id).await.unwrap();
+    lab.tailnets.ensure_running(common.id).await.unwrap();
+
+    let deleted = lab
+        .app
+        .post(&format!("/users/{}?_method=DELETE", outsider.id))
+        .login_as(&actor)
+        .csrf()
+        .form(&[("currentPassword", PASSWORD)])
+        .send()
+        .await;
+    assert_redirect(&deleted, "/users");
+    assert_eq!(flash(&deleted, "success").as_deref(), Some("User deleted"));
+
+    assert!(
+        Tailnet::find(&*lab.app.core.db, mine.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(mine_api.requests_to("/localapi/v0/logout").len(), 1);
+    assert!(!lab.tailnet_dir(mine.id).exists());
+    // The shared team's tailnet stays, and goes to an owner of the team.
+    let common = Tailnet::find(&*lab.app.core.db, common.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(common.created_by, actor.id);
+    assert!(common_api.requests_to("/localapi/v0/logout").is_empty());
+    assert!(lab.tailnets.handle(common.id).is_some());
+}
+
+#[tokio::test]
+async fn keeps_the_mcp_a_team_had_through_a_tailnet_on_the_internet_when_it_goes() {
+    // `on delete set null`: deleting the row never leaves an MCP pointing at nothing.
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let mcp: Mcp = create_mcp(&lab.app, admin.id, |mcp| mcp.tailnet_id = Some(pro.id)).await;
+    pro.delete(&*lab.app.core.db).await.unwrap();
+    assert_eq!(find_mcp(&lab.app, mcp.id).await.tailnet_id, None);
+}

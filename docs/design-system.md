@@ -112,6 +112,7 @@ Text classes: `.text-heading-4xl … .text-heading-sm`, `.text-body-lg`, `.text-
       <p class="nav-section">Gateway</p>
       <a class="nav-item" href="/mcps">ICON plug<span class="nav-item__label">MCPs</span></a>
       <a class="nav-item" href="/tokens">ICON key-round<span class="nav-item__label">Access tokens</span></a>
+      <a class="nav-item" href="/tailnets">ICON network<span class="nav-item__label">Tailnets</span></a>   <!-- owners and admins of the team only -->
       <a class="nav-item" href="/approvals" aria-label="Approvals, 2 waiting">ICON shield-check<span class="nav-item__label">Approvals</span><span class="nav-item__count" aria-hidden="true">2</span></a>
       <p class="nav-section">Observability</p>    <!-- owners and admins of the team only, with Logs and Analytics -->
       <a class="nav-item" href="/logs">ICON scroll-text<span class="nav-item__label">Logs</span></a>
@@ -214,7 +215,7 @@ arrow-right, arrow-up-right, audio-lines, bike, blocks, book-open, bot, braces, 
 calendar, chart-column, check, chevron-down, chevron-left, chevron-right, chevrons-up-down, circle-alert,
 circle-check, circle-x, clock, cloud, copy, database, download, ellipsis, external-link, eye,
 eye-off, file-text, flame, gauge, git-branch, globe, hash, house, info, key, key-round, layers,
-link, list-filter, loader-circle, lock, log-out, mail, menu, minus, moon, notebook-text, package,
+link, list-filter, loader-circle, lock, log-out, mail, menu, minus, moon, network, notebook-text, package,
 panel-left, pencil, play, plug, plus, power, refresh-cw, rotate-cw, scroll-text, search, send,
 server, settings, shield-check, shopping-bag, sparkles, square-terminal, sun, ticket, timer,
 trash, triangle-alert, unplug, user, user-plus, users, wrench, x, zap. Added for what the Figma
@@ -652,6 +653,45 @@ It floats 24px from the top and the right, does not dim the page, and the page s
 A native popover: it opens without JavaScript. app.js adds arrow keys and the fallback position.
 `<p class="menu__label">` titles a group. A menu of a filter form holds radios instead of links:
 `<label class="menu__item"><input type="radio" class="visually-hidden" name="outcome" value="error">Error</label>`.
+
+### Tailnets page and the Network field
+
+`/tailnets` (owners and admins of the team, `views/tailnets.rs`) is a page header, an optional
+warning banner ("Tailscale is off on this server"), and one `.card` with a table or an empty
+state. It uses what exists: the table has the columns Name (`.cell-stack` with the Headscale host
+in `.cell-sub`), Status, Device (`.cell-code`), Used by and Actions (`.col-200`, `.col-96`,
+`.col-160`).
+
+```html
+<td><div class="cell-stack"><span><span class="badge badge--warning">Needs sign-in</span></span>
+  <span class="cell-sub">Waiting for the sign-in link</span></div></td>
+<td class="cell-end"><span class="row-actions">
+  <a class="button button--secondary" href="https://login.tailscale.com/a/…" target="_blank" rel="noopener noreferrer">Sign in</a>
+  <form method="post" action="/tailnets/3?_method=DELETE" data-confirm="Delete pro?" data-confirm-label="Delete" data-confirm-tone="critical">…
+    <button type="submit" class="button" aria-label="Delete pro">Delete</button></form></span></td>
+```
+
+- The status is a `.badge` in the table, as the Figma frames draw it, not a `.status`: a tailnet
+  goes through more states than a dot says, and a second line explains the ones that wait.
+  Tones: `success` Connected, `warning` Needs sign-in and Needs approval, `critical` Error,
+  `neutral` Starting, Stopped and Unavailable (Tailscale is off).
+- The page asks for itself again every 5 seconds with `<meta http-equiv="refresh" content="5">`
+  while a tailnet is starting or waits for a sign-in, and not while its dialog is open.
+  `app_page_with_head` puts such a tag in `<head>`; a CSP does not restrict it. A page that
+  waits on the server uses it rather than the script.
+- The sign-in link comes from the control server, so only an `http` or `https` address is
+  linked, in a new tab.
+- The table is the only view: a team has at most 5 tailnets, so there is no pagination, and
+  under 768px it scrolls inside its card like any table.
+- The dialog "Connect a tailnet" is a form in a `[data-fragment]` like the MCP dialogs. Its sign-in
+  methods are two radio `.choice`s with a description; the auth key is an `.input-group` with the
+  `data-password-toggle` eye, shown with `data-show-when="method=key"`, never given a `value`,
+  and its name (`authKey`) never goes in a flash message.
+
+The MCP form shows a **Network** select (`name="tailnetId"`, first option "Internet", then
+"Tailnet: <name>") under the HTTP URL, in a `data-show-when="transport=http"` block, once the
+team has a tailnet. The MCP list names the tailnet in the second line of the endpoint cell
+("via tailnet pro"), and in the subtitle of its row under 768px.
 
 ### Home and settings blocks
 

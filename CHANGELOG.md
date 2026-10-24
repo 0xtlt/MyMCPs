@@ -10,12 +10,15 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Added the data for Tailscale tailnets: a team can have tailnets, and an HTTP MCP can name the one it reaches its upstream through. They are part of backups, and a backup made before this change still imports.
 - The Docker image holds `tailscaled` 1.104.2, copied from the official `tailscale/tailscale` image, and `TAILSCALED_BINARY` names it. On a host install, `TAILSCALED_BINARY` sets the binary; unset, the `tailscaled` of the `PATH` is used, and `off` turns tailnets off.
 - An HTTP MCP that names a tailnet now reaches its upstream through it, OAuth sign-in included, and the server starts the tailnets of every team in the background when it boots. When the tailnet cannot carry the request, the MCP says why: Tailscale is off on the server, the tailnet was deleted, it needs a new sign-in, or the host is not a device or subnet route of it.
+- The **Tailnets** page (owners and admins of a team): connect a Tailscale or Headscale tailnet with a sign-in link or an auth key, see whether each one is connected, sign in from its row, and delete it once no MCP uses it, which also stops its `tailscaled` and deletes its state. A team connects up to 5. The auth key is used once to join: it is never stored, logged, or sent back to the form. See [docs/tailnets.md](docs/tailnets.md).
+- HTTP MCPs have a **Network** field, **Internet** or one of the team's tailnets, and the MCP list shows the tailnet. `mcp_registry_list`, `mcp_registry_create` and `mcp_registry_update` read and set it by tailnet name (`tailnet`).
 
 ### Changed
 
 - Released version [0.5.0](https://github.com/0xtlt/MyMCPs/releases/tag/v0.5.0).
 
 - A tool call that runs out of time now tells the agent so, for example "The remote MCP server did not answer within 60 seconds, the tool call timeout of this MCP.", instead of "Upstream tool call failed". The call log records the same sentence instead of "MCP error -32001: Request timed out", and says whether a remote server or an npm package was waited for.
+- Deleting a team, or a user whose personal team goes with them, now also stops the `tailscaled` of its tailnets and deletes their state.
 
 ### Security
 

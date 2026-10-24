@@ -27,8 +27,8 @@ The gateway checks the permission at every request, not when the connection was 
 | Tool | What it does |
 | --- | --- |
 | `mcp_registry_list` | Lists every MCP of the team, the disabled ones included, with its slug, status and sign-in. |
-| `mcp_registry_create` | Adds an HTTP MCP: name, description, URL, sign-in (`auto`, `bearer`, `header`), whether it is enabled, and how long a tool call waits (`timeout_seconds`, 60 when left out, 300 at most). It is tested once saved, as on the page. |
-| `mcp_registry_update` | Changes an MCP, named by its slug. What is left out keeps its saved value, secrets included; `timeout_seconds: null` goes back to 60 seconds. For an npm MCP: its name, description, whether it is enabled, and its tool call timeout, 120 seconds at most. |
+| `mcp_registry_create` | Adds an HTTP MCP: name, description, URL, sign-in (`auto`, `bearer`, `header`), whether it is enabled, how long a tool call waits (`timeout_seconds`, 60 when left out, 300 at most), and the tailnet it is reached through (`tailnet`, by name). It is tested once saved, as on the page. |
+| `mcp_registry_update` | Changes an MCP, named by its slug. What is left out keeps its saved value, secrets included; `timeout_seconds: null` goes back to 60 seconds, and `tailnet: null` back to the internet. For an npm MCP: its name, description, whether it is enabled, and its tool call timeout, 120 seconds at most. |
 | `mcp_registry_delete` | Deletes an MCP, named by its slug. |
 | `mcp_registry_test` | Tests the connection, as **Test connection** does, and answers the status, the error, and whether the MCP waits for OAuth. |
 | `mcp_registry_auth_link` | Gives the link that connects an MCP that signs in with OAuth. |
@@ -58,6 +58,12 @@ The agent cannot sign in to an MCP's provider for you. `mcp_registry_auth_link` 
 An npm MCP runs the code of a package on your server. These tools wait for nobody to approve what they do, so they never run code: `mcp_registry_create` refuses `transport: "npm"` and every `npm_*` argument, and `mcp_registry_update` refuses to switch an MCP to npm and to change the package, the version, the arguments or the environment variables of an npm MCP. The agent is told to ask you to do it on the **MCPs** page. The sandbox is not what stops it: on macOS and Windows it exists only with `NPM_SANDBOX=off`, which is no sandbox at all.
 
 The environment is held back with the package: an environment variable can name the address a package sends its key to, so changing one is changing where the keys the package holds go. What the agent can still do with an npm MCP is list it, rename it, change its description, enable or disable it, set its tool call timeout, test it, and delete it. The tool approvals of **MCPs** are not used for this: they hold the call of a tool of an MCP, and show the arguments of the call to the person who decides, which here would be the secrets.
+
+### Tailnets
+
+`mcp_registry_list` answers the `tailnet` of each MCP, by name, or `null` for the internet. `mcp_registry_create` and `mcp_registry_update` take `tailnet` with the name of one of the team's tailnets (case does not matter) for an HTTP MCP: the host of its `url` is then a device or a subnet route of that tailnet, by its MagicDNS name. A name the team does not have is refused, and says which ones it has, and so is a tailnet for an MCP that is not an HTTP one. The agent cannot connect, sign in or delete a tailnet: that is done by a person on the **Tailnets** page (see [Tailnets](tailnets.md)).
+
+Naming a tailnet gives the agent a way to reach the devices of your tailnet through an MCP it adds, so read [the Tailscale access rules](tailnets.md#what-an-mcp-can-reach) first. The check of the addresses below resolves names with the DNS of the server, which does not know the names of your devices, so it does not limit what a tailnet reaches.
 
 ### Addresses
 
