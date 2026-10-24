@@ -370,7 +370,7 @@ mod connect {
     use super::*;
 
     #[tokio::test]
-    async fn with_a_key_it_starts_the_node_authorised_and_asks_for_no_login() {
+    async fn with_a_key_it_starts_the_node_authorised_and_starts_its_login() {
         let fixture = Fixture::new(0);
         let api = fixture.with_api(1, status_in("NeedsLogin")).await;
         let mut options = options(
@@ -401,6 +401,26 @@ mod connect {
                 "AuthKey": "tskey-auth-kABCDEF123456-secretsecretsecret"
             })
         );
+        // tailscaled does not contact the control server on `start` alone: the
+        // login is what uses the key (seen against a real Headscale, see
+        // tests/headscale-e2e.sh). It carries no key of its own.
+        let logins = api.requests_to("/localapi/v0/login-interactive");
+        assert_eq!(logins.len(), 1);
+        assert!(logins[0].body.is_empty());
+    }
+
+    #[tokio::test]
+    async fn with_a_key_a_node_that_is_already_logged_in_is_not_logged_in_again() {
+        let fixture = Fixture::new(0);
+        let api = fixture.with_api(1, running_status()).await;
+
+        fixture
+            .tailnets
+            .connect(1, options("mymcps", Some("tskey-auth-x")))
+            .await
+            .unwrap();
+
+        assert_eq!(api.requests_to("/localapi/v0/start").len(), 1);
         assert!(api.requests_to("/localapi/v0/login-interactive").is_empty());
     }
 

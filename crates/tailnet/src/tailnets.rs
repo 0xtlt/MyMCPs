@@ -186,8 +186,11 @@ impl Tailnets {
 
     /// Joins the tailnet, or leaves its login to the user: with an auth key the
     /// node is authorised at once; without one the daemon is asked for a login
-    /// URL, which `state` reports as `NeedsLogin`. Calling it again on a node
-    /// that is logged in applies the new options without a new login.
+    /// URL, which `state` reports as `NeedsLogin`. Either way a node that has
+    /// no login yet is asked to start one: `start` only sets the key and the
+    /// preferences, and tailscaled 1.104 does not contact the control server
+    /// until a login is started. Calling it again on a node that is logged in
+    /// applies the new options without a new login.
     pub async fn connect(&self, id: i64, options: ConnectOptions) -> Result<(), Error> {
         let options = validate(&options)?;
         let (client, _) = self.lookup(id).ok_or(Error::NotRunning(id))?;
@@ -199,11 +202,9 @@ impl Tailnets {
             .start(&body)
             .await
             .map_err(|error| error.scrubbed(secret))?;
-        if options.auth_key.is_some() {
-            return Ok(());
-        }
         // A node that has no key is logged out; one that has is already on its
-        // way, and asking for a login would throw its key away.
+        // way, and asking for a login would throw its key away. With an auth
+        // key, the login uses it and no URL is shown.
         for _ in 0..LOGIN_PROBES {
             let status = client.status().await?;
             match status.backend_state.as_str() {

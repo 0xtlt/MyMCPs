@@ -371,7 +371,8 @@ async fn connects_a_tailnet_with_a_sign_in_link() {
 async fn connects_a_headscale_tailnet_with_an_auth_key_that_is_kept_nowhere() {
     let lab = Lab::new().await;
     let admin = create_admin(&lab.app).await;
-    let api = lab.daemon(1, running_status());
+    // A new node: tailscaled waits for a login, which the key answers.
+    let api = lab.daemon(1, status_in("NeedsLogin"));
 
     let response = from_script(connect(
         &lab.app,
@@ -402,7 +403,7 @@ async fn connects_a_headscale_tailnet_with_an_auth_key_that_is_kept_nowhere() {
         Some("https://headscale.example.com/")
     );
 
-    // The key went to the daemon, once, and no login was asked for.
+    // The key went to the daemon, once, and the login that uses it was started.
     let start = &api.requests_to("/localapi/v0/start")[0].json();
     assert_eq!(start["AuthKey"], KEY);
     assert_eq!(start["UpdatePrefs"]["Hostname"], "mymcps-home-lab");
@@ -410,7 +411,7 @@ async fn connects_a_headscale_tailnet_with_an_auth_key_that_is_kept_nowhere() {
         start["UpdatePrefs"]["ControlURL"],
         "https://headscale.example.com/"
     );
-    assert!(api.requests_to("/localapi/v0/login-interactive").is_empty());
+    assert_eq!(api.requests_to("/localapi/v0/login-interactive").len(), 1);
 
     // Nothing the server shows or stores holds it.
     let page = get(&lab.app, &admin, "/tailnets").await;
