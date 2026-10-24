@@ -76,8 +76,10 @@ mod route;
 mod supervisor;
 mod tailnets;
 
-#[cfg(test)]
-mod test_support;
+/// A fake LocalAPI and a fake `tailscaled`, for the tests of this crate and
+/// of the crates that reach MCPs through a tailnet (feature `test-util`).
+#[cfg(any(test, feature = "test-util"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;
 

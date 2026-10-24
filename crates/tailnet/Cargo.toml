@@ -26,6 +26,10 @@ hyper = { version = "1", default-features = false, features = ["http1", "client"
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 http-body-util = "0.1"
 
+[features]
+# The fakes of `test_support`, for the tests of other crates.
+test-util = ["hyper/server"]
+
 [target.'cfg(unix)'.dependencies]
 # SIGTERM for tailscaled, so that it saves its state: tokio only knows SIGKILL.
 rustix = { version = "1.1", default-features = false, features = ["std", "process"] }
