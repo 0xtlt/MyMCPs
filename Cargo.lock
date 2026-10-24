@@ -1615,7 +1615,7 @@ checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
 name = "mymcps"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -1643,7 +1643,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-builtin"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -1667,7 +1667,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-core"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "aes-gcm",
  "aws-lc-rs",
@@ -1695,7 +1695,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-gateway"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1724,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-google-ads"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -1746,7 +1746,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-icloud-mail"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -1776,7 +1776,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-mcp"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1797,7 +1797,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-mcp-auth"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -1813,7 +1813,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-net"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1832,7 +1832,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-node"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "flate2",
@@ -1853,7 +1853,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-sandbox"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "landlock",
  "libc",
@@ -1867,7 +1867,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-strava"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "http",
@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-upstream"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1912,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-vine"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "regex",
  "serde",
@@ -1922,7 +1922,7 @@ dependencies = [
 
 [[package]]
 name = "mymcps-web"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -3671,7 +3671,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "0.4.2"
+version = "0.5.0"
 
 [[package]]
 name = "yoke"

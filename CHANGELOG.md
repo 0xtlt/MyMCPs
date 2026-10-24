@@ -10,6 +10,8 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
+- Released version [0.5.0](https://github.com/0xtlt/MyMCPs/releases/tag/v0.5.0).
+
 - A tool call that runs out of time now tells the agent so, for example "The remote MCP server did not answer within 60 seconds, the tool call timeout of this MCP.", instead of "Upstream tool call failed". The call log records the same sentence instead of "MCP error -32001: Request timed out", and says whether a remote server or an npm package was waited for.
 
 ### Security
