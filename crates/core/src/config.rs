@@ -640,23 +640,6 @@ mod tests {
     }
 
     #[test]
-    fn reads_tailscaled_binary_from_the_environment() {
-        let config = |value: Option<&str>| {
-            let mut pairs = vec![("NODE_ENV", "test"), ("APP_KEY", TEST_APP_KEY)];
-            pairs.extend(value.map(|value| ("TAILSCALED_BINARY", value)));
-            Config::from_vars(&vars(&pairs)).unwrap()
-        };
-        assert_eq!(config(None).tailscaled_binary, None);
-        assert_eq!(config(Some("")).tailscaled_binary, None);
-        assert_eq!(
-            config(Some(" /usr/local/bin/tailscaled ")).tailscaled_binary,
-            Some("/usr/local/bin/tailscaled".to_string())
-        );
-        assert_eq!(config(Some("off")).tailscaled(), None);
-        assert_eq!(Config::for_tests("tmp").tailscaled(), None);
-    }
-
-    #[test]
     fn reads_the_control_servers_a_tailnet_may_use() {
         let parse = |value: Option<&str>| TailnetControl::parse(value);
         assert_eq!(parse(None).unwrap(), TailnetControl::Official);
@@ -733,21 +716,32 @@ mod tests {
     }
 
     #[test]
-    fn reads_tailnet_control_urls_from_the_environment() {
-        let config = |value: Option<&str>| {
+    fn reads_the_tailnet_settings_from_the_environment() {
+        let config = |name: &str, value: Option<&str>| {
             let mut pairs = vec![("NODE_ENV", "test"), ("APP_KEY", TEST_APP_KEY)];
-            pairs.extend(value.map(|value| ("TAILNET_CONTROL_URLS", value)));
+            pairs.extend(value.map(|value| (name, value)));
             Config::from_vars(&vars(&pairs))
         };
+        let binary = |value| config("TAILSCALED_BINARY", value).unwrap();
+        assert_eq!(binary(None).tailscaled_binary, None);
+        assert_eq!(binary(Some("")).tailscaled_binary, None);
         assert_eq!(
-            config(None).unwrap().tailnet_control,
+            binary(Some(" /usr/local/bin/tailscaled ")).tailscaled_binary,
+            Some("/usr/local/bin/tailscaled".to_string())
+        );
+        assert_eq!(binary(Some("off")).tailscaled(), None);
+        assert_eq!(Config::for_tests("tmp").tailscaled(), None);
+
+        let control = |value| config("TAILNET_CONTROL_URLS", value);
+        assert_eq!(
+            control(None).unwrap().tailnet_control,
             TailnetControl::Official
         );
         assert_eq!(
-            config(Some("any")).unwrap().tailnet_control,
+            control(Some("any")).unwrap().tailnet_control,
             TailnetControl::Any
         );
-        assert!(config(Some("nope")).is_err());
+        assert!(control(Some("nope")).is_err());
         assert_eq!(
             Config::for_tests("tmp").tailnet_control,
             TailnetControl::Official

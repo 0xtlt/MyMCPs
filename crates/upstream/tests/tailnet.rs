@@ -6,20 +6,25 @@
 mod support;
 
 use std::net::SocketAddr;
+use std::ops::Deref;
 use std::sync::Arc;
+use std::time::Duration;
 
 use mymcps_builtin::BuiltinRegistry;
 use mymcps_core::TestCore;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, Tailnet, Team};
-use mymcps_net::Fetcher;
+use mymcps_net::{CannedResponse, Fetcher};
 use mymcps_tailnet::test_support::{FakeLocalApi, fake_tailscaled, running_status, status_in};
-use mymcps_tailnet::{Tailnets, TailnetsConfig};
+use mymcps_tailnet::{TailnetState, Tailnets, TailnetsConfig};
 use mymcps_upstream::{
     TailnetStart, Upstream, UpstreamError, clear_oauth_session, read_oauth_session,
 };
 use serde_json::{Value, json};
 use support::*;
 use url::Url;
+
+/// The device of the tailnet that serves the MCPs of these tests.
+const NAS: &str = "nas.tail1234.ts.net";
 
 /// The tailnets of a test, run by a fake `tailscaled`.
 struct Fixture {
@@ -41,34 +46,40 @@ impl Fixture {
     /// An upstream that runs these tailnets and sends what they do not carry
     /// over the network.
     fn upstream(&self) -> Arc<Upstream> {
-        Upstream::builder(self.core.core.clone(), BuiltinRegistry::default())
-            .tailnets(Some(self.tailnets.clone()))
-            .build()
+        self.upstream_with(|builder| builder)
     }
 
     /// [`upstream`](Self::upstream) whose fallback network is `fetcher`: what
     /// reaches it did not go through a tailnet.
     fn upstream_falling_back_to(&self, fetcher: Fetcher) -> Arc<Upstream> {
-        Upstream::builder(self.core.core.clone(), BuiltinRegistry::default())
-            .fetcher(fetcher)
-            .tailnets(Some(self.tailnets.clone()))
-            .build()
+        self.upstream_with(|builder| builder.fetcher(fetcher))
+    }
+
+    fn upstream_with(
+        &self,
+        adjust: impl FnOnce(mymcps_upstream::UpstreamBuilder) -> mymcps_upstream::UpstreamBuilder,
+    ) -> Arc<Upstream> {
+        let builder = Upstream::builder(self.core.core.clone(), BuiltinRegistry::default());
+        adjust(builder.tailnets(Some(self.tailnets.clone()))).build()
     }
 
     async fn tailnet_of(&self, team_id: i64, name: &str) -> Tailnet {
-        let mut tailnet = Tailnet {
-            team_id,
-            name: name.to_owned(),
-            hostname: "mymcps".to_owned(),
-            created_by: create_admin(&self.core).await,
-            ..Default::default()
-        };
-        tailnet.insert(&*self.core.db).await.unwrap();
-        tailnet
+        let created_by = create_admin(&self.core).await;
+        Tailnet::create_for_tests(&*self.core.db, team_id, created_by, name).await
     }
 
     async fn tailnet(&self, name: &str) -> Tailnet {
         self.tailnet_of(Team::ROOT_ID, name).await
+    }
+
+    /// A team that is not the one of the MCPs.
+    async fn other_team(&self) -> Team {
+        let mut team = Team {
+            name: "Other".to_owned(),
+            ..Default::default()
+        };
+        team.insert(&*self.core.db).await.unwrap();
+        team
     }
 
     /// Runs the daemon of `tailnet`, with a LocalAPI that says `status` and
@@ -80,18 +91,20 @@ impl Fixture {
         server: Option<&LocalServer>,
     ) -> FakeLocalApi {
         self.tailnets.ensure_running(tailnet.id).await.unwrap();
-        let socket = self
-            .core
-            .dir
-            .path()
-            .join("tailnets")
-            .join(tailnet.id.to_string())
-            .join("ts.sock");
-        let api = FakeLocalApi::bind(&socket, status);
+        let api = FakeLocalApi::bind(&self.socket(tailnet), status);
         if let Some(server) = server {
             api.bridge_dials_to(address_of(server));
         }
         api
+    }
+
+    fn socket(&self, tailnet: &Tailnet) -> std::path::PathBuf {
+        self.core
+            .dir
+            .path()
+            .join("tailnets")
+            .join(tailnet.id.to_string())
+            .join("ts.sock")
     }
 
     async fn mcp(&self, tailnet: &Tailnet, http_url: &str) -> Mcp {
@@ -100,6 +113,109 @@ impl Fixture {
             mcp.tailnet_id = Some(tailnet.id);
         })
         .await
+    }
+
+    /// The row as the database holds it now.
+    async fn saved(&self, mcp: &Mcp) -> Mcp {
+        find_mcp(&self.core, mcp.id).await
+    }
+}
+
+/// A tailnet `Office` that is up with a device `nas`, whose server (an MCP
+/// server and the provider next to it) answers on this machine.
+struct Office {
+    fixture: Fixture,
+    server: LocalServer,
+    tailnet: Tailnet,
+    api: FakeLocalApi,
+    port: u16,
+}
+
+impl Deref for Office {
+    type Target = Fixture;
+
+    fn deref(&self) -> &Fixture {
+        &self.fixture
+    }
+}
+
+impl Office {
+    async fn new() -> Self {
+        Self::on(running_status(), None).await
+    }
+
+    /// An office whose daemon says `status`, and whose server names its
+    /// OAuth provider by `issuer_host` (its own host when `None`).
+    async fn on(status: Value, issuer_host: Option<&'static str>) -> Self {
+        let fixture = Fixture::new().await;
+        let server = mcp_server(issuer_host).await;
+        let tailnet = fixture.tailnet("Office").await;
+        let api = fixture.join(&tailnet, status, Some(&server)).await;
+        let port = port_of(&server);
+        Self {
+            fixture,
+            server,
+            tailnet,
+            api,
+            port,
+        }
+    }
+
+    /// An MCP on the tailnet, at `host` and the port of the server.
+    async fn mcp_at(&self, host: &str) -> Mcp {
+        let url = format!("http://{host}:{}/mcp", self.port);
+        self.fixture.mcp(&self.tailnet, &url).await
+    }
+
+    async fn mcp(&self) -> Mcp {
+        self.mcp_at(NAS).await
+    }
+
+    /// An MCP of the device that wants its authorization.
+    async fn oauth_mcp(&self) -> Mcp {
+        let mut mcp = self.mcp().await;
+        mcp.status = McpStatus::Draft;
+        mcp.oauth_required = true;
+        mcp
+    }
+
+    /// What a dial of the daemon is for: `host` on the port of the server.
+    fn dial(&self, host: &str) -> (String, String) {
+        (host.to_owned(), self.port.to_string())
+    }
+
+    fn dials(&self) -> Vec<(String, String)> {
+        dials(&self.api)
+    }
+
+    /// The requests the server received, as `METHOD /path`.
+    fn received(&self) -> Vec<String> {
+        self.server
+            .requests()
+            .iter()
+            .map(|request| format!("{} {}", request.method, request.path()))
+            .collect()
+    }
+
+    /// Everything the server received came over the tailnet, for the host of
+    /// the MCP.
+    fn assert_only_the_host_of_the_mcp_was_asked(&self, what: &str) {
+        for request in self.server.requests() {
+            assert_eq!(
+                request.header("host"),
+                Some(&format!("{NAS}:{}", self.port)[..]),
+                "{what}: {}",
+                request.path()
+            );
+        }
+    }
+
+    /// Whether an exchange or refresh reached the token endpoint of the server.
+    fn token_requests(&self) -> usize {
+        self.received()
+            .iter()
+            .filter(|request| *request == "POST /token")
+            .count()
     }
 }
 
@@ -156,6 +272,25 @@ async fn mcp_server(issuer_host: Option<&'static str>) -> LocalServer {
     .await
 }
 
+/// The provider `auth.example` of the MCP, which answers on the public
+/// network only.
+fn public_provider(port: u16) -> impl Fn(&Call) -> CannedResponse + Send + Sync + 'static {
+    let issuer = format!("http://auth.example:{port}");
+    move |call| match (call.method.as_str(), call.path().as_str()) {
+        ("GET", "/.well-known/oauth-authorization-server") => {
+            json_response(authorization_server(&issuer))
+        }
+        ("POST", "/register") => json_response(registered_client("public-client")),
+        ("POST", "/token") => json_response(json!({
+            "access_token": format!("access-{}", call.form("grant_type").unwrap_or_default()),
+            "refresh_token": "refresh-new",
+            "token_type": "Bearer",
+            "expires_in": 600,
+        })),
+        _ => not_found(),
+    }
+}
+
 fn dials(api: &FakeLocalApi) -> Vec<(String, String)> {
     api.requests_to("/localapi/v0/dial")
         .iter()
@@ -173,134 +308,104 @@ fn refused(error: &UpstreamError) -> String {
     error.to_string()
 }
 
+/// The authorization of `mcp` up to the provider.
+async fn start_oauth(upstream: &Upstream, mcp: &mut Mcp) -> Result<String, UpstreamError> {
+    upstream.start_oauth_flow(&MemorySession::new(), mcp).await
+}
+
+/// Lets the status that the daemon's client kept expire.
+async fn status_expires() {
+    tokio::time::sleep(Duration::from_millis(2300)).await;
+}
+
+/// The access token of the row is `expected`, as saved by a step of the flow.
+fn assert_access_token(fixture: &Fixture, mcp: &Mcp, expected: &str) {
+    assert_eq!(
+        decrypt(&fixture.core, &mcp.oauth_access_token).as_deref(),
+        Some(expected)
+    );
+}
+
+fn expire_token(mcp: &mut Mcp) {
+    mcp.oauth_token_expires_at = Some(mymcps_core::Timestamp::now() - chrono::Duration::minutes(1));
+}
+
 // The MCP transport
 
 #[tokio::test]
-async fn lists_the_tools_of_an_mcp_through_the_tailnet() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(None).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
-        .await;
-    let port = port_of(&server);
-    let mut mcp = fixture
-        .mcp(&tailnet, &format!("http://nas.tail1234.ts.net:{port}/mcp"))
-        .await;
+async fn lists_the_tools_of_an_mcp_through_the_tailnet_and_its_subnet_routes() {
+    let office = Office::new().await;
+    let mut mcp = office.mcp().await;
 
-    let tools = fixture.upstream().probe(&mut mcp).await.unwrap();
+    let tools = office.upstream().probe(&mut mcp).await.unwrap();
 
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "ping");
     // The connection went to the tailscale address of the device, and the
     // server was still addressed by the host of the MCP.
-    let dialed = dials(&api);
+    let dialed = office.dials();
     assert!(!dialed.is_empty());
     assert!(
-        dialed
-            .iter()
-            .all(|dial| *dial == ("100.64.0.2".to_owned(), port.to_string())),
+        dialed.iter().all(|dial| *dial == office.dial("100.64.0.2")),
         "{dialed:?}"
     );
-    let received = server.requests();
-    assert!(!received.is_empty());
-    assert!(
-        received
-            .iter()
-            .all(|request| request.header("host") == Some(&format!("nas.tail1234.ts.net:{port}")))
-    );
+    assert!(!office.server.requests().is_empty());
+    office.assert_only_the_host_of_the_mcp_was_asked("listing");
+
+    // A device behind a subnet route: 192.168.1.0/24 is routed by the `router`
+    // peer of the fake status.
+    let mut behind = office.mcp_at("192.168.1.20").await;
+    let tools = office.upstream().probe(&mut behind).await.unwrap();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(office.dials().last(), Some(&office.dial("192.168.1.20")));
 }
 
 #[tokio::test]
 async fn pools_the_connections_to_a_tailnet_across_requests() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(None).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
-        .await;
-    let mut mcp = fixture
-        .mcp(
-            &tailnet,
-            &format!("http://nas.tail1234.ts.net:{}/mcp", port_of(&server)),
-        )
-        .await;
-    let upstream = fixture.upstream();
+    let office = Office::new().await;
+    let mut mcp = office.mcp().await;
+    let upstream = office.upstream();
 
     upstream.probe(&mut mcp).await.unwrap();
-    let first = dials(&api).len();
+    let first = office.dials().len();
     for _ in 0..3 {
         upstream.probe(&mut mcp).await.unwrap();
     }
 
     // Without the shared network each of the four would open its own.
     assert!(
-        dials(&api).len() < first * 4,
+        office.dials().len() < first * 4,
         "{first} connections for the first listing, {} for four",
-        dials(&api).len()
-    );
-}
-
-#[tokio::test]
-async fn reaches_a_device_by_its_subnet_route() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(None).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
-        .await;
-    let port = port_of(&server);
-    // 192.168.1.0/24 is routed by the `router` peer of the fake status.
-    let mut mcp = fixture
-        .mcp(&tailnet, &format!("http://192.168.1.20:{port}/mcp"))
-        .await;
-
-    let tools = fixture.upstream().probe(&mut mcp).await.unwrap();
-
-    assert_eq!(tools.len(), 1);
-    assert_eq!(
-        dials(&api)[0],
-        ("192.168.1.20".to_owned(), port.to_string())
+        office.dials().len()
     );
 }
 
 #[tokio::test]
 async fn never_sends_the_credentials_elsewhere_when_the_route_disappears_mid_session() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(None).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
-        .await;
+    let office = Office::new().await;
     // Whatever the tailnet does not carry would reach this: nothing may.
     let (fallback, reached) = mock_fetch(|_| not_found());
-    let upstream = fixture.upstream_falling_back_to(fallback);
-    let mut mcp = create_mcp(&fixture.core, |mcp| {
-        mcp.http_url = Some(format!(
-            "http://nas.tail1234.ts.net:{}/mcp",
-            port_of(&server)
-        ));
-        mcp.tailnet_id = Some(tailnet.id);
-        mcp.auth_type = McpAuthType::Bearer;
-        mcp.auth_bearer = encrypt(&fixture.core, "s3cret");
-    })
-    .await;
+    let upstream = office.upstream_falling_back_to(fallback);
+    let mut mcp = office.mcp().await;
+    mcp.auth_type = McpAuthType::Bearer;
+    mcp.auth_bearer = encrypt(&office.core, "s3cret");
 
     let connected = upstream.connect_http_upstream(&mut mcp).await.unwrap();
     assert_eq!(connected.client.list_tools().await.unwrap().tools.len(), 1);
     // The client also opens a stream with a GET in the background, whose
     // moment is not ours: the POSTs are what the test counts.
-    let posts = |server: &LocalServer| {
-        server
-            .requests()
+    let posts = || {
+        let requests = office.server.requests();
+        requests
             .iter()
             .filter(|request| request.method == "POST")
             .count()
     };
-    let sent = posts(&server);
+    let sent = posts();
     assert_eq!(sent, 3, "initialize, initialized, tools/list");
     assert!(
-        server
+        office
+            .server
             .requests()
             .iter()
             .any(|request| request.header("authorization") == Some("Bearer s3cret"))
@@ -310,17 +415,17 @@ async fn never_sends_the_credentials_elsewhere_when_the_route_disappears_mid_ses
     // up, and the daemon's status that was kept expires.
     let mut status = running_status();
     status["Peer"] = json!({});
-    api.set_status(status);
-    tokio::time::sleep(std::time::Duration::from_millis(2300)).await;
+    office.api.set_status(status);
+    status_expires().await;
 
     let error = connected.client.list_tools().await.unwrap_err();
     assert!(
-        error.to_string().contains("nas.tail1234.ts.net"),
+        error.to_string().contains(NAS),
         "the error says which host the tailnet stopped carrying: {error}"
     );
     // Nothing was sent over the public network, nor over the tailnet.
     assert!(reached.all().is_empty(), "{:?}", reached.all());
-    assert_eq!(posts(&server), sent);
+    assert_eq!(posts(), sent);
     connected.close().await;
 }
 
@@ -328,86 +433,48 @@ async fn never_sends_the_credentials_elsewhere_when_the_route_disappears_mid_ses
 
 #[tokio::test]
 async fn discovers_and_registers_with_the_provider_through_the_tailnet() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(None).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
-        .await;
-    let port = port_of(&server);
-    let mut mcp = fixture
-        .mcp(&tailnet, &format!("http://nas.tail1234.ts.net:{port}/mcp"))
-        .await;
-    mcp.status = McpStatus::Draft;
-    mcp.oauth_required = true;
+    let office = Office::new().await;
+    let mut mcp = office.oauth_mcp().await;
 
-    let session = MemorySession::new();
-    let redirect = fixture
-        .upstream()
-        .start_oauth_flow(&session, &mut mcp)
-        .await
-        .unwrap();
+    let redirect = start_oauth(&office.upstream(), &mut mcp).await.unwrap();
 
     let authorization_url = Url::parse(&redirect).unwrap();
     assert_eq!(
         origin(&authorization_url),
-        format!("http://nas.tail1234.ts.net:{port}")
+        format!("http://{NAS}:{}", office.port)
     );
     assert_eq!(authorization_url.path(), "/authorize");
     assert_eq!(mcp.oauth_client_id.as_deref(), Some("tailnet-client"));
     // Discovery and registration all went over the connection of the tailnet.
-    let paths: Vec<String> = server
-        .requests()
-        .iter()
-        .map(|request| format!("{} {}", request.method, request.path()))
-        .collect();
+    let paths = office.received();
     assert!(
         paths.contains(&"GET /.well-known/oauth-protected-resource/mcp".to_owned()),
         "{paths:?}"
     );
     assert!(paths.contains(&"POST /register".to_owned()), "{paths:?}");
     assert_eq!(
-        dials(&api),
-        [("100.64.0.2".to_owned(), port.to_string())],
+        office.dials(),
+        [office.dial("100.64.0.2")],
         "one pooled connection carried every request"
     );
 }
 
 #[tokio::test]
 async fn sends_the_requests_to_another_origin_of_the_oauth_flow_to_the_public_network() {
-    let fixture = Fixture::new().await;
-    // The MCP names a provider that is not a device of the tailnet.
-    let server = mcp_server(Some("auth.example")).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
-        .await;
-    let port = port_of(&server);
-    // The provider answers on the public network only.
-    let issuer = format!("http://auth.example:{port}");
-    let (fallback, reached) = mock_fetch({
-        let issuer = issuer.clone();
-        move |call| match (call.method.as_str(), call.path().as_str()) {
-            ("GET", "/.well-known/oauth-authorization-server") => {
-                json_response(authorization_server(&issuer))
-            }
-            ("POST", "/register") => json_response(registered_client("public-client")),
-            _ => not_found(),
-        }
-    });
-    let mut mcp = fixture
-        .mcp(&tailnet, &format!("http://nas.tail1234.ts.net:{port}/mcp"))
-        .await;
-    mcp.status = McpStatus::Draft;
-    mcp.oauth_required = true;
+    // The MCP names a provider that is not a device of the tailnet, which
+    // answers on the public network only.
+    let office = Office::on(running_status(), Some("auth.example")).await;
+    let (fallback, reached) = mock_fetch(public_provider(office.port));
+    let mut mcp = office.oauth_mcp().await;
 
-    let redirect = fixture
-        .upstream_falling_back_to(fallback)
-        .start_oauth_flow(&MemorySession::new(), &mut mcp)
+    let redirect = start_oauth(&office.upstream_falling_back_to(fallback), &mut mcp)
         .await
         .unwrap();
 
-    assert_eq!(origin(&Url::parse(&redirect).unwrap()), issuer);
+    assert_eq!(
+        origin(&Url::parse(&redirect).unwrap()),
+        format!("http://auth.example:{}", office.port)
+    );
     assert_eq!(mcp.oauth_client_id.as_deref(), Some("public-client"));
     // The MCP's own origin stayed on the tailnet, the provider's did not.
     assert!(!reached.all().is_empty());
@@ -420,46 +487,31 @@ async fn sends_the_requests_to_another_origin_of_the_oauth_flow_to_the_public_ne
         reached.hosts()
     );
     assert!(
-        server
-            .requests()
-            .iter()
-            .any(|request| request.path() == "/.well-known/oauth-protected-resource/mcp")
+        office
+            .received()
+            .contains(&"GET /.well-known/oauth-protected-resource/mcp".to_owned())
     );
-    assert!(!dials(&api).is_empty());
+    assert!(!office.dials().is_empty());
 }
 
 #[tokio::test]
 async fn lets_the_provider_be_another_device_of_the_tailnet() {
-    let fixture = Fixture::new().await;
     // The MCP names a provider at an address inside the subnet the router
     // routes. For an MCP that is not on a tailnet that is a private address
     // it may not name.
-    let server = mcp_server(Some("192.168.1.10")).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
-        .await;
-    let port = port_of(&server);
-    let mut mcp = fixture
-        .mcp(&tailnet, &format!("http://nas.tail1234.ts.net:{port}/mcp"))
-        .await;
-    mcp.status = McpStatus::Draft;
-    mcp.oauth_required = true;
+    let office = Office::on(running_status(), Some("192.168.1.10")).await;
+    let mut mcp = office.oauth_mcp().await;
 
-    let redirect = fixture
-        .upstream()
-        .start_oauth_flow(&MemorySession::new(), &mut mcp)
-        .await
-        .unwrap();
+    let redirect = start_oauth(&office.upstream(), &mut mcp).await.unwrap();
 
     assert_eq!(
         origin(&Url::parse(&redirect).unwrap()),
-        format!("http://192.168.1.10:{port}")
+        format!("http://192.168.1.10:{}", office.port)
     );
     assert!(
-        dials(&api).contains(&("192.168.1.10".to_owned(), port.to_string())),
+        office.dials().contains(&office.dial("192.168.1.10")),
         "{:?}",
-        dials(&api)
+        office.dials()
     );
 }
 
@@ -470,18 +522,12 @@ async fn an_oauth_flow_that_the_tailnet_cannot_carry_fails_as_a_network_error() 
     let tailnet = fixture.tailnet("Office").await;
     // The daemon does not bridge: it asks the client to dial by itself.
     let api = fixture.join(&tailnet, running_status(), None).await;
-    let mut mcp = fixture
-        .mcp(
-            &tailnet,
-            &format!("http://nas.tail1234.ts.net:{}/mcp", port_of(&server)),
-        )
-        .await;
+    let url = format!("http://{NAS}:{}/mcp", port_of(&server));
+    let mut mcp = fixture.mcp(&tailnet, &url).await;
     mcp.status = McpStatus::Draft;
     mcp.oauth_required = true;
 
-    let error = fixture
-        .upstream()
-        .start_oauth_flow(&MemorySession::new(), &mut mcp)
+    let error = start_oauth(&fixture.upstream(), &mut mcp)
         .await
         .unwrap_err();
 
@@ -513,81 +559,62 @@ fn status_without_providers() -> Value {
     status
 }
 
-fn token_requests(server: &LocalServer) -> usize {
-    server
-        .requests()
-        .iter()
-        .filter(|request| request.method == "POST" && request.path() == "/token")
-        .count()
-}
-
 /// The provider of an OAuth flow that the tailnet routes (`provider`) loses
 /// its route in the middle of the flow, while the server of the MCP keeps its
 /// own. Neither the exchange of the code nor the refresh of the token may
 /// then go to the network that the tailnet is not: the provider is an address
 /// or a name of the tailnet, which no other network may answer for.
 async fn provider_route_withdrawn_mid_flow(provider: &'static str) {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(Some(provider)).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, status_with_providers(), Some(&server))
-        .await;
-    let port = port_of(&server);
+    let office = Office::on(status_with_providers(), Some(provider)).await;
     // Whatever the tailnet does not carry would reach this: nothing may.
     let (fallback, reached) = mock_fetch(|_| not_found());
-    let upstream = fixture.upstream_falling_back_to(fallback);
-    let mut mcp = fixture
-        .mcp(&tailnet, &format!("http://nas.tail1234.ts.net:{port}/mcp"))
-        .await;
-    mcp.status = McpStatus::Draft;
-    mcp.oauth_required = true;
+    let upstream = office.upstream_falling_back_to(fallback);
+    let mut mcp = office.oauth_mcp().await;
     let session = MemorySession::new();
     let redirect =
         Url::parse(&upstream.start_oauth_flow(&session, &mut mcp).await.unwrap()).unwrap();
-    assert_eq!(origin(&redirect), format!("http://{provider}:{port}"));
+    assert_eq!(
+        origin(&redirect),
+        format!("http://{provider}:{}", office.port)
+    );
     let state = query(&redirect, "state").unwrap();
     let oauth = read_oauth_session(&session, Some(&state)).unwrap();
     clear_oauth_session(&session, Some(&state));
 
-    let mut saved = find_mcp(&fixture.core, mcp.id).await;
-    saved.oauth_refresh_token = encrypt(&fixture.core, "refresh-secret");
-    saved.oauth_token_expires_at =
-        Some(mymcps_core::Timestamp::now() - chrono::Duration::minutes(1));
-    saved.save(&*fixture.core.db).await.unwrap();
+    let mut saved = office.saved(&mcp).await;
+    saved.oauth_refresh_token = encrypt(&office.core, "refresh-secret");
+    expire_token(&mut saved);
+    saved.save(&*office.core.db).await.unwrap();
+
+    // Exchanges the code and refreshes the token, as the gateway does.
+    let steps = async || {
+        let mut exchanging = office.saved(&mcp).await;
+        let exchange = upstream
+            .exchange_authorization_code(&mut exchanging, &oauth, "code-secret", None)
+            .await
+            .unwrap_err();
+        let mut refreshing = office.saved(&mcp).await;
+        upstream
+            .refresh_oauth_access_token(&mut refreshing)
+            .await
+            .unwrap_err();
+        exchange
+    };
 
     // While the route is there, both reach the token endpoint of the provider,
     // over the tailnet.
-    assert_eq!(token_requests(&server), 0);
-    let mut exchanging = find_mcp(&fixture.core, mcp.id).await;
-    upstream
-        .exchange_authorization_code(&mut exchanging, &oauth, "code-secret", None)
-        .await
-        .unwrap_err();
-    let mut refreshing = find_mcp(&fixture.core, mcp.id).await;
-    upstream
-        .refresh_oauth_access_token(&mut refreshing)
-        .await
-        .unwrap_err();
-    assert_eq!(token_requests(&server), 2, "{provider}");
+    assert_eq!(office.token_requests(), 0);
+    steps().await;
+    assert_eq!(office.token_requests(), 2, "{provider}");
     assert!(reached.all().is_empty());
 
     // The provider's route disappears while the tailnet stays up, and the
     // status that was kept expires.
-    api.set_status(status_without_providers());
-    tokio::time::sleep(std::time::Duration::from_millis(2300)).await;
+    office.api.set_status(status_without_providers());
+    status_expires().await;
 
-    let mut exchanging = find_mcp(&fixture.core, mcp.id).await;
-    let error = upstream
-        .exchange_authorization_code(&mut exchanging, &oauth, "code-secret", None)
-        .await
-        .unwrap_err();
+    let error = steps().await;
     assert!(!error.to_string().contains("code-secret"), "{error}");
-    let mut refreshing = find_mcp(&fixture.core, mcp.id).await;
-    upstream
-        .refresh_oauth_access_token(&mut refreshing)
-        .await
-        .unwrap_err();
 
     // The code, its verifier, the refresh token and the client went nowhere.
     assert!(
@@ -595,67 +622,37 @@ async fn provider_route_withdrawn_mid_flow(provider: &'static str) {
         "{provider} reached the fallback network: {:?}",
         reached.all()
     );
-    assert_eq!(token_requests(&server), 2, "{provider}");
+    assert_eq!(office.token_requests(), 2, "{provider}");
     // The tokens are still the ones saved, not replaced by anything.
-    let after = find_mcp(&fixture.core, mcp.id).await;
+    let after = office.saved(&mcp).await;
     assert_eq!(
-        decrypt(&fixture.core, &after.oauth_refresh_token).as_deref(),
+        decrypt(&office.core, &after.oauth_refresh_token).as_deref(),
         Some("refresh-secret")
     );
 }
 
-#[tokio::test]
-async fn never_sends_the_oauth_exchange_elsewhere_when_a_subnet_route_of_the_provider_goes() {
-    provider_route_withdrawn_mid_flow("192.168.1.10").await;
+macro_rules! provider_route_withdrawn {
+    ($($name:ident: $provider:literal;)+) => {$(
+        #[tokio::test]
+        async fn $name() {
+            provider_route_withdrawn_mid_flow($provider).await;
+        }
+    )+};
 }
 
-#[tokio::test]
-async fn never_sends_the_oauth_exchange_elsewhere_when_a_public_address_behind_a_32_route_goes() {
-    provider_route_withdrawn_mid_flow("203.0.113.7").await;
-}
-
-#[tokio::test]
-async fn never_sends_the_oauth_exchange_elsewhere_when_the_device_of_the_provider_goes() {
-    provider_route_withdrawn_mid_flow("files.tail1234.ts.net").await;
-}
-
-#[tokio::test]
-async fn never_sends_the_oauth_exchange_elsewhere_when_the_short_name_of_the_provider_goes() {
-    provider_route_withdrawn_mid_flow("files").await;
+provider_route_withdrawn! {
+    never_sends_the_oauth_exchange_elsewhere_when_a_subnet_route_of_the_provider_goes: "192.168.1.10";
+    never_sends_the_oauth_exchange_elsewhere_when_a_public_address_behind_a_32_route_goes: "203.0.113.7";
+    never_sends_the_oauth_exchange_elsewhere_when_the_device_of_the_provider_goes: "files.tail1234.ts.net";
+    never_sends_the_oauth_exchange_elsewhere_when_the_short_name_of_the_provider_goes: "files";
 }
 
 #[tokio::test]
 async fn a_provider_named_by_a_dns_name_still_works_when_the_tailnet_loses_other_routes() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(Some("auth.example")).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, status_with_providers(), Some(&server))
-        .await;
-    let port = port_of(&server);
-    let issuer = format!("http://auth.example:{port}");
-    let (fallback, reached) = mock_fetch({
-        let issuer = issuer.clone();
-        move |call| match (call.method.as_str(), call.path().as_str()) {
-            ("GET", "/.well-known/oauth-authorization-server") => {
-                json_response(authorization_server(&issuer))
-            }
-            ("POST", "/register") => json_response(registered_client("public-client")),
-            ("POST", "/token") => json_response(json!({
-                "access_token": format!("access-{}", call.form("grant_type").unwrap_or_default()),
-                "refresh_token": "refresh-new",
-                "token_type": "Bearer",
-                "expires_in": 600,
-            })),
-            _ => not_found(),
-        }
-    });
-    let upstream = fixture.upstream_falling_back_to(fallback);
-    let mut mcp = fixture
-        .mcp(&tailnet, &format!("http://nas.tail1234.ts.net:{port}/mcp"))
-        .await;
-    mcp.status = McpStatus::Draft;
-    mcp.oauth_required = true;
+    let office = Office::on(status_with_providers(), Some("auth.example")).await;
+    let (fallback, reached) = mock_fetch(public_provider(office.port));
+    let upstream = office.upstream_falling_back_to(fallback);
+    let mut mcp = office.oauth_mcp().await;
     let session = MemorySession::new();
     let redirect =
         Url::parse(&upstream.start_oauth_flow(&session, &mut mcp).await.unwrap()).unwrap();
@@ -663,25 +660,19 @@ async fn a_provider_named_by_a_dns_name_still_works_when_the_tailnet_loses_other
     let oauth = read_oauth_session(&session, Some(&state)).unwrap();
 
     // Routes the provider never used go away.
-    api.set_status(status_without_providers());
-    tokio::time::sleep(std::time::Duration::from_millis(2300)).await;
+    office.api.set_status(status_without_providers());
+    status_expires().await;
 
-    let mut mcp = find_mcp(&fixture.core, mcp.id).await;
+    let mut mcp = office.saved(&mcp).await;
     upstream
         .exchange_authorization_code(&mut mcp, &oauth, "the-code", None)
         .await
         .unwrap();
-    assert_eq!(
-        decrypt(&fixture.core, &mcp.oauth_access_token).as_deref(),
-        Some("access-authorization_code")
-    );
-    mcp.oauth_token_expires_at = Some(mymcps_core::Timestamp::now() - chrono::Duration::minutes(1));
-    mcp.save(&*fixture.core.db).await.unwrap();
+    assert_access_token(&office, &mcp, "access-authorization_code");
+    expire_token(&mut mcp);
+    mcp.save(&*office.core.db).await.unwrap();
     upstream.refresh_oauth_access_token(&mut mcp).await.unwrap();
-    assert_eq!(
-        decrypt(&fixture.core, &mcp.oauth_access_token).as_deref(),
-        Some("access-refresh_token")
-    );
+    assert_access_token(&office, &mcp, "access-refresh_token");
     assert!(
         reached
             .all()
@@ -717,38 +708,33 @@ async fn refuses_an_oauth_endpoint_at_an_ip_address_the_tailnet_does_not_route()
         api.bridge_dials_to(address_of(&server));
         let port = port_of(&server);
         let mut mcp = fixture
-            .mcp(&tailnet, &format!("http://nas.tail1234.ts.net:{port}/mcp"))
+            .mcp(&tailnet, &format!("http://{NAS}:{port}/mcp"))
             .await;
         mcp.status = McpStatus::Draft;
         mcp.oauth_required = true;
 
         let outcome = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            fixture
-                .upstream()
-                .start_oauth_flow(&MemorySession::new(), &mut mcp),
+            Duration::from_secs(5),
+            start_oauth(&fixture.upstream(), &mut mcp),
         )
         .await
         .unwrap_or_else(|_| panic!("{provider}: a connection was attempted"));
 
         assert!(outcome.is_err(), "{provider}");
         // The only requests that reached the server went over the tailnet,
-        // for the host of the MCP.
+        // for the host of the MCP, and none registered or exchanged anything.
         for request in server.requests() {
             assert_eq!(
                 request.header("host"),
-                Some(&format!("nas.tail1234.ts.net:{port}")[..]),
+                Some(&format!("{NAS}:{port}")[..]),
                 "{provider}: {}",
                 request.path()
             );
+            assert!(
+                request.path() != "/register" && request.path() != "/token",
+                "{provider}"
+            );
         }
-        assert!(
-            !server
-                .requests()
-                .iter()
-                .any(|request| request.path() == "/register" || request.path() == "/token"),
-            "{provider}"
-        );
     }
 }
 
@@ -759,7 +745,7 @@ async fn refuses_a_tailnet_mcp_when_tailscale_is_off_on_the_server() {
     let fixture = Fixture::new().await;
     let tailnet = fixture.tailnet("Office").await;
     let mut mcp = fixture
-        .mcp(&tailnet, "http://nas.tail1234.ts.net:8080/mcp")
+        .mcp(&tailnet, &format!("http://{NAS}:8080/mcp"))
         .await;
     let upstream = Upstream::builder(fixture.core.core.clone(), BuiltinRegistry::default())
         .tailnets(None)
@@ -767,71 +753,35 @@ async fn refuses_a_tailnet_mcp_when_tailscale_is_off_on_the_server() {
 
     let message = refused(&upstream.probe(&mut mcp).await.unwrap_err());
     assert!(message.contains("Tailscale is turned off"), "{message}");
-    let message = refused(
-        &upstream
-            .start_oauth_flow(&MemorySession::new(), &mut mcp)
-            .await
-            .unwrap_err(),
-    );
+    let message = refused(&start_oauth(&upstream, &mut mcp).await.unwrap_err());
     assert!(message.contains("Tailscale is turned off"), "{message}");
 }
 
 #[tokio::test]
-async fn refuses_a_tailnet_that_was_deleted() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(None).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
+async fn refuses_a_tailnet_that_was_deleted_or_is_of_another_team() {
+    let office = Office::new().await;
+    let other_team = office.other_team().await;
+    let foreign = office.tailnet_of(other_team.id, "Theirs").await;
+    let foreign_api = office
+        .join(&foreign, running_status(), Some(&office.server))
         .await;
-    let mut mcp = fixture
-        .mcp(
-            &tailnet,
-            &format!("http://nas.tail1234.ts.net:{}/mcp", port_of(&server)),
-        )
-        .await;
-    // The row an MCP in flight holds still names it.
-    tailnet.delete(&*fixture.core.db).await.unwrap();
-
-    let message = refused(&fixture.upstream().probe(&mut mcp).await.unwrap_err());
-
-    assert!(message.contains("no longer exists"), "{message}");
-    assert!(dials(&api).is_empty());
-}
-
-#[tokio::test]
-async fn refuses_the_tailnet_of_another_team() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(None).await;
-    let mut other_team = Team {
-        name: "Other".to_owned(),
-        ..Default::default()
-    };
-    other_team.insert(&*fixture.core.db).await.unwrap();
-    let foreign = fixture.tailnet_of(other_team.id, "Theirs").await;
-    let api = fixture
-        .join(&foreign, running_status(), Some(&server))
-        .await;
+    let upstream = office.upstream();
+    // The row an MCP in flight holds still names the first, which is gone.
+    let mut deleted = office.mcp().await;
+    office.tailnet.delete(&*office.core.db).await.unwrap();
     // The MCP is in the root team, the tailnet in another one.
-    let mut mcp = fixture
-        .mcp(
-            &foreign,
-            &format!("http://nas.tail1234.ts.net:{}/mcp", port_of(&server)),
-        )
-        .await;
-    assert_ne!(mcp.team_id, foreign.team_id);
+    let url = format!("http://{NAS}:{}/mcp", office.port);
+    let mut foreigner = office.fixture.mcp(&foreign, &url).await;
+    assert_ne!(foreigner.team_id, foreign.team_id);
 
-    let upstream = fixture.upstream();
-    let message = refused(&upstream.probe(&mut mcp).await.unwrap_err());
-    assert!(message.contains("no longer exists"), "{message}");
-    refused(
-        &upstream
-            .start_oauth_flow(&MemorySession::new(), &mut mcp)
-            .await
-            .unwrap_err(),
-    );
-    assert!(dials(&api).is_empty());
-    assert!(server.requests().is_empty());
+    for mcp in [&mut deleted, &mut foreigner] {
+        let message = refused(&upstream.probe(mcp).await.unwrap_err());
+        assert!(message.contains("no longer exists"), "{message}");
+        refused(&start_oauth(&upstream, mcp).await.unwrap_err());
+    }
+    assert!(office.dials().is_empty());
+    assert!(dials(&foreign_api).is_empty());
+    assert!(office.server.requests().is_empty());
 }
 
 #[tokio::test]
@@ -842,20 +792,10 @@ async fn refuses_a_tailnet_that_is_not_running() {
         ("Stopped", "is stopped"),
         ("Starting", "is starting"),
     ] {
-        let fixture = Fixture::new().await;
-        let server = mcp_server(None).await;
-        let tailnet = fixture.tailnet("Office").await;
-        let api = fixture
-            .join(&tailnet, status_in(state), Some(&server))
-            .await;
-        let mut mcp = fixture
-            .mcp(
-                &tailnet,
-                &format!("http://nas.tail1234.ts.net:{}/mcp", port_of(&server)),
-            )
-            .await;
+        let office = Office::on(status_in(state), None).await;
+        let mut mcp = office.mcp().await;
 
-        let message = refused(&fixture.upstream().probe(&mut mcp).await.unwrap_err());
+        let message = refused(&office.upstream().probe(&mut mcp).await.unwrap_err());
 
         assert!(
             message.contains("Tailnet \"Office\" is not running"),
@@ -866,8 +806,8 @@ async fn refuses_a_tailnet_that_is_not_running() {
             message.contains("Sign in again on the Tailnets page"),
             "{state}: {message}"
         );
-        assert!(dials(&api).is_empty(), "{state}");
-        assert!(server.requests().is_empty(), "{state}");
+        assert!(office.dials().is_empty(), "{state}");
+        assert!(office.server.requests().is_empty(), "{state}");
     }
 }
 
@@ -876,7 +816,7 @@ async fn refuses_a_tailnet_nobody_started() {
     let fixture = Fixture::new().await;
     let tailnet = fixture.tailnet("Office").await;
     let mut mcp = fixture
-        .mcp(&tailnet, "http://nas.tail1234.ts.net:8080/mcp")
+        .mcp(&tailnet, &format!("http://{NAS}:8080/mcp"))
         .await;
 
     let message = refused(&fixture.upstream().probe(&mut mcp).await.unwrap_err());
@@ -887,14 +827,8 @@ async fn refuses_a_tailnet_nobody_started() {
 
 #[tokio::test]
 async fn refuses_a_host_that_is_not_a_device_of_the_tailnet() {
-    let fixture = Fixture::new().await;
-    let server = mcp_server(None).await;
-    let tailnet = fixture.tailnet("Office").await;
-    let api = fixture
-        .join(&tailnet, running_status(), Some(&server))
-        .await;
-    let port = port_of(&server);
-    let upstream = fixture.upstream();
+    let office = Office::new().await;
+    let upstream = office.upstream();
 
     // Another machine of the Internet, an address outside every route of the
     // tailnet, and the machine of the server itself.
@@ -904,9 +838,7 @@ async fn refuses_a_host_that_is_not_a_device_of_the_tailnet() {
         "127.0.0.1",
         "169.254.169.254",
     ] {
-        let mut mcp = fixture
-            .mcp(&tailnet, &format!("http://{host}:{port}/mcp"))
-            .await;
+        let mut mcp = office.mcp_at(host).await;
 
         let message = refused(&upstream.probe(&mut mcp).await.unwrap_err());
         assert!(
@@ -916,16 +848,11 @@ async fn refuses_a_host_that_is_not_a_device_of_the_tailnet() {
             "{host}: {message}"
         );
 
-        let message = refused(
-            &upstream
-                .start_oauth_flow(&MemorySession::new(), &mut mcp)
-                .await
-                .unwrap_err(),
-        );
+        let message = refused(&start_oauth(&upstream, &mut mcp).await.unwrap_err());
         assert!(message.contains("is not a device or a subnet route"));
     }
-    assert!(dials(&api).is_empty());
-    assert!(server.requests().is_empty());
+    assert!(office.dials().is_empty());
+    assert!(office.server.requests().is_empty());
 }
 
 // An MCP that is not on a tailnet
@@ -943,11 +870,8 @@ async fn leaves_an_mcp_without_a_tailnet_on_the_network_it_used() {
             &json!({}),
         )
     });
-    let upstream = Upstream::builder(fixture.core.core.clone(), BuiltinRegistry::default())
-        .fetcher(fetcher)
-        .address_guard(public_names())
-        .tailnets(Some(fixture.tailnets.clone()))
-        .build();
+    let upstream =
+        fixture.upstream_with(|builder| builder.fetcher(fetcher).address_guard(public_names()));
     let mut mcp = create_mcp(&fixture.core, |mcp| {
         mcp.http_url = Some("https://mcp.example/mcp".to_owned());
     })
@@ -967,11 +891,7 @@ async fn leaves_an_mcp_without_a_tailnet_on_the_network_it_used() {
 #[tokio::test]
 async fn starts_the_tailnet_of_every_team_and_says_where_each_stands() {
     let fixture = Fixture::new().await;
-    let mut other_team = Team {
-        name: "Other".to_owned(),
-        ..Default::default()
-    };
-    other_team.insert(&*fixture.core.db).await.unwrap();
+    let other_team = fixture.other_team().await;
     let office = fixture.tailnet("Office").await;
     let theirs = fixture.tailnet_of(other_team.id, "Theirs").await;
 
@@ -983,15 +903,9 @@ async fn starts_the_tailnet_of_every_team_and_says_where_each_stands() {
             (&office, running_status()),
             (&theirs, status_in("NeedsLogin")),
         ] {
-            let socket = fixture
-                .core
-                .dir
-                .path()
-                .join("tailnets")
-                .join(tailnet.id.to_string())
-                .join("ts.sock");
+            let socket = fixture.socket(tailnet);
             while !socket.parent().unwrap().exists() {
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
             apis.push(FakeLocalApi::bind(&socket, status));
         }
@@ -1001,14 +915,11 @@ async fn starts_the_tailnet_of_every_team_and_says_where_each_stands() {
     let starts: Vec<TailnetStart> = starts.unwrap();
     assert_eq!(starts.len(), 2);
     assert_eq!(starts[0].tailnet.name, "Office");
-    assert!(matches!(
-        starts[0].state,
-        Ok(mymcps_tailnet::TailnetState::Running { .. })
-    ));
+    assert!(matches!(starts[0].state, Ok(TailnetState::Running { .. })));
     assert_eq!(starts[1].tailnet.name, "Theirs");
     assert!(matches!(
         starts[1].state,
-        Ok(mymcps_tailnet::TailnetState::NeedsLogin { .. })
+        Ok(TailnetState::NeedsLogin { .. })
     ));
     assert!(fixture.tailnets.handle(office.id).is_some());
     assert!(fixture.tailnets.handle(theirs.id).is_some());

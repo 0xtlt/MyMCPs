@@ -10,6 +10,7 @@ mod support;
 use std::sync::Arc;
 
 use chrono::Duration;
+use mymcps_core::gate::Gate;
 use mymcps_core::models::Mcp;
 use mymcps_core::{TestCore, Timestamp};
 use mymcps_net::CannedResponse;
@@ -29,7 +30,7 @@ fn late_provider(core: &TestCore, gate: Arc<Gate>) -> (Arc<Upstream>, Calls) {
         move |call| -> CannedResponse {
             match call.url.as_str() {
                 "https://www.example.test/oauth/token" => {
-                    gate.hold();
+                    gate.hold("token");
                     json_response(json!({
                         "token_type": "Bearer",
                         "access_token": ISSUED,
@@ -72,26 +73,34 @@ fn assert_nothing_issued_was_saved(core: &TestCore, saved: &Mcp) {
     }
 }
 
+/// Renews the token of a connected MCP of the example provider, and edits the
+/// row while the provider has not answered. Returns the error of the renewal
+/// (it is always refused) and the row as it ended.
+async fn renewal_edited_meanwhile(core: &TestCore, change: impl FnOnce(&mut Mcp)) -> (String, Mcp) {
+    let gate = Arc::new(Gate::default());
+    let (upstream, _) = late_provider(core, gate.clone());
+    let mcp = connected(core, |_| {}).await;
+    let mut row = find_mcp(core, mcp.id).await;
+    gate.arm("token");
+    let renewing = tokio::spawn(async move {
+        upstream
+            .refresh_oauth_access_token(&mut row)
+            .await
+            .map_err(|error| error.to_string())
+    });
+    gate.reached().await;
+    edit(core, mcp.id, change).await;
+    gate.release();
+
+    let error = renewing.await.unwrap().unwrap_err();
+    (error, find_mcp(core, mcp.id).await)
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn drops_a_renewal_answered_after_the_sign_in_was_cleared() {
     let core = TestCore::new().await;
-    let gate = Arc::new(Gate::default());
-    let (upstream, _) = late_provider(&core, gate.clone());
-    let mcp = connected(&core, |_| {}).await;
 
-    let renewing = {
-        let upstream = upstream.clone();
-        let mut mcp = find_mcp(&core, mcp.id).await;
-        gate.arm();
-        tokio::spawn(async move {
-            upstream
-                .refresh_oauth_access_token(&mut mcp)
-                .await
-                .map_err(|error| error.to_string())
-        })
-    };
-    gate.reached().await;
-    edit(&core, mcp.id, |mcp| {
+    let (error, saved) = renewal_edited_meanwhile(&core, |mcp| {
         mcp.oauth_access_token = None;
         mcp.oauth_refresh_token = None;
         mcp.oauth_token_expires_at = None;
@@ -99,11 +108,8 @@ async fn drops_a_renewal_answered_after_the_sign_in_was_cleared() {
         mcp.oauth_client_secret = None;
     })
     .await;
-    gate.release();
 
-    let error = renewing.await.unwrap().unwrap_err();
     assert!(error.contains("changed while"), "{error}");
-    let saved = find_mcp(&core, mcp.id).await;
     assert_eq!(saved.oauth_access_token, None);
     assert_eq!(saved.oauth_refresh_token, None);
 }
@@ -111,27 +117,12 @@ async fn drops_a_renewal_answered_after_the_sign_in_was_cleared() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn drops_a_renewal_answered_after_the_sign_in_was_made_again() {
     let core = TestCore::new().await;
-    let gate = Arc::new(Gate::default());
-    let (upstream, _) = late_provider(&core, gate.clone());
-    let mcp = connected(&core, |_| {}).await;
-
-    let renewing = {
-        let upstream = upstream.clone();
-        let mut mcp = find_mcp(&core, mcp.id).await;
-        gate.arm();
-        tokio::spawn(async move { upstream.refresh_oauth_access_token(&mut mcp).await })
-    };
-    gate.reached().await;
     // Another sign-in finished first: its tokens are the ones to keep.
     let replaced = encrypt(&core, "replaced-refresh-token");
-    edit(&core, mcp.id, |mcp| {
-        mcp.oauth_refresh_token = replaced;
-    })
-    .await;
-    gate.release();
 
-    renewing.await.unwrap().unwrap_err();
-    let saved = find_mcp(&core, mcp.id).await;
+    let (_, saved) =
+        renewal_edited_meanwhile(&core, |mcp| mcp.oauth_refresh_token = replaced).await;
+
     assert_nothing_issued_was_saved(&core, &saved);
     assert_eq!(
         decrypt(&core, &saved.oauth_refresh_token).as_deref(),
@@ -163,7 +154,7 @@ async fn drops_a_code_exchanged_after_the_application_credentials_were_replaced(
     let exchanging = {
         let upstream = upstream.clone();
         let mut mcp = find_mcp(&core, mcp.id).await;
-        gate.arm();
+        gate.arm("token");
         tokio::spawn(async move {
             upstream
                 .exchange_authorization_code(&mut mcp, &oauth, "the-code", None)

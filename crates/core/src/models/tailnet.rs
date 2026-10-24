@@ -24,6 +24,31 @@ model! {
     }
 }
 
+#[cfg(feature = "test-util")]
+impl Tailnet {
+    /// A tailnet row of `team_id` called `name`, as if connected earlier: its
+    /// node is `mymcps-<name>`.
+    pub fn for_tests(team_id: i64, created_by: i64, name: &str) -> Self {
+        Self {
+            team_id,
+            name: name.into(),
+            hostname: format!("mymcps-{}", name.to_lowercase()),
+            created_by,
+            ..Default::default()
+        }
+    }
+
+    /// [`for_tests`](Self::for_tests), saved.
+    pub async fn create_for_tests<'e, E>(db: E, team_id: i64, created_by: i64, name: &str) -> Self
+    where
+        E: SqliteExecutor<'e>,
+    {
+        let mut tailnet = Self::for_tests(team_id, created_by, name);
+        tailnet.insert(db).await.unwrap();
+        tailnet
+    }
+}
+
 impl Tailnet {
     /// The tailnets of a team, by name.
     pub async fn of_team<'e, E>(db: E, team_id: i64) -> Result<Vec<Self>, sqlx::Error>

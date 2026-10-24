@@ -17,14 +17,15 @@
 
 mod mcps_support;
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use chrono::Duration as Age;
 use http::StatusCode;
 use mcps_support::*;
 use mymcps_core::Timestamp;
+use mymcps_core::gate::Gate;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, Tailnet, Team, User};
 use mymcps_gateway::mcp_management::{ManagementActor, McpFields, McpRegistryManager};
 use mymcps_net::{AddressGuard, CannedResponse, Resolver};
@@ -48,55 +49,6 @@ const TOKEN: &str = "/token";
 const REGISTER: &str = "/register";
 const WAIT: Duration = Duration::from_secs(20);
 
-/// Holds the answer of one request of the provider while the gate is armed
-/// for its path. The answer is computed on a thread of the runtime, which
-/// waits: the tests that use it run on more than one.
-#[derive(Default)]
-struct Gate {
-    armed: Mutex<Option<&'static str>>,
-    arrived: Notify,
-    released: Mutex<bool>,
-    wake: Condvar,
-}
-
-impl Gate {
-    /// Hold the next request to `path`.
-    fn arm(&self, path: &'static str) {
-        *self.released.lock().unwrap() = false;
-        *self.armed.lock().unwrap() = Some(path);
-    }
-
-    /// Called by the provider on each request: when it is the one the gate
-    /// waits for, tells the test it is there, then holds the answer until
-    /// [`release`](Self::release).
-    fn hold(&self, call: &Call) {
-        {
-            let mut armed = self.armed.lock().unwrap();
-            if *armed != Some(call.path().as_str()) {
-                return;
-            }
-            *armed = None;
-        }
-        self.arrived.notify_one();
-        let mut released = self.released.lock().unwrap();
-        while !*released {
-            released = self.wake.wait(released).unwrap();
-        }
-    }
-
-    /// The request of the step is at the provider, which has not answered.
-    async fn reached(&self) {
-        tokio::time::timeout(WAIT, self.arrived.notified())
-            .await
-            .expect("the token request reached the provider");
-    }
-
-    fn release(&self) {
-        *self.released.lock().unwrap() = true;
-        self.wake.notify_all();
-    }
-}
-
 /// A provider that serves the two origins of the test, and issues a token of
 /// its own for each grant.
 fn provider(gate: Arc<Gate>) -> impl Fn(&Call) -> CannedResponse + Send + Sync + 'static {
@@ -113,11 +65,11 @@ fn provider(gate: Arc<Gate>) -> impl Fn(&Call) -> CannedResponse + Send + Sync +
                 json_response(authorization_server("https://auth.example"))
             }
             "https://auth.example/register" => {
-                gate.hold(call);
+                gate.hold(&call.path());
                 json_response(registered_client("client-1"))
             }
             "https://auth.example/token" => {
-                gate.hold(call);
+                gate.hold(&call.path());
                 let refreshing = call.form("grant_type").as_deref() == Some("refresh_token");
                 json_response(json!({
                     "access_token": if refreshing { REFRESHED_ACCESS_TOKEN } else { CODE_ACCESS_TOKEN },
@@ -264,15 +216,8 @@ impl Lab {
     }
 
     async fn tailnet_named(&self, name: &str) -> Tailnet {
-        let mut tailnet = Tailnet {
-            team_id: Team::ROOT_ID,
-            name: name.into(),
-            hostname: format!("mymcps-{name}"),
-            created_by: self.admin.id,
-            ..Default::default()
-        };
-        tailnet.insert(&*self.app.core.db).await.unwrap();
-        tailnet
+        let db = &*self.app.core.db;
+        Tailnet::create_for_tests(db, Team::ROOT_ID, self.admin.id, name).await
     }
 
     /// Save the MCP with this URL and network, through the route of the edit

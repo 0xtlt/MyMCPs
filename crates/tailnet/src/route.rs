@@ -203,27 +203,20 @@ mod tests {
     }
 
     #[test]
-    fn a_peer_is_found_by_its_full_magic_dns_name() {
+    fn a_peer_is_found_by_its_name() {
         let status = status();
+        // The full MagicDNS name, with or without the final dot.
         assert_eq!(resolve(&status, "nas.tail1234.ts.net"), ip("100.64.0.2"));
         assert_eq!(resolve(&status, "nas.tail1234.ts.net."), ip("100.64.0.2"));
-    }
-
-    #[test]
-    fn a_peer_is_found_by_its_first_label_in_any_case() {
-        let status = status();
+        // Its first label, in any case.
         assert_eq!(resolve(&status, "nas"), ip("100.64.0.2"));
         assert_eq!(resolve(&status, "NAS"), ip("100.64.0.2"));
         assert_eq!(resolve(&status, "ROUTER.Tail1234.TS.net"), ip("100.64.0.3"));
+        // `Router` lists its IPv6 address first: a name gets the IPv4 one.
         assert_eq!(resolve(&status, "router"), ip("100.64.0.3"));
-    }
-
-    #[test]
-    fn the_first_label_only_names_a_node_of_this_tailnet() {
-        let status = status();
-        // `nas` exists in two tailnets: the one of this tailnet wins, and the
-        // shared node answers to its full name only.
-        assert_eq!(resolve(&status, "nas"), ip("100.64.0.2"));
+        // The first label only names a node of this tailnet: `nas` exists in
+        // two tailnets and the one of this tailnet wins, and the shared node
+        // answers to its full name only.
         assert_eq!(
             resolve(&status, "nas.other-tailnet.ts.net"),
             ip("100.64.0.6")
@@ -287,6 +280,7 @@ mod tests {
         assert_eq!(resolve(&status, "fd00::1234"), ip("fd00::1234"));
         assert_eq!(resolve(&status, "192.168.2.50"), None);
         assert_eq!(resolve(&status, "10.2.0.1"), None);
+        // `evil` announces 0.0.0.0/0: that does not make 8.8.8.8 a peer.
         assert_eq!(resolve(&status, "8.8.8.8"), None);
         assert_eq!(resolve(&status, "fd01::1"), None);
     }
@@ -371,12 +365,6 @@ mod tests {
     }
 
     #[test]
-    fn the_default_route_of_an_exit_node_routes_nothing() {
-        // `evil` announces 0.0.0.0/0: that does not make 8.8.8.8 a peer.
-        assert_eq!(resolve(&status(), "8.8.8.8"), None);
-    }
-
-    #[test]
     fn a_status_without_peers_routes_nothing() {
         let status: Status = serde_json::from_value(json!({
             "BackendState": "Running",
@@ -428,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn a_subnet_route_never_reaches_the_addresses_of_this_node() {
+    fn a_hostile_status_never_sends_the_server_to_its_own_addresses() {
         let status = status_with_a_subnet_over_this_node();
         for host in [
             "100.64.0.1",
@@ -446,11 +434,8 @@ mod tests {
             ip("fd7a:115c:a1e0::77")
         );
         assert_eq!(resolve(&status, "192.168.1.5"), ip("192.168.1.5"));
-    }
 
-    #[test]
-    fn a_peer_that_lists_an_address_of_this_node_is_not_dialled_there() {
-        let status = status_with_a_subnet_over_this_node();
+        // A peer that lists an address of this node is not dialled there:
         // `twin` has nothing but this node's addresses: nothing to dial.
         assert_eq!(resolve(&status, "twin"), None);
         assert_eq!(resolve(&status, "twin.tail1234.ts.net"), None);

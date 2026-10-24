@@ -5,6 +5,7 @@ use std::time::Duration;
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::task::JoinHandle;
 use url::Url;
 
 use crate::supervisor::Backoff;
@@ -78,6 +79,46 @@ impl Fixture {
         self.tailnets.ensure_running(id).await.unwrap();
         FakeLocalApi::bind(&self.socket(id), status)
     }
+
+    /// Starts tailnet `id` and waits until its daemon runs: returns its pid.
+    async fn start(&self, id: i64) -> String {
+        self.tailnets.ensure_running(id).await.unwrap();
+        assert!(eventually(PATIENCE, || self.pid().is_some()).await);
+        self.pid().unwrap()
+    }
+
+    /// The state of a node that joined tailnet `id`, as a daemon leaves it.
+    fn node_state(&self, id: i64) {
+        std::fs::create_dir_all(self.tailnet_dir(id)).unwrap();
+        std::fs::write(self.tailnet_dir(id).join("tailscaled.state"), "{}").unwrap();
+    }
+
+    /// A fake LocalAPI that appears once the (fake) daemon of `id` is up: it
+    /// is the daemon that records its start, not the clock, that says so.
+    fn api_once_started(&self, id: i64, status: serde_json::Value) -> JoinHandle<FakeLocalApi> {
+        let socket = self.socket(id);
+        let started = self.bin("runs");
+        tokio::spawn(async move {
+            assert!(eventually(PATIENCE, || has_run(&started)).await);
+            FakeLocalApi::bind(&socket, status)
+        })
+    }
+}
+
+/// What a tailnet that cannot start says, once it does.
+async fn failed_reason(tailnets: &Tailnets, id: i64) -> String {
+    let mut state = TailnetState::Starting;
+    for _ in 0..200 {
+        state = tailnets.state(id).await;
+        if matches!(state, TailnetState::Failed(_)) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let TailnetState::Failed(reason) = state else {
+        panic!("expected Failed, got {state:?}");
+    };
+    reason
 }
 
 fn alive(pid: &str) -> bool {
@@ -110,8 +151,7 @@ mod supervisor {
     async fn it_starts_tailscaled_in_userspace_mode_with_a_private_directory_and_a_bare_environment()
      {
         let fixture = Fixture::new(0);
-        fixture.tailnets.ensure_running(7).await.unwrap();
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
+        fixture.start(7).await;
 
         let directory = fixture.tailnet_dir(7);
         let args = std::fs::read_to_string(fixture.bin("args.1")).unwrap();
@@ -147,17 +187,15 @@ mod supervisor {
             .filter(|name| !matches!(**name, "PATH" | "HOME" | "PWD" | "SHLVL" | "_" | "OLDPWD"))
             .collect();
         assert!(leaked.is_empty(), "{leaked:?}");
-        let home = std::fs::read_to_string(fixture.bin("env.1")).unwrap();
-        assert!(home.contains(&format!("HOME={}", directory.display())));
+        assert!(env.contains(&format!("HOME={}", directory.display())));
     }
 
     #[tokio::test]
     async fn ensure_running_is_idempotent() {
         let fixture = Fixture::new(0);
         for _ in 0..3 {
-            fixture.tailnets.ensure_running(1).await.unwrap();
+            fixture.start(1).await;
         }
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(fixture.runs(), 1);
     }
@@ -165,9 +203,8 @@ mod supervisor {
     #[tokio::test]
     async fn it_starts_tailscaled_again_with_a_growing_wait_when_it_exits() {
         let fixture = Fixture::new(2);
-        fixture.tailnets.ensure_running(1).await.unwrap();
         // Two runs end at once with status 3; the third one stays.
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
+        fixture.start(1).await;
         assert_eq!(fixture.runs(), 3);
         assert_eq!(fixture.tailnets.state(1).await, TailnetState::Starting);
     }
@@ -183,17 +220,7 @@ mod supervisor {
             },
         );
         fixture.tailnets.ensure_running(1).await.unwrap();
-        let mut state = TailnetState::Starting;
-        for _ in 0..200 {
-            state = fixture.tailnets.state(1).await;
-            if matches!(state, TailnetState::Failed(_)) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        let TailnetState::Failed(reason) = state else {
-            panic!("expected Failed, got {state:?}");
-        };
+        let reason = failed_reason(&fixture.tailnets, 1).await;
         assert!(reason.contains("exited"), "{reason}");
         assert!(reason.contains('3'), "{reason}");
     }
@@ -210,17 +237,7 @@ mod supervisor {
             SECOND,
         );
         tailnets.ensure_running(1).await.unwrap();
-        let mut state = TailnetState::Starting;
-        for _ in 0..200 {
-            state = tailnets.state(1).await;
-            if matches!(state, TailnetState::Failed(_)) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        let TailnetState::Failed(reason) = state else {
-            panic!("expected Failed, got {state:?}");
-        };
+        let reason = failed_reason(&tailnets, 1).await;
         assert!(reason.contains("could not start"), "{reason}");
         assert!(reason.contains("no-such-tailscaled"), "{reason}");
     }
@@ -228,10 +245,8 @@ mod supervisor {
     #[tokio::test]
     async fn stop_kills_the_process_and_keeps_the_state() {
         let fixture = Fixture::new(0);
-        fixture.tailnets.ensure_running(1).await.unwrap();
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
-        let pid = fixture.pid().unwrap();
-        std::fs::write(fixture.tailnet_dir(1).join("tailscaled.state"), "{}").unwrap();
+        let pid = fixture.start(1).await;
+        fixture.node_state(1);
         assert!(alive(&pid));
 
         fixture.tailnets.stop(1).await;
@@ -252,9 +267,7 @@ mod supervisor {
     async fn dropping_the_last_registry_kills_the_process() {
         let fixture = Fixture::new(0);
         let clone = fixture.tailnets.clone();
-        clone.ensure_running(1).await.unwrap();
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
-        let pid = fixture.pid().unwrap();
+        let pid = fixture.start(1).await;
 
         // A clone keeps the daemon.
         drop(clone);
@@ -355,54 +368,43 @@ mod state {
     }
 
     #[tokio::test]
-    async fn needs_login_carries_the_url_of_control() {
-        let state = state_of(json!({
-            "BackendState": "NeedsLogin",
-            "AuthURL": "https://login.tailscale.com/a/0123456789abcd"
-        }))
-        .await;
-        assert_eq!(
-            state,
-            TailnetState::NeedsLogin {
-                auth_url: Some(Url::parse("https://login.tailscale.com/a/0123456789abcd").unwrap())
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn needs_login_has_no_url_until_control_gives_one() {
-        let state = state_of(json!({"BackendState": "NeedsLogin", "AuthURL": ""})).await;
-        assert_eq!(state, TailnetState::NeedsLogin { auth_url: None });
-    }
-
-    #[tokio::test]
-    async fn running_names_the_node_and_the_tailnet() {
-        let state = state_of(running_status()).await;
-        assert_eq!(
-            state,
-            TailnetState::Running {
-                magic_dns_suffix: "tail1234.ts.net".to_owned(),
-                dns_name: "mymcps.tail1234.ts.net".to_owned(),
-                addresses: vec![
-                    "100.64.0.1".parse().unwrap(),
-                    "fd7a:115c:a1e0::1".parse().unwrap()
-                ],
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn the_other_backend_states() {
-        assert_eq!(
-            state_of(status_in("NeedsMachineAuth")).await,
-            TailnetState::NeedsMachineAuth
-        );
-        assert_eq!(state_of(status_in("Stopped")).await, TailnetState::Stopped);
-        assert_eq!(
-            state_of(status_in("Starting")).await,
-            TailnetState::Starting
-        );
-        assert_eq!(state_of(status_in("NoState")).await, TailnetState::Starting);
+    async fn is_read_from_the_status_of_the_daemon() {
+        let login = "https://login.tailscale.com/a/0123456789abcd";
+        let cases = [
+            // Control gives its URL, or has none yet.
+            (
+                json!({"BackendState": "NeedsLogin", "AuthURL": login}),
+                TailnetState::NeedsLogin {
+                    auth_url: Some(Url::parse(login).unwrap()),
+                },
+            ),
+            (
+                json!({"BackendState": "NeedsLogin", "AuthURL": ""}),
+                TailnetState::NeedsLogin { auth_url: None },
+            ),
+            // Running names the node and the tailnet.
+            (
+                running_status(),
+                TailnetState::Running {
+                    magic_dns_suffix: "tail1234.ts.net".to_owned(),
+                    dns_name: "mymcps.tail1234.ts.net".to_owned(),
+                    addresses: vec![
+                        "100.64.0.1".parse().unwrap(),
+                        "fd7a:115c:a1e0::1".parse().unwrap(),
+                    ],
+                },
+            ),
+            (
+                status_in("NeedsMachineAuth"),
+                TailnetState::NeedsMachineAuth,
+            ),
+            (status_in("Stopped"), TailnetState::Stopped),
+            (status_in("Starting"), TailnetState::Starting),
+            (status_in("NoState"), TailnetState::Starting),
+        ];
+        for (status, expected) in cases {
+            assert_eq!(state_of(status.clone()).await, expected, "{status}");
+        }
         assert!(matches!(
             state_of(status_in("Surprise")).await,
             TailnetState::Failed(reason) if reason.contains("Surprise")
@@ -410,27 +412,20 @@ mod state {
     }
 
     #[tokio::test]
-    async fn a_daemon_that_does_not_answer_yet_is_starting() {
+    async fn is_starting_stopped_or_failed_when_the_daemon_cannot_say() {
         let fixture = Fixture::new(0);
+        // A daemon that does not answer yet is starting.
         fixture.tailnets.ensure_running(1).await.unwrap();
         assert_eq!(fixture.tailnets.state(1).await, TailnetState::Starting);
-    }
-
-    #[tokio::test]
-    async fn a_refusal_of_the_daemon_is_a_failure() {
-        let fixture = Fixture::new(0);
-        let api = fixture.with_api(1, status_in("Running")).await;
+        // A tailnet nobody started is stopped.
+        assert_eq!(fixture.tailnets.state(99).await, TailnetState::Stopped);
+        // A refusal of the daemon is a failure.
+        let api = fixture.with_api(2, status_in("Running")).await;
         api.force("/localapi/v0/status", 403, "status access denied");
-        let TailnetState::Failed(reason) = fixture.tailnets.state(1).await else {
+        let TailnetState::Failed(reason) = fixture.tailnets.state(2).await else {
             panic!("expected Failed");
         };
         assert!(reason.contains("403"), "{reason}");
-    }
-
-    #[tokio::test]
-    async fn an_unknown_tailnet_is_stopped() {
-        let fixture = Fixture::new(0);
-        assert_eq!(fixture.tailnets.state(99).await, TailnetState::Stopped);
     }
 }
 
@@ -478,18 +473,20 @@ mod connect {
     }
 
     #[tokio::test]
-    async fn with_a_key_a_node_that_is_already_logged_in_is_not_logged_in_again() {
-        let fixture = Fixture::new(0);
-        let api = fixture.with_api(1, running_status()).await;
+    async fn a_node_that_is_already_logged_in_is_not_logged_in_again_with_or_without_a_key() {
+        for key in [Some("tskey-auth-x"), None] {
+            let fixture = Fixture::new(0);
+            let api = fixture.with_api(1, running_status()).await;
 
-        fixture
-            .tailnets
-            .connect(1, options("mymcps", Some("tskey-auth-x")))
-            .await
-            .unwrap();
+            fixture
+                .tailnets
+                .connect(1, options("mymcps", key))
+                .await
+                .unwrap();
 
-        assert_eq!(api.requests_to("/localapi/v0/start").len(), 1);
-        assert!(api.requests_to("/localapi/v0/login-interactive").is_empty());
+            assert_eq!(api.requests_to("/localapi/v0/start").len(), 1);
+            assert!(api.requests_to("/localapi/v0/login-interactive").is_empty());
+        }
     }
 
     #[tokio::test]
@@ -517,35 +514,20 @@ mod connect {
         assert_eq!(logins[0].method, "POST");
         assert!(logins[0].body.is_empty());
         // Start comes first: the login belongs to the new preferences.
-        let order: Vec<String> = api
+        let paths: Vec<String> = api
             .requests()
             .into_iter()
             .map(|request| request.path)
             .collect();
-        let start = order
+        let paths: Vec<&str> = paths
             .iter()
-            .position(|path| path.ends_with("/start"))
-            .unwrap();
-        let login = order
-            .iter()
-            .position(|path| path.ends_with("/login-interactive"))
-            .unwrap();
-        assert!(start < login);
-    }
-
-    #[tokio::test]
-    async fn without_a_key_a_node_that_is_already_logged_in_is_not_logged_out_again() {
-        let fixture = Fixture::new(0);
-        let api = fixture.with_api(1, running_status()).await;
-
-        fixture
-            .tailnets
-            .connect(1, options("mymcps", None))
-            .await
-            .unwrap();
-
-        assert_eq!(api.requests_to("/localapi/v0/start").len(), 1);
-        assert!(api.requests_to("/localapi/v0/login-interactive").is_empty());
+            .map(String::as_str)
+            .filter(|path| !path.ends_with("/status"))
+            .collect();
+        assert_eq!(
+            paths,
+            ["/localapi/v0/start", "/localapi/v0/login-interactive"]
+        );
     }
 
     #[tokio::test]
@@ -577,36 +559,28 @@ mod connect {
     }
 
     #[tokio::test]
-    async fn sign_in_again_needs_a_running_daemon_and_valid_options() {
+    async fn connect_and_sign_in_again_need_a_running_daemon() {
         let fixture = Fixture::new(0);
+        let error = fixture
+            .tailnets
+            .connect(1, options("mymcps", None))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::NotRunning(1)), "{error}");
         let error = fixture
             .tailnets
             .sign_in_again(1, options("mymcps", None))
             .await
             .unwrap_err();
         assert!(matches!(error, Error::NotRunning(1)), "{error}");
-
-        let api = fixture.with_api(2, status_in("NeedsLogin")).await;
-        let error = fixture
-            .tailnets
-            .sign_in_again(2, options("not a hostname", None))
-            .await
-            .unwrap_err();
-        assert!(matches!(error, Error::InvalidOptions(_)), "{error}");
-        assert!(api.requests().is_empty());
     }
 
     #[tokio::test]
     async fn it_waits_for_the_socket_of_a_daemon_that_is_still_starting() {
         let fixture = Fixture::new(0);
         fixture.tailnets.ensure_running(1).await.unwrap();
-        let socket = fixture.socket(1);
         // The socket appears once the daemon has started, not after a delay.
-        let started = fixture.bin("runs");
-        let late = tokio::spawn(async move {
-            assert!(eventually(PATIENCE, || has_run(&started)).await);
-            FakeLocalApi::bind(&socket, status_in("NeedsLogin"))
-        });
+        let late = fixture.api_once_started(1, status_in("NeedsLogin"));
 
         fixture
             .tailnets
@@ -616,17 +590,6 @@ mod connect {
 
         let api = late.await.unwrap();
         assert_eq!(api.requests_to("/localapi/v0/start").len(), 1);
-    }
-
-    #[tokio::test]
-    async fn it_needs_a_running_daemon() {
-        let fixture = Fixture::new(0);
-        let error = fixture
-            .tailnets
-            .connect(1, options("mymcps", None))
-            .await
-            .unwrap_err();
-        assert!(matches!(error, Error::NotRunning(1)), "{error}");
     }
 
     #[tokio::test]
@@ -658,6 +621,13 @@ mod connect {
             fixture.tailnets.connect(1, bad_url).await.unwrap_err(),
             Error::InvalidOptions(_)
         ));
+        // Signing in again checks them too.
+        let error = fixture
+            .tailnets
+            .sign_in_again(1, options("not a hostname", None))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::InvalidOptions(_)), "{error}");
         assert!(api.requests().is_empty());
     }
 
@@ -753,9 +723,8 @@ mod remove {
     async fn it_logs_out_stops_the_daemon_and_deletes_the_directory() {
         let fixture = Fixture::new(0);
         let api = fixture.with_api(1, running_status()).await;
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
-        let pid = fixture.pid().unwrap();
-        std::fs::write(fixture.tailnet_dir(1).join("tailscaled.state"), "{}").unwrap();
+        let pid = fixture.start(1).await;
+        fixture.node_state(1);
 
         fixture.tailnets.remove(1).await.unwrap();
 
@@ -767,17 +736,12 @@ mod remove {
         assert!(!fixture.tailnet_dir(1).exists());
         assert!(fixture.tailnets.handle(1).is_none());
         assert_eq!(fixture.tailnets.state(1).await, TailnetState::Stopped);
-    }
 
-    #[tokio::test]
-    async fn a_failed_logout_does_not_keep_the_tailnet() {
-        let fixture = Fixture::new(0);
-        let api = fixture.with_api(1, running_status()).await;
+        // A failed logout does not keep the tailnet.
+        let api = fixture.with_api(2, running_status()).await;
         api.force("/localapi/v0/logout", 500, "control is down");
-
-        fixture.tailnets.remove(1).await.unwrap();
-
-        assert!(!fixture.tailnet_dir(1).exists());
+        fixture.tailnets.remove(2).await.unwrap();
+        assert!(!fixture.tailnet_dir(2).exists());
     }
 
     #[tokio::test]
@@ -797,17 +761,9 @@ mod remove {
     async fn a_node_joined_before_a_restart_is_logged_out_by_a_daemon_started_for_it() {
         let fixture = Fixture::new(0);
         let directory = fixture.tailnet_dir(1);
-        std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join("tailscaled.state"), "{}").unwrap();
+        fixture.node_state(1);
         assert!(fixture.tailnets.handle(1).is_none());
-        // The fake LocalAPI appears once the (fake) daemon is up: it is the
-        // daemon that records its start, not the clock, that says so.
-        let socket = fixture.socket(1);
-        let started = fixture.bin("runs");
-        let late = tokio::spawn(async move {
-            assert!(eventually(PATIENCE, || has_run(&started)).await);
-            FakeLocalApi::bind(&socket, running_status())
-        });
+        let late = fixture.api_once_started(1, running_status());
 
         fixture.tailnets.remove(1).await.unwrap();
 
@@ -818,16 +774,15 @@ mod remove {
     }
 
     #[tokio::test]
-    async fn discard_starts_no_daemon_for_a_node_that_joined_before_a_restart() {
+    async fn discard_deletes_the_tailnet_without_a_logout_and_forever() {
         let fixture = Fixture::new(0);
-        let directory = fixture.tailnet_dir(1);
-        std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join("tailscaled.state"), "{}").unwrap();
+        // A node that joined before a restart: no daemon is started for it.
+        fixture.node_state(1);
 
         fixture.tailnets.discard(1).await.unwrap();
 
         assert_eq!(fixture.runs(), 0);
-        assert!(!directory.exists());
+        assert!(!fixture.tailnet_dir(1).exists());
         assert!(fixture.tailnets.handle(1).is_none());
         // Removed for good: nothing starts it again.
         assert!(matches!(
@@ -835,22 +790,18 @@ mod remove {
             Err(Error::Removed(1))
         ));
         assert_eq!(fixture.runs(), 0);
-    }
 
-    #[tokio::test]
-    async fn discard_stops_a_running_daemon_without_logging_out() {
-        let fixture = Fixture::new(0);
-        let api = fixture.with_api(1, running_status()).await;
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
-        let pid = fixture.pid().unwrap();
-        std::fs::write(fixture.tailnet_dir(1).join("tailscaled.state"), "{}").unwrap();
+        // A running daemon is stopped, and not logged out.
+        let api = fixture.with_api(2, running_status()).await;
+        let pid = fixture.start(2).await;
+        fixture.node_state(2);
 
-        fixture.tailnets.discard(1).await.unwrap();
+        fixture.tailnets.discard(2).await.unwrap();
 
         assert!(api.requests_to("/localapi/v0/logout").is_empty());
         assert!(eventually(PATIENCE, || !alive(&pid)).await);
-        assert!(!fixture.tailnet_dir(1).exists());
-        assert!(fixture.tailnets.handle(1).is_none());
+        assert!(!fixture.tailnet_dir(2).exists());
+        assert!(fixture.tailnets.handle(2).is_none());
     }
 }
 
@@ -885,8 +836,7 @@ mod lifecycle {
     async fn a_request_that_comes_during_a_removal_does_not_start_the_tailnet_again() {
         let fixture = slow_to_stop();
         let _api = fixture.with_api(1, running_status()).await;
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
-        let pid = fixture.pid().unwrap();
+        let pid = fixture.start(1).await;
 
         let removal = tokio::spawn({
             let tailnets = fixture.tailnets.clone();
@@ -951,9 +901,7 @@ mod lifecycle {
     #[tokio::test]
     async fn a_start_that_comes_during_a_stop_waits_for_it_and_runs_one_daemon() {
         let fixture = slow_to_stop();
-        fixture.tailnets.ensure_running(1).await.unwrap();
-        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
-        let first = fixture.pid().unwrap();
+        let first = fixture.start(1).await;
 
         let stop = tokio::spawn({
             let tailnets = fixture.tailnets.clone();
@@ -991,6 +939,19 @@ mod route_and_dial {
         let api = fixture.with_api(1, running_status()).await;
         let handle = fixture.tailnets.handle(1).expect("a supervised tailnet");
         (api, handle)
+    }
+
+    /// [`running`], with the dials bridged to an echo server.
+    async fn bridged(fixture: &Fixture) -> (FakeLocalApi, crate::TailnetHandle, JoinHandle<()>) {
+        let (api, handle) = running(fixture).await;
+        let (echo, server) = spawn_echo_server().await;
+        api.bridge_dials_to(echo);
+        (api, handle, server)
+    }
+
+    /// The error of a dial that the client refuses.
+    async fn dial_error(handle: &crate::TailnetHandle, address: &str) -> std::io::Error {
+        handle.dial(address.parse().unwrap()).await.err().unwrap()
     }
 
     #[tokio::test]
@@ -1121,9 +1082,7 @@ mod route_and_dial {
     #[tokio::test]
     async fn dial_bridges_the_connection_to_the_peer() {
         let fixture = Fixture::new(0);
-        let (api, handle) = running(&fixture).await;
-        let (echo, _server) = spawn_echo_server().await;
-        api.bridge_dials_to(echo);
+        let (api, handle, _server) = bridged(&fixture).await;
 
         let address = handle.route("nas", 7000).await.unwrap().unwrap();
         let mut connection = handle.dial(address).await.unwrap();
@@ -1159,15 +1118,8 @@ mod route_and_dial {
         assert_eq!(dials[0].header("dial-host"), Some("100.64.0.2"));
         assert_eq!(dials[0].header("dial-port"), Some("7000"));
         assert_eq!(dials[0].header("dial-network"), Some("tcp"));
-    }
 
-    #[tokio::test]
-    async fn dial_passes_an_ipv6_peer_without_brackets() {
-        let fixture = Fixture::new(0);
-        let (api, handle) = running(&fixture).await;
-        let (echo, _server) = spawn_echo_server().await;
-        api.bridge_dials_to(echo);
-
+        // An IPv6 peer is passed without brackets.
         let address = handle
             .route("fd7a:115c:a1e0::2", 80)
             .await
@@ -1178,18 +1130,11 @@ mod route_and_dial {
         let mut answer = [0u8; 2];
         connection.read_exact(&mut answer).await.unwrap();
         assert_eq!(
-            api.requests_to("/localapi/v0/dial")[0].header("dial-host"),
+            api.requests_to("/localapi/v0/dial")[1].header("dial-host"),
             Some("fd7a:115c:a1e0::2")
         );
-    }
 
-    #[tokio::test]
-    async fn dial_ends_when_the_peer_closes() {
-        let fixture = Fixture::new(0);
-        let (api, handle) = running(&fixture).await;
-        let (echo, _server) = spawn_echo_server().await;
-        api.bridge_dials_to(echo);
-
+        // The connection ends when the peer closes.
         let mut connection = handle.dial("100.64.0.2:80".parse().unwrap()).await.unwrap();
         connection.write_all(b"bye").await.unwrap();
         connection.shutdown().await.unwrap();
@@ -1208,8 +1153,10 @@ mod route_and_dial {
             "169.254.169.254:80",
             "0.0.0.0:80",
             "224.0.0.1:80",
+            // No peer has it.
+            "100.64.0.99:80",
         ] {
-            let error = handle.dial(address.parse().unwrap()).await.err().unwrap();
+            let error = dial_error(&handle, address).await;
             assert_eq!(
                 error.kind(),
                 std::io::ErrorKind::PermissionDenied,
@@ -1234,7 +1181,7 @@ mod route_and_dial {
         }
         assert!(handle.route("100.64.0.50", 8080).await.unwrap().is_some());
         for address in ["100.64.0.1:8080", "[fd7a:115c:a1e0::1]:8080"] {
-            let error = handle.dial(address.parse().unwrap()).await.err().unwrap();
+            let error = dial_error(&handle, address).await;
             assert_eq!(
                 error.kind(),
                 std::io::ErrorKind::PermissionDenied,
@@ -1247,9 +1194,7 @@ mod route_and_dial {
     #[tokio::test]
     async fn dial_reads_a_fresh_status_not_the_cached_one() {
         let fixture = Fixture::new(0);
-        let (api, handle) = running(&fixture).await;
-        let echo = spawn_echo_server().await.0;
-        api.bridge_dials_to(echo);
+        let (api, handle, _server) = bridged(&fixture).await;
 
         // The route fills the cache: the address is a peer's, not ours.
         let address = handle.route("nas", 80).await.unwrap().unwrap();
@@ -1274,53 +1219,22 @@ mod route_and_dial {
     }
 
     #[tokio::test]
-    async fn dial_checks_the_address_again_against_the_status() {
-        let fixture = Fixture::new(0);
-        let (api, handle) = running(&fixture).await;
-        // Never routed: no peer has it.
-        let error = handle
-            .dial("100.64.0.99:80".parse().unwrap())
-            .await
-            .err()
-            .unwrap();
-        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
-        assert!(api.requests_to("/localapi/v0/dial").is_empty());
-    }
-
-    #[tokio::test]
-    async fn dial_refuses_an_address_the_daemon_would_have_dialled_directly() {
+    async fn dial_reports_what_the_daemon_refused() {
         let fixture = Fixture::new(0);
         let (api, handle) = running(&fixture).await;
         // No bridge: the fake answers `Dial-Self: true`, as for a host that is
         // not on the tailnet.
-        let error = handle
-            .dial("100.64.0.2:80".parse().unwrap())
-            .await
-            .err()
-            .unwrap();
+        let error = dial_error(&handle, "100.64.0.2:80").await;
         assert!(error.to_string().contains("does not route"), "{error}");
         assert_eq!(api.requests_to("/localapi/v0/dial").len(), 1);
-    }
 
-    #[tokio::test]
-    async fn dial_reports_what_the_daemon_refused() {
-        let fixture = Fixture::new(0);
-        let (api, handle) = running(&fixture).await;
         api.force("/localapi/v0/dial", 502, "dial failure: connection refused");
-        let error = handle
-            .dial("100.64.0.2:80".parse().unwrap())
-            .await
-            .err()
-            .unwrap();
+        let error = dial_error(&handle, "100.64.0.2:80").await;
         assert!(error.to_string().contains("502"), "{error}");
         assert!(error.to_string().contains("connection refused"), "{error}");
 
         api.force("/localapi/v0/dial", 403, "access denied");
-        let error = handle
-            .dial("100.64.0.2:80".parse().unwrap())
-            .await
-            .err()
-            .unwrap();
+        let error = dial_error(&handle, "100.64.0.2:80").await;
         assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
     }
 

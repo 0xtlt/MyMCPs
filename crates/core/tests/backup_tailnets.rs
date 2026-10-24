@@ -69,23 +69,10 @@ async fn tailnets_and_their_mcps_come_back_from_a_backup() {
     let source = instance(source_dir.path()).await;
     let ada = administrator(&source).await;
 
-    let mut work = Tailnet {
-        team_id: Team::ROOT_ID,
-        name: "work".into(),
-        control_url: Some("https://headscale.example.com".into()),
-        hostname: "mymcps-work".into(),
-        created_by: ada.id,
-        ..Default::default()
-    };
+    let mut work = Tailnet::for_tests(Team::ROOT_ID, ada.id, "work");
+    work.control_url = Some("https://headscale.example.com".into());
     work.insert(&*source.db).await.unwrap();
-    let mut home = Tailnet {
-        team_id: Team::ROOT_ID,
-        name: "home".into(),
-        hostname: "mymcps-home".into(),
-        created_by: ada.id,
-        ..Default::default()
-    };
-    home.insert(&*source.db).await.unwrap();
+    let home = Tailnet::create_for_tests(&*source.db, Team::ROOT_ID, ada.id, "home").await;
     let mut wiki = Mcp {
         name: "Wiki".into(),
         slug: "wiki".into(),
@@ -98,14 +85,7 @@ async fn tailnets_and_their_mcps_come_back_from_a_backup() {
     };
     wiki.insert(&*source.db).await.unwrap();
     // A tailnet deleted before the backup does not give its id away.
-    let mut gone = Tailnet {
-        team_id: Team::ROOT_ID,
-        name: "gone".into(),
-        hostname: "mymcps-gone".into(),
-        created_by: ada.id,
-        ..Default::default()
-    };
-    gone.insert(&*source.db).await.unwrap();
+    let gone = Tailnet::create_for_tests(&*source.db, Team::ROOT_ID, ada.id, "gone").await;
     gone.delete(&*source.db).await.unwrap();
 
     let file = export(&source).await;
@@ -144,14 +124,7 @@ async fn tailnets_and_their_mcps_come_back_from_a_backup() {
     );
 
     // Ids go on counting past the deleted tailnet.
-    let mut next = Tailnet {
-        team_id: Team::ROOT_ID,
-        name: "next".into(),
-        hostname: "mymcps-next".into(),
-        created_by: ada.id,
-        ..Default::default()
-    };
-    next.insert(&*target.db).await.unwrap();
+    let next = Tailnet::create_for_tests(&*target.db, Team::ROOT_ID, ada.id, "next").await;
     assert_eq!(next.id, gone.id + 1);
 }
 
@@ -279,13 +252,6 @@ async fn a_backup_made_before_tailnets_restores_with_none() {
     );
 
     // The tables are those of this version: a tailnet can be added.
-    let mut tailnet = Tailnet {
-        team_id: Team::ROOT_ID,
-        name: "work".into(),
-        hostname: "mymcps".into(),
-        created_by: 1,
-        ..Default::default()
-    };
-    tailnet.insert(&*target.db).await.unwrap();
+    let tailnet = Tailnet::create_for_tests(&*target.db, Team::ROOT_ID, 1, "work").await;
     assert_eq!(tailnet.id, 1);
 }

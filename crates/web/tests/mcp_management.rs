@@ -161,6 +161,16 @@ async fn call_refused(
     result_text(&result).to_owned()
 }
 
+/// `mcp_registry_update` with `arguments`, expected to succeed.
+async fn update_ok(gateway: &TestGateway, plaintext: &str, arguments: Value) -> Value {
+    call_ok(gateway, plaintext, "mcp_registry_update", arguments).await
+}
+
+/// `mcp_registry_update` with `arguments`, expected to be refused: its text.
+async fn update_refused(gateway: &TestGateway, plaintext: &str, arguments: Value) -> String {
+    call_refused(gateway, plaintext, "mcp_registry_update", arguments).await
+}
+
 async fn mcp_in(
     gateway: &TestGateway,
     team_id: i64,
@@ -764,15 +774,7 @@ async fn sets_how_long_a_tool_call_waits_and_keeps_it_when_not_given() {
 
 /// A tailnet of a team, as if connected earlier.
 async fn tailnet_in(gateway: &TestGateway, team_id: i64, user: &User, name: &str) -> Tailnet {
-    let mut tailnet = Tailnet {
-        team_id,
-        name: name.into(),
-        hostname: format!("mymcps-{}", name.to_lowercase()),
-        created_by: user.id,
-        ..Default::default()
-    };
-    tailnet.insert(&**gateway.db()).await.unwrap();
-    tailnet
+    Tailnet::create_for_tests(&**gateway.db(), team_id, user.id, name).await
 }
 
 #[tokio::test]
@@ -789,10 +791,9 @@ async fn reads_and_sets_the_tailnet_of_an_http_mcp_by_name() {
     assert_eq!(listed["mcps"][0]["tailnet"], Value::Null);
 
     // By name, whatever its case.
-    let result = call_ok(
+    let result = update_ok(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": "docs", "tailnet": "pro" }),
     )
     .await;
@@ -802,10 +803,9 @@ async fn reads_and_sets_the_tailnet_of_an_http_mcp_by_name() {
     assert_eq!(listed["mcps"][0]["tailnet"], "Pro");
 
     // Another change leaves it as it is.
-    call_ok(
+    update_ok(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": "docs", "description": "New" }),
     )
     .await;
@@ -813,10 +813,9 @@ async fn reads_and_sets_the_tailnet_of_an_http_mcp_by_name() {
 
     // The team's own tailnets only, and the refusal says which they are.
     for name in ["Theirs", "nope"] {
-        let refused = call_refused(
+        let refused = update_refused(
             &gateway,
             &manager,
-            "mcp_registry_update",
             json!({ "slug": "docs", "tailnet": name }),
         )
         .await;
@@ -842,31 +841,23 @@ async fn reads_and_sets_the_tailnet_of_an_http_mcp_by_name() {
         Some(pro.id)
     );
     for cleared in [json!(null), json!("")] {
-        call_ok(
+        update_ok(
             &gateway,
             &manager,
-            "mcp_registry_update",
             json!({ "slug": "docs", "tailnet": cleared }),
         )
         .await;
         assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, None);
-        call_ok(
+        update_ok(
             &gateway,
             &manager,
-            "mcp_registry_update",
             json!({ "slug": "docs", "tailnet": "Pro" }),
         )
         .await;
     }
 
     // A tailnet is a name.
-    let refused = call_refused(
-        &gateway,
-        &manager,
-        "mcp_registry_update",
-        json!({ "slug": "docs", "tailnet": 7 }),
-    )
-    .await;
+    let refused = update_refused(&gateway, &manager, json!({ "slug": "docs", "tailnet": 7 })).await;
     assert!(
         refused.contains("tailnet must be the name of a tailnet of the team"),
         "{refused}"
@@ -880,10 +871,9 @@ async fn names_no_tailnet_for_a_team_that_has_none_and_none_for_an_npm_mcp() {
     let manager = grant(&gateway, &admin, MANAGE).await;
     bearer_mcp(&gateway, &admin).await;
 
-    let refused = call_refused(
+    let refused = update_refused(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": "docs", "tailnet": "pro" }),
     )
     .await;
@@ -891,10 +881,9 @@ async fn names_no_tailnet_for_a_team_that_has_none_and_none_for_an_npm_mcp() {
 
     tailnet_in(&gateway, Team::ROOT_ID, &admin, "pro").await;
     let package = package_mcp(&gateway, &admin).await;
-    let refused = call_refused(
+    let refused = update_refused(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": package.slug, "tailnet": "pro" }),
     )
     .await;
@@ -1617,10 +1606,9 @@ async fn does_not_let_an_agent_leave_a_tailnet_for_the_network_of_the_instance()
     gateway.upstreams.clear();
 
     for tailnet in [json!(null), json!("")] {
-        let refusal = call_refused(
+        let refusal = update_refused(
             &gateway,
             &manager,
-            "mcp_registry_update",
             json!({ "slug": "router", "tailnet": tailnet }),
         )
         .await;
@@ -1634,10 +1622,9 @@ async fn does_not_let_an_agent_leave_a_tailnet_for_the_network_of_the_instance()
     assert!(gateway.upstreams.requests().is_empty());
 
     // Left as it is on its tailnet, it is still the person's to rename.
-    call_ok(
+    update_ok(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": "router", "description": "Behind the router", "tailnet": "Pro" }),
     )
     .await;
@@ -1650,10 +1637,9 @@ async fn does_not_let_an_agent_leave_a_tailnet_for_the_network_of_the_instance()
         mcp.tailnet_id = Some(pro.id);
     })
     .await;
-    call_ok(
+    update_ok(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": "docs", "tailnet": null }),
     )
     .await;
@@ -2036,13 +2022,7 @@ async fn clears_the_secrets_and_the_sign_in_when_the_network_changes_and_says_so
         })
         .await;
 
-        let result = call_ok(
-            &gateway,
-            &manager,
-            "mcp_registry_update",
-            json!({ "slug": slug, "tailnet": to }),
-        )
-        .await;
+        let result = update_ok(&gateway, &manager, json!({ "slug": slug, "tailnet": to })).await;
 
         let cleared = result["cleared_secrets"].as_array().unwrap();
         assert!(cleared.contains(&json!("bearer_token")), "{slug}: {result}");
@@ -2061,25 +2041,22 @@ async fn clears_the_secrets_and_the_sign_in_when_the_network_changes_and_says_so
     // The same network, named again, keeps them; so does a new token sent
     // with the new network.
     bearer_mcp(&gateway, &admin).await;
-    call_ok(
+    update_ok(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": "docs", "tailnet": "Pro" }),
     )
     .await;
-    let again = call_ok(
+    let again = update_ok(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": "docs", "tailnet": "pro", "description": "Same network" }),
     )
     .await;
     assert_eq!(again["cleared_secrets"], json!([]));
-    call_ok(
+    update_ok(
         &gateway,
         &manager,
-        "mcp_registry_update",
         json!({ "slug": "docs", "tailnet": "Home", "bearer_token": "fresh-token" }),
     )
     .await;

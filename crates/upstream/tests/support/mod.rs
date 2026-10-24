@@ -8,7 +8,7 @@ pub mod providers;
 use std::io;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 
 use http::{HeaderMap, StatusCode};
 use mymcps_builtin::BuiltinRegistry;
@@ -531,48 +531,4 @@ pub async fn eventually(condition: impl Fn() -> bool) {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     panic!("condition did not hold in time");
-}
-
-/// Holds the answer of one request of a provider until the test lets it go:
-/// the test decides what happens while the request is in flight. The answer
-/// is computed on a thread of the runtime, which waits, so the tests that
-/// use it run on more than one.
-#[derive(Default)]
-pub struct Gate {
-    armed: Mutex<bool>,
-    arrived: tokio::sync::Notify,
-    released: Mutex<bool>,
-    wake: Condvar,
-}
-
-impl Gate {
-    /// Hold the next request that calls [`hold`](Self::hold).
-    pub fn arm(&self) {
-        *self.released.lock().unwrap() = false;
-        *self.armed.lock().unwrap() = true;
-    }
-
-    /// Called by the provider where a request may be held.
-    pub fn hold(&self) {
-        if !std::mem::take(&mut *self.armed.lock().unwrap()) {
-            return;
-        }
-        self.arrived.notify_one();
-        let mut released = self.released.lock().unwrap();
-        while !*released {
-            released = self.wake.wait(released).unwrap();
-        }
-    }
-
-    /// The held request is at the provider, which has not answered.
-    pub async fn reached(&self) {
-        tokio::time::timeout(std::time::Duration::from_secs(20), self.arrived.notified())
-            .await
-            .expect("the request reached the provider");
-    }
-
-    pub fn release(&self) {
-        *self.released.lock().unwrap() = true;
-        self.wake.notify_all();
-    }
 }

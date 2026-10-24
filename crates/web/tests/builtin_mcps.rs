@@ -9,13 +9,14 @@
 
 mod mcps_support;
 
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use http::StatusCode;
 use mcps_support::*;
 use mymcps_builtin::BuiltinEnv;
 use mymcps_core::Timestamp;
+use mymcps_core::gate::Gate;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, User};
 use mymcps_core::secrets::{EnvironmentInput, decrypt_environment, merge_environment};
 use mymcps_google_ads::testing::{FakeGoogleAds, GOOGLE_ADS_SCOPE};
@@ -27,7 +28,6 @@ use mymcps_web::state::builtins;
 use mymcps_web::testing::factories::{create_admin, create_mcp};
 use mymcps_web::testing::{TestApp, TestResponse};
 use serde_json::{Value, json};
-use tokio::sync::Notify;
 use url::Url;
 
 fn with<'a>(base: &[(&'a str, &'a str)], fields: &[(&'a str, &'a str)]) -> Vec<(&'a str, &'a str)> {
@@ -400,21 +400,14 @@ async fn strava_shares_the_callback_domain_and_never_the_client_secret_with_the_
 /// token is not good any more.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn strava_saves_a_rotated_token_when_the_mcp_is_renamed_during_the_refresh() {
-    let reached = Arc::new(Notify::new());
-    let released = Arc::new((Mutex::new(false), Condvar::new()));
+    let gate = Arc::new(Gate::default());
     let (app, _calls) = app_with_strava({
-        let reached = reached.clone();
-        let released = released.clone();
+        let gate = gate.clone();
         move |call| {
             if call.path() != "/api/v3/oauth/token" {
                 return None;
             }
-            reached.notify_one();
-            let (flag, wake) = &*released;
-            let mut open = flag.lock().unwrap();
-            while !*open {
-                open = wake.wait(open).unwrap();
-            }
+            gate.hold("token");
             Some(strava_json(
                 json!({
                     "token_type": "Bearer",
@@ -434,14 +427,13 @@ async fn strava_saves_a_rotated_token_when_the_mcp_is_renamed_during_the_refresh
     mcp.save(&*app.core.db).await.unwrap();
 
     // A request of the gateway renews the token, and waits for the provider.
+    gate.arm("token");
     let refreshing = {
         let upstream = app.state.upstream.clone();
         let mut row = find_mcp(&app, mcp.id).await;
         tokio::spawn(async move { upstream.refresh_oauth_access_token(&mut row).await })
     };
-    tokio::time::timeout(Duration::from_secs(20), reached.notified())
-        .await
-        .expect("the refresh reached the provider");
+    gate.reached().await;
 
     // The MCP is renamed meanwhile, its credentials as the dialog shows them.
     let renaming = {
@@ -461,11 +453,7 @@ async fn strava_saves_a_rotated_token_when_the_mcp_is_renamed_during_the_refresh
     tokio::time::timeout(Duration::from_secs(20), renamed)
         .await
         .expect("the rename was saved");
-    {
-        let (flag, wake) = &*released;
-        *flag.lock().unwrap() = true;
-        wake.notify_all();
-    }
+    gate.release();
     refreshing.await.unwrap().expect("the refresh was saved");
     let renamed = renaming.await.unwrap();
     assert_eq!(renamed.flashed("success"), Some(json!("MCP updated")));

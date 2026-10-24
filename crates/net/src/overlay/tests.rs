@@ -306,12 +306,22 @@ async fn get(fetcher: &Fetcher, address: &str) -> Result<FetchResponse, FetchErr
     fetch(fetcher, FetchRequest::get(url(address))).await
 }
 
+/// The body of the answer to a GET.
+async fn text_of(fetcher: &Fetcher, address: &str) -> String {
+    get(fetcher, address).await.unwrap().text().await.unwrap()
+}
+
+/// An overlay that carries `hosts` and answers `text` to everything, and a
+/// fetcher with nothing else that goes through it.
+fn serving(hosts: &[&'static str], text: &'static str) -> (Arc<Memory>, Fetcher) {
+    let overlay = Arc::new(Memory::new(hosts, move |_| Reply::text(text)));
+    let fetcher = Fetcher::offline().through(&network(&overlay));
+    (overlay, fetcher)
+}
+
 #[tokio::test]
 async fn sends_a_request_to_the_address_the_overlay_routed() {
-    let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| {
-        Reply::text("through")
-    }));
-    let fetcher = Fetcher::offline().through(&network(&overlay));
+    let (overlay, fetcher) = serving(&["mcp.tailnet.test"], "through");
 
     let request = FetchRequest::get(url("http://user:secret@MCP.tailnet.test:8080/mcp?x=1#top"))
         .header("Accept-Encoding", "gzip")
@@ -344,8 +354,7 @@ async fn sends_a_request_to_the_address_the_overlay_routed() {
 
 #[tokio::test]
 async fn keeps_the_user_agent_of_the_request_and_sends_its_body() {
-    let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| Reply::text("ok")));
-    let fetcher = Fetcher::offline().through(&network(&overlay));
+    let (overlay, fetcher) = serving(&["mcp.tailnet.test"], "ok");
 
     let request = FetchRequest::post(url("http://mcp.tailnet.test/rpc"))
         .header("User-Agent", "Inspector/1")
@@ -368,12 +377,10 @@ async fn keeps_the_user_agent_of_the_request_and_sends_its_body() {
 
 #[tokio::test]
 async fn reuses_the_connection_of_the_pool() {
-    let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| Reply::text("again")));
-    let fetcher = Fetcher::offline().through(&network(&overlay));
+    let (overlay, fetcher) = serving(&["mcp.tailnet.test"], "again");
 
     for _ in 0..3 {
-        let mut response = get(&fetcher, "http://mcp.tailnet.test/").await.unwrap();
-        assert_eq!(response.text().await.unwrap(), "again");
+        assert_eq!(text_of(&fetcher, "http://mcp.tailnet.test/").await, "again");
     }
 
     // The overlay is asked about every request, but dialled once.
@@ -484,19 +491,18 @@ async fn keeps_the_limits_of_the_response() {
 
 #[tokio::test]
 async fn sends_what_the_overlay_does_not_route_where_it_went_before() {
-    let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| {
-        Reply::text("overlay")
-    }));
+    let (overlay, _) = serving(&["mcp.tailnet.test"], "overlay");
     let rest = Fetcher::offline().answering(|request| {
         (request.url.host_str() == Some("api.example"))
             .then(|| CannedResponse::new(StatusCode::OK).body("fallback"))
     });
     let fetcher = rest.through(&network(&overlay));
 
-    let mut routed = get(&fetcher, "http://mcp.tailnet.test/").await.unwrap();
-    let mut other = get(&fetcher, "http://api.example/").await.unwrap();
-    assert_eq!(routed.text().await.unwrap(), "overlay");
-    assert_eq!(other.text().await.unwrap(), "fallback");
+    assert_eq!(
+        text_of(&fetcher, "http://mcp.tailnet.test/").await,
+        "overlay"
+    );
+    assert_eq!(text_of(&fetcher, "http://api.example/").await, "fallback");
     assert_eq!(
         overlay.routed(),
         [
@@ -510,24 +516,17 @@ async fn sends_what_the_overlay_does_not_route_where_it_went_before() {
     let error = get(&fetcher, "http://unknown.example/").await.unwrap_err();
     assert!(matches!(error, FetchError::Offline), "{error}");
 
+    // A URL that is not HTTP is left to the rest, and the overlay is not asked.
+    let asked = overlay.routed().len();
+    let error = get(&fetcher, "ftp://mcp.tailnet.test/").await.unwrap_err();
+    assert!(matches!(error, FetchError::Offline), "{error}");
+    assert_eq!(overlay.routed().len(), asked);
+
     // Answers added afterwards come first, even for a host of the overlay.
     let fetcher = fetcher.answering(|_| Some(CannedResponse::new(StatusCode::IM_A_TEAPOT)));
     let response = get(&fetcher, "http://mcp.tailnet.test/").await.unwrap();
     assert_eq!(response.status(), StatusCode::IM_A_TEAPOT);
     assert_eq!(overlay.requests().len(), 1);
-}
-
-#[tokio::test]
-async fn leaves_a_url_that_is_not_http_to_the_rest() {
-    let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| {
-        Reply::text("overlay")
-    }));
-    let fetcher = Fetcher::offline().through(&network(&overlay));
-
-    let error = get(&fetcher, "ftp://mcp.tailnet.test/").await.unwrap_err();
-
-    assert!(matches!(error, FetchError::Offline), "{error}");
-    assert!(overlay.routed().is_empty());
 }
 
 /// A server on this machine that counts the connections it is given.
@@ -657,27 +656,8 @@ async fn an_error_of_the_overlay_route_never_falls_back_to_the_network() {
 
 #[tokio::test]
 async fn keeps_the_overlay_when_the_rest_must_be_public() {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let accepted = Arc::new(AtomicUsize::new(0));
-    let counted = Arc::clone(&accepted);
-    tokio::spawn(async move {
-        while let Ok((mut stream, _)) = listener.accept().await {
-            counted.fetch_add(1, Ordering::SeqCst);
-            let mut request = [0u8; 1024];
-            let _ = stream.read(&mut request).await;
-            let _ = stream
-                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok")
-                .await;
-        }
-    });
-    let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| {
-        Reply::text("overlay")
-    }));
+    let (port, accepted) = counting_local_server().await;
+    let (overlay, _) = serving(&["mcp.tailnet.test"], "overlay");
     let network = network(&overlay);
     let local = format!("http://localhost:{port}/");
 
@@ -715,14 +695,12 @@ async fn keeps_the_overlay_when_the_rest_must_be_public() {
 
 #[tokio::test]
 async fn asks_the_overlay_for_an_ipv6_host_without_brackets() {
-    let overlay = Arc::new(Memory::new(&["fd7a:115c:a1e0::1"], |_| Reply::text("six")));
-    let fetcher = Fetcher::offline().through(&network(&overlay));
+    let (overlay, fetcher) = serving(&["fd7a:115c:a1e0::1"], "six");
 
-    let mut response = get(&fetcher, "http://[FD7A:115C:A1E0::1]:3000/")
-        .await
-        .unwrap();
-
-    assert_eq!(response.text().await.unwrap(), "six");
+    assert_eq!(
+        text_of(&fetcher, "http://[FD7A:115C:A1E0::1]:3000/").await,
+        "six"
+    );
     assert_eq!(overlay.routed(), [("fd7a:115c:a1e0::1".to_owned(), 3000)]);
     assert_eq!(
         overlay.requests()[0].header("host"),
@@ -750,7 +728,7 @@ async fn names_the_overlay_when_it_cannot_connect() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn gives_up_on_a_request_at_the_timeout_of_the_caller() {
+async fn gives_up_on_a_request_at_the_timeout_of_the_caller_or_of_a_silent_server() {
     let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| Reply::Silence));
     let fetcher = Fetcher::offline().through(&network(&overlay));
     let started = Instant::now();
@@ -761,6 +739,16 @@ async fn gives_up_on_a_request_at_the_timeout_of_the_caller() {
 
     assert!(matches!(error, FetchError::Timeout), "{error}");
     assert_eq!(started.elapsed(), Duration::from_secs(5));
+
+    // Without a timeout of its own, the request waits as long as an idle
+    // server is allowed to.
+    let started = Instant::now();
+    let error = get(&fetcher, "http://mcp.tailnet.test/").await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "fetch failed through test tailnet: no response within 300 s"
+    );
+    assert_eq!(started.elapsed(), IDLE_TIMEOUT);
 }
 
 #[tokio::test(start_paused = true)]
@@ -788,21 +776,6 @@ async fn limits_the_route_the_connection_and_the_handshake_together() {
         );
         assert_eq!(started.elapsed(), CONNECT_TIMEOUT);
     }
-}
-
-#[tokio::test(start_paused = true)]
-async fn gives_up_on_a_server_that_stays_silent() {
-    let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| Reply::Silence));
-    let fetcher = Fetcher::offline().through(&network(&overlay));
-    let started = Instant::now();
-
-    let error = get(&fetcher, "http://mcp.tailnet.test/").await.unwrap_err();
-
-    assert_eq!(
-        error.to_string(),
-        "fetch failed through test tailnet: no response within 300 s"
-    );
-    assert_eq!(started.elapsed(), IDLE_TIMEOUT);
 }
 
 #[tokio::test(start_paused = true)]
@@ -858,38 +831,32 @@ async fn speaks_tls_to_the_host_of_the_url_over_the_overlay() {
 }
 
 #[tokio::test]
-async fn refuses_a_certificate_that_is_not_for_the_host_of_the_url() {
-    let overlay =
-        Arc::new(Memory::new(&["other.tailnet.test"], |_| Reply::text("never")).serving_tls());
-    let fetcher = Fetcher::offline().through(&network_trusting_the_test_authority(&overlay));
+async fn refuses_a_certificate_that_is_not_for_the_host_or_not_trusted() {
+    // The certificate is the one of `mcp.tailnet.test`: it is not for
+    // `other.tailnet.test`, and the platform knows nothing of the authority of
+    // the test.
+    for (host, trusting) in [("other.tailnet.test", true), ("mcp.tailnet.test", false)] {
+        let overlay = Arc::new(Memory::new(&[host], |_| Reply::text("never")).serving_tls());
+        let network = if trusting {
+            network_trusting_the_test_authority(&overlay)
+        } else {
+            network(&overlay)
+        };
+        let fetcher = Fetcher::offline().through(&network);
 
-    let error = get(&fetcher, "https://other.tailnet.test/")
-        .await
-        .unwrap_err();
+        let error = get(&fetcher, &format!("https://{host}/"))
+            .await
+            .unwrap_err();
 
-    assert!(matches!(error, FetchError::Overlay { .. }), "{error}");
-    assert!(
-        error
-            .to_string()
-            .starts_with("fetch failed through test tailnet: "),
-        "{error}"
-    );
-    assert!(overlay.requests().is_empty());
-}
-
-#[tokio::test]
-async fn refuses_a_certificate_the_platform_does_not_trust() {
-    // The platform knows nothing of the certificate authority of the test.
-    let overlay =
-        Arc::new(Memory::new(&["mcp.tailnet.test"], |_| Reply::text("never")).serving_tls());
-    let fetcher = Fetcher::offline().through(&network(&overlay));
-
-    let error = get(&fetcher, "https://mcp.tailnet.test/")
-        .await
-        .unwrap_err();
-
-    assert!(matches!(error, FetchError::Overlay { .. }), "{error}");
-    assert!(overlay.requests().is_empty());
+        assert!(matches!(error, FetchError::Overlay { .. }), "{error}");
+        assert!(
+            error
+                .to_string()
+                .starts_with("fetch failed through test tailnet: "),
+            "{error}"
+        );
+        assert!(overlay.requests().is_empty());
+    }
 }
 
 #[test]

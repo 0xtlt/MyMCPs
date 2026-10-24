@@ -783,15 +783,7 @@ async fn the_instance_always_keeps_a_super_admin() {
 }
 
 async fn tailnet_of(db: &Db, team_id: i64, created_by: i64, name: &str) -> Tailnet {
-    let mut tailnet = Tailnet {
-        team_id,
-        name: name.into(),
-        hostname: format!("mymcps-{}", name.to_lowercase()),
-        created_by,
-        ..Default::default()
-    };
-    tailnet.insert(&**db).await.unwrap();
-    tailnet
+    Tailnet::create_for_tests(&**db, team_id, created_by, name).await
 }
 
 #[tokio::test]
@@ -847,23 +839,11 @@ async fn a_team_connects_tailnets_that_its_mcps_use() {
     );
 
     // A name is unique in a team, and free in another.
-    let mut duplicate = Tailnet {
-        team_id: Team::ROOT_ID,
-        name: "work".into(),
-        hostname: "another".into(),
-        created_by: ada.id,
-        ..Default::default()
-    };
+    let mut duplicate = Tailnet::for_tests(Team::ROOT_ID, ada.id, "work");
     assert!(duplicate.insert(&**db).await.is_err());
     // Whatever its case: lookups by name ignore it, so the index does too.
     for name in ["WORK", "Work", "lab"] {
-        let mut variant = Tailnet {
-            team_id: Team::ROOT_ID,
-            name: name.into(),
-            hostname: "variant".into(),
-            created_by: ada.id,
-            ..Default::default()
-        };
+        let mut variant = Tailnet::for_tests(Team::ROOT_ID, ada.id, name);
         let error = variant.insert(&**db).await.unwrap_err();
         assert!(
             error

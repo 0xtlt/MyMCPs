@@ -39,4 +39,6 @@ test-util = ["dep:tempfile"]
 
 [dev-dependencies]
 tempfile.workspace = true
+# The helpers that the tests of other crates use, for its own.
+mymcps-core = { path = ".", features = ["test-util"] }
 

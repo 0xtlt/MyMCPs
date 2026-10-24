@@ -11,6 +11,8 @@ pub mod backup;
 pub mod client_ip;
 pub mod config;
 pub mod crypto;
+#[cfg(feature = "test-util")]
+pub mod gate;
 #[macro_use]
 pub mod db;
 pub mod error;
