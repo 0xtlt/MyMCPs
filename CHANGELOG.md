@@ -26,6 +26,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Tailnets work with the default relative `DATA_DIR=tmp`: the server now gives `tailscaled` absolute paths for its socket and state, instead of paths that only held from the server's own directory.
 - Deleting a tailnet can no longer be undone by a page that was loading at the same time: its daemon is not started again once it was removed, and starting, stopping and deleting a tailnet no longer overlap.
 - The **Connect a tailnet** form no longer empties itself while you fill it on a Tailnets page that refreshes: the button opens the form on its own page there.
+- Two tailnets of a team can no longer have names that differ only by case (`pro` and `PRO`), even when created at the same moment: the second gets the usual "name already used" message.
 
 ### Security
 
@@ -35,6 +36,7 @@ Notable project changes are recorded here in English. Sections are organized by 
 - Changing the network of an MCP (internet to a tailnet, back, or from one tailnet to another) now clears its saved bearer token, header value and OAuth sign-in, as moving it to another origin does, so they are not sent to another machine behind the same URL. The same holds for `mcp_registry_update`, which lists them in `cleared_secrets`.
 - A tailnet never reaches the address of MyMCPs' own device, even when a subnet route of a peer (or of a hostile Headscale) covers it, so an MCP cannot loop back to the server through it.
 - The sign-in link of a tailnet and the keys of Tailscale are kept out of the debug log of `tailscaled`.
+- Deleting a tailnet, a team or a user no longer starts a `tailscaled` for a tailnet whose saved control server `TAILNET_CONTROL_URLS` does not allow any more: its state is only deleted, with no logout, so a control server the operator refused is never contacted. Remove the device in the admin console of that tailnet. Tailnets whose control server is allowed still log out as before.
 - Updated tokio to 1.54.1, which fixes a race condition in its interval timer (RUSTSEC-2026-0384), and ctutils to 0.4.5, which fixes mask generation and `u128` comparisons that did not run in constant time (RUSTSEC-2026-0385).
 
 ## 2026-10-21

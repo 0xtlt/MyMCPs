@@ -780,6 +780,42 @@ mod remove {
         assert!(!directory.exists());
         assert_eq!(fixture.runs(), 1);
     }
+
+    #[tokio::test]
+    async fn discard_starts_no_daemon_for_a_node_that_joined_before_a_restart() {
+        let fixture = Fixture::new(0);
+        let directory = fixture.tailnet_dir(1);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("tailscaled.state"), "{}").unwrap();
+
+        fixture.tailnets.discard(1).await.unwrap();
+
+        assert_eq!(fixture.runs(), 0);
+        assert!(!directory.exists());
+        assert!(fixture.tailnets.handle(1).is_none());
+        // Removed for good: nothing starts it again.
+        assert!(matches!(
+            fixture.tailnets.ensure_running(1).await,
+            Err(Error::Removed(1))
+        ));
+        assert_eq!(fixture.runs(), 0);
+    }
+
+    #[tokio::test]
+    async fn discard_stops_a_running_daemon_without_logging_out() {
+        let fixture = Fixture::new(0);
+        let api = fixture.with_api(1, running_status()).await;
+        assert!(eventually(PATIENCE, || fixture.pid().is_some()).await);
+        let pid = fixture.pid().unwrap();
+        std::fs::write(fixture.tailnet_dir(1).join("tailscaled.state"), "{}").unwrap();
+
+        fixture.tailnets.discard(1).await.unwrap();
+
+        assert!(api.requests_to("/localapi/v0/logout").is_empty());
+        assert!(eventually(PATIENCE, || !alive(&pid)).await);
+        assert!(!fixture.tailnet_dir(1).exists());
+        assert!(fixture.tailnets.handle(1).is_none());
+    }
 }
 
 mod lifecycle {

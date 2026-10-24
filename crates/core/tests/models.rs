@@ -791,6 +791,27 @@ async fn a_team_connects_tailnets_that_its_mcps_use() {
         ..Default::default()
     };
     assert!(duplicate.insert(&**db).await.is_err());
+    // Whatever its case: lookups by name ignore it, so the index does too.
+    for name in ["WORK", "Work", "lab"] {
+        let mut variant = Tailnet {
+            team_id: Team::ROOT_ID,
+            name: name.into(),
+            hostname: "variant".into(),
+            created_by: ada.id,
+            ..Default::default()
+        };
+        let error = variant.insert(&**db).await.unwrap_err();
+        assert!(
+            error
+                .as_database_error()
+                .is_some_and(|error| error.is_unique_violation()),
+            "{name}: {error}"
+        );
+    }
+    assert_eq!(
+        Tailnet::count_in_team(&**db, Team::ROOT_ID).await.unwrap(),
+        2
+    );
 
     // Only the columns that changed are written.
     lab.control_url = Some("https://headscale.example.com".into());

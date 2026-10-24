@@ -2,7 +2,7 @@
 //! MCPs to reach devices that only answer inside them. For the owners and
 //! administrators of the team, as the MCPs they are chosen on.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use axum::Router;
 use axum::extract::{OriginalUri, Path, State};
@@ -480,16 +480,7 @@ pub async fn destroy(
     }
     // The connections an MCP kept through it end with it.
     state.upstream.forget_tailnet(tailnet.id);
-    if let Some(tailnets) = state.upstream.tailnets()
-        && let Err(error) = tailnets.remove(tailnet.id).await
-    {
-        // The row is gone and its id is never given again: what is left is
-        // a directory for the operator to delete.
-        tracing::warn!(
-            tailnet = tailnet.id,
-            "could not delete the state of a tailnet: {error}"
-        );
-    }
+    remove_node(&state, tailnet.id, tailnet.control_url.as_deref()).await;
     session.flash("success", "Tailnet deleted");
     Ok(navigate(&headers, &list(&uri)))
 }
@@ -578,37 +569,62 @@ pub async fn sign_in_again(
     ))
 }
 
-/// The ids of every tailnet of the instance, to tell afterwards which a
-/// deletion took with it.
-pub async fn all_ids(state: &AppState) -> Result<BTreeSet<i64>, sqlx::Error> {
-    let ids: Vec<i64> = sqlx::query_scalar("select `id` from `tailnets`")
-        .fetch_all(&*state.core.db)
-        .await?;
-    Ok(ids.into_iter().collect())
+/// Takes the node of a tailnet out of this server. The node logs out of its
+/// tailnet, unless the control server it was connected to is not allowed any
+/// more (`TAILNET_CONTROL_URLS`): the logout needs a daemon, which that server
+/// would steer, so the daemon is then never started and the state is only
+/// deleted. `control_url` is the one the row had.
+async fn remove_node(state: &AppState, id: i64, control_url: Option<&str>) {
+    let Some(tailnets) = state.upstream.tailnets() else {
+        return;
+    };
+    let result = match state.upstream.control_url_refusal(control_url) {
+        Some(_) => tailnets.discard(id).await,
+        None => tailnets.remove(id).await,
+    };
+    if let Err(error) = result {
+        // The row is gone and its id is never given again: what is left is
+        // a directory for the operator to delete.
+        tracing::warn!(
+            tailnet = id,
+            "could not delete the state of a tailnet: {error}"
+        );
+    }
+}
+
+/// Every tailnet of the instance with the control server it was connected to,
+/// to tell afterwards which a deletion took with it, and what to do with the
+/// state of each: the rows are gone by then.
+pub async fn all_control_urls(
+    state: &AppState,
+) -> Result<BTreeMap<i64, Option<String>>, sqlx::Error> {
+    let rows: Vec<(i64, Option<String>)> =
+        sqlx::query_as("select `id`, `control_url` from `tailnets`")
+            .fetch_all(&*state.core.db)
+            .await?;
+    Ok(rows.into_iter().collect())
 }
 
 /// Stop the daemons of the tailnets that were in `before` and are no more:
 /// the ones a deleted team, or the personal team of a deleted account, had.
 /// A daemon that cannot be stopped is logged: the deletion is done.
-pub async fn discard_removed(state: &AppState, before: &BTreeSet<i64>) {
-    let Some(tailnets) = state.upstream.tailnets() else {
+pub async fn discard_removed(state: &AppState, before: &BTreeMap<i64, Option<String>>) {
+    if state.upstream.tailnets().is_none() {
         return;
-    };
-    let after = match all_ids(state).await {
+    }
+    let after = match all_control_urls(state).await {
         Ok(after) => after,
         Err(error) => {
             tracing::warn!("could not list the tailnets that remain: {error}");
             return;
         }
     };
-    for id in before.difference(&after) {
-        state.upstream.forget_tailnet(*id);
-        if let Err(error) = tailnets.remove(*id).await {
-            tracing::warn!(
-                tailnet = id,
-                "could not delete the state of a tailnet: {error}"
-            );
+    for (id, control_url) in before {
+        if after.contains_key(id) {
+            continue;
         }
+        state.upstream.forget_tailnet(*id);
+        remove_node(state, *id, control_url.as_deref()).await;
     }
 }
 

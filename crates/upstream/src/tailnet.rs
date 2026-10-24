@@ -205,10 +205,13 @@ impl Upstream {
     /// the daemon makes requests that its control server asks for, outside the
     /// routing of the tailnet. Check it before every start.
     pub fn tailnet_control_refusal(&self, tailnet: &Tailnet) -> Option<String> {
-        self.core
-            .config
-            .tailnet_control
-            .refusal(tailnet.control_url.as_deref())
+        self.control_url_refusal(tailnet.control_url.as_deref())
+    }
+
+    /// [`tailnet_control_refusal`](Self::tailnet_control_refusal) for a saved
+    /// control server alone, for a tailnet whose row is gone.
+    pub fn control_url_refusal(&self, control_url: Option<&str>) -> Option<String> {
+        self.core.config.tailnet_control.refusal(control_url)
     }
 
     /// Drops the network kept for a tailnet, and with it the connections it

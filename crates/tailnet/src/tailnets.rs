@@ -392,11 +392,31 @@ impl Tailnets {
             }
         }
         self.stop_daemon(id).await;
-        match tokio::fs::remove_dir_all(&dir).await {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-        }
+        remove_dir(&dir).await
+    }
+
+    /// [`remove`](Self::remove) without the logout: it never starts a daemon
+    /// and never contacts a control server. It stops the daemon if one runs,
+    /// and deletes the directory of the tailnet. For a tailnet whose control
+    /// server must not be reached any more: the daemon would be steered by
+    /// it. The device stays in the admin console of that tailnet, for its
+    /// owner to remove.
+    ///
+    /// The tailnet stays removed, as with `remove`.
+    pub async fn discard(&self, id: i64) -> Result<(), Error> {
+        self.removed().insert(id);
+        let _turn = self.turn(id).await;
+        self.stop_daemon(id).await;
+        remove_dir(&self.tailnet_dir(id)).await
+    }
+}
+
+/// Deletes `dir` and what is in it; a directory that is not there is done.
+async fn remove_dir(dir: &std::path::Path) -> Result<(), Error> {
+    match tokio::fs::remove_dir_all(dir).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
 }
 

@@ -47,7 +47,7 @@ An agent that has the permission to [manage MCPs](mcp-management-tools.md) reads
 
 ## Delete a tailnet
 
-Select **Delete** on its row. A tailnet that MCPs use is not deleted: the message names them, and each goes back to **Internet** or to another tailnet first. Deleting logs the device out of the tailnet, stops its `tailscaled` and deletes its key. If the control server could not be reached for the logout, the device stays in your admin console: remove it there.
+Select **Delete** on its row. A tailnet that MCPs use is not deleted: the message names them, and each goes back to **Internet** or to another tailnet first. Deleting logs the device out of the tailnet, stops its `tailscaled` and deletes its key. If the control server could not be reached for the logout, the device stays in your admin console: remove it there. The same holds when the control server of the tailnet is not allowed any more (see [Control servers](#control-servers)): the logout would need a daemon that server steers, so none is started, the state is only deleted and the device stays in your admin console.
 
 Deleting a team, or a user whose personal team goes with them, does the same for its tailnets.
 

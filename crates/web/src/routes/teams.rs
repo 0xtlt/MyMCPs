@@ -343,7 +343,7 @@ pub async fn destroy(
         return Ok(refuse("A personal team cannot be deleted"));
     }
 
-    let before = tailnets::all_ids(&state).await?;
+    let before = tailnets::all_control_urls(&state).await?;
     let mut transaction = state.core.db.begin().await?;
     let mcps: i64 = sqlx::query_scalar("select count(*) from `mcps` where `team_id` = ?")
         .bind(team.id())
@@ -883,7 +883,7 @@ pub async fn destroy_user(
         PasswordCheck::Limited(response) => return Ok(response),
     }
 
-    let before = tailnets::all_ids(&state).await?;
+    let before = tailnets::all_control_urls(&state).await?;
     let mut transaction = state.core.db.begin().await?;
     if !still_super_admin(&mut transaction, &actor).await? {
         return Ok(refuse(SUPER_ADMIN_REQUIRED));
