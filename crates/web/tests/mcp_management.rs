@@ -1946,3 +1946,86 @@ async fn opens_the_link_of_an_mcp_only_for_the_team_it_is_in() {
     assert_eq!(started.redirect_path().as_deref(), Some("/mcps"));
     assert!(gateway.upstreams.requests().is_empty());
 }
+
+#[tokio::test]
+async fn clears_the_secrets_and_the_sign_in_when_the_network_changes_and_says_so() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    let pro = tailnet_in(&gateway, Team::ROOT_ID, &admin, "Pro").await;
+    let home = tailnet_in(&gateway, Team::ROOT_ID, &admin, "Home").await;
+    let core = gateway.core().clone();
+
+    // Internet to a tailnet, a tailnet to the internet, and one tailnet to
+    // another: the same URL, but not the same machine.
+    for (slug, from, to, expected) in [
+        ("online-to-pro", None, json!("Pro"), Some(pro.id)),
+        ("pro-to-online", Some(pro.id), json!(null), None),
+        ("pro-to-home", Some(pro.id), json!("Home"), Some(home.id)),
+    ] {
+        create_mcp(&gateway, admin.id, |mcp| {
+            mcp.name = slug.into();
+            mcp.slug = slug.into();
+            mcp.http_url = Some("https://docs.example/mcp".into());
+            mcp.tailnet_id = from;
+            mcp.auth_type = McpAuthType::Bearer;
+            mcp.auth_bearer = core.encrypt_secret(Some("bearer-secret-value"));
+            mcp.oauth_access_token = core.encrypt_secret(Some("access-token"));
+            mcp.oauth_client_id = Some("registered-client".into());
+        })
+        .await;
+
+        let result = call_ok(
+            &gateway,
+            &manager,
+            "mcp_registry_update",
+            json!({ "slug": slug, "tailnet": to }),
+        )
+        .await;
+
+        let cleared = result["cleared_secrets"].as_array().unwrap();
+        assert!(cleared.contains(&json!("bearer_token")), "{slug}: {result}");
+        assert!(
+            cleared.contains(&json!("oauth_connection")),
+            "{slug}: {result}"
+        );
+        assert!(result["notes"].to_string().contains("network"), "{result}");
+        let saved = mcp_named(&gateway, slug).await;
+        assert_eq!(saved.auth_bearer, None, "{slug}");
+        assert_eq!(saved.oauth_access_token, None, "{slug}");
+        assert_eq!(saved.oauth_client_id, None, "{slug}");
+        assert_eq!(saved.tailnet_id, expected, "{slug}");
+    }
+
+    // The same network, named again, keeps them; so does a new token sent
+    // with the new network.
+    bearer_mcp(&gateway, &admin).await;
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "tailnet": "Pro" }),
+    )
+    .await;
+    let again = call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "tailnet": "pro", "description": "Same network" }),
+    )
+    .await;
+    assert_eq!(again["cleared_secrets"], json!([]));
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "tailnet": "Home", "bearer_token": "fresh-token" }),
+    )
+    .await;
+    let saved = mcp_named(&gateway, "docs").await;
+    assert_eq!(saved.tailnet_id, Some(home.id));
+    assert_eq!(
+        decrypted(&gateway, &saved.auth_bearer).as_deref(),
+        Some("fresh-token")
+    );
+}

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use http::StatusCode;
 use mcps_support::*;
-use mymcps_core::models::{Mcp, McpTransport, Tailnet, Team, TeamRole, User};
+use mymcps_core::models::{Mcp, McpAuthType, McpTransport, Tailnet, Team, TeamRole, User};
 use mymcps_tailnet::test_support::{FakeLocalApi, fake_tailscaled, running_status, status_in};
 use mymcps_tailnet::{Tailnets, TailnetsConfig};
 use mymcps_web::testing::factories::{
@@ -1211,4 +1211,146 @@ async fn keeps_the_mcp_a_team_had_through_a_tailnet_on_the_internet_when_it_goes
     let mcp: Mcp = create_mcp(&lab.app, admin.id, |mcp| mcp.tailnet_id = Some(pro.id)).await;
     pro.delete(&*lab.app.core.db).await.unwrap();
     assert_eq!(find_mcp(&lab.app, mcp.id).await.tailnet_id, None);
+}
+
+/// An HTTP MCP that holds a bearer token, a header value and an OAuth
+/// connection, on `network`.
+async fn mcp_with_secrets(lab: &Lab, user: &User, name: &str, network: Option<i64>) -> Mcp {
+    create_mcp(&lab.app, user.id, |mcp| {
+        mcp.name = name.into();
+        mcp.slug = name.to_lowercase();
+        mcp.http_url = Some("https://grafana.tail1234.ts.net/mcp".into());
+        mcp.tailnet_id = network;
+        mcp.auth_type = McpAuthType::Bearer;
+        mcp.auth_bearer = encrypt(&lab.app, "bearer-secret");
+        mcp.auth_header_value = encrypt(&lab.app, "header-secret");
+        mcp.oauth_access_token = encrypt(&lab.app, "access-token");
+        mcp.oauth_refresh_token = encrypt(&lab.app, "refresh-token");
+        mcp.oauth_client_id = Some("registered-client".into());
+        mcp.oauth_client_secret = encrypt(&lab.app, "client-secret");
+        mcp.oauth_token_url = Some("https://grafana.tail1234.ts.net/token".into());
+        mcp.oauth_authorize_url = Some("https://grafana.tail1234.ts.net/authorize".into());
+    })
+    .await
+}
+
+/// Saves the MCP again with the same URL and sign-in, on `network`.
+async fn save_on(lab: &Lab, user: &User, mcp: &Mcp, network: Option<i64>) {
+    save_with(lab, user, mcp, "bearer", network).await;
+}
+
+async fn save_with(lab: &Lab, user: &User, mcp: &Mcp, auth_type: &str, network: Option<i64>) {
+    let id = network.map(|id| id.to_string()).unwrap_or_default();
+    let response = lab
+        .app
+        .post(&format!("/mcps/{}?_method=PUT", mcp.id))
+        .login_as(user)
+        .csrf()
+        .form(&[
+            ("name", mcp.name.as_str()),
+            ("transport", "http"),
+            ("httpUrl", "https://grafana.tail1234.ts.net/mcp"),
+            ("authType", auth_type),
+            ("tailnetId", id.as_str()),
+            ("enabled", "on"),
+        ])
+        .send()
+        .await;
+    assert_redirect(&response, "/mcps");
+}
+
+#[tokio::test]
+async fn forgets_the_secrets_and_the_sign_in_of_an_mcp_when_only_its_network_changes() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let home = lab.row(Team::ROOT_ID, admin.id, "home").await;
+
+    // The same URL is another machine on another network.
+    for (from, to) in [
+        (None, Some(pro.id)),
+        (Some(pro.id), None),
+        (Some(pro.id), Some(home.id)),
+    ] {
+        let name = format!("Moves {}-{}", from.unwrap_or(0), to.unwrap_or(0));
+        let mcp = mcp_with_secrets(&lab, &admin, &name, from).await;
+
+        save_on(&lab, &admin, &mcp, to).await;
+
+        let saved = find_mcp(&lab.app, mcp.id).await;
+        assert_eq!(saved.tailnet_id, to, "{name}");
+        assert_eq!(saved.auth_bearer, None, "{name}");
+        assert_eq!(saved.auth_header_value, None, "{name}");
+        assert_eq!(saved.oauth_access_token, None, "{name}");
+        assert_eq!(saved.oauth_refresh_token, None, "{name}");
+        assert_eq!(saved.oauth_client_id, None, "{name}");
+        assert_eq!(saved.oauth_client_secret, None, "{name}");
+        assert_eq!(saved.oauth_token_url, None, "{name}");
+        assert_eq!(saved.oauth_authorize_url, None, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn keeps_the_secrets_and_the_sign_in_of_an_mcp_that_stays_on_its_network() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    for (name, network) in [("Stays on pro", Some(pro.id)), ("Stays online", None)] {
+        let mcp = mcp_with_secrets(&lab, &admin, name, network).await;
+        save_on(&lab, &admin, &mcp, network).await;
+
+        let saved = find_mcp(&lab.app, mcp.id).await;
+        assert_eq!(saved.tailnet_id, network, "{name}");
+        assert_eq!(saved.auth_bearer, mcp.auth_bearer, "{name}");
+        assert_eq!(saved.auth_header_value, None, "{name}: unused by a bearer");
+        assert_eq!(saved.oauth_access_token, None, "{name}: unused by a bearer");
+    }
+}
+
+#[tokio::test]
+async fn keeps_the_oauth_connection_of_an_mcp_that_stays_on_its_network_and_drops_it_on_leaving() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let mcp = create_mcp(&lab.app, admin.id, |mcp| {
+        mcp.name = "Signed in".into();
+        mcp.http_url = Some("https://grafana.tail1234.ts.net/mcp".into());
+        mcp.tailnet_id = Some(pro.id);
+        mcp.auth_type = McpAuthType::Auto;
+        mcp.oauth_access_token = encrypt(&lab.app, "access-token");
+        mcp.oauth_client_id = Some("registered-client".into());
+    })
+    .await;
+    save_with(&lab, &admin, &mcp, "auto", Some(pro.id)).await;
+    let saved = find_mcp(&lab.app, mcp.id).await;
+    assert_eq!(saved.oauth_access_token, mcp.oauth_access_token);
+    assert_eq!(saved.oauth_client_id.as_deref(), Some("registered-client"));
+
+    // Moving it to the internet signs it out.
+    save_with(&lab, &admin, &mcp, "auto", None).await;
+    let saved = find_mcp(&lab.app, mcp.id).await;
+    assert_eq!(saved.tailnet_id, None);
+    assert_eq!(saved.oauth_access_token, None);
+    assert_eq!(saved.oauth_client_id, None);
+}
+
+#[tokio::test]
+async fn the_form_stops_offering_to_keep_the_saved_secrets_for_another_network() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let internet = mcp_with_secrets(&lab, &admin, "Online", None).await;
+    let tailnet = mcp_with_secrets(&lab, &admin, "Inside", Some(pro.id)).await;
+
+    // The page script follows the Network field with this condition.
+    let page = get(&lab.app, &admin, &format!("/mcps/{}/edit", internet.id)).await;
+    assert!(
+        page.contains("data-show-when=\"transport=http&amp;httpUrl:origin=https://grafana.tail1234.ts.net&amp;tailnetId=\""),
+        "{page}"
+    );
+    let page = get(&lab.app, &admin, &format!("/mcps/{}/edit", tailnet.id)).await;
+    assert!(
+        page.contains(&format!("&amp;tailnetId={}\"", pro.id)),
+        "{page}"
+    );
 }

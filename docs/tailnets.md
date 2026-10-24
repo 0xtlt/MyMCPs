@@ -41,7 +41,7 @@ Select it, then **Sign in** on the row once the new link shows up (a few seconds
 
 ## Choose it on an MCP
 
-When the team has a tailnet, the dialog of an HTTP MCP has a **Network** field: **Internet**, or **Tailnet: pro**. Save the MCP; it is tested through the tailnet. The list of MCPs names the tailnet under the URL. Only HTTP MCPs have a network: an npm MCP runs on the server, and a built-in one talks to its provider.
+When the team has a tailnet, the dialog of an HTTP MCP has a **Network** field: **Internet**, or **Tailnet: pro**. Save the MCP; it is tested through the tailnet. The list of MCPs names the tailnet under the URL. Changing the network of an MCP, from the internet to a tailnet, back, or from one tailnet to another, is like moving it to another server: the same URL may name another machine there, so the MCP forgets its saved bearer token, header value and OAuth sign-in, and they are entered or connected again. Only HTTP MCPs have a network: an npm MCP runs on the server, and a built-in one talks to its provider.
 
 An agent that has the permission to [manage MCPs](mcp-management-tools.md) reads and sets the network by tailnet name, with `tailnet` on `mcp_registry_create` and `mcp_registry_update`.
 

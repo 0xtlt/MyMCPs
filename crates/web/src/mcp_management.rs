@@ -604,7 +604,7 @@ impl McpRegistryManager for WebMcpRegistry {
         let mut notes = Vec::new();
         if !cleared.is_empty() {
             notes.push(format!(
-                "Saved secrets are cleared when the URL origin or the npm package changes, or when the sign-in type stops using them. Cleared: {}. Send them again with {}.",
+                "Saved secrets are cleared when the URL origin, the network or the npm package changes, or when the sign-in type stops using them. Cleared: {}. Send them again with {}.",
                 cleared.join(", "),
                 mymcps_gateway::mcp_management::UPDATE_TOOL
             ));

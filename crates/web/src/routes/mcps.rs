@@ -545,28 +545,9 @@ pub async fn assign_mcp_from_payload(
         .npm_package
         .clone()
         .filter(|_| transport == McpTransport::Npm);
-    // A row that was never saved has no transport yet.
-    let transport_changed = !mcp.is_persisted() || mcp.transport != transport;
-    let oauth_server_changed =
-        transport_changed || mcp.http_url != next_http_url || mcp.builtin_key != next_builtin_key;
-    if oauth_server_changed {
-        clear_oauth_connection(mcp);
-    }
-
-    // Saved secrets are write-only and were entered for one destination. They
-    // must not follow the MCP to another origin or package, where the probe
-    // after saving would hand them over. A new path or version keeps them.
-    let credential_target_changed = transport_changed
-        || http_origin(mcp.http_url.as_deref()) != http_origin(next_http_url.as_deref())
-        || mcp.npm_package != next_npm_package;
-    if credential_target_changed {
-        mcp.auth_bearer = None;
-        mcp.auth_header_value = None;
-    }
-
     // Only an HTTP MCP is reached over a network, and a tailnet is only
     // ever one of the team's, whatever id the form names.
-    mcp.tailnet_id = match (transport, payload.tailnet_id) {
+    let next_tailnet_id = match (transport, payload.tailnet_id) {
         (McpTransport::Http, Some(id)) => {
             match Tailnet::find_in_team(&*core.db, mcp.team_id, id).await? {
                 Some(tailnet) => Some(tailnet.id),
@@ -583,6 +564,33 @@ pub async fn assign_mcp_from_payload(
         _ => None,
     };
 
+    // A row that was never saved has no transport yet.
+    let transport_changed = !mcp.is_persisted() || mcp.transport != transport;
+    // The network is part of where a request goes: the same URL names another
+    // machine on another network, which is not the one that was signed in to
+    // or given a secret.
+    let network_changed = mcp.tailnet_id != next_tailnet_id;
+    let oauth_server_changed = transport_changed
+        || network_changed
+        || mcp.http_url != next_http_url
+        || mcp.builtin_key != next_builtin_key;
+    if oauth_server_changed {
+        clear_oauth_connection(mcp);
+    }
+
+    // Saved secrets are write-only and were entered for one destination. They
+    // must not follow the MCP to another origin, network or package, where the
+    // probe after saving would hand them over. A new path or version keeps them.
+    let credential_target_changed = transport_changed
+        || network_changed
+        || http_origin(mcp.http_url.as_deref()) != http_origin(next_http_url.as_deref())
+        || mcp.npm_package != next_npm_package;
+    if credential_target_changed {
+        mcp.auth_bearer = None;
+        mcp.auth_header_value = None;
+    }
+
+    mcp.tailnet_id = next_tailnet_id;
     mcp.name = payload.name.clone();
     mcp.slug = unique_slug(&*core.db, mcp.team_id, &payload.name, exclude_id).await?;
     mcp.description = payload

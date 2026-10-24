@@ -43,7 +43,7 @@ One access token may call these tools 30 times a minute.
 
 The tools take secrets and never give them back. A bearer token or a header value is answered as set or not, never with its value, and so is each environment variable of an npm MCP, and neither are the tokens of an OAuth connection. The URL of an MCP is shown as its origin (`https://mcp.example/…`): its user name, password, path and query can all hold a key. The arguments of an npm MCP are only counted, since people put keys there too. The arguments of these tools are kept out of the call log.
 
-As on the page, an MCP forgets its saved secrets when its URL moves to another origin. The answer of `mcp_registry_update` names the secrets it cleared, so the agent can send them again.
+As on the page, an MCP forgets its saved secrets when its URL moves to another origin, or when its network changes (`tailnet`: the internet, or a tailnet of the team). The answer of `mcp_registry_update` names the secrets it cleared, so the agent can send them again.
 
 ### Connect an MCP that signs in with OAuth
 

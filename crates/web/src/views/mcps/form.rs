@@ -326,7 +326,8 @@ fn url_origin(value: &str) -> Option<String> {
 
 /// Whether saving these values keeps the saved token, header value and
 /// environment values. The server drops them when the MCP moves to another
-/// origin, transport or package, so the form must not offer to keep them.
+/// origin, network, transport or package, so the form must not offer to keep
+/// them.
 pub fn keeps_saved_credentials(saved: &McpView, values: &FormValues) -> bool {
     if saved.transport != values.transport {
         return false;
@@ -339,10 +340,21 @@ pub fn keeps_saved_credentials(saved: &McpView, values: &FormValues) -> bool {
             let saved_origin = saved.http_url.as_deref().and_then(url_origin);
             let next_origin = url_origin(&values.http_url);
             // A URL still being typed is not a decision yet.
-            saved_origin.is_none() || next_origin.is_none() || saved_origin == next_origin
+            let same_origin =
+                saved_origin.is_none() || next_origin.is_none() || saved_origin == next_origin;
+            same_origin && saved_network(saved) == values.tailnet_id
         }
         McpTransport::Builtin => true,
     }
+}
+
+/// The network of a saved MCP as the Network field names it: the id of its
+/// tailnet, or nothing for the internet.
+fn saved_network(saved: &McpView) -> String {
+    saved
+        .tailnet_id
+        .map(|id| id.to_string())
+        .unwrap_or_default()
 }
 
 /// The saved credentials of the MCP being edited, as the form talks about them.
@@ -356,12 +368,20 @@ struct Saved<'a> {
 }
 
 impl<'a> Saved<'a> {
-    fn of(mcp: &'a McpView, values: &FormValues) -> Self {
+    fn of(mcp: &'a McpView, form: &McpForm) -> Self {
+        let values = &form.values;
         let condition = match mcp.transport {
-            McpTransport::Http => Some(match mcp.http_url.as_deref().and_then(url_origin) {
-                Some(origin) => format!("transport=http&httpUrl:origin={origin}"),
-                None => "transport=http".to_string(),
-            }),
+            McpTransport::Http => {
+                let mut condition = match mcp.http_url.as_deref().and_then(url_origin) {
+                    Some(origin) => format!("transport=http&httpUrl:origin={origin}"),
+                    None => "transport=http".to_string(),
+                };
+                // The Network field is only drawn once the team has a tailnet.
+                if !form.tailnets.is_empty() {
+                    condition.push_str(&format!("&tailnetId={}", saved_network(mcp)));
+                }
+                Some(condition)
+            }
             McpTransport::Npm => mcp
                 .npm_package
                 .as_deref()
@@ -1159,7 +1179,7 @@ pub fn edit_fragment(context: &PageContext, dialog: &EditDialog) -> Markup {
     let mcp = dialog.mcp;
     let form = dialog.form;
     let builtin = form.values.transport == McpTransport::Builtin;
-    let saved = Saved::of(mcp, &form.values);
+    let saved = Saved::of(mcp, form);
     // Shown by a banner of its own unless one of the banners above already offers it.
     let banner_reauthorizes = mcp.awaits_write_authorization() || dialog.shows_last_error();
     let reauthorize = mcp.can_reauthorize() && !banner_reauthorizes;
