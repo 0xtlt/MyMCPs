@@ -35,7 +35,7 @@ A team connects up to 5 tailnets. The page refreshes every 5 seconds while a tai
 
 ## Choose it on an MCP
 
-When the team has a tailnet, the dialog of an HTTP MCP has a **Network** field: **Internet**, or **Tailnet: pro**. Save the MCP; it is tested through the tailnet. The list of MCPs names the tailnet under the URL. Only HTTP MCPs have a network: an npm MCP runs on the server, and a built-in one talks to its provider.
+When the team has a tailnet, the dialog of an HTTP MCP has a **Network** field: **Internet**, or **Tailnet: pro**. Save the MCP; it is tested through the tailnet. On a tailnet the URL may name a device by its MagicDNS short name (`http://nas:8080/mcp`) as well as by its full name or its Tailscale address; on the internet a host needs a domain with a top-level domain. The list of MCPs names the tailnet under the URL. Only HTTP MCPs have a network: an npm MCP runs on the server, and a built-in one talks to its provider.
 
 An agent that has the permission to [manage MCPs](mcp-management-tools.md) reads and sets the network by tailnet name, with `tailnet` on `mcp_registry_create` and `mcp_registry_update`.
 
@@ -87,3 +87,21 @@ The access rules are the ones of the policy file of your Headscale. The device o
 - Linux and macOS: the tailnet support is not compiled for Windows.
 - A tailnet belongs to one team. Another team connects the same tailnet again if it needs it, as a second device.
 - The auth key is read once. A key that is refused shows up as **Needs sign-in** or **Error** on the row, not on the form.
+
+## Contributing: the end-to-end test
+
+`crates/tailnet/tests/headscale-e2e.sh` proves with real software that MyMCPs reaches an HTTP MCP through a tailnet. Nothing in it is a fake and nothing touches a Tailscale account. It starts, in Docker and on a private network of its own:
+
+- a Headscale, the control server (pinned by tag),
+- a device: the real `tailscaled`, joined with a pre-auth key, that serves a small streamable-HTTP MCP (`crates/tailnet/tests/headscale-e2e/mcp-device.js`),
+- the MyMCPs image, built from your checkout, which joins the same tailnet with the `tailscaled` of the image.
+
+It then drives MyMCPs over HTTP like a person: onboarding and sign-in, the **Tailnets** page, the MCP form and an access token. It checks that the tailnet reaches **Connected**; that MCPs on it, by short name, full name and Tailscale address, save as ready and list the tools of the device; that a tool call through the gateway reaches the device, which sees it come from a tailnet address; that a host that is not a device of the tailnet is refused with the tailnet message, and that the same URL on **Internet** is not reachable; and that the sign-in link leads to the register page of the Headscale and, once registered there, turns the row **Connected**.
+
+```sh
+crates/tailnet/tests/headscale-e2e.sh
+```
+
+It needs Docker, `curl`, `jq` and the Internet, and takes about 30 seconds with the image already built, a few minutes when the image has to compile. It prints one `PASS` per check and `ALL GREEN` at the end, and removes its containers, volumes and network whatever happens. Environment: `MYMCPS_IMAGE` uses an image you built instead of building one, `HEADSCALE_TAG` and `TAILSCALE_TAG` choose the versions, and `E2E_KEEP=1` leaves the containers running to look around (remove them with `docker rm -f -v $(docker ps -aq --filter name=mymcps-e2e-)`).
+
+Peers connect directly on the Docker network: the DERP relay that a Headscale embeds needs TLS, which the test does not set up, so the script lets the device and MyMCPs find their direct path before the first request. A real tailnet needs no such step.
