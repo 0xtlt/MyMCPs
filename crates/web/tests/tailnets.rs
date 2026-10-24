@@ -1639,6 +1639,121 @@ async fn stops_the_daemons_of_a_team_that_is_deleted() {
     assert!(lab.tailnets.handle(kept.id).is_some());
 }
 
+/// Runs `deletion` while a tailnet is connected to `team_id` in the gap that
+/// opened before the deletion took the write lock of the database: a Connect
+/// request, which inserts the row and starts its daemon, is in flight when
+/// the deletion request arrives, and its insert lands first.
+///
+/// The ordering is the test's own: it holds the write lock (as that request's
+/// transaction does) until the deletion has had every chance to run, inserts
+/// the row under it, then lets go. Where the deletion reads the tailnets it
+/// takes down does not change what it must do, but a read made before the
+/// lock misses this row, so nothing would remove its daemon. Returns the
+/// response, the new tailnet and its (fake) LocalAPI.
+async fn delete_while_a_tailnet_is_connected(
+    lab: &Lab,
+    team_id: i64,
+    created_by: i64,
+    deletion: impl std::future::Future<Output = TestResponse>,
+) -> (TestResponse, Tailnet, FakeLocalApi) {
+    let mut connecting = lab.app.core.db.begin().await.unwrap();
+    let mut tailnet = Tailnet {
+        team_id,
+        name: "late".into(),
+        hostname: "mymcps-late".into(),
+        created_by,
+        ..Default::default()
+    };
+    tailnet.insert(&mut *connecting).await.unwrap();
+    // Its daemon is up, as the Connect request starts it right after.
+    let api = lab.daemon(tailnet.id, running_status());
+    lab.tailnets.ensure_running(tailnet.id).await.unwrap();
+
+    let release = async {
+        // The deletion is in flight, waiting for the lock: its connection
+        // joins ours, and a pause lets it get as far as it can. Only the
+        // regression this test guards against depends on that pause.
+        let pool = lab.app.core.db.pool();
+        while pool.size() as usize - pool.num_idle() < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        connecting.commit().await.unwrap();
+    };
+    let (response, ()) = tokio::join!(deletion, release);
+    (response, tailnet, api)
+}
+
+fn assert_gone_with_its_team(lab: &Lab, tailnet: &Tailnet, api: &FakeLocalApi) {
+    assert_eq!(
+        api.requests_to("/localapi/v0/logout").len(),
+        1,
+        "the node left its tailnet"
+    );
+    assert!(lab.tailnets.handle(tailnet.id).is_none(), "no daemon runs");
+    assert!(!lab.tailnet_dir(tailnet.id).exists(), "no key is left");
+}
+
+#[tokio::test]
+async fn removes_the_daemon_of_a_tailnet_connected_just_before_its_team_is_deleted() {
+    let lab = Lab::new().await;
+    let team = create_team(&lab.app, "Research").await;
+    let owner = create_account(&lab.app, None).await;
+    join_team(&lab.app, team.id, &owner, TeamRole::Owner).await;
+    let deletion = lab
+        .app
+        .post("/team?_method=DELETE")
+        .login_as(&owner)
+        .in_team(team.id)
+        .csrf()
+        .send();
+
+    let (deleted, late, api) =
+        delete_while_a_tailnet_is_connected(&lab, team.id, owner.id, deletion).await;
+
+    assert_redirect(&deleted, "/");
+    assert_eq!(flash(&deleted, "success").as_deref(), Some("Team deleted"));
+    assert!(
+        Tailnet::find(&*lab.app.core.db, late.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_gone_with_its_team(&lab, &late, &api);
+}
+
+#[tokio::test]
+async fn removes_the_daemon_of_a_tailnet_connected_just_before_its_account_is_deleted() {
+    let lab = Lab::new().await;
+    let actor = create_super_admin(&lab.app).await;
+    let outsider = create_account(&lab.app, None).await;
+    let mut transaction = lab.app.core.db.begin().await.unwrap();
+    let personal = Team::create_personal(&mut transaction, &outsider)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    let deletion = lab
+        .app
+        .post(&format!("/users/{}?_method=DELETE", outsider.id))
+        .login_as(&actor)
+        .csrf()
+        .form(&[("currentPassword", PASSWORD)])
+        .send();
+
+    let (deleted, late, api) =
+        delete_while_a_tailnet_is_connected(&lab, personal.id, outsider.id, deletion).await;
+
+    assert_redirect(&deleted, "/users");
+    assert_eq!(flash(&deleted, "success").as_deref(), Some("User deleted"));
+    assert!(
+        Tailnet::find(&*lab.app.core.db, late.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_gone_with_its_team(&lab, &late, &api);
+}
+
 #[tokio::test]
 async fn stops_the_daemons_of_a_user_deleted_with_their_personal_team() {
     let lab = Lab::new().await;

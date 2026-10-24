@@ -18,7 +18,7 @@ use serde::de::DeserializeOwned;
 use tokio::time::{Instant, Sleep};
 use url::Url;
 
-use crate::overlay::OverlayNetwork;
+use crate::overlay::{Origin, OverlayNetwork};
 
 const MAX_REDIRECTS: usize = 5;
 
@@ -489,9 +489,12 @@ enum Transport {
         answer: Box<Answer>,
         rest: Arc<Transport>,
     },
-    /// What the overlay network routes goes through it, the rest through `rest`.
+    /// What the overlay network routes goes through it, the rest through
+    /// `rest`, except the requests to `required`, which fail when the overlay
+    /// does not route them.
     Overlay {
         network: OverlayNetwork,
+        required: Option<Origin>,
         rest: Arc<Transport>,
     },
 }
@@ -522,8 +525,18 @@ impl Transport {
                     Some(response) => return Ok(RawResponse::canned(response)),
                     None => transport = rest,
                 },
-                Transport::Overlay { network, rest } => match network.send(request).await? {
+                Transport::Overlay {
+                    network,
+                    required,
+                    rest,
+                } => match network.send(request).await? {
                     Some(response) => return Ok(response),
+                    None if required
+                        .as_ref()
+                        .is_some_and(|origin| origin.contains(&request.url)) =>
+                    {
+                        return Err(network.unrouted(&request.url));
+                    }
                     None => transport = rest,
                 },
             }
@@ -536,8 +549,13 @@ impl Transport {
     fn public_only(self: &Arc<Self>) -> Arc<Self> {
         match &**self {
             Transport::Network => Arc::new(Transport::PublicNetwork),
-            Transport::Overlay { network, rest } => Arc::new(Transport::Overlay {
+            Transport::Overlay {
+                network,
+                required,
+                rest,
+            } => Arc::new(Transport::Overlay {
                 network: network.clone(),
+                required: required.clone(),
                 rest: rest.public_only(),
             }),
             _ => Arc::clone(self),
@@ -814,6 +832,25 @@ impl Fetcher {
         Self {
             transport: Arc::new(Transport::Overlay {
                 network: network.clone(),
+                required: None,
+                rest: Arc::clone(&self.transport),
+            }),
+        }
+    }
+
+    /// [`through`](Self::through), except that the requests to the origin
+    /// (scheme, host and port) of `required` never fall back: when the overlay
+    /// does not route their host, they fail with [`FetchError::Overlay`]
+    /// without reaching the transport behind it, not even a public one. Use it
+    /// for the server an administrator pointed at the overlay, so that the
+    /// credentials sent to it cannot end up on another network when the
+    /// overlay stops routing it. The other origins behave as with `through`.
+    /// A URL that is not an HTTP one requires nothing.
+    pub fn through_requiring(&self, network: &OverlayNetwork, required: &Url) -> Self {
+        Self {
+            transport: Arc::new(Transport::Overlay {
+                network: network.clone(),
+                required: Origin::of(required),
                 rest: Arc::clone(&self.transport),
             }),
         }

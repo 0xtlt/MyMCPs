@@ -8,6 +8,15 @@
 //! goes [`through`](Fetcher::through) it sends there what the overlay routes
 //! and the rest as it did before.
 //!
+//! That fallback is wrong for the server an administrator pointed at the
+//! overlay: if the overlay stops routing it (a subnet route is withdrawn, a
+//! name no longer resolves) while the request carries credentials, sending it
+//! on to the public network would hand them to whoever answers there. A
+//! fetcher that goes [`through_requiring`](Fetcher::through_requiring) the
+//! overlay for an origin never falls back for it: the request to that origin
+//! (scheme, host and port) fails when the overlay does not route it, and the
+//! other origins still fall back.
+//!
 //! ```
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! # tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
@@ -156,6 +165,15 @@ impl OverlayNetwork {
         self.inner.overlay.label()
     }
 
+    /// The error for a request that has to go over the overlay, when the
+    /// overlay does not route its host.
+    pub(crate) fn unrouted(&self, url: &Url) -> FetchError {
+        let host = url.host_str().unwrap_or_default();
+        self.failure(format!(
+            "\"{host}\" is not reachable through it any more, and the request is not sent anywhere else"
+        ))
+    }
+
     fn failure(&self, reason: impl Into<String>) -> FetchError {
         FetchError::Overlay {
             label: self.label(),
@@ -248,6 +266,30 @@ impl fmt::Debug for OverlayNetwork {
             .debug_struct("OverlayNetwork")
             .field("label", &self.label())
             .finish_non_exhaustive()
+    }
+}
+
+/// An origin (scheme, host and port) whose requests must go over an overlay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Origin {
+    scheme: String,
+    host: String,
+    port: u16,
+}
+
+impl Origin {
+    /// The origin of an HTTP URL, or `None` for one that is not.
+    pub(crate) fn of(url: &Url) -> Option<Self> {
+        let (host, port) = target(url)?;
+        Some(Self {
+            scheme: url.scheme().to_owned(),
+            host,
+            port,
+        })
+    }
+
+    pub(crate) fn contains(&self, url: &Url) -> bool {
+        Self::of(url).is_some_and(|origin| origin == *self)
     }
 }
 

@@ -343,8 +343,10 @@ pub async fn destroy(
         return Ok(refuse("A personal team cannot be deleted"));
     }
 
-    let before = tailnets::all_control_urls(&state).await?;
     let mut transaction = state.core.db.begin().await?;
+    // Read with the write lock held: a tailnet connected before it is here,
+    // and none can be connected until the team is gone.
+    let before = tailnets::all_control_urls(&mut *transaction).await?;
     let mcps: i64 = sqlx::query_scalar("select count(*) from `mcps` where `team_id` = ?")
         .bind(team.id())
         .fetch_one(&mut *transaction)
@@ -883,8 +885,9 @@ pub async fn destroy_user(
         PasswordCheck::Limited(response) => return Ok(response),
     }
 
-    let before = tailnets::all_control_urls(&state).await?;
     let mut transaction = state.core.db.begin().await?;
+    // Read with the write lock held, see `destroy`.
+    let before = tailnets::all_control_urls(&mut *transaction).await?;
     if !still_super_admin(&mut transaction, &actor).await? {
         return Ok(refuse(SUPER_ADMIN_REQUIRED));
     }

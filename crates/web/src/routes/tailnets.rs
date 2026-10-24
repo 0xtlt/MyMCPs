@@ -595,24 +595,31 @@ async fn remove_node(state: &AppState, id: i64, control_url: Option<&str>) {
 /// Every tailnet of the instance with the control server it was connected to,
 /// to tell afterwards which a deletion took with it, and what to do with the
 /// state of each: the rows are gone by then.
-pub async fn all_control_urls(
-    state: &AppState,
+///
+/// A deletion reads it inside its own transaction, once the write lock is
+/// held: a tailnet created before the deletion took the lock is in it, and
+/// none can be created after, until the transaction ends. Read before the
+/// transaction, a tailnet inserted in between would be cascaded away with a
+/// daemon (and its node key) that nothing removes.
+pub async fn all_control_urls<'e>(
+    executor: impl sqlx::Executor<'e, Database = sqlx::Sqlite>,
 ) -> Result<BTreeMap<i64, Option<String>>, sqlx::Error> {
     let rows: Vec<(i64, Option<String>)> =
         sqlx::query_as("select `id`, `control_url` from `tailnets`")
-            .fetch_all(&*state.core.db)
+            .fetch_all(executor)
             .await?;
     Ok(rows.into_iter().collect())
 }
 
-/// Stop the daemons of the tailnets that were in `before` and are no more:
+/// Stop the daemons of the tailnets that were in `before` (read with
+/// [`all_control_urls`] inside the deletion's transaction) and are no more:
 /// the ones a deleted team, or the personal team of a deleted account, had.
 /// A daemon that cannot be stopped is logged: the deletion is done.
 pub async fn discard_removed(state: &AppState, before: &BTreeMap<i64, Option<String>>) {
     if state.upstream.tailnets().is_none() {
         return;
     }
-    let after = match all_control_urls(state).await {
+    let after = match all_control_urls(&*state.core.db).await {
         Ok(after) => after,
         Err(error) => {
             tracing::warn!("could not list the tailnets that remain: {error}");

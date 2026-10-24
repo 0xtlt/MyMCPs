@@ -89,7 +89,7 @@ type Handshake = (Option<String>, Option<Vec<u8>>);
 /// An overlay that lives in memory: it carries the hosts it is given to a
 /// server in the same process, over a pipe, and records what it was asked.
 struct Memory {
-    hosts: Vec<&'static str>,
+    hosts: Mutex<Vec<&'static str>>,
     handler: Handler,
     received: Arc<Mutex<Vec<Received>>>,
     routed: Mutex<Vec<(String, u16)>>,
@@ -107,7 +107,7 @@ impl Memory {
         handler: impl Fn(&Received) -> Reply + Send + Sync + 'static,
     ) -> Self {
         Self {
-            hosts: hosts.to_vec(),
+            hosts: Mutex::new(hosts.to_vec()),
             handler: Arc::new(handler),
             received: Arc::default(),
             routed: Mutex::default(),
@@ -133,6 +133,11 @@ impl Memory {
         config.alpn_protocols = vec![b"http/1.1".to_vec()];
         self.tls = Some(TlsAcceptor::from(Arc::new(config)));
         self
+    }
+
+    /// The overlay stops routing `host`, as when a subnet route is withdrawn.
+    fn withdraw(&self, host: &str) {
+        self.hosts.lock().unwrap().retain(|known| *known != host);
     }
 
     fn requests(&self) -> Vec<Received> {
@@ -168,6 +173,8 @@ impl Overlay for Memory {
         tokio::time::sleep(self.route_delay).await;
         Ok(self
             .hosts
+            .lock()
+            .unwrap()
             .contains(&host)
             .then(|| SocketAddr::new(TAILNET_ADDRESS.parse().unwrap(), port)))
     }
@@ -764,4 +771,84 @@ fn carries_the_address_and_the_host_in_the_uri_of_the_pool() {
         assert_eq!(uri.path_and_query().unwrap().as_str(), path);
         assert_eq!(dialed(&uri), Some((host.to_owned(), address)));
     }
+}
+
+/// A fetcher whose fallback counts the requests it receives.
+fn counting_fallback(counter: &Arc<AtomicUsize>) -> Fetcher {
+    let counter = Arc::clone(counter);
+    Fetcher::offline().answering(move |_| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Some(CannedResponse::new(StatusCode::OK).body("fallback"))
+    })
+}
+
+#[tokio::test]
+async fn never_falls_back_for_the_required_origin() {
+    let overlay = Arc::new(Memory::new(&["mcp.tailnet.test"], |_| {
+        Reply::text("overlay")
+    }));
+    let fallback = Arc::new(AtomicUsize::new(0));
+    let fetcher = counting_fallback(&fallback)
+        .through_requiring(&network(&overlay), &url("http://mcp.tailnet.test:8080/mcp"));
+
+    // While the overlay routes the host, the request goes through it.
+    let mut response = get(&fetcher, "http://mcp.tailnet.test:8080/mcp")
+        .await
+        .unwrap();
+    assert_eq!(response.text().await.unwrap(), "overlay");
+
+    // The route disappears: the request fails, with its credentials unsent.
+    overlay.withdraw("mcp.tailnet.test");
+    let request = FetchRequest::post(url("http://MCP.tailnet.test:8080/other"))
+        .header("Authorization", "Bearer secret")
+        .unwrap();
+    let error = fetch(&fetcher, request).await.unwrap_err();
+    assert!(
+        matches!(&error, FetchError::Overlay { label, reason }
+            if label == "test tailnet" && reason.contains("mcp.tailnet.test")),
+        "{error}"
+    );
+    assert_eq!(fallback.load(Ordering::SeqCst), 0);
+    assert_eq!(overlay.requests().len(), 1);
+
+    // The same holds when the restriction to the public network is added.
+    let error = get(&fetcher.public_only(), "http://mcp.tailnet.test:8080/mcp")
+        .await
+        .unwrap_err();
+    assert!(matches!(error, FetchError::Overlay { .. }), "{error}");
+    assert_eq!(fallback.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn requires_the_overlay_for_the_whole_origin_and_only_for_it() {
+    let overlay = Arc::new(Memory::new(&[], |_| Reply::text("overlay")));
+    let fallback = Arc::new(AtomicUsize::new(0));
+    let fetcher = counting_fallback(&fallback)
+        .through_requiring(&network(&overlay), &url("https://mcp.tailnet.test/mcp"));
+
+    // Another scheme, another port or another host is another origin.
+    for other in [
+        "http://mcp.tailnet.test/mcp",
+        "https://mcp.tailnet.test:8443/mcp",
+        "https://auth.example/token",
+    ] {
+        let mut response = get(&fetcher, other).await.unwrap();
+        assert_eq!(response.text().await.unwrap(), "fallback", "{other}");
+    }
+    assert_eq!(fallback.load(Ordering::SeqCst), 3);
+
+    // The default port is the origin's port, written or not.
+    for same in [
+        "https://mcp.tailnet.test/mcp",
+        "https://mcp.tailnet.test:443/mcp",
+        "https://MCP.tailnet.test/.well-known/oauth-protected-resource",
+    ] {
+        let error = get(&fetcher, same).await.unwrap_err();
+        assert!(
+            matches!(error, FetchError::Overlay { .. }),
+            "{same}: {error}"
+        );
+    }
+    assert_eq!(fallback.load(Ordering::SeqCst), 3);
+    assert!(overlay.requests().is_empty());
 }

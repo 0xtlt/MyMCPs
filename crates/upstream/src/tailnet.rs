@@ -1,11 +1,19 @@
 //! HTTP MCPs that reach their server through a Tailscale tailnet.
 //!
-//! An MCP whose `tailnet_id` is set sends everything through the tailnet: the
-//! MCP transport and every request of its OAuth flow. Before the first
-//! request the gateway checks that the tailnet can carry it, so that what an
-//! administrator reads is the reason (Tailscale is off, the tailnet was
-//! deleted, it needs a new sign-in, the host is not a device of it) and not
-//! "fetch failed".
+//! An MCP whose `tailnet_id` is set sends everything to its own server through
+//! the tailnet: the MCP transport and every request of its OAuth flow to that
+//! origin (scheme, host and port). Before the first request the gateway checks
+//! that the tailnet can carry it, so that what an administrator reads is the
+//! reason (Tailscale is off, the tailnet was deleted, it needs a new sign-in,
+//! the host is not a device of it) and not "fetch failed".
+//!
+//! The check is only for that message. What keeps the credentials of the MCP
+//! off the public network is that every later request to its origin requires
+//! the tailnet too: when the tailnet stops routing the host in the middle of a
+//! session (a subnet route is withdrawn, the device left), the request fails
+//! and is never sent anywhere else. Only the other origins of the OAuth flow,
+//! such as a provider on the internet, go to the public network, and only to
+//! public addresses.
 //!
 //! There is one [`OverlayNetwork`] per tailnet, kept by the [`Upstream`], so
 //! the connections to the devices of a tailnet are pooled across requests.
@@ -111,9 +119,11 @@ impl Upstream {
     ///
     /// It fails when the tailnet cannot carry them, see
     /// [`UpstreamError::Tailnet`]. The fetcher sends through the tailnet what
-    /// the tailnet routes. What it does not route goes to the public network
-    /// only: a tailnet MCP cannot be aimed at the network the instance runs
-    /// in.
+    /// the tailnet routes, and never anywhere else a request to the origin of
+    /// `url`: it fails when the tailnet stops routing that host, even after
+    /// this check. What the tailnet does not route for another origin goes to
+    /// the public network only: a tailnet MCP cannot be aimed at the network
+    /// the instance runs in.
     pub(crate) async fn tailnet_fetcher(
         &self,
         mcp: &Mcp,
@@ -174,7 +184,9 @@ impl Upstream {
         }
 
         let network = self.tailnet_network(tailnets, &tailnet);
-        Ok(Some(self.fetcher.public_only().through(&network)))
+        Ok(Some(
+            self.fetcher.public_only().through_requiring(&network, url),
+        ))
     }
 
     /// The network of a tailnet, the same one for every request so that its

@@ -449,8 +449,10 @@ impl Upstream {
             ));
         };
         let mcp_url = parse_http_url(http_url, "MCP URL")?;
-        // An MCP on a tailnet is in a private network: its whole flow goes
-        // through the tailnet, which carries what its devices serve.
+        // An MCP on a tailnet is in a private network: every request of its
+        // flow to its own origin goes through the tailnet, which carries what
+        // its devices serve, and fails when it stops routing that origin. The
+        // other origins (a provider on the internet) go to public addresses.
         if let Some(fetcher) = self.tailnet_fetcher(mcp, &mcp_url).await? {
             return Ok(OAuthEndpoints {
                 fetcher,
