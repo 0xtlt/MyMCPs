@@ -7,9 +7,17 @@
 //!
 //! The provider's token endpoint is held until the test lets it answer, so
 //! the order of events is the test's and no test waits for a delay.
+//!
+//! The same goes for the sign-in itself. An authorization carries the
+//! generation of the sign-in it began on and is refused once the MCP was moved
+//! or signed out since, even when it is back where it started, with the same
+//! client. And an edit that moves the MCP writes the sign-in it clears, so
+//! tokens that a code exchange saved after the edit read the row do not
+//! survive it.
 
 mod mcps_support;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -18,9 +26,13 @@ use http::StatusCode;
 use mcps_support::*;
 use mymcps_core::Timestamp;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, Tailnet, Team, User};
-use mymcps_net::CannedResponse;
+use mymcps_gateway::mcp_management::{ManagementActor, McpFields, McpRegistryManager};
+use mymcps_net::{AddressGuard, CannedResponse, Resolver};
+use mymcps_web::mcp_management::WebMcpRegistry;
+use mymcps_web::routes::mcps::assign_mcp_from_payload;
 use mymcps_web::testing::factories::{create_admin, create_mcp};
 use mymcps_web::testing::{TestApp, TestResponse};
+use mymcps_web::validators::mcp::{McpPayload, UPDATE_MCP_VALIDATOR};
 use serde_json::json;
 use tokio::sync::Notify;
 use url::Url;
@@ -130,10 +142,62 @@ struct Lab {
     mcp: Mcp,
 }
 
+/// Every name is public, and the lookup of one of them can be held: the
+/// registry tool looks up the new address of an MCP after it read the row and
+/// before it writes it.
+struct HeldName {
+    name: &'static str,
+    armed: AtomicBool,
+    arrived: Notify,
+    released: Notify,
+}
+
+impl HeldName {
+    fn new(name: &'static str) -> Arc<Self> {
+        Arc::new(Self {
+            name,
+            armed: AtomicBool::new(false),
+            arrived: Notify::new(),
+            released: Notify::new(),
+        })
+    }
+
+    fn arm(&self) {
+        self.armed.store(true, Ordering::SeqCst);
+    }
+
+    async fn reached(&self) {
+        tokio::time::timeout(WAIT, self.arrived.notified())
+            .await
+            .expect("the name was looked up");
+    }
+
+    fn release(&self) {
+        self.released.notify_one();
+    }
+}
+
+#[async_trait::async_trait]
+impl Resolver for HeldName {
+    async fn lookup(&self, hostname: &str) -> std::io::Result<Vec<std::net::IpAddr>> {
+        if hostname == self.name && self.armed.swap(false, Ordering::SeqCst) {
+            self.arrived.notify_one();
+            self.released.notified().await;
+        }
+        Ok(vec!["203.0.113.10".parse().unwrap()])
+    }
+}
+
 /// An MCP at `OLD_URL` that wants its authorization.
 async fn lab() -> Lab {
+    lab_resolving(public_names()).await
+}
+
+async fn lab_resolving(guard: AddressGuard) -> Lab {
     let gate = Arc::new(Gate::default());
-    let (app, calls) = app_answering(provider(gate.clone())).await;
+    let (fetcher, calls) = mock_fetch(provider(gate.clone()));
+    let app =
+        TestApp::with_upstream(|upstream| upstream.fetcher(fetcher).address_guard(guard)).await;
     let admin = create_admin(&app).await;
     let mcp = create_mcp(&app, admin.id, |mcp| {
         mcp.name = "Moving".into();
@@ -196,10 +260,14 @@ impl Lab {
 
     /// A tailnet of the team: an MCP is moved to it by name of its id.
     async fn tailnet(&self) -> Tailnet {
+        self.tailnet_named("pro").await
+    }
+
+    async fn tailnet_named(&self, name: &str) -> Tailnet {
         let mut tailnet = Tailnet {
             team_id: Team::ROOT_ID,
-            name: "pro".into(),
-            hostname: "mymcps-pro".into(),
+            name: name.into(),
+            hostname: format!("mymcps-{name}"),
             created_by: self.admin.id,
             ..Default::default()
         };
@@ -409,4 +477,180 @@ async fn still_saves_the_tokens_when_only_something_else_of_the_mcp_changed() {
         Some(CODE_ACCESS_TOKEN)
     );
     assert_eq!(saved.name, "Renamed meanwhile");
+}
+
+// A sign-in is refused once the MCP it began on is not the MCP anymore.
+
+/// The row as a second sign-in leaves it: the provider already knows the
+/// client, so it registers nothing new and keeps the one the first sign-in
+/// saved, whatever the MCP was moved to in between.
+async fn sign_in_again_like(lab: &Lab, first: &Mcp) {
+    let mut row = find_mcp(&lab.app, lab.mcp.id).await;
+    row.oauth_client_id = first.oauth_client_id.clone();
+    row.oauth_client_secret = first.oauth_client_secret.clone();
+    row.oauth_client_auth_method = first.oauth_client_auth_method.clone();
+    row.oauth_issuer = first.oauth_issuer.clone();
+    row.oauth_resource = first.oauth_resource.clone();
+    row.oauth_redirect_uri = first.oauth_redirect_uri.clone();
+    row.oauth_authorize_url = first.oauth_authorize_url.clone();
+    row.oauth_token_url = first.oauth_token_url.clone();
+    row.oauth_required = true;
+    row.save(&*lab.app.core.db).await.unwrap();
+}
+
+/// Sign-in A starts, the MCP is moved along `route` (`None` is the internet)
+/// with the same URL, a sign-in B with the same client is started, and A is
+/// finished. B did not clear anything, so nothing but A's own generation
+/// tells that the MCP is not where A began, not even when the route ends
+/// there.
+async fn finishing_a_sign_in_started_before_the_mcp_moved(route: &[Option<&str>]) {
+    let lab = lab().await;
+    let pro = lab.tailnet_named("pro").await;
+    let perso = lab.tailnet_named("perso").await;
+    let (start, state) = lab.start().await;
+    let first = find_mcp(&lab.app, lab.mcp.id).await;
+    for hop in route {
+        let tailnet = match hop {
+            Some("pro") => Some(pro.id),
+            Some("perso") => Some(perso.id),
+            _ => None,
+        };
+        lab.save(OLD_URL, tailnet).await;
+    }
+    sign_in_again_like(&lab, &first).await;
+    lab.calls.clear();
+
+    let callback = lab.callback(&start, &state).await;
+
+    assert_eq!(callback.status, StatusCode::FOUND, "{route:?}");
+    assert_eq!(callback.flashed("success"), None, "{route:?}");
+    let error = callback.flashed("error").expect("the callback says why");
+    assert!(
+        error.as_str().unwrap().contains("changed since"),
+        "{route:?}: {error}"
+    );
+    // The code was not even sent to the provider.
+    assert!(lab.calls.with_path(TOKEN).is_empty(), "{route:?}");
+    let saved = find_mcp(&lab.app, lab.mcp.id).await;
+    assert_eq!(saved.oauth_access_token, None, "{route:?}");
+    assert_eq!(saved.oauth_refresh_token, None, "{route:?}");
+    assert_ne!(saved.oauth_generation, first.oauth_generation, "{route:?}");
+}
+
+cases! {
+    refuses_a_sign_in_finished_after_the_mcp_moved_to_another_network: finishing_a_sign_in_started_before_the_mcp_moved(&[Some("perso")]);
+    refuses_a_sign_in_finished_after_the_mcp_went_through_two_networks: finishing_a_sign_in_started_before_the_mcp_moved(&[Some("pro"), Some("perso")]);
+    refuses_a_sign_in_finished_after_the_mcp_moved_and_came_back: finishing_a_sign_in_started_before_the_mcp_moved(&[Some("pro"), Some("perso"), None]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn finishes_a_sign_in_when_the_mcp_was_saved_without_moving() {
+    let lab = lab().await;
+    let (start, state) = lab.start().await;
+    // Saved as it is: neither moved nor signed out.
+    lab.save(OLD_URL, None).await;
+    let first = find_mcp(&lab.app, lab.mcp.id).await;
+    assert!(first.oauth_client_id.is_some());
+
+    let callback = lab.callback(&start, &state).await;
+
+    assert_eq!(callback.flashed("success"), Some(json!("OAuth connected")));
+}
+
+// An edit that moves the MCP clears its sign-in, and that is written, not
+// inferred from what the edit read.
+
+fn assert_signed_out_and_moved(lab: &Lab, before: &Mcp, after: &Mcp) {
+    for (column, value) in [
+        ("oauth_access_token", &after.oauth_access_token),
+        ("oauth_refresh_token", &after.oauth_refresh_token),
+        ("oauth_client_id", &after.oauth_client_id),
+        ("oauth_client_secret", &after.oauth_client_secret),
+        ("oauth_issuer", &after.oauth_issuer),
+        ("oauth_token_url", &after.oauth_token_url),
+        ("oauth_redirect_uri", &after.oauth_redirect_uri),
+    ] {
+        assert_eq!(value, &None, "{column} outlived the move");
+    }
+    assert_eq!(after.oauth_token_expires_at, None);
+    assert_eq!(after.oauth_token_type, None);
+    assert!(!after.oauth_required);
+    assert_eq!(after.http_url.as_deref(), Some(NEW_URL));
+    assert_ne!(after.oauth_generation, before.oauth_generation);
+    // The old address had them while it was the MCP's; the new one never.
+    for call in lab
+        .calls
+        .all()
+        .iter()
+        .filter(|call| call.url.starts_with(NEW_URL))
+    {
+        let authorization = call.header("authorization").unwrap_or_default();
+        assert!(!authorization.contains(CODE_ACCESS_TOKEN), "{}", call.url);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_form_that_moves_an_mcp_clears_tokens_saved_after_it_read_the_row() {
+    let lab = lab().await;
+    let upstream = &lab.app.state.upstream;
+    // The edit reads the row: no sign-in yet, every token is empty.
+    let read = find_mcp(&lab.app, lab.mcp.id).await;
+    let payload: McpPayload = UPDATE_MCP_VALIDATOR
+        .validate_as(&json!({
+            "name": "Moving",
+            "transport": "http",
+            "httpUrl": NEW_URL,
+            "authType": "auto",
+            "enabled": true,
+        }))
+        .unwrap();
+    let mut edited = read.clone();
+    assign_mcp_from_payload(upstream, &mut edited, &payload, Some(read.id))
+        .await
+        .map_err(|_| "refused")
+        .unwrap();
+
+    // A code is exchanged, and its tokens saved, before the edit writes.
+    let (start, state) = lab.start().await;
+    let callback = lab.callback(&start, &state).await;
+    assert_eq!(callback.flashed("success"), Some(json!("OAuth connected")));
+    let signed_in = find_mcp(&lab.app, lab.mcp.id).await;
+    assert!(signed_in.oauth_access_token.is_some());
+
+    edited.save(&*lab.app.core.db).await.unwrap();
+
+    assert_signed_out_and_moved(&lab, &read, &find_mcp(&lab.app, lab.mcp.id).await);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_registry_tool_that_moves_an_mcp_clears_tokens_saved_after_it_read_the_row() {
+    let held = HeldName::new("new.example");
+    let lab = lab_resolving(AddressGuard::new(held.clone())).await;
+    let read = find_mcp(&lab.app, lab.mcp.id).await;
+    let registry = WebMcpRegistry::new(lab.app.state.upstream.clone());
+    let actor = ManagementActor {
+        user_id: lab.admin.id,
+        team_id: Team::ROOT_ID,
+        access_token_id: 1,
+    };
+
+    // The tool has read the row, and looks up the new address before it writes.
+    held.arm();
+    let updating = tokio::spawn(async move {
+        let fields = McpFields {
+            url: Some(NEW_URL.into()),
+            ..Default::default()
+        };
+        registry.update(&actor, "moving", fields).await
+    });
+    held.reached().await;
+
+    let (start, state) = lab.start().await;
+    let callback = lab.callback(&start, &state).await;
+    assert_eq!(callback.flashed("success"), Some(json!("OAuth connected")));
+
+    held.release();
+    updating.await.unwrap().expect("the tool saved the move");
+
+    assert_signed_out_and_moved(&lab, &read, &find_mcp(&lab.app, lab.mcp.id).await);
 }

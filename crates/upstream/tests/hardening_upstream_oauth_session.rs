@@ -48,9 +48,9 @@ fn older_starts_make_room_so_the_pending_ones_fit_in_a_cookie_store_session() {
         Some("mcp_oauth:state-4")
     );
     assert_eq!(session.value("auth_web"), Some(json!(42)));
-    // Each weighs 672 bytes as the Node app counted them: two fit, three do not.
+    // Each weighs 687 bytes as the Node app counted them: two fit, three do not.
     assert_eq!(pending, ["mcp_oauth:state-3", "mcp_oauth:state-4"]);
-    assert_eq!(session.pending_bytes(), 2 * 672);
+    assert_eq!(session.pending_bytes(), 2 * 687);
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn short_starts_are_still_limited_by_their_number() {
             "mcp_oauth:s7"
         ]
     );
-    assert_eq!(session.pending_bytes(), 1315);
+    assert_eq!(session.pending_bytes(), 1390);
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn a_start_is_read_back_as_it_was_put_and_only_under_its_own_state() {
     assert_eq!(
         serde_json::to_string(&session.value("mcp_oauth:state-a").unwrap()).unwrap(),
         format!(
-            r#"{{"mcpId":1,"redirectUri":"{CALLBACK}","authorizationServerUrl":"https://auth.example.com","resource":"https://mcp.example.com/mcp","clientId":"client","codeVerifier":"{}","state":"state-a"}}"#,
+            r#"{{"mcpId":1,"redirectUri":"{CALLBACK}","authorizationServerUrl":"https://auth.example.com","resource":"https://mcp.example.com/mcp","clientId":"client","codeVerifier":"{}","state":"state-a","generation":0}}"#,
             "v".repeat(43)
         )
     );

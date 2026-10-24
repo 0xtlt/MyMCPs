@@ -309,4 +309,12 @@ pub const MIGRATIONS: &[Migration] = &[
             r#"create index `mcps_tailnet_id_index` on `mcps` (`tailnet_id`)"#,
         ],
     },
+    // Names the sign-in an MCP holds and the destination it is for, so that a
+    // sign-in started before the MCP was moved cannot finish after it.
+    Migration {
+        name: "database/migrations/1792850000000_add_oauth_generation_to_mcps",
+        statements: &[
+            r#"alter table `mcps` add column `oauth_generation` integer not null default '0'"#,
+        ],
+    },
 ];

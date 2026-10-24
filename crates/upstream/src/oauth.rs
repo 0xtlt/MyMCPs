@@ -435,6 +435,7 @@ fn forget_oauth_tokens(mcp: &mut Mcp) {
     mcp.oauth_token_expires_at = None;
     mcp.oauth_token_type = None;
     mcp.oauth_required = true;
+    mcp.renew_oauth_generation();
 }
 
 /// When an access token issued now stops being fresh.
@@ -947,6 +948,9 @@ impl Upstream {
         code: &str,
         granted_scope: Option<&str>,
     ) -> Result<(), UpstreamError> {
+        // Before anything is asked of the provider: a sign-in that began on
+        // another destination or sign-in has no code worth exchanging.
+        oauth.check_current(mcp)?;
         let client = self
             .client_information_from_mcp(mcp)
             .filter(|client| client.client_id == oauth.client_id);

@@ -32,6 +32,7 @@ pub static OAUTH_SESSION_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
         "authorizationServerUrl" => url(),
         "resource" => url().optional(),
         "clientId" => vine::string().min_length(1),
+        "generation" => vine::number().optional(),
     })
 });
 
@@ -120,6 +121,26 @@ mod tests {
         fields.remove("codeVerifier");
         fields.remove("resource");
         assert!(OAUTH_SESSION_VALIDATOR.validate(&builtin).is_ok());
+    }
+
+    #[test]
+    fn reads_the_generation_a_pending_authorization_began_on() {
+        let mut value = session();
+        value["generation"] = json!(4_503_599_627_370_495_i64);
+        assert_eq!(
+            OAUTH_SESSION_VALIDATOR.validate(&value).unwrap()["generation"],
+            4_503_599_627_370_495_i64
+        );
+        // One that was started before generations existed has none.
+        assert!(
+            OAUTH_SESSION_VALIDATOR
+                .validate(&session())
+                .unwrap()
+                .get("generation")
+                .is_none()
+        );
+        value["generation"] = json!("one");
+        assert!(OAUTH_SESSION_VALIDATOR.validate(&value).is_err());
     }
 
     #[test]

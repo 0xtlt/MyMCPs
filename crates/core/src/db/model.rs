@@ -92,6 +92,10 @@ macro_rules! model {
             /// The row as the database holds it, to tell which columns changed.
             #[doc(hidden)]
             pub stored: Option<Box<$name>>,
+            /// Columns the next `save` writes whether or not they differ
+            /// from `stored`. See [`Self::write_over`].
+            #[doc(hidden)]
+            pub forced: Vec<&'static str>,
         }
 
         impl<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> for $name {
@@ -101,6 +105,7 @@ macro_rules! model {
                     id: row.try_get("id")?,
                     $( $field: row.try_get(stringify!($field))?, )+
                     stored: None,
+                    forced: Vec::new(),
                 };
                 model.remember();
                 Ok(model)
@@ -114,7 +119,18 @@ macro_rules! model {
             fn remember(&mut self) {
                 let mut copy = self.clone();
                 copy.stored = None;
+                copy.forced = Vec::new();
                 self.stored = Some(Box::new(copy));
+                self.forced = Vec::new();
+            }
+
+            /// Have the next `save` write these columns, with the value they
+            /// hold now, even when it equals what was read. A column that
+            /// was read empty and is cleared looks unchanged, but the row may
+            /// have been given a value since: a value that is cleared on
+            /// purpose has to be written, not inferred from a comparison.
+            pub fn write_over(&mut self, columns: &[&'static str]) {
+                self.forced.extend_from_slice(columns);
             }
 
             /// Whether the row exists in the database, as far as this value knows.
@@ -202,7 +218,7 @@ macro_rules! model {
             where
                 E: sqlx::sqlite::SqliteExecutor<'e>,
             {
-                if true $( && self.$field == stored.$field )+ {
+                if self.forced.is_empty() $( && self.$field == stored.$field )+ {
                     return Ok(true);
                 }
                 let touched = self.clone();
@@ -211,7 +227,7 @@ macro_rules! model {
                 let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(concat!("update `", $table, "` set "));
                 let mut first = true;
                 $(
-                    if self.$field != stored.$field {
+                    if self.$field != stored.$field || self.forced.contains(&stringify!($field)) {
                         if !first {
                             query.push(", ");
                         }

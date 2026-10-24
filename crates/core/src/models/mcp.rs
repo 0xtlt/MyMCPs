@@ -124,6 +124,13 @@ model! {
         /// The tailnet of its team that an HTTP MCP reaches its upstream
         /// through. `None`: the direct network.
         pub tailnet_id: Option<i64>,
+        /// Names the sign-in this MCP holds, and the destination it is for.
+        /// It is replaced whenever the MCP is moved or its sign-in is
+        /// cleared ([`Mcp::renew_oauth_generation`]). A sign-in that is
+        /// started carries it, and its callback is refused once it is no
+        /// longer the MCP's: a destination that was left and come back to is
+        /// not the one the sign-in began on.
+        pub oauth_generation: i64,
     }
 }
 
@@ -154,6 +161,7 @@ pub struct McpOauthBasis {
     oauth_client_auth_method: Option<String>,
     oauth_access_token: Option<String>,
     oauth_refresh_token: Option<String>,
+    oauth_generation: i64,
 }
 
 impl McpOauthBasis {
@@ -164,6 +172,8 @@ impl McpOauthBasis {
         query.push_bind(self.transport);
         query.push(" and `auth_type` = ");
         query.push_bind(self.auth_type);
+        query.push(" and `oauth_generation` = ");
+        query.push_bind(self.oauth_generation);
         query.push(" and `tailnet_id` is ");
         query.push_bind(self.tailnet_id);
         for (column, value) in [
@@ -205,7 +215,15 @@ impl Mcp {
             oauth_client_auth_method: self.oauth_client_auth_method.clone(),
             oauth_access_token: self.oauth_access_token.clone(),
             oauth_refresh_token: self.oauth_refresh_token.clone(),
+            oauth_generation: self.oauth_generation,
         }
+    }
+
+    /// Name a new sign-in: the one that was started before is no longer this
+    /// MCP's. The value is drawn rather than counted, so that two edits that
+    /// each read the row and each clear it cannot end on the same one.
+    pub fn renew_oauth_generation(&mut self) {
+        self.oauth_generation = (rand::random::<u64>() >> 12) as i64;
     }
 
     /// Save what changed in this value if the row is still `basis`, in one

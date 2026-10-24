@@ -162,6 +162,70 @@ async fn save_writes_only_the_columns_that_changed() {
     ));
 }
 
+#[tokio::test]
+async fn a_column_cleared_on_purpose_is_written_even_when_the_row_was_read_empty() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let user = admin(db).await;
+    let mut mcp = mcp_of(db, Team::ROOT_ID, user.id, "Notion").await;
+
+    // An edit reads the row with no token and clears it, while another
+    // request saves one.
+    let mut edit = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    mcp.oauth_access_token = core.encrypt_secret(Some("saved-meanwhile"));
+    mcp.save(&**db).await.unwrap();
+
+    edit.oauth_access_token = None;
+    edit.name = "Renamed".into();
+    edit.save(&**db).await.unwrap();
+    let after = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    assert_eq!(after.name, "Renamed");
+    assert!(
+        after.oauth_access_token.is_some(),
+        "unchanged as far as the edit knows: not written"
+    );
+
+    // Cleared on purpose, it is written whatever the edit read.
+    mcp.oauth_access_token = None;
+    mcp.save(&**db).await.unwrap();
+    let mut edit = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    mcp.oauth_access_token = core.encrypt_secret(Some("saved-again"));
+    mcp.save(&**db).await.unwrap();
+    edit.oauth_access_token = None;
+    edit.oauth_refresh_token = None;
+    edit.write_over(&["oauth_access_token", "oauth_refresh_token"]);
+    edit.save(&**db).await.unwrap();
+    let after = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    assert_eq!(after.oauth_access_token, None);
+    // Written once: the next save of the same value is a save of nothing.
+    assert!(edit.forced.is_empty());
+}
+
+#[tokio::test]
+async fn a_secret_that_did_not_change_keeps_its_ciphertext() {
+    let (core, _dir) = core().await;
+    let saved = core.encrypt_secret(Some("client-secret"));
+    assert_eq!(
+        core.encrypt_secret_keeping(saved.as_deref(), Some("client-secret")),
+        saved
+    );
+    let changed = core.encrypt_secret_keeping(saved.as_deref(), Some("another-secret"));
+    assert_ne!(changed, saved);
+    assert_eq!(
+        core.decrypt_secret(changed.as_deref()).as_deref(),
+        Some("another-secret")
+    );
+    // Nothing saved, or another APP_KEY's ciphertext that cannot be read: encrypted anew.
+    for saved in [None, Some("not-ciphertext")] {
+        let fresh = core.encrypt_secret_keeping(saved, Some("client-secret"));
+        assert_eq!(
+            core.decrypt_secret(fresh.as_deref()).as_deref(),
+            Some("client-secret")
+        );
+    }
+    assert_eq!(core.encrypt_secret_keeping(saved.as_deref(), None), None);
+}
+
 #[test]
 fn slugs_and_lists_follow_the_node_models() {
     assert_eq!(

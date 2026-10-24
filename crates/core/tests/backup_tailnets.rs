@@ -166,10 +166,16 @@ async fn connect(path: &Path) -> SqliteConnection {
 
 #[tokio::test]
 async fn a_backup_made_before_tailnets_restores_with_none() {
-    // The database of the version before this one: every migration but the
-    // last, run as the migrator runs them.
-    let (last, earlier) = MIGRATIONS.split_last().unwrap();
-    assert!(last.name.ends_with("_add_tailnets"));
+    // The database of the version before tailnets: every migration before
+    // theirs, run as the migrator runs them.
+    let earlier = &MIGRATIONS[..MIGRATIONS
+        .iter()
+        .position(|migration| migration.name.ends_with("_add_tailnets"))
+        .unwrap()];
+    let later: Vec<&str> = MIGRATIONS[earlier.len()..]
+        .iter()
+        .map(|migration| migration.name)
+        .collect();
     let old_key = generate_app_key();
 
     let dir = tempfile::tempdir().unwrap();
@@ -239,16 +245,22 @@ async fn a_backup_made_before_tailnets_restores_with_none() {
     let target_dir = tempfile::tempdir().unwrap();
     let target = instance(target_dir.path()).await;
     let imported = restore(&target, &file).await;
-    assert_eq!(imported.migrated, [last.name]);
+    assert_eq!(imported.migrated, later);
 
     // The migration ran on the backup, as a batch after its own.
     let batches: Vec<(String, i64)> = sqlx::query_as(
-        "select `name`, `batch` from `adonis_schema` where `name` like '%add_tailnets' or `batch` > 1",
+        "select `name`, `batch` from `adonis_schema` where `batch` > 1 order by `id`",
     )
     .fetch_all(&*target.db)
     .await
     .unwrap();
-    assert_eq!(batches, [(last.name.to_string(), 2)]);
+    assert_eq!(
+        batches,
+        later
+            .iter()
+            .map(|name| (name.to_string(), 2))
+            .collect::<Vec<_>>()
+    );
 
     assert!(
         Tailnet::of_team(&*target.db, Team::ROOT_ID)

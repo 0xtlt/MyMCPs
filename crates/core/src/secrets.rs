@@ -12,6 +12,26 @@ pub fn encrypt_secret(encryption: &Encryption, value: Option<&str>) -> Option<St
         .map(|value| encryption.encrypt(value))
 }
 
+/// The ciphertext to save for `value` in a column that holds `saved`:
+/// `saved` itself while it is `value`, and a new encryption otherwise. A new
+/// encryption of the same secret is another string (each has its own IV), and
+/// whatever compares the column to what it read, such as an OAuth step that
+/// saves a renewed token only if the sign-in it started from is unchanged,
+/// takes it for a different secret.
+pub fn encrypt_secret_keeping(
+    encryption: &Encryption,
+    saved: Option<&str>,
+    value: Option<&str>,
+) -> Option<String> {
+    let saved = saved.filter(|saved| !saved.is_empty());
+    match (saved, value.filter(|value| !value.is_empty())) {
+        (Some(saved), Some(value)) if encryption.decrypt(saved).as_deref() == Some(value) => {
+            Some(saved.to_owned())
+        }
+        (_, value) => encrypt_secret(encryption, value),
+    }
+}
+
 /// Decrypt a secret column. Ciphertext that is corrupt, or was written with
 /// another APP_KEY, is treated as a missing secret.
 pub fn decrypt_secret(encryption: &Encryption, value: Option<&str>) -> Option<String> {

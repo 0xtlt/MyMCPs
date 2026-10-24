@@ -38,6 +38,16 @@ impl Core {
         crate::secrets::encrypt_secret(&self.encryption, value)
     }
 
+    /// Encrypt a secret column, keeping `saved` while it holds `value`: see
+    /// [`crate::secrets::encrypt_secret_keeping`].
+    pub fn encrypt_secret_keeping(
+        &self,
+        saved: Option<&str>,
+        value: Option<&str>,
+    ) -> Option<String> {
+        crate::secrets::encrypt_secret_keeping(&self.encryption, saved, value)
+    }
+
     /// Decrypt a secret column: see [`crate::secrets::decrypt_secret`].
     pub fn decrypt_secret(&self, value: Option<&str>) -> Option<String> {
         crate::secrets::decrypt_secret(&self.encryption, value)

@@ -179,11 +179,43 @@ fn assign_npm_environment(
 
 fn apply_secrets(core: &Core, mcp: &mut Mcp, payload: &McpPayload) {
     if let Some(bearer) = filled(&payload.auth_bearer) {
-        mcp.auth_bearer = core.encrypt_secret(Some(bearer));
+        mcp.auth_bearer = core.encrypt_secret_keeping(mcp.auth_bearer.as_deref(), Some(bearer));
     }
     if let Some(value) = filled(&payload.auth_header_value) {
-        mcp.auth_header_value = core.encrypt_secret(Some(value));
+        mcp.auth_header_value =
+            core.encrypt_secret_keeping(mcp.auth_header_value.as_deref(), Some(value));
     }
+}
+
+/// Every column of the sign-in that [`forget_oauth_connection`] empties.
+const OAUTH_CONNECTION_COLUMNS: &[&str] = &[
+    "oauth_authorize_url",
+    "oauth_token_url",
+    "oauth_scopes",
+    "oauth_client_id",
+    "oauth_client_secret",
+    "oauth_access_token",
+    "oauth_refresh_token",
+    "oauth_token_expires_at",
+    "oauth_issuer",
+    "oauth_resource",
+    "oauth_redirect_uri",
+    "oauth_client_auth_method",
+    "oauth_token_type",
+    "oauth_required",
+];
+
+/// The secrets entered for one destination, which a move forgets.
+const DESTINATION_SECRET_COLUMNS: &[&str] = &["auth_bearer", "auth_header_value"];
+
+/// Forget the sign-in, and name a new one, so that an authorization started
+/// before can no longer finish. The row is written with these columns
+/// emptied whatever the edit read: tokens a code exchange saved since would
+/// look unchanged to a comparison with an empty read, and stay.
+fn forget_oauth_connection(mcp: &mut Mcp) {
+    mcp.renew_oauth_generation();
+    mcp.write_over(OAUTH_CONNECTION_COLUMNS);
+    clear_oauth_connection(mcp);
 }
 
 fn clear_oauth_connection(mcp: &mut Mcp) {
@@ -203,8 +235,10 @@ fn clear_oauth_connection(mcp: &mut Mcp) {
     mcp.oauth_required = false;
 }
 
-/// Clear secrets that no longer apply to the selected auth type.
-fn clear_unused_auth_secrets(mcp: &mut Mcp) {
+/// Clear secrets that no longer apply to the selected auth type. `was_auto`:
+/// the MCP signed in with OAuth until this edit, which is when its sign-in
+/// is forgotten.
+fn clear_unused_auth_secrets(mcp: &mut Mcp, was_auto: bool) {
     if mcp.auth_type != McpAuthType::Bearer {
         mcp.auth_bearer = None;
     }
@@ -213,7 +247,11 @@ fn clear_unused_auth_secrets(mcp: &mut Mcp) {
         mcp.auth_header_value = None;
     }
     if mcp.auth_type != McpAuthType::Auto {
-        clear_oauth_connection(mcp);
+        if was_auto {
+            forget_oauth_connection(mcp);
+        } else {
+            clear_oauth_connection(mcp);
+        }
     }
 }
 
@@ -269,10 +307,11 @@ fn assign_oauth_application(
     if mcp.oauth_client_id.as_deref() != Some(client_id.as_str())
         || saved_secret.as_deref() != Some(client_secret.as_str())
     {
-        clear_oauth_connection(mcp);
+        forget_oauth_connection(mcp);
     }
     mcp.oauth_client_id = Some(client_id);
-    mcp.oauth_client_secret = core.encrypt_secret(Some(&client_secret));
+    mcp.oauth_client_secret =
+        core.encrypt_secret_keeping(mcp.oauth_client_secret.as_deref(), Some(&client_secret));
     Vec::new()
 }
 
@@ -360,7 +399,8 @@ fn assign_password_sign_in(
     };
 
     mcp.builtin_username = Some(username);
-    mcp.builtin_password = core.encrypt_secret(Some(&password));
+    mcp.builtin_password =
+        core.encrypt_secret_keeping(mcp.builtin_password.as_deref(), Some(&password));
     mcp.builtin_permissions = Some(
         sign_in
             .permissions
@@ -575,7 +615,7 @@ pub async fn assign_mcp_from_payload(
         || mcp.http_url != next_http_url
         || mcp.builtin_key != next_builtin_key;
     if oauth_server_changed {
-        clear_oauth_connection(mcp);
+        forget_oauth_connection(mcp);
     }
 
     // Saved secrets are write-only and were entered for one destination. They
@@ -586,6 +626,7 @@ pub async fn assign_mcp_from_payload(
         || http_origin(mcp.http_url.as_deref()) != http_origin(next_http_url.as_deref())
         || mcp.npm_package != next_npm_package;
     if credential_target_changed {
+        mcp.write_over(DESTINATION_SECRET_COLUMNS);
         mcp.auth_bearer = None;
         mcp.auth_header_value = None;
     }
@@ -616,6 +657,7 @@ pub async fn assign_mcp_from_payload(
     mcp.tool_timeout_seconds = payload
         .tool_timeout_seconds
         .filter(|_| transport != McpTransport::Builtin);
+    let was_auto = mcp.auth_type == McpAuthType::Auto;
     // Built-in MCPs sign in the one way their provider supports.
     mcp.auth_type = match transport {
         McpTransport::Builtin => McpAuthType::Auto,
@@ -626,7 +668,7 @@ pub async fn assign_mcp_from_payload(
         .clone()
         .filter(|_| mcp.auth_type == McpAuthType::Header);
     mcp.enabled = payload.enabled.unwrap_or(false);
-    clear_unused_auth_secrets(mcp);
+    clear_unused_auth_secrets(mcp, was_auto);
     apply_secrets(core, mcp, payload);
     assign_builtin_credentials(upstream, mcp, payload)?;
     Ok(())
@@ -1429,6 +1471,15 @@ pub async fn oauth_callback(
         session.flash("error", NOT_FOUND);
         return Ok(to_registry());
     };
+
+    // An authorization that began before the MCP was moved or signed out is
+    // not this MCP's to finish, and says nothing about the MCP as it is now:
+    // its status stays as it is.
+    if let Err(error) = oauth.check_current(&mcp) {
+        session.flash("error", error.to_string());
+        session.flash(EDITING_KEY, mcp.id);
+        return Ok(to_registry());
+    }
 
     let granted_scope = granted_scope_from_callback(query.get("scope"));
     let connected = match upstream
