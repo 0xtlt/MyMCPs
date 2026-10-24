@@ -1925,6 +1925,7 @@ dependencies = [
  "mymcps-mcp-auth",
  "mymcps-net",
  "mymcps-node",
+ "mymcps-tailnet",
  "mymcps-vine",
  "regex",
  "serde",

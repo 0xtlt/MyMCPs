@@ -17,6 +17,7 @@ mymcps-mcp.workspace = true
 mymcps-mcp-auth.workspace = true
 mymcps-builtin.workspace = true
 mymcps-node.workspace = true
+mymcps-tailnet.workspace = true
 tokio.workspace = true
 futures.workspace = true
 async-trait.workspace = true
