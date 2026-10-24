@@ -209,6 +209,14 @@ The network stays open: a package reaches whatever the server reaches, the serve
 
 The sandbox needs no privilege and works in a container without capabilities. It needs Linux 5.13 or later with Landlock enabled, which the kernels of current distributions are (Ubuntu 22.04, Debian 12 and later). The server says what it found when it starts: `npm MCPs run in a sandbox`, with the version of Landlock in use, or `npm MCPs cannot start` and the reason. A server that cannot sandbox a package does not start it. `NPM_SANDBOX=off` starts npm MCPs without a sandbox, with every right of the server: that is for development on another system than Linux, not for an instance other people use.
 
+## Tailscale tailnets
+
+A team can connect [Tailscale](https://tailscale.com/) tailnets, and let its HTTP MCPs reach their upstream through one, for servers that only answer inside it. The server joins a tailnet with `tailscaled`, the Tailscale daemon. The image holds it, copied from the official `tailscale/tailscale` image at a pinned version, and sets `TAILSCALED_BINARY` to it. A server run from source uses the `tailscaled` of its `PATH`, or the binary `TAILSCALED_BINARY` names. Without one, tailnets are off: `TAILSCALED_BINARY=off` turns them off on a host that has `tailscaled` too.
+
+By default a tailnet uses Tailscale's own control server. The daemon of a tailnet makes the requests its control server asks for (redirects, pings), which MyMCPs does not route, so a team cannot point it at a control server of its own unless the operator allows it: `TAILNET_CONTROL_URLS` is `any`, or a comma-separated list of origins such as `https://headscale.example.com`. The Connect dialog shows the **Control server** field only then. See [docs/tailnets.md](docs/tailnets.md).
+
+The tailnets of a team, and the MCPs that use them, are part of a [backup](docs/backup.md).
+
 ## Stack
 
 MyMCPs is one Rust binary: an [axum](https://github.com/tokio-rs/axum) server that renders its pages with [maud](https://maud.lambda.xyz/), stores its data in SQLite, speaks MCP with its own implementation of the protocol, and runs npm-based MCPs with [Node.js](https://nodejs.org/) in a sandbox of the kernel. Its pages need no JavaScript build. See [SECURITY.md](SECURITY.md) for the deployment security baseline and vulnerability reporting process.

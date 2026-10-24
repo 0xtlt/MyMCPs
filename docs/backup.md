@@ -7,6 +7,7 @@ A backup is one file that holds everything an instance stores, encrypted with a 
 - Users, with their password hashes, their teams and their roles, and pending invites. Their sign-in protection comes with them: the secret of their authenticator app, their recovery codes, and their passkeys.
 - The MCPs of every team, with their credentials: bearer tokens, header values, OAuth clients and connections, built-in MCP sign-ins and settings, and the environment of npm MCPs.
 - Access tokens and the OAuth connections of AI clients. Agents keep working with the tokens they already have.
+- The Tailscale tailnets of every team, and which of its HTTP MCPs use each.
 - Tool approval choices and requests, call logs, and the instance settings.
 
 It does not hold the files MyMCPs can make again: the installed packages and the sandboxes of npm MCPs, and files waiting in `builtin-uploads`. It does not hold your environment variables either: set `APP_URL`, `TRUST_PROXY` and the others on the new instance yourself.
@@ -49,7 +50,8 @@ The secret of an authenticator app is one of these credentials: the app keeps sh
 
 ## Versions
 
-- A backup from an older version imports into a newer one: its data is migrated first.
+- A backup from an older version imports into a newer one: its data is migrated first. One made before tailnets existed imports with none, and its MCPs keep using the direct network.
+- A tailnet of a backup that names a control server this instance does not allow (`TAILNET_CONTROL_URLS`, see [Tailnets](tailnets.md#control-servers)) is imported but not started.
 - A backup from a newer version is refused. Update the instance, then import again.
 - The TypeScript server and the Rust server write and read the same file.
 

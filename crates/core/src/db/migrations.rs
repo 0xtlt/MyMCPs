@@ -296,4 +296,17 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "database/migrations/1792749111897_add_tool_timeout_to_mcps_table",
         statements: &[r#"alter table `mcps` add column `tool_timeout_seconds` integer null"#],
     },
+    // The Tailscale tailnets a team connects, and the HTTP MCPs that reach
+    // their upstream through one. Deleting a team deletes its tailnets;
+    // deleting a tailnet leaves its MCPs, which go back to the direct
+    // network.
+    Migration {
+        name: "database/migrations/1792840156000_add_tailnets",
+        statements: &[
+            r#"create table `tailnets` (`id` integer not null primary key autoincrement, `team_id` integer not null, `name` varchar(120) not null, `control_url` varchar(2048) null, `hostname` varchar(63) not null, `created_by` integer not null, `created_at` datetime not null, `updated_at` datetime null, foreign key(`team_id`) references `teams`(`id`) on delete CASCADE)"#,
+            r#"create unique index `tailnets_team_id_name_unique` on `tailnets` (`team_id`, `name` collate nocase)"#,
+            r#"alter table `mcps` add column `tailnet_id` integer null references `tailnets`(`id`) on delete SET NULL"#,
+            r#"create index `mcps_tailnet_id_index` on `mcps` (`tailnet_id`)"#,
+        ],
+    },
 ];

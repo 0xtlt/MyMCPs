@@ -20,6 +20,7 @@ pub mod mcps;
 pub mod oauth_server;
 pub mod passkeys;
 pub mod settings;
+pub mod tailnets;
 pub mod teams;
 pub mod tokens;
 pub mod two_factor;
@@ -88,6 +89,7 @@ pub fn all() -> FeatureRoutes {
         oauth_server::routes(),
         passkeys::routes(),
         settings::routes(),
+        tailnets::routes(),
         teams::routes(),
         tokens::routes(),
         two_factor::routes(),

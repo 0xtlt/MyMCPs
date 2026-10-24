@@ -103,6 +103,9 @@ pub struct McpFields {
     /// The tool call timeout, in seconds. `Some(None)` goes back to the
     /// default.
     pub timeout_seconds: Option<Option<i64>>,
+    /// The name of the tailnet of the team the MCP is reached through.
+    /// `Some(None)` goes back to the internet.
+    pub tailnet: Option<Option<String>>,
 }
 
 impl fmt::Debug for McpFields {
@@ -124,6 +127,7 @@ impl fmt::Debug for McpFields {
             .field("header_value", &secret(&self.header_value))
             .field("enabled", &self.enabled)
             .field("timeout_seconds", &self.timeout_seconds)
+            .field("tailnet", &self.tailnet)
             .finish()
     }
 }
@@ -295,6 +299,11 @@ fn mcp_properties() -> Map<String, Value> {
             "type": "boolean",
             "description": "Whether tokens can use the MCP. A new MCP is enabled unless this says otherwise.",
         },
+        "tailnet": {
+            "type": ["string", "null"],
+            "maxLength": 40,
+            "description": "HTTP transport only: the name of a Tailscale tailnet of the team (shown as \"tailnet\" by mcp_registry_list), to reach the url through it: the host of the url is then a device or a subnet route of that tailnet, by its MagicDNS name. Null or an empty string goes back to the internet. Left out on an update keeps the saved network. The user connects tailnets on the Tailnets page of MyMCPs.",
+        },
         "timeout_seconds": {
             "type": ["integer", "null"],
             "minimum": 1,
@@ -447,6 +456,12 @@ fn fields_of(input: &Value) -> McpFields {
         header_name: text(input, "header_name"),
         header_value: text(input, "header_value"),
         enabled: input.get("enabled").and_then(Value::as_bool),
+        // Null, which is what a blank value comes as, goes back to the internet.
+        tailnet: match input.get("tailnet") {
+            Some(Value::Null) => Some(None),
+            Some(Value::String(name)) => Some(Some(name.clone())),
+            _ => None,
+        },
         timeout_seconds: match input.get("timeout_seconds") {
             Some(Value::Null) => Some(None),
             Some(seconds) => seconds.as_i64().map(Some),

@@ -16,6 +16,7 @@ mymcps-net.workspace = true
 mymcps-node.workspace = true
 mymcps-gateway.workspace = true
 mymcps-upstream.workspace = true
+mymcps-tailnet.workspace = true
 mymcps-builtin.workspace = true
 mymcps-strava.workspace = true
 mymcps-icloud-mail.workspace = true
@@ -57,6 +58,8 @@ test-util = ["mymcps-core/test-util"]
 mymcps-icloud-mail = { workspace = true, features = ["test-util"] }
 mymcps-google-ads = { workspace = true, features = ["test-util"] }
 mymcps-web = { path = ".", features = ["test-util"] }
+# The fake tailscaled and LocalAPI that the tests of the Tailnets page connect to.
+mymcps-tailnet = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true
 # A paused clock, for the tests of what a slow client is given up on.
 tokio = { workspace = true, features = ["test-util"] }

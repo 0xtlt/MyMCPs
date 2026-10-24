@@ -135,6 +135,7 @@ mod npm_update;
 mod oauth;
 mod session;
 mod shared;
+mod tailnet;
 pub mod validators;
 
 use std::collections::HashMap;
@@ -142,8 +143,9 @@ use std::sync::{Arc, Mutex};
 
 use mymcps_builtin::{BuiltinEnv, BuiltinRegistry};
 use mymcps_core::Core;
-use mymcps_net::{AddressGuard, Fetcher};
+use mymcps_net::{AddressGuard, Fetcher, OverlayNetwork};
 use mymcps_node::NodeRunner;
+use mymcps_tailnet::{Tailnets, TailnetsConfig};
 
 pub use error::UpstreamError;
 pub use http_client::{ConnectedHttpUpstream, UpstreamTool};
@@ -157,6 +159,7 @@ pub use session::{
     MAX_PENDING_OAUTH_START_BYTES, OauthSession, OauthSessionStore, OauthStart,
     clear_oauth_session, read_oauth_session, start_oauth_session,
 };
+pub use tailnet::TailnetStart;
 
 /// The gateway's side of every MCP it exposes. See the crate documentation.
 ///
@@ -179,6 +182,13 @@ pub struct Upstream {
     /// The update of the latest-tracking npm MCPs that is under way.
     pending_npm_updates: Arc<Mutex<Option<npm_update::PendingNpmUpdates>>>,
     npm_update_runtime: Option<Arc<dyn NpmUpdateRuntime>>,
+    /// The `tailscaled` of every tailnet a team connected, when the server
+    /// has a `tailscaled` to run (`TAILSCALED_BINARY`).
+    tailnets: Option<Tailnets>,
+    /// The network of each tailnet an MCP goes through, by tailnet id, with
+    /// the label it was made with: one per tailnet, so that its connections
+    /// are pooled.
+    tailnet_networks: Arc<Mutex<HashMap<i64, (String, OverlayNetwork)>>>,
 }
 
 impl Upstream {
@@ -199,7 +209,14 @@ impl Upstream {
             builtin_env: None,
             node: None,
             npm_update_runtime: None,
+            tailnets: None,
         }
+    }
+
+    /// The tailnets teams connect and HTTP MCPs reach their devices through,
+    /// or `None` when the server has no `tailscaled` to run.
+    pub fn tailnets(&self) -> Option<&Tailnets> {
+        self.tailnets.as_ref()
     }
 
     /// The guard that keeps addresses out of the network of the instance.
@@ -271,6 +288,7 @@ pub struct UpstreamBuilder {
     builtin_env: Option<BuiltinEnv>,
     node: Option<NodeRunner>,
     npm_update_runtime: Option<Arc<dyn NpmUpdateRuntime>>,
+    tailnets: Option<Option<Tailnets>>,
 }
 
 impl UpstreamBuilder {
@@ -306,7 +324,25 @@ impl UpstreamBuilder {
         self
     }
 
+    /// The tailnets, in place of the ones `TAILSCALED_BINARY` gives; `None`
+    /// turns them off.
+    pub fn tailnets(mut self, tailnets: Option<Tailnets>) -> Self {
+        self.tailnets = Some(tailnets);
+        self
+    }
+
     pub fn build(self) -> Arc<Upstream> {
+        let tailnets = self.tailnets.unwrap_or_else(|| {
+            self.core.config.tailscaled().map(|binary| {
+                Tailnets::new(TailnetsConfig {
+                    binary,
+                    // `Tailnets` makes a relative `DATA_DIR` (the default is
+                    // `tmp`) absolute: its daemons do not run where the
+                    // server does.
+                    data_dir: self.core.config.data_dir.clone(),
+                })
+            })
+        });
         let fetcher = self.fetcher.unwrap_or_default();
         let builtin_env = self.builtin_env.unwrap_or_else(|| {
             BuiltinEnv::new(Arc::clone(&self.core)).with_fetcher(fetcher.clone())
@@ -325,6 +361,8 @@ impl UpstreamBuilder {
             known_tool_counts: Arc::default(),
             pending_npm_updates: Arc::default(),
             npm_update_runtime: self.npm_update_runtime,
+            tailnets,
+            tailnet_networks: Arc::default(),
         })
     }
 }

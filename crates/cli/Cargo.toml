@@ -18,6 +18,7 @@ path = "src/main.rs"
 mymcps-core.workspace = true
 mymcps-web.workspace = true
 mymcps-upstream.workspace = true
+mymcps-tailnet.workspace = true
 mymcps-node.workspace = true
 mymcps-sandbox.workspace = true
 tokio.workspace = true

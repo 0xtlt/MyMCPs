@@ -29,6 +29,7 @@ use crate::routes::FeatureRoutes;
 use crate::routes::invites::{CREATED_INVITE_KEY, forwarded};
 use crate::routes::logs::{fragment_target, uncached};
 use crate::routes::settings::{PasswordCheck, confirm_current_password, wrong_current_password};
+use crate::routes::tailnets;
 use crate::session::Session;
 use crate::state::AppState;
 use crate::validators::route_params::record_id;
@@ -343,6 +344,9 @@ pub async fn destroy(
     }
 
     let mut transaction = state.core.db.begin().await?;
+    // Read with the write lock held: a tailnet connected before it is here,
+    // and none can be connected until the team is gone.
+    let before = tailnets::all_control_urls(&mut *transaction).await?;
     let mcps: i64 = sqlx::query_scalar("select count(*) from `mcps` where `team_id` = ?")
         .bind(team.id())
         .fetch_one(&mut *transaction)
@@ -352,10 +356,12 @@ pub async fn destroy(
     }
     team.team.delete(&mut *transaction).await?;
     transaction.commit().await?;
+    // Its tailnets went with it: their daemons leave the tailnets too.
+    let left = tailnets::discard_removed(&state, &before).await;
 
     // The next page is drawn in another team of theirs.
     session.forget(crate::auth::TEAM_KEY);
-    session.flash("success", "Team deleted");
+    session.flash("success", tailnets::with_logout_note("Team deleted", left));
     Ok(navigate(&headers, "/"))
 }
 
@@ -880,14 +886,20 @@ pub async fn destroy_user(
     }
 
     let mut transaction = state.core.db.begin().await?;
+    // Read with the write lock held, see `destroy`.
+    let before = tailnets::all_control_urls(&mut *transaction).await?;
     if !still_super_admin(&mut transaction, &actor).await? {
         return Ok(refuse(SUPER_ADMIN_REQUIRED));
     }
-    match Team::delete_account(&mut transaction, account.id).await? {
-        Ok(()) => transaction.commit().await?,
+    let left = match Team::delete_account(&mut transaction, account.id).await? {
+        Ok(()) => {
+            transaction.commit().await?;
+            // The teams the account was alone in went with it, tailnets included.
+            tailnets::discard_removed(&state, &before).await
+        }
         Err(AccountRemovalRefusal::LastSuperAdmin) => return Ok(refuse(LAST_SUPER_ADMIN)),
-    }
+    };
 
-    session.flash("success", "User deleted");
+    session.flash("success", tailnets::with_logout_note("User deleted", left));
     Ok(navigate(&headers, "/users"))
 }

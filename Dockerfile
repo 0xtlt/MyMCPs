@@ -1,9 +1,11 @@
 # Production image for self-hosted MyMCPs.
 #
 # Holds the `mymcps` server binary, and Node.js with its npm, so npm-transport
-# MCPs work out of the box (see crates/node). The server runs them in a
-# sandbox of the kernel (crates/sandbox) that needs no privilege: the
-# container can drop every capability, as docker-compose.yml does.
+# MCPs work out of the box (see crates/node), and `tailscaled`, which the
+# server starts for the Tailscale tailnets a team connects. The server runs
+# npm MCPs in a sandbox of the kernel (crates/sandbox) that needs no
+# privilege: the container can drop every capability, as docker-compose.yml
+# does.
 #
 # Build:  docker build -t mymcps .
 # Run:    docker run --rm -p 3333:3333 \
@@ -17,6 +19,12 @@
 # built on the Debian release of the runtime stage, whose C++ library the
 # binary loads.
 FROM node:24.22.0-trixie-slim@sha256:a6155384446670e9719bdc4fd0ebe4d4b29fb32a8d6aa523da3547a6cfbcf22c AS node
+
+# Official Tailscale image (multi-arch), for its `tailscaled` daemon. The
+# binary is a static Go program: it runs on the Debian runtime although the
+# image is built on Alpine. Only `tailscaled` is copied: not the `tailscale`
+# command, not `containerboot`.
+FROM tailscale/tailscale:v1.104.2@sha256:b11583ad2e93e4671128538c88cf11f460444a5d7e449311dd1933a400ab849d AS tailscale
 
 # ---------------------------------------------------------------------------
 # Compile the server
@@ -80,14 +88,17 @@ RUN --mount=type=cache,id=mymcps-cargo-registry,target=/usr/local/cargo/registry
 # ---------------------------------------------------------------------------
 FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 
-# NODE_VERSION must name the version in the node tag above; Dependabot only
-# edits the FROM line (crates/xtask/tests/container_image.rs checks it).
+# NODE_VERSION and TAILSCALE_VERSION must name the versions in the node and
+# tailscale tags above; Dependabot only edits the FROM lines
+# (crates/xtask/tests/container_image.rs checks them).
 ENV APP_ENV=production \
   HOST=0.0.0.0 \
   PORT=3333 \
   DATA_DIR=/app/tmp \
   NODE_BINARY=/usr/local/bin/node \
-  NODE_VERSION=24.22.0
+  NODE_VERSION=24.22.0 \
+  TAILSCALED_BINARY=/usr/local/bin/tailscaled \
+  TAILSCALE_VERSION=1.104.2
 
 # ca-certificates: the server verifies upstream MCPs and OAuth providers
 # against the system trust store. dumb-init: see ENTRYPOINT.
@@ -107,6 +118,7 @@ RUN apt-get update \
 # image, which also holds yarn and corepack.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscaled
 COPY --from=build /out/mymcps /usr/local/bin/mymcps
 
 WORKDIR /app

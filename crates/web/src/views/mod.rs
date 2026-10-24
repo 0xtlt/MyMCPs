@@ -14,6 +14,7 @@ pub mod mcps;
 pub mod oauth;
 pub mod settings;
 pub mod shell;
+pub mod tailnets;
 pub mod teams;
 pub mod tokens;
 pub mod two_factor;

@@ -3,7 +3,7 @@ use std::time::Duration;
 use mymcps_core::limiter::{Limiter, LimiterError};
 use mymcps_core::models::{
     AccessToken, ApprovalDecision, ApprovalRequest, ApprovalState, InstanceSetting, Invite, Mcp,
-    McpLogLevel, McpStatus, McpTransport, OauthClient, Team, TeamRole, User,
+    McpLogLevel, McpStatus, McpTransport, OauthClient, Tailnet, Team, TeamRole, User,
 };
 use mymcps_core::{Config, Core, Db, Timestamp};
 
@@ -716,4 +716,166 @@ async fn the_instance_always_keeps_a_super_admin() {
     );
     transaction.commit().await.unwrap();
     assert!(is_super_admin(grace.id).await);
+}
+
+async fn tailnet_of(db: &Db, team_id: i64, created_by: i64, name: &str) -> Tailnet {
+    let mut tailnet = Tailnet {
+        team_id,
+        name: name.into(),
+        hostname: format!("mymcps-{}", name.to_lowercase()),
+        created_by,
+        ..Default::default()
+    };
+    tailnet.insert(&**db).await.unwrap();
+    tailnet
+}
+
+#[tokio::test]
+async fn a_team_connects_tailnets_that_its_mcps_use() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let ada = admin(db).await;
+    let (bob, bob_team) = account(db, "bob@example.com", Some("Bob")).await;
+
+    let work = tailnet_of(db, Team::ROOT_ID, ada.id, "work").await;
+    let mut lab = tailnet_of(db, Team::ROOT_ID, ada.id, "Lab").await;
+    let other = tailnet_of(db, bob_team.id, bob.id, "work").await;
+    assert!(work.is_persisted() && work.id > 0);
+    assert!(work.created_at.to_string().len() > 10 && work.updated_at.is_some());
+    assert_eq!(work.control_url, None);
+
+    // Listed by team and by name, whatever the case; counted per team.
+    let names = |tailnets: Vec<Tailnet>| -> Vec<String> {
+        tailnets.into_iter().map(|tailnet| tailnet.name).collect()
+    };
+    assert_eq!(
+        names(Tailnet::of_team(&**db, Team::ROOT_ID).await.unwrap()),
+        ["Lab", "work"]
+    );
+    assert_eq!(
+        names(Tailnet::of_team(&**db, bob_team.id).await.unwrap()),
+        ["work"]
+    );
+    assert_eq!(
+        Tailnet::count_in_team(&**db, Team::ROOT_ID).await.unwrap(),
+        2
+    );
+    assert_eq!(Tailnet::count_in_team(&**db, bob_team.id).await.unwrap(), 1);
+    assert_eq!(Tailnet::count_in_team(&**db, 999).await.unwrap(), 0);
+
+    // Found by id in its own team only.
+    let found = Tailnet::find_in_team(&**db, Team::ROOT_ID, work.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.hostname, "mymcps-work");
+    assert!(
+        Tailnet::find_in_team(&**db, bob_team.id, work.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        Tailnet::find_in_team(&**db, Team::ROOT_ID, other.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // A name is unique in a team, and free in another.
+    let mut duplicate = Tailnet {
+        team_id: Team::ROOT_ID,
+        name: "work".into(),
+        hostname: "another".into(),
+        created_by: ada.id,
+        ..Default::default()
+    };
+    assert!(duplicate.insert(&**db).await.is_err());
+    // Whatever its case: lookups by name ignore it, so the index does too.
+    for name in ["WORK", "Work", "lab"] {
+        let mut variant = Tailnet {
+            team_id: Team::ROOT_ID,
+            name: name.into(),
+            hostname: "variant".into(),
+            created_by: ada.id,
+            ..Default::default()
+        };
+        let error = variant.insert(&**db).await.unwrap_err();
+        assert!(
+            error
+                .as_database_error()
+                .is_some_and(|error| error.is_unique_violation()),
+            "{name}: {error}"
+        );
+    }
+    assert_eq!(
+        Tailnet::count_in_team(&**db, Team::ROOT_ID).await.unwrap(),
+        2
+    );
+
+    // Only the columns that changed are written.
+    lab.control_url = Some("https://headscale.example.com".into());
+    lab.save(&**db).await.unwrap();
+    let lab = Tailnet::find(&**db, lab.id).await.unwrap().unwrap();
+    assert_eq!(
+        lab.control_url.as_deref(),
+        Some("https://headscale.example.com")
+    );
+    assert_eq!(lab.name, "Lab");
+
+    // MCPs reach their upstream through one tailnet, or none.
+    let mut tagged = mcp_of(db, Team::ROOT_ID, ada.id, "Wiki").await;
+    tagged.tailnet_id = Some(work.id);
+    tagged.save(&**db).await.unwrap();
+    let mut second = mcp_of(db, Team::ROOT_ID, ada.id, "Build").await;
+    second.tailnet_id = Some(work.id);
+    second.save(&**db).await.unwrap();
+    let direct = mcp_of(db, Team::ROOT_ID, ada.id, "Direct").await;
+    assert_eq!(direct.tailnet_id, None);
+    let direct = Mcp::find(&**db, direct.id).await.unwrap().unwrap();
+    assert_eq!(direct.tailnet_id, None);
+
+    let using = work.mcps(&**db).await.unwrap();
+    assert_eq!(
+        using
+            .iter()
+            .map(|mcp| mcp.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Build", "Wiki"]
+    );
+    assert_eq!(using[1].tailnet_id, Some(work.id));
+    assert_eq!(work.mcp_count(&**db).await.unwrap(), 2);
+    assert_eq!(lab.mcp_count(&**db).await.unwrap(), 0);
+    assert!(lab.mcps(&**db).await.unwrap().is_empty());
+
+    // A tailnet that does not exist cannot be used.
+    let mut stray = mcp_of(db, Team::ROOT_ID, ada.id, "Stray").await;
+    stray.tailnet_id = Some(9999);
+    assert!(stray.save(&**db).await.is_err());
+
+    // Deleting a tailnet leaves its MCPs, on the direct network.
+    sqlx::query("delete from `tailnets` where `id` = ?")
+        .bind(work.id)
+        .execute(&**db)
+        .await
+        .unwrap();
+    let wiki = Mcp::find(&**db, tagged.id).await.unwrap().unwrap();
+    assert_eq!(wiki.tailnet_id, None);
+    assert_eq!(wiki.name, "Wiki");
+
+    // Deleting a team deletes its tailnets, not those of other teams.
+    let mut kept = mcp_of(db, bob_team.id, bob.id, "Kept").await;
+    kept.tailnet_id = Some(other.id);
+    kept.save(&**db).await.unwrap();
+    sqlx::query("delete from `teams` where `id` = ?")
+        .bind(Team::ROOT_ID)
+        .execute(&**db)
+        .await
+        .unwrap();
+    assert_eq!(
+        Tailnet::count_in_team(&**db, Team::ROOT_ID).await.unwrap(),
+        0
+    );
+    assert_eq!(Tailnet::count_in_team(&**db, bob_team.id).await.unwrap(), 1);
+    assert_eq!(other.mcp_count(&**db).await.unwrap(), 1);
 }
