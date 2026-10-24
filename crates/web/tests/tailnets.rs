@@ -1,7 +1,7 @@
 //! The Tailnets page and the Network field of the MCP form: listing, connecting
 //! with either sign-in method (against the fake `tailscaled` and LocalAPI of
-//! `mymcps-tailnet`), what is refused, deleting, and what deleting a team or a
-//! user does to the daemons of its tailnets.
+//! `mymcps-tailnet`), what is refused, signing in again, deleting, and what
+//! deleting a team or a user does to the daemons of its tailnets.
 #![cfg(unix)]
 
 mod mcps_support;
@@ -700,6 +700,202 @@ async fn deletes_only_a_tailnet_of_the_team() {
         );
     }
     assert_eq!(tailnets_of(&lab.app, other_team.id).await.len(), 1);
+}
+
+// --- signing in again ---
+
+fn sign_in_again<'a>(
+    app: &'a TestApp,
+    user: &User,
+    id: impl std::fmt::Display,
+) -> mymcps_web::testing::TestRequest<'a> {
+    app.post(&format!("/tailnets/{id}/sign-in"))
+        .login_as(user)
+        .csrf()
+}
+
+#[tokio::test]
+async fn signs_a_tailnet_in_again_whatever_it_holds_and_shows_the_new_link() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let api = lab.daemon(pro.id, status_in("Stopped"));
+
+    // A tailnet that is not connected offers the way back, as a plain form.
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    let row = table_rows(&page)[0];
+    assert!(row.contains("badge badge--neutral\">Stopped"));
+    assert!(row.contains(&format!(
+        "<form method=\"post\" action=\"/tailnets/{}/sign-in\">",
+        pro.id
+    )));
+    assert!(row.contains("Sign in again</button>"));
+
+    let response = sign_in_again(&lab.app, &admin, pro.id).send().await;
+    assert_redirect(&response, "/tailnets");
+    assert_eq!(
+        flash(&response, "success").as_deref(),
+        Some("Use the Sign in link of the tailnet to finish")
+    );
+    // The node was asked, with its own name and no key, for a new login.
+    let starts = api.requests_to("/localapi/v0/start");
+    assert_eq!(starts.len(), 1);
+    let start = starts[0].json();
+    assert_eq!(start["UpdatePrefs"]["Hostname"], "mymcps-pro");
+    assert_eq!(start["UpdatePrefs"]["ControlURL"], "");
+    assert!(start.get("AuthKey").is_none());
+    assert_eq!(api.requests_to("/localapi/v0/login-interactive").len(), 1);
+    assert!(api.requests_to("/localapi/v0/logout").is_empty());
+
+    // The daemon then has a link: the row offers it, and still the way back,
+    // since a link that is shown may be one that expired.
+    api.set_status(needs_login());
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    let row = table_rows(&page)[0];
+    assert!(row.contains(&format!("href=\"{LOGIN_URL}\" target=\"_blank\"")));
+    assert!(row.contains("Sign in again</button>"));
+    assert_eq!(tailnets_of(&lab.app, Team::ROOT_ID).await.len(), 1);
+}
+
+#[tokio::test]
+async fn keeps_the_headscale_of_a_tailnet_when_it_signs_in_again() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    sqlx::query("update `tailnets` set `control_url` = ? where `id` = ?")
+        .bind("https://headscale.example.com/")
+        .bind(pro.id)
+        .execute(&*lab.app.core.db)
+        .await
+        .unwrap();
+    let api = lab.daemon(pro.id, status_in("NeedsLogin"));
+
+    let response = sign_in_again(&lab.app, &admin, pro.id).send().await;
+
+    assert_redirect(&response, "/tailnets");
+    let start = api.requests_to("/localapi/v0/start")[0].json();
+    assert_eq!(
+        start["UpdatePrefs"]["ControlURL"],
+        "https://headscale.example.com/"
+    );
+    assert_eq!(api.requests_to("/localapi/v0/login-interactive").len(), 1);
+}
+
+#[tokio::test]
+async fn does_not_sign_in_again_a_tailnet_that_is_connected_or_waits_for_an_admin() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let api = lab.daemon(pro.id, running_status());
+
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    assert!(!page.contains("Sign in again"));
+    assert!(!page.contains("/sign-in"));
+    for status in [
+        running_status(),
+        json!({ "Version": "1.104.2", "BackendState": "NeedsMachineAuth" }),
+    ] {
+        api.set_status(status);
+        let refused = sign_in_again(&lab.app, &admin, pro.id).send().await;
+        assert_redirect(&refused, "/tailnets");
+        assert_eq!(
+            flash(&refused, "error").as_deref(),
+            Some("pro does not need to sign in again")
+        );
+    }
+    assert!(api.requests_to("/localapi/v0/start").is_empty());
+    assert!(api.requests_to("/localapi/v0/login-interactive").is_empty());
+}
+
+#[tokio::test]
+async fn reports_a_daemon_that_cannot_sign_in_again() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let api = lab.daemon(pro.id, status_in("NeedsLogin"));
+    api.force("/localapi/v0/login-interactive", 500, "control is down");
+
+    let response = sign_in_again(&lab.app, &admin, pro.id).send().await;
+
+    assert_redirect(&response, "/tailnets");
+    let message = flash(&response, "error").unwrap();
+    assert!(
+        message.starts_with("Could not sign in again: "),
+        "{message}"
+    );
+    assert!(flash(&response, "success").is_none());
+}
+
+#[tokio::test]
+async fn signs_in_again_only_for_the_admins_of_the_team() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let member = create_member(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    let api = lab.daemon(pro.id, status_in("Stopped"));
+
+    let refused = lab
+        .app
+        .post(&format!("/tailnets/{}/sign-in", pro.id))
+        .csrf()
+        .send()
+        .await;
+    assert_redirect(&refused, "/login");
+    let refused = sign_in_again(&lab.app, &member, pro.id).send().await;
+    assert_redirect(&refused, "/");
+    // Nor without the token of the page.
+    let forged = lab
+        .app
+        .post(&format!("/tailnets/{}/sign-in", pro.id))
+        .login_as(&admin)
+        .send()
+        .await;
+    assert_ne!(forged.status, StatusCode::OK);
+    assert!(forged.flashed("success").is_none());
+    assert!(api.requests().is_empty());
+}
+
+#[tokio::test]
+async fn signs_in_again_only_a_tailnet_of_the_team() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    let other_team = create_team(&lab.app, "Other").await;
+    let theirs = lab.row(other_team.id, admin.id, "theirs").await;
+    let api = lab.daemon(theirs.id, status_in("Stopped"));
+
+    for id in [theirs.id.to_string(), "999".into(), "abc".into()] {
+        let refused = sign_in_again(&lab.app, &admin, &id).send().await;
+        assert_redirect(&refused, "/tailnets");
+        assert_eq!(
+            flash(&refused, "error").as_deref(),
+            Some("Tailnet not found"),
+            "{id}"
+        );
+    }
+    assert!(api.requests().is_empty());
+}
+
+#[tokio::test]
+async fn does_not_sign_in_again_when_tailscale_is_off() {
+    let app = TestApp::with_upstream(|upstream| upstream.tailnets(None)).await;
+    let admin = create_admin(&app).await;
+    let mut pro = Tailnet {
+        team_id: Team::ROOT_ID,
+        name: "pro".into(),
+        hostname: "mymcps-pro".into(),
+        created_by: admin.id,
+        ..Default::default()
+    };
+    pro.insert(&*app.core.db).await.unwrap();
+
+    let refused = sign_in_again(&app, &admin, pro.id).send().await;
+
+    assert_redirect(&refused, "/tailnets");
+    assert!(
+        flash(&refused, "error")
+            .unwrap()
+            .contains("Tailscale is off on this server")
+    );
 }
 
 // --- the Network field of the MCP form ---

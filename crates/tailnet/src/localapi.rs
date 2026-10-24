@@ -55,6 +55,9 @@ pub(crate) const LOCALAPI_HOST: &str = "local-tailscaled.sock";
 /// How long a status answer is reused.
 pub(crate) const STATUS_TTL: Duration = Duration::from_secs(2);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long `settled_status` waits for the daemon to leave `NoState`.
+const SETTLE_PROBES: usize = 40;
+const SETTLE_INTERVAL: Duration = Duration::from_millis(250);
 /// A first dial wakes up the tunnel to the peer: give it time.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(30);
 /// A tailnet of thousands of nodes answers a few megabytes.
@@ -249,6 +252,20 @@ impl LocalClient {
             .send(Method::GET, "/localapi/v0/status", None, REQUEST_TIMEOUT)
             .await?;
         serde_json::from_slice(&body).map_err(|error| Error::Protocol(format!("status: {error}")))
+    }
+
+    /// The status once the daemon has left `NoState`, which it does a moment
+    /// after `start`: the last one read when it has not by then.
+    pub(crate) async fn settled_status(&self) -> Result<Arc<Status>, Error> {
+        let mut status = self.status().await?;
+        for _ in 1..SETTLE_PROBES {
+            if !matches!(status.backend_state.as_str(), "NoState" | "") {
+                break;
+            }
+            tokio::time::sleep(SETTLE_INTERVAL).await;
+            status = self.status().await?;
+        }
+        Ok(status)
     }
 
     /// `POST /localapi/v0/start` with an `ipn.Options`.

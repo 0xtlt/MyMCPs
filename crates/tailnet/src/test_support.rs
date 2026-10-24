@@ -272,7 +272,8 @@ pub fn status_in(state: &str) -> Value {
 }
 
 /// A `tailscaled` that records how it was started and then sleeps: the first
-/// `fail_runs` runs exit with status 3 at once.
+/// `fail_runs` runs exit with status 3 at once. `--probe` exits at once and
+/// records nothing.
 ///
 /// Next to the script: `pid` (of the last run), `runs` (a count),
 /// `args.<run>`, `env.<run>`, `cwd.<run>`.
@@ -280,6 +281,7 @@ pub fn fake_tailscaled(dir: &Path, fail_runs: u32) -> PathBuf {
     std::fs::create_dir_all(dir).unwrap();
     let script = format!(
         r#"#!/bin/sh
+[ "$1" = "--probe" ] && exit 0
 here="$(dirname "$0")"
 n=$(cat "$here/runs" 2>/dev/null || echo 0)
 n=$((n + 1))
@@ -299,7 +301,31 @@ exec sleep 600
     let path = dir.join("tailscaled");
     std::fs::write(&path, script).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    wait_until_executable(&path);
     path
+}
+
+/// Runs the script once, until the system lets it. A process forked by a test
+/// that runs at the same time can still hold the file open for writing, and
+/// `exec` then fails with ETXTBSY ("Text file busy"): the daemon of a test
+/// would not start, or would start late. Once the script has run, no process
+/// holds it for writing any more, and none gets to.
+fn wait_until_executable(path: &Path) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        match std::process::Command::new(path).arg("--probe").status() {
+            Ok(_) => return,
+            Err(error) if std::time::Instant::now() < deadline => {
+                // Only ETXTBSY is worth waiting for: anything else is final.
+                assert!(
+                    error.kind() == std::io::ErrorKind::ExecutableFileBusy,
+                    "cannot run the fake tailscaled: {error}"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("cannot run the fake tailscaled: {error}"),
+        }
+    }
 }
 
 /// Polls `condition` until it holds, for at most `timeout`.

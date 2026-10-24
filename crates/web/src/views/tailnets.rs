@@ -29,6 +29,16 @@ pub struct TailnetRow {
     pub mcps: Vec<String>,
 }
 
+/// Whether a tailnet in this state may be signed in again: any that is not
+/// connected and does not wait for an admin. A link that is shown may have
+/// expired, which nothing tells from here: it does not hide the action.
+pub fn can_sign_in_again(state: &TailnetState) -> bool {
+    !matches!(
+        state,
+        TailnetState::Running { .. } | TailnetState::NeedsMachineAuth
+    )
+}
+
 /// How a tailnet is told apart in the list: a tone and a label.
 struct Standing {
     tone: &'static str,
@@ -92,6 +102,10 @@ impl TailnetRow {
             }) if is_web_link(url) => Some(url),
             _ => None,
         }
+    }
+
+    fn can_sign_in_again(&self) -> bool {
+        self.state.as_ref().is_some_and(can_sign_in_again)
     }
 
     /// Whether the tailnet is about to change by itself.
@@ -273,6 +287,13 @@ fn table_row(context: &PageContext, row: &TailnetRow) -> Markup {
                         // The page of the control server, which is not this site's.
                         a class="button button--secondary" href=(url.as_str()) target="_blank" rel="noopener noreferrer" { "Sign in" }
                     }
+                    @if row.can_sign_in_again() {
+                        // Works without the script: a plain post, answered by a redirect.
+                        form method="post" action=(format!("/tailnets/{}/sign-in", row.id)) {
+                            (context.csrf_field())
+                            button type="submit" class="button" aria-label=(format!("Sign {} in again", row.name)) { "Sign in again" }
+                        }
+                    }
                     form method="post" action=(format!("/tailnets/{}?_method=DELETE", row.id))
                         data-confirm=(format!("Delete {}?", row.name)) data-confirm-label="Delete" data-confirm-tone="critical"
                         data-confirm-title="Delete this tailnet" {
@@ -296,7 +317,7 @@ fn table(context: &PageContext, page: &TailnetsPage) -> Markup {
                             th scope="col" class="col-200" { "Status" }
                             th scope="col" { "Device" }
                             th scope="col" class="col-96" { "Used by" }
-                            th scope="col" class="col-160 cell-end" { "Actions" }
+                            th scope="col" class="col-240 cell-end" { "Actions" }
                         }
                     }
                     tbody { @for row in page.rows { (table_row(context, row)) } }
@@ -486,6 +507,37 @@ mod tests {
                 auth_url: Url::parse(hostile).ok(),
             });
             assert!(row.sign_in_url().is_none(), "{hostile}");
+        }
+    }
+
+    #[test]
+    fn offers_to_sign_in_again_unless_connected_or_waiting_for_an_admin() {
+        assert!(!row(TailnetState::NeedsMachineAuth).can_sign_in_again());
+        assert!(
+            !TailnetRow {
+                state: None,
+                ..row(TailnetState::Stopped)
+            }
+            .can_sign_in_again()
+        );
+        assert!(
+            !row(TailnetState::Running {
+                magic_dns_suffix: String::new(),
+                dns_name: String::new(),
+                addresses: Vec::new(),
+            })
+            .can_sign_in_again()
+        );
+        for state in [
+            TailnetState::Starting,
+            TailnetState::NeedsLogin { auth_url: None },
+            TailnetState::NeedsLogin {
+                auth_url: Url::parse("https://login.tailscale.com/a/abc").ok(),
+            },
+            TailnetState::Stopped,
+            TailnetState::Failed("x".into()),
+        ] {
+            assert!(row(state.clone()).can_sign_in_again(), "{state:?}");
         }
     }
 

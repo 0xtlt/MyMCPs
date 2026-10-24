@@ -21,9 +21,6 @@ use crate::supervisor::{Backoff, Process, Supervisor, SupervisorConfig};
 const MAX_SOCKET_PATH: usize = 103;
 /// How long `connect` waits for a fresh daemon to open its socket.
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
-/// How long `connect` waits for the daemon to say whether it needs a login.
-const LOGIN_PROBES: usize = 40;
-const LOGIN_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Where the daemons live.
 #[derive(Debug, Clone)]
@@ -189,6 +186,45 @@ impl Tailnets {
     /// URL, which `state` reports as `NeedsLogin`. Calling it again on a node
     /// that is logged in applies the new options without a new login.
     pub async fn connect(&self, id: i64, options: ConnectOptions) -> Result<(), Error> {
+        let (options, client) = self.start_node(id, options).await?;
+        if options.auth_key.is_some() {
+            return Ok(());
+        }
+        // A node that has no key is logged out; one that has is already on its
+        // way, and asking for a login would throw its key away.
+        if client.settled_status().await?.backend_state == "NeedsLogin" {
+            client.login_interactive().await?;
+        }
+        Ok(())
+    }
+
+    /// Asks the daemon for a new interactive login, whatever the node holds: a
+    /// sign-in link that expired, a node key that expired, a node restored
+    /// without its key. The new link is in `state` a moment later, as
+    /// `NeedsLogin`. Any `auth_key` of the options is ignored: this is the way
+    /// back for a tailnet that has no usable key, not a new way to join.
+    pub async fn sign_in_again(&self, id: i64, options: ConnectOptions) -> Result<(), Error> {
+        let (_, client) = self
+            .start_node(
+                id,
+                ConnectOptions {
+                    auth_key: None,
+                    ..options
+                },
+            )
+            .await?;
+        // The login is asked for once the daemon has said where it stands: a
+        // request made while it is still loading its state is lost.
+        client.settled_status().await?;
+        client.login_interactive().await
+    }
+
+    /// Validates the options, waits for the daemon, and sends it the options.
+    async fn start_node(
+        &self,
+        id: i64,
+        options: ConnectOptions,
+    ) -> Result<(ConnectOptions, LocalClient), Error> {
         let options = validate(&options)?;
         let (client, _) = self.lookup(id).ok_or(Error::NotRunning(id))?;
         self.wait_ready(id, &client).await?;
@@ -199,20 +235,7 @@ impl Tailnets {
             .start(&body)
             .await
             .map_err(|error| error.scrubbed(secret))?;
-        if options.auth_key.is_some() {
-            return Ok(());
-        }
-        // A node that has no key is logged out; one that has is already on its
-        // way, and asking for a login would throw its key away.
-        for _ in 0..LOGIN_PROBES {
-            let status = client.status().await?;
-            match status.backend_state.as_str() {
-                "NeedsLogin" => return client.login_interactive().await,
-                "NoState" | "" => tokio::time::sleep(LOGIN_PROBE_INTERVAL).await,
-                _ => return Ok(()),
-            }
-        }
-        Ok(())
+        Ok((options, client))
     }
 
     /// Waits for the daemon of `id` to answer on its socket.

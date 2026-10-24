@@ -660,13 +660,15 @@ A native popover: it opens without JavaScript. app.js adds arrow keys and the fa
 warning banner ("Tailscale is off on this server"), and one `.card` with a table or an empty
 state. It uses what exists: the table has the columns Name (`.cell-stack` with the Headscale host
 in `.cell-sub`), Status, Device (`.cell-code`), Used by and Actions (`.col-200`, `.col-96`,
-`.col-160`).
+`.col-240`).
 
 ```html
 <td><div class="cell-stack"><span><span class="badge badge--warning">Needs sign-in</span></span>
   <span class="cell-sub">Waiting for the sign-in link</span></div></td>
 <td class="cell-end"><span class="row-actions">
   <a class="button button--secondary" href="https://login.tailscale.com/a/…" target="_blank" rel="noopener noreferrer">Sign in</a>
+  <form method="post" action="/tailnets/3/sign-in">…
+    <button type="submit" class="button" aria-label="Sign pro in again">Sign in again</button></form>
   <form method="post" action="/tailnets/3?_method=DELETE" data-confirm="Delete pro?" data-confirm-label="Delete" data-confirm-tone="critical">…
     <button type="submit" class="button" aria-label="Delete pro">Delete</button></form></span></td>
 ```
@@ -681,6 +683,10 @@ in `.cell-sub`), Status, Device (`.cell-code`), Used by and Actions (`.col-200`,
   waits on the server uses it rather than the script.
 - The sign-in link comes from the control server, so only an `http` or `https` address is
   linked, in a new tab.
+- "Sign in again" is a plain form post, with no `data-async` or `data-confirm`, answered by a
+  redirect: it works without the script. It is shown whenever the tailnet is not Connected and
+  does not wait for an approval, next to the link when there is one (a link that is shown may
+  have expired). The server refuses it for a tailnet that is connected.
 - The table is the only view: a team has at most 5 tailnets, so there is no pagination, and
   under 768px it scrolls inside its card like any table.
 - The dialog "Connect a tailnet" is a form in a `[data-fragment]` like the MCP dialogs. Its sign-in

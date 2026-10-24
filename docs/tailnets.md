@@ -26,12 +26,18 @@ A team connects up to 5 tailnets. The page refreshes every 5 seconds while a tai
 | Status | Meaning |
 | --- | --- |
 | Starting | `tailscaled` is starting, or has not answered yet. |
-| Needs sign-in | The device must sign in: select **Sign in**. The link of the control server is only good for a while; if it stops working, delete the tailnet and connect it again. |
+| Needs sign-in | The device must sign in: select **Sign in**. The link of the control server is only good for a while; if it stops working, select **Sign in again** for a new one. |
 | Needs approval | The device signed in and waits for an admin to approve it in the admin console of your tailnet. |
 | Connected | The device is in the tailnet. Its name is shown in **Device**. |
-| Stopped | The device is logged in and switched off. |
-| Error | `tailscaled` cannot start or keeps exiting. The row says why. |
+| Stopped | The device is logged in and switched off. Select **Sign in again** to bring it back. |
+| Error | `tailscaled` cannot start or keeps exiting. The row says why. **Sign in again** tries once more, and asks for a new sign-in. |
 | Unavailable | Tailscale is off on this server. |
+
+## Sign in again
+
+A tailnet that is not **Connected** has a way back that keeps its name and the MCPs that use it: **Sign in again** on its row, for an owner or an admin. Use it when the sign-in link expired or does not work, when the key of the device expired, when the tailnet came with an imported backup, or when it is **Stopped** or in **Error**. It is not offered while the device is **Connected** or waits for an approval.
+
+Select it, then **Sign in** on the row once the new link shows up (a few seconds), and approve the device as for a new tailnet. The control server, the name of the device and the MCPs of the tailnet do not change. The connections the MCPs kept through the tailnet end, and are opened again when they are next used. A device that signed in with an auth key signs in with a link this time: the key was used once and is not kept.
 
 ## Choose it on an MCP
 
@@ -67,7 +73,7 @@ Give the device a tag, such as `tag:mymcps`, and allow it the servers and ports 
 }
 ```
 
-Then generate the auth key with the tag `tag:mymcps`. A tagged device has no key expiry. A device signed in as a person expires like the others (180 days by default), and the row goes back to **Needs sign-in**: disable the key expiry of the device in the admin console, or use a tag.
+Then generate the auth key with the tag `tag:mymcps`. A tagged device has no key expiry. A device signed in as a person expires like the others (180 days by default), and the row goes back to **Needs sign-in**: select **Sign in again** for a new link, then disable the key expiry of the device in the admin console, or use a tag.
 
 For a subnet route, `dst` is the address and port behind the router (`192.168.1.0/24:8080`), and the router must advertise the route and have it approved in the admin console.
 

@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 use axum::Router;
 use axum::extract::{OriginalUri, Path, State};
 use axum::response::Response;
-use axum::routing::{delete, get};
+use axum::routing::{delete, get, post};
 use futures::future::join_all;
 use http::HeaderMap;
 use mymcps_core::models::{Mcp, Tailnet};
@@ -31,7 +31,8 @@ use crate::validators::tailnet::{
 };
 use crate::views::shell::PageContext;
 use crate::views::tailnets::{
-    ConnectForm, FORM_ERROR, TailnetRow, TailnetsPage, connect_fragment, tailnets_page,
+    ConnectForm, FORM_ERROR, TailnetRow, TailnetsPage, can_sign_in_again, connect_fragment,
+    tailnets_page,
 };
 
 /// How many tailnets a team connects. Each one is a `tailscaled` process.
@@ -54,7 +55,8 @@ pub fn routes() -> FeatureRoutes {
         admin: Router::new()
             .route("/tailnets", get(index).post(store))
             .route("/tailnets/new", get(new))
-            .route("/tailnets/{id}", delete(destroy)),
+            .route("/tailnets/{id}", delete(destroy))
+            .route("/tailnets/{id}/sign-in", post(sign_in_again)),
         ..Default::default()
     }
 }
@@ -459,6 +461,83 @@ pub async fn destroy(
     }
     session.flash("success", "Tailnet deleted");
     Ok(navigate(&headers, &list(&uri)))
+}
+
+/// `POST /tailnets/{id}/sign-in`: the way back for a tailnet that is not
+/// connected and cannot be signed in with what it holds (a link that expired,
+/// a node key that expired, a node restored from a backup, a daemon that was
+/// stopped). The node is asked for a new interactive login, and the page then
+/// shows its new link. A plain post, answered by a redirect, as the other
+/// actions of a row.
+pub async fn sign_in_again(
+    State(state): State<AppState>,
+    context: PageContext,
+    session: Session,
+    OriginalUri(uri): OriginalUri,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Response, AppError> {
+    let team = context.current_team()?;
+    let back = |kind: &str, message: &str| {
+        session.flash(kind, message);
+        navigate(&headers, &list(&uri))
+    };
+    let tailnet = match tailnet_id(&id) {
+        Some(id) => Tailnet::find_in_team(&*state.core.db, team.id(), id).await?,
+        None => None,
+    };
+    let Some(tailnet) = tailnet else {
+        return Ok(back("error", NOT_FOUND));
+    };
+    let Some(tailnets) = state.upstream.tailnets() else {
+        return Ok(back("error", TAILSCALE_OFF));
+    };
+    // A node that is connected, or that waits for an admin, has nothing to
+    // sign in to: a new login would only put it out of the tailnet.
+    if let Some(current) = state_of(Some(tailnets), tailnet.id).await
+        && !can_sign_in_again(&current)
+    {
+        return Ok(back(
+            "error",
+            &format!("{} does not need to sign in again", tailnet.name),
+        ));
+    }
+
+    let control_url = tailnet
+        .control_url
+        .as_deref()
+        .and_then(|url| Url::parse(url).ok());
+    let signed = async {
+        tailnets.ensure_running(tailnet.id).await?;
+        tailnets
+            .sign_in_again(
+                tailnet.id,
+                ConnectOptions {
+                    hostname: tailnet.hostname.clone(),
+                    control_url,
+                    auth_key: None,
+                },
+            )
+            .await
+    }
+    .await;
+    if let Err(error) = signed {
+        let message = describe(&error, None);
+        tracing::warn!(
+            tailnet = tailnet.id,
+            "could not sign a tailnet in again: {message}"
+        );
+        return Ok(back(
+            "error",
+            &format!("Could not sign in again: {message}"),
+        ));
+    }
+    // The connections an MCP kept through the old login end with it.
+    state.upstream.forget_tailnet(tailnet.id);
+    Ok(back(
+        "success",
+        "Use the Sign in link of the tailnet to finish",
+    ))
 }
 
 /// The ids of every tailnet of the instance, to tell afterwards which a

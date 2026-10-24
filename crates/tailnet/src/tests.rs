@@ -90,6 +90,11 @@ fn alive(pid: &str) -> bool {
     rustix::process::test_kill_process(pid).is_ok()
 }
 
+/// Whether the fake daemon has run, by the count it writes in `runs`.
+fn has_run(runs: &std::path::Path) -> bool {
+    std::fs::read_to_string(runs).is_ok_and(|runs| runs.trim().parse::<u32>().is_ok_and(|n| n > 0))
+}
+
 fn options(hostname: &str, key: Option<&str>) -> ConnectOptions {
     ConnectOptions {
         hostname: hostname.to_owned(),
@@ -461,12 +466,62 @@ mod connect {
     }
 
     #[tokio::test]
+    async fn sign_in_again_asks_for_a_login_whatever_the_node_holds() {
+        for state in [
+            status_in("NeedsLogin"),
+            status_in("Stopped"),
+            running_status(),
+        ] {
+            let fixture = Fixture::new(0);
+            let api = fixture.with_api(1, state).await;
+
+            // A key is not a way back: it is not sent, nor kept.
+            fixture
+                .tailnets
+                .sign_in_again(1, options("mymcps", Some("tskey-auth-x")))
+                .await
+                .unwrap();
+
+            let starts = api.requests_to("/localapi/v0/start");
+            assert_eq!(starts.len(), 1);
+            let body = starts[0].json();
+            assert!(body.get("AuthKey").is_none(), "{body}");
+            assert_eq!(body["UpdatePrefs"]["WantRunning"], true);
+            assert_eq!(body["UpdatePrefs"]["Hostname"], "mymcps");
+            assert_eq!(api.requests_to("/localapi/v0/login-interactive").len(), 1);
+            assert!(api.requests_to("/localapi/v0/logout").is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn sign_in_again_needs_a_running_daemon_and_valid_options() {
+        let fixture = Fixture::new(0);
+        let error = fixture
+            .tailnets
+            .sign_in_again(1, options("mymcps", None))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::NotRunning(1)), "{error}");
+
+        let api = fixture.with_api(2, status_in("NeedsLogin")).await;
+        let error = fixture
+            .tailnets
+            .sign_in_again(2, options("not a hostname", None))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::InvalidOptions(_)), "{error}");
+        assert!(api.requests().is_empty());
+    }
+
+    #[tokio::test]
     async fn it_waits_for_the_socket_of_a_daemon_that_is_still_starting() {
         let fixture = Fixture::new(0);
         fixture.tailnets.ensure_running(1).await.unwrap();
         let socket = fixture.socket(1);
+        // The socket appears once the daemon has started, not after a delay.
+        let started = fixture.bin("runs");
         let late = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(400)).await;
+            assert!(eventually(PATIENCE, || has_run(&started)).await);
             FakeLocalApi::bind(&socket, status_in("NeedsLogin"))
         });
 
@@ -625,10 +680,13 @@ mod remove {
         let directory = fixture.tailnet_dir(1);
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(directory.join("tailscaled.state"), "{}").unwrap();
-        // The fake LocalAPI appears once the (fake) daemon is up.
+        assert!(fixture.tailnets.handle(1).is_none());
+        // The fake LocalAPI appears once the (fake) daemon is up: it is the
+        // daemon that records its start, not the clock, that says so.
         let socket = fixture.socket(1);
+        let started = fixture.bin("runs");
         let late = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert!(eventually(PATIENCE, || has_run(&started)).await);
             FakeLocalApi::bind(&socket, running_status())
         });
 
