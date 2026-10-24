@@ -20,7 +20,9 @@ use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
 use mymcps_core::Db;
-use mymcps_core::models::{AccessToken, McpAuthType, McpTransport, Team};
+use mymcps_core::models::{
+    AccessToken, DEFAULT_TOOL_TIMEOUT_SECONDS, McpAuthType, McpTransport, Team,
+};
 use mymcps_vine as vine;
 use serde_json::{Map, Value, json};
 
@@ -98,6 +100,9 @@ pub struct McpFields {
     pub header_name: Option<String>,
     pub header_value: Option<String>,
     pub enabled: Option<bool>,
+    /// The tool call timeout, in seconds. `Some(None)` goes back to the
+    /// default.
+    pub timeout_seconds: Option<Option<i64>>,
 }
 
 impl fmt::Debug for McpFields {
@@ -118,6 +123,7 @@ impl fmt::Debug for McpFields {
             .field("header_name", &self.header_name)
             .field("header_value", &secret(&self.header_value))
             .field("enabled", &self.enabled)
+            .field("timeout_seconds", &self.timeout_seconds)
             .finish()
     }
 }
@@ -289,6 +295,17 @@ fn mcp_properties() -> Map<String, Value> {
             "type": "boolean",
             "description": "Whether tokens can use the MCP. A new MCP is enabled unless this says otherwise.",
         },
+        "timeout_seconds": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": McpTransport::Http.max_tool_timeout_seconds(),
+            "description": format!(
+                "How long a tool call of the MCP waits for its answer, in seconds: at most {} for an HTTP MCP, {} for an npm MCP. Null goes back to the default, {} seconds. Left out on an update keeps the saved value.",
+                McpTransport::Http.max_tool_timeout_seconds().unwrap_or_default(),
+                McpTransport::Npm.max_tool_timeout_seconds().unwrap_or_default(),
+                DEFAULT_TOOL_TIMEOUT_SECONDS,
+            ),
+        },
     }) else {
         unreachable!("a JSON object literal");
     };
@@ -430,6 +447,11 @@ fn fields_of(input: &Value) -> McpFields {
         header_name: text(input, "header_name"),
         header_value: text(input, "header_value"),
         enabled: input.get("enabled").and_then(Value::as_bool),
+        timeout_seconds: match input.get("timeout_seconds") {
+            Some(Value::Null) => Some(None),
+            Some(seconds) => seconds.as_i64().map(Some),
+            None => None,
+        },
     }
 }
 

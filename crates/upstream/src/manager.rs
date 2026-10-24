@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
 use mymcps_core::redaction::sanitize_mcp_diagnostic;
+use mymcps_mcp::client::ClientError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -128,27 +129,44 @@ impl Upstream {
 
     /// Call a tool of an MCP and return its result as the MCP gave it: a
     /// result with `isError` is a result, not an error.
+    ///
+    /// An HTTP or npm MCP has [`Mcp::tool_timeout`] to answer the call, after
+    /// it connected or started. Without an answer by then the call fails with
+    /// [`UpstreamError::ToolTimeout`].
     pub async fn call_tool(
         &self,
         mcp: &mut Mcp,
         tool_name: &str,
         arguments: Option<Map<String, Value>>,
     ) -> Result<Value, UpstreamError> {
+        let timeout = mcp.tool_timeout();
+        let timed_out = |transport| UpstreamError::ToolTimeout { transport, timeout };
         match mcp.transport {
             McpTransport::Builtin => Ok(self.call_builtin_tool(mcp, tool_name, arguments).await?),
             McpTransport::Http => {
                 let connected = self.connect_http_upstream(mcp).await?;
                 let result = connected
                     .client
-                    .call_tool(tool_name, Some(arguments.unwrap_or_default()))
+                    .call_tool_within(tool_name, Some(arguments.unwrap_or_default()), timeout)
                     .await;
                 connected.close().await;
-                Ok(result?)
+                result.map_err(|error| match &error {
+                    ClientError::Mcp(answer) if answer.is_timeout_after(timeout) => {
+                        timed_out(McpTransport::Http)
+                    }
+                    _ => error.into(),
+                })
             }
-            McpTransport::Npm => Ok(self
+            McpTransport::Npm => self
                 .node
                 .call_tool(mcp, tool_name, arguments.unwrap_or_default())
-                .await?),
+                .await
+                .map_err(|error| match error.mcp_error() {
+                    Some(answer) if answer.is_timeout_after(timeout) => {
+                        timed_out(McpTransport::Npm)
+                    }
+                    _ => error.into(),
+                }),
         }
     }
 

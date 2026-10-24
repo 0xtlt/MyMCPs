@@ -690,6 +690,79 @@ async fn updates_only_what_it_is_given_and_keeps_the_secrets() {
 }
 
 #[tokio::test]
+async fn sets_how_long_a_tool_call_waits_and_keeps_it_when_not_given() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    bearer_mcp(&gateway, &admin).await;
+
+    let result = call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "timeout_seconds": 240 }),
+    )
+    .await;
+    assert_eq!(result["mcp"]["timeout_seconds"], 240);
+    assert_eq!(
+        mcp_named(&gateway, "docs").await.tool_timeout_seconds,
+        Some(240)
+    );
+
+    // Another change leaves it as it is.
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "description": "New" }),
+    )
+    .await;
+    assert_eq!(
+        mcp_named(&gateway, "docs").await.tool_timeout_seconds,
+        Some(240)
+    );
+
+    for (timeout, refusal) in [
+        (
+            json!(301),
+            "Invalid timeout_seconds: A remote MCP waits at most 300 seconds for a tool call",
+        ),
+        (
+            json!(0),
+            "timeout_seconds must be a whole number of seconds, 1 or more, or null for the default",
+        ),
+        (
+            json!("240"),
+            "timeout_seconds must be a whole number of seconds, 1 or more, or null for the default",
+        ),
+    ] {
+        let refused = call_refused(
+            &gateway,
+            &manager,
+            "mcp_registry_update",
+            json!({ "slug": "docs", "timeout_seconds": timeout }),
+        )
+        .await;
+        assert!(refused.contains(refusal), "{refused}");
+    }
+    assert_eq!(
+        mcp_named(&gateway, "docs").await.tool_timeout_seconds,
+        Some(240)
+    );
+
+    // Null goes back to the default.
+    let result = call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "timeout_seconds": null }),
+    )
+    .await;
+    assert_eq!(result["mcp"]["timeout_seconds"], 60);
+    assert_eq!(mcp_named(&gateway, "docs").await.tool_timeout_seconds, None);
+}
+
+#[tokio::test]
 async fn clears_the_secrets_when_the_origin_changes_and_says_so() {
     let gateway = gateway().await;
     let admin = create_admin(&gateway).await;

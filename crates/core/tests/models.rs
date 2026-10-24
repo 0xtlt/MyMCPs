@@ -145,8 +145,10 @@ async fn save_writes_only_the_columns_that_changed() {
     assert_eq!(updated_at, "2020-01-01 00:00:00");
 
     mcp.set_npm_args_list(&["--flag".to_string(), "value".to_string()]);
+    mcp.tool_timeout_seconds = Some(240);
     mcp.save(&**db).await.unwrap();
     let reloaded = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    assert_eq!(reloaded.tool_timeout_seconds, Some(240));
     assert_eq!(reloaded.npm_args.as_deref(), Some("[\"--flag\",\"value\"]"));
     assert_eq!(reloaded.npm_args_list(), ["--flag", "value"]);
     assert!(reloaded.updated_at.unwrap() > Timestamp::parse_sql("2020-01-01 00:00:00").unwrap());
@@ -194,6 +196,34 @@ fn slugs_and_lists_follow_the_node_models() {
     assert_eq!(client.redirect_uri_list(), ["http://localhost:1/callback"]);
     assert!(client.grant_type_list().is_empty());
     assert_eq!(client.response_type_list(), ["code"]);
+}
+
+#[test]
+fn a_tool_call_waits_the_timeout_of_its_mcp_within_what_its_transport_allows() {
+    let timeout = |transport: McpTransport, seconds: Option<i64>| {
+        Mcp {
+            transport,
+            tool_timeout_seconds: seconds,
+            ..Default::default()
+        }
+        .tool_timeout()
+        .as_secs()
+    };
+    // Nothing saved waits the default.
+    assert_eq!(timeout(McpTransport::Http, None), 60);
+    assert_eq!(timeout(McpTransport::Npm, None), 60);
+    assert_eq!(timeout(McpTransport::Http, Some(240)), 240);
+    assert_eq!(timeout(McpTransport::Npm, Some(5)), 5);
+    // A remote server only holds a connection open; an npm package is a
+    // process of this server, which waits less.
+    assert_eq!(McpTransport::Http.max_tool_timeout_seconds(), Some(300));
+    assert_eq!(McpTransport::Npm.max_tool_timeout_seconds(), Some(120));
+    assert_eq!(McpTransport::Builtin.max_tool_timeout_seconds(), None);
+    // A row saved with more, or with nothing sensible, is held to the rules.
+    assert_eq!(timeout(McpTransport::Http, Some(3600)), 300);
+    assert_eq!(timeout(McpTransport::Npm, Some(300)), 120);
+    assert_eq!(timeout(McpTransport::Http, Some(0)), 60);
+    assert_eq!(timeout(McpTransport::Npm, Some(-5)), 60);
 }
 
 #[tokio::test]

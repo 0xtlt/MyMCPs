@@ -290,4 +290,10 @@ pub const MIGRATIONS: &[Migration] = &[
             r#"create index `passkeys_user_id_index` on `passkeys` (`user_id`)"#,
         ],
     },
+    // How long a tool call of an MCP waits for its answer, in seconds. Null
+    // keeps the default of 60 seconds.
+    Migration {
+        name: "database/migrations/1792749111897_add_tool_timeout_to_mcps_table",
+        statements: &[r#"alter table `mcps` add column `tool_timeout_seconds` integer null"#],
+    },
 ];

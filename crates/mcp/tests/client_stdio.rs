@@ -525,6 +525,40 @@ async fn closes_when_the_child_writes_a_line_longer_than_the_read_buffer() {
 }
 
 #[tokio::test]
+async fn a_tool_call_waits_the_timeout_it_is_given_instead_of_the_clients() {
+    let directory = tempfile::tempdir().unwrap();
+    let script = SERVER.replace(
+        "    *'\"method\":\"tools/call\"'*)",
+        "    *'\"method\":\"tools/call\"'*) : ;;\n    *nothing*)",
+    );
+    let transport = StdioClientTransport::new(
+        shell(&script)
+            .cwd(directory.path())
+            .stderr(StdioStderr::Null),
+    );
+    // The client would wait a minute.
+    let client = Client::new(Implementation::new("test-client", "1.0.0"));
+    client.connect(transport.clone()).await.unwrap();
+
+    let started = std::time::Instant::now();
+    let timeout = Duration::from_millis(200);
+    let error = client
+        .call_tool_within("describe", None, timeout)
+        .await
+        .unwrap_err();
+    assert!(started.elapsed() < Duration::from_secs(10));
+    let ClientError::Mcp(error) = error else {
+        panic!("not an MCP error: {error}");
+    };
+    assert_eq!(error.to_string(), "MCP error -32001: Request timed out");
+    assert!(error.is_timeout_after(timeout));
+    assert!(!error.is_timeout_after(Duration::from_secs(60)));
+    // An error the server answers with the same code is not a timeout of the client.
+    assert!(!mymcps_mcp::McpError::new(-32001, "Request timed out").is_timeout_after(timeout));
+    client.close().await;
+}
+
+#[tokio::test]
 async fn times_out_a_request_the_child_never_answers() {
     let directory = tempfile::tempdir().unwrap();
     let script = SERVER.replace(

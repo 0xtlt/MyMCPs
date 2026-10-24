@@ -94,6 +94,10 @@ An agent that can call a tool can call it wrongly. For any MCP, built-in or conn
 
 The page you approve on is written by MyMCPs from the call itself, never by the agent. For a built-in tool it says what would change, with the current value beside the new one: "Change the daily budget of the campaign "Spring sale" from €2.50 to €250.00". For a tool of a connected MCP it lists the exact arguments beside the description the MCP gives of its tool. An approval covers one call with those exact arguments, is used once, and expires after 24 hours. Open requests are listed under **Approvals**. See [docs/tool-approvals.md](docs/tool-approvals.md).
 
+### Tool call timeouts
+
+A tool call waits 60 seconds for its answer, then fails and tells the agent so. Some tools take longer on purpose, a tool that waits for another agent to finish for one: set **Tool call timeout** in the MCP's dialog. An HTTP MCP may wait up to 300 seconds, since the server only holds a connection open meanwhile. An npm MCP may wait up to 120 seconds, since its package runs on your server for the whole call. Built-in MCPs have no such setting: each request to their service has a timeout of its own. The AI client that calls MyMCPs has its own limit as well.
+
 ## How to deploy to my Coolify
 
 This repository includes a production Docker image, a Compose service, and a `coolify.json` profile.
@@ -196,6 +200,7 @@ A package is code written by someone else, and on an instance with open registra
 - A package reads the files it was installed with and the system's, and reads and writes one directory of its own. The database, the key, `.env` and the files of other MCPs are refused, whoever owns them.
 - It starts no other process, sends a signal to none but itself, opens no Unix socket, and changes the mode or the owner of no file by its path.
 - A process holds at most 2 GiB of memory and 4,096 open files, and cannot take the user the server runs as past 4,096 threads on the host.
+- A tool call keeps its process for the **Tool call timeout** of the MCP at most, 120 seconds or less, after which the process is stopped.
 - `npm` installs a package under the same sandbox, runs none of its scripts, and can write nothing but the directory it installs into.
 
 Every sandboxed process reads the directories of the system, such as `/usr`. Keep the application and its data directory (`DATA_DIR`) out of them, as the image does with `/app`: a server installed under one starts no npm MCP and says why.

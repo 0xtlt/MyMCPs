@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 
 use maud::{Markup, html};
-use mymcps_core::models::{McpAuthType, McpStatus, McpTransport};
+use mymcps_core::models::{DEFAULT_TOOL_TIMEOUT_SECONDS, McpAuthType, McpStatus, McpTransport};
 use mymcps_vine::ValidationError;
 use serde_json::{Map, Value};
 use url::Url;
@@ -41,6 +41,8 @@ pub struct FormValues {
     pub npm_version: String,
     pub npm_args: String,
     pub npm_env: Vec<EnvRow>,
+    /// Seconds, as typed. Blank waits the default.
+    pub tool_timeout_seconds: String,
     pub builtin_key: String,
     pub oauth_client_id: String,
     pub oauth_client_secret: String,
@@ -70,6 +72,7 @@ impl Default for FormValues {
             npm_version: String::new(),
             npm_args: String::new(),
             npm_env: Vec::new(),
+            tool_timeout_seconds: String::new(),
             builtin_key: String::new(),
             oauth_client_id: String::new(),
             oauth_client_secret: String::new(),
@@ -155,6 +158,10 @@ impl FormValues {
                     value: String::new(),
                 })
                 .collect(),
+            tool_timeout_seconds: mcp
+                .tool_timeout_seconds
+                .map(|seconds| seconds.to_string())
+                .unwrap_or_default(),
             builtin_key: mcp.builtin_key.clone().unwrap_or_default(),
             oauth_client_id: mcp.oauth_client_id.clone().unwrap_or_default(),
             builtin_username: mcp.builtin_username.clone().unwrap_or_default(),
@@ -207,6 +214,7 @@ impl FormValues {
             npm_version: text(input, "npmVersion"),
             npm_args: text(input, "npmArgs"),
             npm_env,
+            tool_timeout_seconds: text(input, "toolTimeoutSeconds"),
             builtin_key: text(input, "builtinKey"),
             oauth_client_id: text(input, "oauthClientId"),
             oauth_client_secret: text(input, "oauthClientSecret"),
@@ -752,6 +760,8 @@ fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup 
             }
         }
 
+        (tool_timeout_field(prefix, form))
+
         fieldset class="field-group" {
             legend class="field-group__label" { "Authentication" }
             div class="option-cards" {
@@ -789,6 +799,44 @@ fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup 
                 has_header_value,
                 "The saved value is not sent to a different server. Enter the value for this one.",
             ).render())
+        }
+    }
+}
+
+/// How long a tool call may wait for its answer. The limit depends on the
+/// transport, so the help line follows the choice of the page.
+fn tool_timeout_field(prefix: &str, form: &McpForm) -> Markup {
+    let id = format!("{prefix}-tool-timeout");
+    let help_id = format!("{id}-help");
+    let error = form.error("toolTimeoutSeconds");
+    let error_id = format!("{id}-error");
+    let described_by = match error {
+        Some(_) => format!("{error_id} {help_id}"),
+        None => help_id.clone(),
+    };
+    let http = form.values.transport == McpTransport::Http;
+    let max = |transport: McpTransport| transport.max_tool_timeout_seconds().unwrap_or_default();
+    html! {
+        div class="field" {
+            label class="field__label" for=(id) { "Tool call timeout " (optional_mark()) }
+            // A whole number of seconds. The unit follows the value inside the field.
+            label class="input-group" {
+                input class="input-group__control" id=(id) name="toolTimeoutSeconds" type="number" inputmode="numeric"
+                    min="1" max=(max(McpTransport::Http)) step="1" placeholder=(DEFAULT_TOOL_TIMEOUT_SECONDS)
+                    value=[(!form.values.tool_timeout_seconds.is_empty()).then_some(&form.values.tool_timeout_seconds)]
+                    aria-invalid=[error.map(|_| "true")] aria-describedby=(described_by);
+                span class="input-group__unit" { "seconds" }
+            }
+            @if let Some(message) = error { p class="field__error" id=(error_id) { (message) } }
+            p class="field__help" id=(help_id) {
+                "How long a tool call waits for its answer. Blank waits " (DEFAULT_TOOL_TIMEOUT_SECONDS) " seconds. "
+                span data-show-when="transport=http" hidden[!http] {
+                    "At most " (max(McpTransport::Http)) " for a remote server."
+                }
+                span data-show-when="transport=npm" hidden[http] {
+                    "At most " (max(McpTransport::Npm)) ": the package runs on this server for the whole call."
+                }
+            }
         }
     }
 }
