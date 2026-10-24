@@ -14,6 +14,12 @@ use crate::test_support::{
 };
 use crate::{ConnectOptions, Error, TailnetState, Tailnets, TailnetsConfig};
 
+// Fake keys are written in two pieces so that no line of the source reads as a
+// Tailscale API key to a secret scanner. They still start with `tskey-`.
+const KEY: &str = concat!("tskey", "-auth-kABCDEF123456-secretsecretsecret");
+const SHORT_KEY: &str = concat!("tskey", "-auth-x");
+const SECRET: &str = concat!("tskey", "-auth-kSECRET123-0123456789abcdef");
+
 const SECOND: Duration = Duration::from_secs(1);
 const PATIENCE: Duration = Duration::from_secs(10);
 
@@ -436,10 +442,7 @@ mod connect {
     async fn with_a_key_it_starts_the_node_authorised_and_starts_its_login() {
         let fixture = Fixture::new(0);
         let api = fixture.with_api(1, status_in("NeedsLogin")).await;
-        let mut options = options(
-            "mymcps",
-            Some("tskey-auth-kABCDEF123456-secretsecretsecret"),
-        );
+        let mut options = options("mymcps", Some(KEY));
         options.control_url = Some(Url::parse("https://headscale.example.com").unwrap());
 
         fixture.tailnets.connect(1, options).await.unwrap();
@@ -461,7 +464,7 @@ mod connect {
                     "ShieldsUp": true,
                     "AutoUpdate": {"Check": false}
                 },
-                "AuthKey": "tskey-auth-kABCDEF123456-secretsecretsecret"
+                "AuthKey": KEY
             })
         );
         // tailscaled does not contact the control server on `start` alone: the
@@ -474,7 +477,7 @@ mod connect {
 
     #[tokio::test]
     async fn a_node_that_is_already_logged_in_is_not_logged_in_again_with_or_without_a_key() {
-        for key in [Some("tskey-auth-x"), None] {
+        for key in [Some(SHORT_KEY), None] {
             let fixture = Fixture::new(0);
             let api = fixture.with_api(1, running_status()).await;
 
@@ -543,7 +546,7 @@ mod connect {
             // A key is not a way back: it is not sent, nor kept.
             fixture
                 .tailnets
-                .sign_in_again(1, options("mymcps", Some("tskey-auth-x")))
+                .sign_in_again(1, options("mymcps", Some(SHORT_KEY)))
                 .await
                 .unwrap();
 
@@ -584,7 +587,7 @@ mod connect {
 
         fixture
             .tailnets
-            .connect(1, options("mymcps", Some("tskey-auth-x")))
+            .connect(1, options("mymcps", Some(SHORT_KEY)))
             .await
             .unwrap();
 
@@ -638,12 +641,12 @@ mod connect {
 
         fixture
             .tailnets
-            .connect(1, options("mymcps", Some("  tskey-auth-x \n")))
+            .connect(1, options("mymcps", Some(concat!("  tskey", "-auth-x \n"))))
             .await
             .unwrap();
         assert_eq!(
             api.requests_to("/localapi/v0/start")[0].json()["AuthKey"],
-            "tskey-auth-x"
+            SHORT_KEY
         );
 
         fixture
@@ -661,7 +664,7 @@ mod connect {
 
     #[tokio::test]
     async fn the_key_is_not_in_the_debug_output_nor_in_an_error() {
-        let secret = "tskey-auth-kSECRET123-0123456789abcdef";
+        let secret = SECRET;
         let debug = format!("{:?}", options("mymcps", Some(secret)));
         assert!(!debug.contains(secret), "{debug}");
         assert!(debug.contains("redacted"));

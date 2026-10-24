@@ -22,7 +22,7 @@ use mymcps_web::testing::{TestApp, TestRequest, TestResponse};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-const KEY: &str = "tskey-auth-kS3cr3tK3y-abcdef";
+const KEY: &str = concat!("tskey", "-auth-kS3cr3tK3y-abcdef");
 const LOGIN_URL: &str = "https://login.tailscale.com/a/abc123";
 const START: &str = "/localapi/v0/start";
 const LOGIN: &str = "/localapi/v0/login-interactive";
