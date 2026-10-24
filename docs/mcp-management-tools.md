@@ -27,8 +27,8 @@ The gateway checks the permission at every request, not when the connection was 
 | Tool | What it does |
 | --- | --- |
 | `mcp_registry_list` | Lists every MCP of the team, the disabled ones included, with its slug, status and sign-in. |
-| `mcp_registry_create` | Adds an HTTP MCP: name, description, URL, sign-in (`auto`, `bearer`, `header`), and whether it is enabled. It is tested once saved, as on the page. |
-| `mcp_registry_update` | Changes an MCP, named by its slug. What is left out keeps its saved value, secrets included. For an npm MCP: its name, description and whether it is enabled. |
+| `mcp_registry_create` | Adds an HTTP MCP: name, description, URL, sign-in (`auto`, `bearer`, `header`), whether it is enabled, and how long a tool call waits (`timeout_seconds`, 60 when left out, 300 at most). It is tested once saved, as on the page. |
+| `mcp_registry_update` | Changes an MCP, named by its slug. What is left out keeps its saved value, secrets included; `timeout_seconds: null` goes back to 60 seconds. For an npm MCP: its name, description, whether it is enabled, and its tool call timeout, 120 seconds at most. |
 | `mcp_registry_delete` | Deletes an MCP, named by its slug. |
 | `mcp_registry_test` | Tests the connection, as **Test connection** does, and answers the status, the error, and whether the MCP waits for OAuth. |
 | `mcp_registry_auth_link` | Gives the link that connects an MCP that signs in with OAuth. |
@@ -57,7 +57,7 @@ The agent cannot sign in to an MCP's provider for you. `mcp_registry_auth_link` 
 
 An npm MCP runs the code of a package on your server. These tools wait for nobody to approve what they do, so they never run code: `mcp_registry_create` refuses `transport: "npm"` and every `npm_*` argument, and `mcp_registry_update` refuses to switch an MCP to npm and to change the package, the version, the arguments or the environment variables of an npm MCP. The agent is told to ask you to do it on the **MCPs** page. The sandbox is not what stops it: on macOS and Windows it exists only with `NPM_SANDBOX=off`, which is no sandbox at all.
 
-The environment is held back with the package: an environment variable can name the address a package sends its key to, so changing one is changing where the keys the package holds go. What the agent can still do with an npm MCP is list it, rename it, change its description, enable or disable it, test it, and delete it. The tool approvals of **MCPs** are not used for this: they hold the call of a tool of an MCP, and show the arguments of the call to the person who decides, which here would be the secrets.
+The environment is held back with the package: an environment variable can name the address a package sends its key to, so changing one is changing where the keys the package holds go. What the agent can still do with an npm MCP is list it, rename it, change its description, enable or disable it, set its tool call timeout, test it, and delete it. The tool approvals of **MCPs** are not used for this: they hold the call of a tool of an MCP, and show the arguments of the call to the person who decides, which here would be the secrets.
 
 ### Addresses
 

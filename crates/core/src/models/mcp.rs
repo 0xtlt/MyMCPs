@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde_json::Value;
 
 use crate::crypto::Encryption;
@@ -10,6 +12,29 @@ string_enum! {
         Http => "http",
         Npm => "npm",
         Builtin => "builtin",
+    }
+}
+
+/// How long the gateway waits for the answer to a tool call of an MCP that
+/// sets no timeout of its own.
+pub const DEFAULT_TOOL_TIMEOUT_SECONDS: i64 = 60;
+
+impl McpTransport {
+    /// The longest an MCP of this transport may wait for the answer to a
+    /// tool call, in seconds. `None` for a built-in MCP: it runs inside
+    /// MyMCPs, and each request to its provider has a timeout of its own.
+    ///
+    /// An HTTP MCP only holds a connection open while it waits. It stops at
+    /// 5 minutes, the idle limit of the HTTP client (`IDLE_TIMEOUT` in
+    /// `mymcps-net`), which cuts a response that stays silent longer. An npm
+    /// MCP is a process this server runs in its sandbox for the whole call,
+    /// with its memory and its files: it waits less.
+    pub const fn max_tool_timeout_seconds(self) -> Option<i64> {
+        match self {
+            Self::Http => Some(300),
+            Self::Npm => Some(120),
+            Self::Builtin => None,
+        }
     }
 }
 
@@ -92,10 +117,30 @@ model! {
         pub builtin_settings: Option<String>,
         /// The team the MCP belongs to. Its slug is unique there.
         pub team_id: i64,
+        /// How long a tool call of an HTTP or npm MCP may wait for its
+        /// answer, in seconds. `None` waits [`DEFAULT_TOOL_TIMEOUT_SECONDS`].
+        /// Read it with [`Mcp::tool_timeout`].
+        pub tool_timeout_seconds: Option<i64>,
     }
 }
 
 impl Mcp {
+    /// How long a tool call of this MCP waits for its answer: the timeout
+    /// saved for it, or [`DEFAULT_TOOL_TIMEOUT_SECONDS`], and never more
+    /// than its transport allows.
+    pub fn tool_timeout(&self) -> Duration {
+        let max = self
+            .transport
+            .max_tool_timeout_seconds()
+            .unwrap_or(DEFAULT_TOOL_TIMEOUT_SECONDS);
+        let seconds = self
+            .tool_timeout_seconds
+            .filter(|seconds| *seconds > 0)
+            .unwrap_or(DEFAULT_TOOL_TIMEOUT_SECONDS)
+            .min(max);
+        Duration::from_secs(seconds.unsigned_abs())
+    }
+
     /// The npm args, which the column stores as JSON text.
     pub fn npm_args_list(&self) -> Vec<String> {
         let Some(Ok(Value::Array(parts))) = self

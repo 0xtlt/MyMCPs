@@ -494,11 +494,11 @@ impl Session {
                 }
                 result
             }
-            Err(error) => {
+            Err(Failure { message, for_agent }) => {
                 tracing::warn!(
                     error = %sanitize_mcp_diagnostic(
                         &self.upstream.core().encryption,
-                        &error,
+                        &message,
                         &mcp,
                     ),
                     mcp_id = mcp.id,
@@ -508,22 +508,26 @@ impl Session {
                 self.record_error(
                     started_at,
                     CallErrorCategory::UpstreamException,
-                    &error,
+                    &message,
                     record,
                 );
-                error_result("Upstream tool call failed")
+                if for_agent {
+                    error_result(&message)
+                } else {
+                    error_result("Upstream tool call failed")
+                }
             }
         }
     }
 
-    /// Run a call, unless it has to wait for a person. Fails with the
-    /// message of what went wrong, which is redacted before it goes anywhere.
+    /// Run a call, unless it has to wait for a person. Fails with what went
+    /// wrong.
     async fn attempt(
         &self,
         mcp: &mut Mcp,
         tool_name: &str,
         args: Option<&Map<String, Value>>,
-    ) -> Result<Attempt, String> {
+    ) -> Result<Attempt, Failure> {
         // A tool set to ask is held here until a person approved this very call.
         let gate = self
             .approvals
@@ -534,7 +538,7 @@ impl Session {
                 args,
             })
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| Failure::hidden(error.to_string()))?;
         if let ApprovalGate::Held(held) = gate {
             return Ok(Attempt::Held(held));
         }
@@ -543,7 +547,10 @@ impl Session {
             .call_tool(mcp, tool_name, args.cloned())
             .await
             .map(Attempt::Ran)
-            .map_err(|error| error.to_string())
+            .map_err(|error| Failure {
+                for_agent: error.is_tool_timeout(),
+                message: error.to_string(),
+            })
     }
 }
 
@@ -623,6 +630,25 @@ impl Session {
 enum Attempt {
     Held(crate::approvals::HeldCall),
     Ran(Value),
+}
+
+/// Why a call did not run to its end.
+struct Failure {
+    /// What went wrong. It is redacted before it goes anywhere.
+    message: String,
+    /// Whether the agent is told `message`: a timeout, which holds no secret
+    /// and lets it call again with less to wait for. Any other failure can
+    /// quote a secret, and the agent only reads that the call failed.
+    for_agent: bool,
+}
+
+impl Failure {
+    fn hidden(message: String) -> Self {
+        Self {
+            message,
+            for_agent: false,
+        }
+    }
 }
 
 #[async_trait]

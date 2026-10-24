@@ -86,6 +86,78 @@ async fn call_gateway(
     response
 }
 
+/// An MCP server on 127.0.0.1 that answers its handshake and lets a tool
+/// call wait 5 seconds.
+async fn slow_mcp_server() -> std::net::SocketAddr {
+    async fn answer(body: String) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        let message: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+        if message.get("id").is_none() {
+            return StatusCode::ACCEPTED.into_response();
+        }
+        let result = if message["method"] == "initialize" {
+            json!({
+                "protocolVersion": message["params"]["protocolVersion"],
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": "slow", "version": "1.0.0" },
+            })
+        } else {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            json!({ "content": [{ "type": "text", "text": "late" }] })
+        };
+        (
+            [(http::header::CONTENT_TYPE, "application/json")],
+            json!({ "jsonrpc": "2.0", "id": message["id"], "result": result }).to_string(),
+        )
+            .into_response()
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let router = axum::Router::new().route("/mcp", axum::routing::post(answer));
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    address
+}
+
+#[tokio::test]
+async fn tells_the_agent_and_the_log_that_an_mcp_did_not_answer_within_its_timeout() {
+    let address = slow_mcp_server().await;
+    let gateway = TestGateway::with(
+        |_| {},
+        |_| mymcps_net::Fetcher::shared(),
+        |_| Reply::Error("unused".into()),
+    )
+    .await;
+    let (_, plaintext) = logging_setup(&gateway, |mcp| {
+        mcp.http_url = Some(format!("http://{address}/mcp"));
+        mcp.tool_timeout_seconds = Some(1);
+    })
+    .await;
+
+    let response = call_gateway(&gateway, &plaintext, "logging__wait", None, &[]).await;
+    assert_eq!(response.status, StatusCode::OK);
+    let told =
+        "The remote MCP server did not answer within 1 second, the tool call timeout of this MCP.";
+    // The agent can act on it, by asking for less: it holds no secret.
+    assert_eq!(
+        result_of(&response),
+        json!({ "content": [{ "type": "text", "text": told }], "isError": true })
+    );
+
+    let logs = gateway.call_logs().await;
+    let log = &logs[0];
+    assert_eq!(log.outcome, CallOutcome::Error);
+    assert_eq!(
+        log.error_category,
+        Some(CallErrorCategory::UpstreamException)
+    );
+    assert_eq!(log.error_summary.as_deref(), Some(told));
+    assert!(
+        log.duration_ms >= 1000 && log.duration_ms < 5000,
+        "{}",
+        log.duration_ms
+    );
+}
+
 // MCP call capture
 
 #[tokio::test]

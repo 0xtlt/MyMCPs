@@ -2,6 +2,16 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-10-24
+
+### Added
+
+- Each HTTP or npm MCP has a **Tool call timeout** in its dialog: how long a tool call waits for its answer, 60 seconds when left blank as before. A remote HTTP MCP may wait up to 300 seconds, since the server only holds a connection open meanwhile; an npm MCP up to 120 seconds, since its package runs on the server, in its sandbox, for the whole call. A tool that waits on purpose, such as `t3_thread_wait` of T3 Code, no longer fails at 60 seconds once its MCP is given more time. The registry tools take it as `timeout_seconds`.
+
+### Changed
+
+- A tool call that runs out of time now tells the agent so, for example "The remote MCP server did not answer within 60 seconds, the tool call timeout of this MCP.", instead of "Upstream tool call failed". The call log records the same sentence instead of "MCP error -32001: Request timed out", and says whether a remote server or an npm package was waited for.
+
 ## 2026-10-21
 
 ### Changed

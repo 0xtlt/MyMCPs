@@ -51,6 +51,8 @@ while IFS= read -r line; do
       case "$line" in
         *'"name":"failing"'*)
           printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"it failed"}],"isError":true}}\n' "$id" ;;
+        *'"name":"slow"'*)
+          sleep 10 ;;
         *)
           printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"called"}]}}\n' "$id" ;;
       esac ;;
@@ -209,6 +211,35 @@ async fn lists_and_calls_the_tools_of_an_npm_mcp() {
         call["params"],
         json!({ "name": "failing", "arguments": {} })
     );
+}
+
+#[tokio::test]
+async fn stops_an_npm_mcp_that_does_not_answer_within_its_tool_call_timeout() {
+    let server = Server::new().await;
+    let mut mcp = server.npm_mcp(&[]).await;
+    mcp.tool_timeout_seconds = Some(1);
+
+    let started = std::time::Instant::now();
+    let error = server
+        .upstream
+        .call_tool(&mut mcp, "slow", None)
+        .await
+        .unwrap_err();
+    assert!(error.is_tool_timeout(), "{error}");
+    assert_eq!(
+        error.to_string(),
+        "The npm package did not answer within 1 second, the tool call timeout of this MCP. Its process on the MyMCPs server was stopped."
+    );
+    // The package would have answered after 10 seconds.
+    assert!(started.elapsed() < std::time::Duration::from_secs(9));
+
+    // A tool that answers is not held to anything it did not need.
+    let result = server
+        .upstream
+        .call_tool(&mut mcp, "bare", None)
+        .await
+        .unwrap();
+    assert_eq!(result["content"][0]["text"], "called");
 }
 
 #[tokio::test]
