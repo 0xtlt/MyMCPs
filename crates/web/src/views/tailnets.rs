@@ -3,6 +3,7 @@
 //! "Connect a tailnet")
 
 use maud::{Markup, html};
+use mymcps_core::config::TailnetControl;
 use mymcps_tailnet::TailnetState;
 use url::Url;
 
@@ -130,12 +131,41 @@ fn is_web_link(url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https")
 }
 
+/// What the dialog offers for the control server, which the operator decides
+/// (`TAILNET_CONTROL_URLS`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ControlField {
+    /// Tailscale's own is the only one: no field.
+    #[default]
+    Hidden,
+    /// Any `http(s)` address: a text field.
+    Free,
+    /// The origins the operator named: a select, Tailscale first.
+    Choice(Vec<String>),
+}
+
+impl ControlField {
+    pub fn of(control: &TailnetControl) -> Self {
+        match control {
+            TailnetControl::Official => Self::Hidden,
+            TailnetControl::Any => Self::Free,
+            TailnetControl::Origins(origins) => Self::Choice(origins.clone()),
+        }
+    }
+
+    fn is_shown(&self) -> bool {
+        *self != Self::Hidden
+    }
+}
+
 /// What the Connect dialog holds: what was typed, and what was refused.
 #[derive(Debug, Clone)]
 pub struct ConnectForm {
     pub name: String,
     pub method: SignInMethod,
     pub control_url: String,
+    /// What the dialog offers for the control server.
+    pub control: ControlField,
     /// The first message of each field that was refused, in field order.
     errors: Vec<(String, String)>,
 }
@@ -149,6 +179,7 @@ impl Default for ConnectForm {
             name: String::new(),
             method: SignInMethod::Link,
             control_url: String::new(),
+            control: ControlField::default(),
             errors: Vec::new(),
         }
     }
@@ -167,8 +198,15 @@ impl ConnectForm {
             name: name.to_string(),
             method,
             control_url: control_url.to_string(),
+            control: ControlField::default(),
             errors,
         }
+    }
+
+    /// The form with the control server field the operator allows.
+    pub fn with_control(mut self, control: ControlField) -> Self {
+        self.control = control;
+        self
     }
 
     pub fn first_error(&self) -> Option<&str> {
@@ -182,11 +220,16 @@ impl ConnectForm {
             .map(|(_, message)| message.as_str())
     }
 
-    /// What the fields do not say: the cap, a refused connection.
+    /// What the fields do not say: the cap, a refused connection, and a
+    /// control server when the dialog has no field for it.
     fn unshown(&self) -> Vec<&str> {
+        let shown_control = self.control.is_shown();
         self.errors
             .iter()
-            .filter(|(field, _)| !["name", "authKey", "controlUrl"].contains(&field.as_str()))
+            .filter(|(field, _)| {
+                !(["name", "authKey"].contains(&field.as_str())
+                    || (field == "controlUrl" && shown_control))
+            })
             .map(|(_, message)| message.as_str())
             .collect()
     }
@@ -202,6 +245,8 @@ pub struct TailnetsPage<'a> {
     pub limit: usize,
     /// The dialog, open, with this form. `None`: closed.
     pub open: Option<&'a ConnectForm>,
+    /// The control server field the dialog offers.
+    pub control: ControlField,
 }
 
 impl TailnetsPage<'_> {
@@ -389,6 +434,55 @@ fn method_choice(
     }
 }
 
+/// The control server: a field for the operator's choice, and nothing when
+/// only Tailscale's own is allowed.
+fn control_field(form: &ConnectForm) -> Markup {
+    let error = form.error("controlUrl");
+    let describedby = if error.is_some() {
+        "connect-tailnet-control-error connect-tailnet-control-help"
+    } else {
+        "connect-tailnet-control-help"
+    };
+    html! {
+        @match &form.control {
+            ControlField::Hidden => {}
+            ControlField::Free => {
+                div class="field" {
+                    label class="field__label" for="connect-tailnet-control" { "Control server URL " span class="field__optional" { "Optional" } }
+                    input class="input" id="connect-tailnet-control" name="controlUrl" type="text" inputmode="url" value=(form.control_url)
+                        placeholder="https://headscale.example.com" autocomplete="off" autocapitalize="off" spellcheck="false"
+                        aria-invalid=[error.map(|_| "true")] aria-describedby=(describedby);
+                    @if let Some(message) = error { p class="field__error" id="connect-tailnet-control-error" { (message) } }
+                    p class="field__help" id="connect-tailnet-control-help" { "Leave empty for Tailscale. Set it for Headscale." }
+                }
+            }
+            ControlField::Choice(origins) => {
+                div class="field" {
+                    label class="field__label" for="connect-tailnet-control" { "Control server" }
+                    div class="select" {
+                        select class="input" id="connect-tailnet-control" name="controlUrl"
+                            aria-invalid=[error.map(|_| "true")] aria-describedby=(describedby) {
+                            option value="" selected[form.control_url.is_empty()] { "Tailscale" }
+                            @for origin in origins {
+                                option value=(origin) selected[chosen_origin(&form.control_url, origin)] { (origin) }
+                            }
+                        }
+                        (icon("chevron-down"))
+                    }
+                    @if let Some(message) = error { p class="field__error" id="connect-tailnet-control-error" { (message) } }
+                    p class="field__help" id="connect-tailnet-control-help" { "Tailscale, or a control server your operator allows." }
+                }
+            }
+        }
+    }
+}
+
+/// Whether the typed address is on `origin`, as the option of a select.
+fn chosen_origin(typed: &str, origin: &str) -> bool {
+    let typed = typed.trim();
+    typed == origin || typed.strip_suffix('/') == Some(origin)
+}
+
 /// The content of the dialog: what its `[data-fragment]` holds, and what a
 /// refused submission gets back.
 pub fn connect_fragment(context: &PageContext, form: &ConnectForm) -> Markup {
@@ -435,15 +529,7 @@ pub fn connect_fragment(context: &PageContext, form: &ConnectForm) -> Markup {
                     }
                 }
             }
-            div class="field" {
-                label class="field__label" for="connect-tailnet-control" { "Control server URL " span class="field__optional" { "Optional" } }
-                input class="input" id="connect-tailnet-control" name="controlUrl" type="text" inputmode="url" value=(form.control_url)
-                    placeholder="https://headscale.example.com" autocomplete="off" autocapitalize="off" spellcheck="false"
-                    aria-invalid=[form.error("controlUrl").map(|_| "true")]
-                    aria-describedby=(if form.error("controlUrl").is_some() { "connect-tailnet-control-error connect-tailnet-control-help" } else { "connect-tailnet-control-help" });
-                @if let Some(message) = form.error("controlUrl") { p class="field__error" id="connect-tailnet-control-error" { (message) } }
-                p class="field__help" id="connect-tailnet-control-help" { "Leave empty for Tailscale. Set it for Headscale." }
-            }
+            (control_field(form))
         }
         div class="dialog__footer" {
             button type="button" class="button button--secondary" data-dialog-close { "Cancel" }
@@ -453,7 +539,7 @@ pub fn connect_fragment(context: &PageContext, form: &ConnectForm) -> Markup {
 }
 
 fn connect_dialog(context: &PageContext, page: &TailnetsPage) -> Markup {
-    let default = ConnectForm::default();
+    let default = ConnectForm::default().with_control(page.control.clone());
     let form = page.open.unwrap_or(&default);
     html! {
         dialog class="dialog" id=(CONNECT_DIALOG_ID) aria-labelledby="connect-tailnet-title" data-dialog-static data-dialog-reset

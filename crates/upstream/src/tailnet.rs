@@ -136,6 +136,9 @@ impl Upstream {
                 refusal("The tailnet of this MCP no longer exists. Choose another tailnet or remove it from the MCP")
             })?;
 
+        if let Some(message) = self.tailnet_control_refusal(&tailnet) {
+            return Err(refusal(format!("Tailnet \"{}\": {message}", tailnet.name)));
+        }
         let state = tailnets.state(id).await;
         if !matches!(state, TailnetState::Running { .. }) {
             return Err(refusal(format!(
@@ -197,6 +200,17 @@ impl Upstream {
         network
     }
 
+    /// Why the daemon of this tailnet must not run, when the control server it
+    /// was connected to is not one the operator allows (`TAILNET_CONTROL_URLS`):
+    /// the daemon makes requests that its control server asks for, outside the
+    /// routing of the tailnet. Check it before every start.
+    pub fn tailnet_control_refusal(&self, tailnet: &Tailnet) -> Option<String> {
+        self.core
+            .config
+            .tailnet_control
+            .refusal(tailnet.control_url.as_deref())
+    }
+
     /// Drops the network kept for a tailnet, and with it the connections it
     /// pooled. Call it when a tailnet is deleted or its node signed out.
     pub fn forget_tailnet(&self, id: i64) {
@@ -218,7 +232,11 @@ impl Upstream {
             return Ok(Vec::new());
         };
         let starts = self.all_tailnets().await?.into_iter().map(|tailnet| async {
-            let state = start_tailnet(tailnets, tailnet.id).await;
+            // A control server the operator no longer allows steers no daemon.
+            let state = match self.tailnet_control_refusal(&tailnet) {
+                Some(message) => Ok(TailnetState::Failed(message)),
+                None => start_tailnet(tailnets, tailnet.id).await,
+            };
             TailnetStart { tailnet, state }
         });
         Ok(futures::future::join_all(starts).await)

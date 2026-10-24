@@ -51,6 +51,7 @@ The secret of an authenticator app is one of these credentials: the app keeps sh
 ## Versions
 
 - A backup from an older version imports into a newer one: its data is migrated first. One made before tailnets existed imports with none, and its MCPs keep using the direct network.
+- A tailnet of a backup that names a control server this instance does not allow (`TAILNET_CONTROL_URLS`, see [Tailnets](tailnets.md#control-servers)) is imported but not started.
 - A backup from a newer version is refused. Update the instance, then import again.
 - The TypeScript server and the Rust server write and read the same file.
 

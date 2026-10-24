@@ -22,12 +22,16 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Fixed
 
+- A tailnet created while its team is deleted can no longer start a daemon nobody owns: the Connect form no longer clears the record that a deletion leaves, and a restored backup clears those records instead.
 - Tailnets work with the default relative `DATA_DIR=tmp`: the server now gives `tailscaled` absolute paths for its socket and state, instead of paths that only held from the server's own directory.
 - Deleting a tailnet can no longer be undone by a page that was loading at the same time: its daemon is not started again once it was removed, and starting, stopping and deleting a tailnet no longer overlap.
 - The **Connect a tailnet** form no longer empties itself while you fill it on a Tailnets page that refreshes: the button opens the form on its own page there.
 
 ### Security
 
+- A tailnet now uses Tailscale's own control server unless the operator sets `TAILNET_CONTROL_URLS` (`any`, or a comma-separated list of origins such as `https://headscale.example.com`). A control server steers the `tailscaled` of its tailnet, which can then send requests to loopback, cloud metadata or the LAN outside the routing of MyMCPs, so a team can no longer point one at its own server. The Connect dialog shows the **Control server** field only when the operator allows other servers, the server refuses any other address, and a tailnet whose saved control server is no longer allowed is not started and says why. A tailnet's own DERP relays remain dialled by the daemon: see [docs/tailnets.md](docs/tailnets.md#control-servers).
+- An agent can no longer move a tailnet MCP at a private address to the internet with `mcp_registry_update` (`tailnet: null`) to reach the network of the instance: the address is checked again whenever the network changes, before anything is saved or probed.
+- A tailnet checks that an address is not one of MyMCPs' own device against a fresh status right before every connection, not the one kept for two seconds, so an address assigned to the device a moment earlier is not dialled.
 - Changing the network of an MCP (internet to a tailnet, back, or from one tailnet to another) now clears its saved bearer token, header value and OAuth sign-in, as moving it to another origin does, so they are not sent to another machine behind the same URL. The same holds for `mcp_registry_update`, which lists them in `cleared_secrets`.
 - A tailnet never reaches the address of MyMCPs' own device, even when a subnet route of a peer (or of a hostile Headscale) covers it, so an MCP cannot loop back to the server through it.
 - The sign-in link of a tailnet and the keys of Tailscale are kept out of the debug log of `tailscaled`.

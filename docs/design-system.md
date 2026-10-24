@@ -693,6 +693,10 @@ in `.cell-sub`), Status, Device (`.cell-code`), Used by and Actions (`.col-200`,
   methods are two radio `.choice`s with a description; the auth key is an `.input-group` with the
   `data-password-toggle` eye, shown with `data-show-when="method=key"`, never given a `value`,
   and its name (`authKey`) never goes in a flash message.
+- The control server field depends on the operator (`TAILNET_CONTROL_URLS`): none when only
+  Tailscale's is allowed, a text `.input` (`name="controlUrl"`) for `any`, and a `.select` with
+  "Tailscale" first and the allowed origins for a list. An error for a server that is refused
+  shows under the field, or above the form when the field is not there.
 
 The MCP form shows a **Network** select (`name="tailnetId"`, first option "Internet", then
 "Tailnet: <name>") under the HTTP URL, in a `data-show-when="transport=http"` block, once the

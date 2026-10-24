@@ -13,7 +13,7 @@ use http::HeaderMap;
 use mymcps_core::models::{Mcp, Tailnet};
 use mymcps_core::redaction::sanitize_diagnostic_with;
 use mymcps_net::parse_http_url;
-use mymcps_tailnet::{ConnectOptions, TailnetState, Tailnets};
+use mymcps_tailnet::{ConnectOptions, TailnetState};
 use serde_json::Value;
 use url::Url;
 
@@ -27,12 +27,12 @@ use crate::routes::FeatureRoutes;
 use crate::session::Session;
 use crate::state::AppState;
 use crate::validators::tailnet::{
-    CREATE_TAILNET_VALIDATOR, SignInMethod, TailnetPayload, tailnet_id,
+    SignInMethod, TailnetPayload, create_tailnet_validator, tailnet_id,
 };
 use crate::views::shell::PageContext;
 use crate::views::tailnets::{
-    ConnectForm, FORM_ERROR, TailnetRow, TailnetsPage, can_sign_in_again, connect_fragment,
-    tailnets_page,
+    ConnectForm, ControlField, FORM_ERROR, TailnetRow, TailnetsPage, can_sign_in_again,
+    connect_fragment, tailnets_page,
 };
 
 /// How many tailnets a team connects. Each one is a `tailscaled` process.
@@ -67,17 +67,21 @@ fn list(uri: &http::Uri) -> String {
 }
 
 /// What the server knows of a tailnet, which starts its daemon if it is
-/// not running: a server that restarted has none until something asks.
-async fn state_of(tailnets: Option<&Tailnets>, id: i64) -> Option<TailnetState> {
-    let tailnets = tailnets?;
-    if let Err(error) = tailnets.ensure_running(id).await {
+/// not running: a server that restarted has none until something asks. A
+/// tailnet whose control server the operator does not allow is not started.
+async fn state_of(state: &AppState, tailnet: &Tailnet) -> Option<TailnetState> {
+    let tailnets = state.upstream.tailnets()?;
+    if let Some(message) = state.upstream.tailnet_control_refusal(tailnet) {
+        return Some(TailnetState::Failed(message));
+    }
+    if let Err(error) = tailnets.ensure_running(tailnet.id).await {
         return Some(TailnetState::Failed(sanitize_diagnostic_with(
             &error.to_string(),
             DIAGNOSTIC_LIMIT,
             [],
         )));
     }
-    Some(tailnets.state(id).await)
+    Some(tailnets.state(tailnet.id).await)
 }
 
 /// The tailnets of a team as the list shows them.
@@ -94,8 +98,7 @@ async fn rows(state: &AppState, team_id: i64) -> Result<Vec<TailnetRow>, sqlx::E
     for (tailnet_id, name) in used {
         names.entry(tailnet_id).or_default().push(name);
     }
-    let running = state.upstream.tailnets();
-    let states = join_all(tailnets.iter().map(|tailnet| state_of(running, tailnet.id))).await;
+    let states = join_all(tailnets.iter().map(|tailnet| state_of(state, tailnet))).await;
     Ok(tailnets
         .into_iter()
         .zip(states)
@@ -124,6 +127,7 @@ async fn tailnets_response(
             enabled: state.upstream.tailnets().is_some(),
             rows: &rows,
             open,
+            control: ControlField::of(&state.core.config.tailnet_control),
         },
     );
     Ok(page(markup))
@@ -142,7 +146,13 @@ pub async fn new(
     State(state): State<AppState>,
     context: PageContext,
 ) -> Result<Response, AppError> {
-    tailnets_response(&state, &context, Some(&ConnectForm::default())).await
+    let form = ConnectForm::default().with_control(control_field(&state));
+    tailnets_response(&state, &context, Some(&form)).await
+}
+
+/// What the Connect dialog offers for the control server.
+fn control_field(state: &AppState) -> ControlField {
+    ControlField::of(&state.core.config.tailnet_control)
 }
 
 /// The name this server has in a tailnet: the same for the same name, and
@@ -173,6 +183,7 @@ fn refused(
 
 /// A refusal that belongs to no field.
 fn refused_form(
+    state: &AppState,
     context: &PageContext,
     session: &Session,
     headers: &HeaderMap,
@@ -183,12 +194,20 @@ fn refused_form(
         context,
         session,
         headers,
-        form_of(input, vec![(FORM_ERROR.to_string(), message.to_string())]),
+        form_of(
+            state,
+            input,
+            vec![(FORM_ERROR.to_string(), message.to_string())],
+        ),
     )
 }
 
 /// The form as it was sent, without its key.
-fn form_of(input: &serde_json::Map<String, Value>, errors: Vec<(String, String)>) -> ConnectForm {
+fn form_of(
+    state: &AppState,
+    input: &serde_json::Map<String, Value>,
+    errors: Vec<(String, String)>,
+) -> ConnectForm {
     let text = |field: &str| match input.get(field) {
         Some(Value::String(text)) => text.clone(),
         _ => String::new(),
@@ -204,6 +223,7 @@ fn form_of(input: &serde_json::Map<String, Value>, errors: Vec<(String, String)>
         _ => control_url,
     };
     ConnectForm::refused(&text("name"), method, &control_url, errors)
+        .with_control(control_field(state))
 }
 
 /// What a person is told of tailscaled failing: its words, without the key
@@ -242,6 +262,7 @@ pub async fn store(
     let team = context.current_team()?;
     let Some(tailnets) = state.upstream.tailnets() else {
         return Ok(refused_form(
+            &state,
             &context,
             &session,
             &headers,
@@ -249,24 +270,24 @@ pub async fn store(
             TAILSCALE_OFF,
         ));
     };
-    let payload: TailnetPayload =
-        match CREATE_TAILNET_VALIDATOR.validate_as(&Value::Object(input.clone())) {
-            Ok(payload) => payload,
-            Err(error) => {
-                let error = refusal(error)?;
-                let errors = error
-                    .messages
-                    .iter()
-                    .map(|message| (message.field.clone(), message.message.clone()))
-                    .collect();
-                return Ok(refused(
-                    &context,
-                    &session,
-                    &headers,
-                    form_of(&input, errors),
-                ));
-            }
-        };
+    let validator = create_tailnet_validator(&state.core.config.tailnet_control);
+    let payload: TailnetPayload = match validator.validate_as(&Value::Object(input.clone())) {
+        Ok(payload) => payload,
+        Err(error) => {
+            let error = refusal(error)?;
+            let errors = error
+                .messages
+                .iter()
+                .map(|message| (message.field.clone(), message.message.clone()))
+                .collect();
+            return Ok(refused(
+                &context,
+                &session,
+                &headers,
+                form_of(&state, &input, errors),
+            ));
+        }
+    };
     // The key is only read for the method that uses it.
     let key = payload
         .auth_key
@@ -281,7 +302,11 @@ pub async fn store(
             &context,
             &session,
             &headers,
-            form_of(&input, vec![(field.to_string(), message.to_string())]),
+            form_of(
+                &state,
+                &input,
+                vec![(field.to_string(), message.to_string())],
+            ),
         )
     };
 
@@ -289,6 +314,7 @@ pub async fn store(
     let existing = Tailnet::of_team(db, team.id()).await?;
     if existing.len() >= MAX_TAILNETS_PER_TEAM {
         return Ok(refused_form(
+            &state,
             &context,
             &session,
             &headers,
@@ -332,6 +358,7 @@ pub async fn store(
     if Tailnet::count_in_team(db, team.id()).await? > MAX_TAILNETS_PER_TEAM as i64 {
         abandon(&state, &tailnet).await;
         return Ok(refused_form(
+            &state,
             &context,
             &session,
             &headers,
@@ -341,9 +368,9 @@ pub async fn store(
     }
 
     let connected = async {
-        // A new row never has the id of a removed tailnet, but a daemon that
-        // is refused for one would be a login that never comes.
-        tailnets.forget_removal(tailnet.id);
+        // No tombstone is cleared here: the id of a new row (AUTOINCREMENT)
+        // is never one of a removed tailnet, and clearing the tombstone of
+        // another id would let a concurrent deletion be undone.
         tailnets.ensure_running(tailnet.id).await?;
         tailnets
             .connect(
@@ -365,6 +392,7 @@ pub async fn store(
         );
         abandon(&state, &tailnet).await;
         return Ok(refused_form(
+            &state,
             &context,
             &session,
             &headers,
@@ -495,9 +523,16 @@ pub async fn sign_in_again(
     let Some(tailnets) = state.upstream.tailnets() else {
         return Ok(back("error", TAILSCALE_OFF));
     };
+    // Its control server may have stopped being allowed since it was connected.
+    if let Some(message) = state.upstream.tailnet_control_refusal(&tailnet) {
+        return Ok(back(
+            "error",
+            &format!("Could not sign in again: {message}"),
+        ));
+    }
     // A node that is connected, or that waits for an admin, has nothing to
     // sign in to: a new login would only put it out of the tailnet.
-    if let Some(current) = state_of(Some(tailnets), tailnet.id).await
+    if let Some(current) = state_of(&state, &tailnet).await
         && !can_sign_in_again(&current)
     {
         return Ok(back(

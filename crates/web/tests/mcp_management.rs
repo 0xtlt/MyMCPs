@@ -1600,6 +1600,67 @@ async fn does_not_let_an_agent_move_an_mcp_into_the_network_of_the_instance() {
 }
 
 #[tokio::test]
+async fn does_not_let_an_agent_leave_a_tailnet_for_the_network_of_the_instance() {
+    let gateway = gateway_guarded(|_| {}, guard_with_internal_names()).await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    let pro = tailnet_in(&gateway, Team::ROOT_ID, &admin, "Pro").await;
+    // Put by a person: on the tailnet, a private address is a device behind
+    // a subnet router.
+    create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "Router".into();
+        mcp.slug = "router".into();
+        mcp.http_url = Some("http://10.0.0.5:8080/mcp".into());
+        mcp.tailnet_id = Some(pro.id);
+    })
+    .await;
+    gateway.upstreams.clear();
+
+    for tailnet in [json!(null), json!("")] {
+        let refusal = call_refused(
+            &gateway,
+            &manager,
+            "mcp_registry_update",
+            json!({ "slug": "router", "tailnet": tailnet }),
+        )
+        .await;
+        assert!(
+            refusal.starts_with("Invalid url: the host is a loopback, private or link-local"),
+            "{refusal}"
+        );
+    }
+    // Refused before it was saved, and before anything was probed.
+    assert_eq!(mcp_named(&gateway, "router").await.tailnet_id, Some(pro.id));
+    assert!(gateway.upstreams.requests().is_empty());
+
+    // Left as it is on its tailnet, it is still the person's to rename.
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "router", "description": "Behind the router", "tailnet": "Pro" }),
+    )
+    .await;
+
+    // A public address can leave a tailnet.
+    create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "Docs".into();
+        mcp.slug = "docs".into();
+        mcp.http_url = Some("https://public.example/mcp".into());
+        mcp.tailnet_id = Some(pro.id);
+    })
+    .await;
+    call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_update",
+        json!({ "slug": "docs", "tailnet": null }),
+    )
+    .await;
+    assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, None);
+}
+
+#[tokio::test]
 async fn keeps_the_secrets_of_an_url_out_of_what_the_agent_reads_back() {
     let gateway = gateway().await;
     let admin = create_admin(&gateway).await;

@@ -1123,6 +1123,35 @@ mod route_and_dial {
     }
 
     #[tokio::test]
+    async fn dial_reads_a_fresh_status_not_the_cached_one() {
+        let fixture = Fixture::new(0);
+        let (api, handle) = running(&fixture).await;
+        let echo = spawn_echo_server().await.0;
+        api.bridge_dials_to(echo);
+
+        // The route fills the cache: the address is a peer's, not ours.
+        let address = handle.route("nas", 80).await.unwrap().unwrap();
+        assert_eq!(address.ip().to_string(), "100.64.0.2");
+        assert_eq!(api.requests_to("/localapi/v0/status").len(), 1);
+
+        // The daemon now gives this very address to this node, well inside the
+        // two seconds of the cache.
+        let mut status = running_status();
+        status["Self"]["TailscaleIPs"] = json!(["100.64.0.1", "fd7a:115c:a1e0::1", "100.64.0.2"]);
+        status["TailscaleIPs"] = status["Self"]["TailscaleIPs"].clone();
+        api.set_status(status);
+
+        let error = handle.dial(address).await.err().unwrap();
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(api.requests_to("/localapi/v0/dial").is_empty());
+        assert_eq!(
+            api.requests_to("/localapi/v0/status").len(),
+            2,
+            "the dial read the status again"
+        );
+    }
+
+    #[tokio::test]
     async fn dial_checks_the_address_again_against_the_status() {
         let fixture = Fixture::new(0);
         let (api, handle) = running(&fixture).await;

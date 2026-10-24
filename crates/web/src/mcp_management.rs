@@ -559,9 +559,13 @@ impl McpRegistryManager for WebMcpRegistry {
         }
         let input = form_input(Some(&saved), &fields, tailnet_id);
         let payload = validated(&UPDATE_MCP_VALIDATOR, &input)?;
-        // The address of an MCP that is left as it is was set by a person.
+        // The address of an MCP that is left as it is, on the network it is
+        // on, was set by a person. Another network is another place for the
+        // same address: an MCP leaving a tailnet for the internet is checked
+        // like a new one, before anything is saved or probed.
         if payload.http_url.as_deref().map(str::trim) != saved.http_url.as_deref().map(str::trim)
             || saved.transport != McpTransport::Http
+            || payload.tailnet_id != saved.tailnet_id
         {
             self.ensure_public_url(&payload).await?;
         }

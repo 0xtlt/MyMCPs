@@ -254,6 +254,7 @@ for attempt in 1 2 3 4 5 6 7 8; do
   if docker run -d --name "$run-mymcps" --network "$network" \
       -p "127.0.0.1:$candidate:3333" \
       -e "APP_URL=http://localhost:$candidate" \
+      -e "TAILNET_CONTROL_URLS=$control_url" \
       "$image" >/dev/null 2>&1; then
     web_port=$candidate
     break

@@ -213,6 +213,8 @@ The sandbox needs no privilege and works in a container without capabilities. It
 
 A team can connect [Tailscale](https://tailscale.com/) tailnets, and let its HTTP MCPs reach their upstream through one, for servers that only answer inside it. The server joins a tailnet with `tailscaled`, the Tailscale daemon. The image holds it, copied from the official `tailscale/tailscale` image at a pinned version, and sets `TAILSCALED_BINARY` to it. A server run from source uses the `tailscaled` of its `PATH`, or the binary `TAILSCALED_BINARY` names. Without one, tailnets are off: `TAILSCALED_BINARY=off` turns them off on a host that has `tailscaled` too.
 
+By default a tailnet uses Tailscale's own control server. The daemon of a tailnet makes the requests its control server asks for (redirects, pings), which MyMCPs does not route, so a team cannot point it at a control server of its own unless the operator allows it: `TAILNET_CONTROL_URLS` is `any`, or a comma-separated list of origins such as `https://headscale.example.com`. The Connect dialog shows the **Control server** field only then. See [docs/tailnets.md](docs/tailnets.md).
+
 The tailnets of a team, and the MCPs that use them, are part of a [backup](docs/backup.md).
 
 ## Stack

@@ -161,10 +161,19 @@ impl Tailnets {
 
     /// Allows tailnet `id` to be started again after `remove`. A removed id is
     /// never started, so that a request that was already under way cannot
-    /// bring a deleted tailnet back; call this when the id is given to a tailnet
-    /// again (a restored database, a new row), before `ensure_running`.
+    /// bring a deleted tailnet back. Ids of new rows are never reused, so
+    /// nothing needs this for them: call it only when an id comes back to
+    /// life some other way, and never for an id that may be removed at this
+    /// very moment.
     pub fn forget_removal(&self, id: i64) {
         self.removed().remove(&id);
+    }
+
+    /// [`forget_removal`](Self::forget_removal) for every id: the database
+    /// was replaced by a restored backup, which brings back ids this process
+    /// removed. Nothing of the old database is left to be started by mistake.
+    pub fn forget_removals(&self) {
+        self.removed().clear();
     }
 
     fn tailnet_dir(&self, id: i64) -> PathBuf {

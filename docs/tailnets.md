@@ -19,7 +19,7 @@ Only an owner or an admin of the team sees **Tailnets** in the navigation.
 3. Choose how the device signs in:
    - **Sign in with Tailscale**. Select **Connect**; the row says **Needs sign-in**. Select **Sign in** on the row: the page of your Tailscale account opens in a new tab. Sign in and approve the device. The row turns to **Connected** by itself.
    - **Auth key**. Paste a key from the Tailscale admin console (**Settings**, **Keys**, **Generate auth key**). Prefer a one-off key, with a tag (below): it is used once, to join. MyMCPs never stores it, never logs it and never shows it again: the form comes back empty when something is wrong, and the key is typed again.
-4. Leave **Control server URL** empty for Tailscale. For a Headscale, see below.
+4. **Control server** is only there when the operator allows other control servers than Tailscale's (see [Control servers](#control-servers)). Leave it empty for Tailscale. For a Headscale, see below.
 
 A team connects up to 5 tailnets. The page refreshes every 5 seconds while a tailnet starts or waits for its sign-in; **Connect a tailnet** then opens the form on its own page, which does not refresh, so that nothing typed is lost.
 
@@ -53,12 +53,12 @@ Deleting a team, or a user whose personal team goes with them, does the same for
 
 ## What an MCP can reach
 
-An MCP that has a tailnet reaches the devices of that tailnet and the subnet routes its devices advertise, and nothing else through it: a host that is neither is refused, and so is a name that is not one of the tailnet's, rather than sent to the internet. The device only dials out; it accepts no connection from the tailnet. It does not use an exit node. The addresses of MyMCPs' own device are never reachable either, even when a subnet route of the tailnet covers them: an MCP cannot loop back to the server through its own tailnet address.
+An MCP that has a tailnet reaches the devices of that tailnet and the subnet routes its devices advertise, and nothing else through it: a host that is neither is refused, and so is a name that is not one of the tailnet's, rather than sent to the internet. The device only dials out; it accepts no connection from the tailnet. It does not use an exit node. The addresses of MyMCPs' own device are never reachable either, even when a subnet route of the tailnet covers them: an MCP cannot loop back to the server through its own tailnet address. That check reads a fresh status of the device right before every connection, not the status kept for two seconds. What stays is the time between that read and the connection being made, under a millisecond: an address the control server gives to the device in that very moment is still dialled. Giving the device an address is the control server's to do, so the control servers a team may use are the operator's to choose (below).
 
 Two things to keep in mind:
 
 - The device has the access of what it signs in as. With a sign-in link it is a device of the person who signs in, with that person's access in your policy. Give it less: join with an auth key that carries a tag, and let the policy of your tailnet say what that tag reaches.
-- An agent that can manage MCPs can add an MCP on your tailnet by name, with any path on any device the device reaches. The address check that keeps agents off the private network of the server resolves names with the DNS of the server, which does not know the names of your devices. Allow the permission only to agents you trust with the tailnet, and keep the tag of MyMCPs from reaching more than the MCP servers.
+- An agent that can manage MCPs can add an MCP on your tailnet by name, with any path on any device the device reaches. The address check that keeps agents off the private network of the server resolves names with the DNS of the server, which does not know the names of your devices. Allow the permission only to agents you trust with the tailnet, and keep the tag of MyMCPs from reaching more than the MCP servers. An agent cannot take such an MCP off its tailnet to reach the private network of the server: whenever the network of an MCP changes, its address goes through the same check as a new one.
 
 ### Tailscale policy
 
@@ -79,12 +79,28 @@ For a subnet route, `dst` is the address and port behind the router (`192.168.1.
 
 ## Headscale
 
-Set **Control server URL** to the address of your [Headscale](https://headscale.net/), such as `https://headscale.example.com`. It must be an `http` or `https` address with no user name, password or query. The server connecting to it is `tailscaled`, which also reaches private addresses, so a Headscale on your LAN works.
+Set **Control server** to the address of your [Headscale](https://headscale.net/), such as `https://headscale.example.com`, once the operator has allowed it (below). It must be an `http` or `https` address with no user name, password or query. The server connecting to it is `tailscaled`, which also reaches private addresses, so a Headscale on your LAN works.
 
 - With **Auth key**, create a pre-authorised key on the Headscale (`headscale preauthkeys create --user <user>`) and paste it.
 - With **Sign in with Tailscale**, the link of the row is the registration page of your Headscale: it shows a `headscale nodes register` command to run there.
 
 The access rules are the ones of the policy file of your Headscale. The device of a Headscale is named like any other: `mymcps-pro`.
+
+## Control servers
+
+Unless the operator allows more, a tailnet uses Tailscale's own control server. The reason: a control server steers the `tailscaled` of its tailnet, and can make it send HTTP requests of its own (redirects, ping requests, calls to the node) to any address the server can reach, loopback, the metadata address of a cloud and the LAN included. Those requests come from the daemon, not from an MCP, so the routing of the tailnet, which only guards what MCPs send, does not see them. A team that could name any control server could aim them at the network of the instance.
+
+`TAILNET_CONTROL_URLS` in the environment of MyMCPs (restart after a change) says which other servers a team may use:
+
+| Value | Effect |
+| --- | --- |
+| unset | Tailscale's only. The Connect dialog has no **Control server** field. |
+| `https://hs.example.com,http://10.0.0.2:8080` | Tailscale's, and those origins (scheme, host and port: a path is ignored). The dialog has a **Control server** list: **Tailscale**, then each origin. |
+| `any` | Tailscale's, and any `http` or `https` server. The dialog has a **Control server** field to type an address in. |
+
+The server refuses any other value, whatever the form sends. A tailnet whose saved control server is not allowed any more (the variable changed, or the tailnet came with an imported backup) is not started and cannot sign in again: its row says **Error**, with the reason, and **Sign in again** gives the same message. Allow the server again, or delete the tailnet and connect it again.
+
+Allow only control servers you trust, or `any` on an instance whose teams you trust. One risk stays, even for an allowed server: the DERP map of a tailnet comes from its own control server, and `tailscaled` connects to the relays in it. A control server can name a relay at a private address, and the daemon dials it. Treat an allowed control server as able to make the daemon connect to the network of the instance, and run the instance where that is no risk (a network of its own, no access to cloud metadata) when you allow servers that are not yours.
 
 ## Limits
 
@@ -100,7 +116,7 @@ The access rules are the ones of the policy file of your Headscale. The device o
 
 - a Headscale, the control server (pinned by tag),
 - a device: the real `tailscaled`, joined with a pre-auth key, that serves a small streamable-HTTP MCP (`crates/tailnet/tests/headscale-e2e/mcp-device.js`),
-- the MyMCPs image, built from your checkout, which joins the same tailnet with the `tailscaled` of the image.
+- the MyMCPs image, built from your checkout, which joins the same tailnet with the `tailscaled` of the image. The script sets `TAILNET_CONTROL_URLS` to the address of its Headscale for that container, since MyMCPs only connects to Tailscale otherwise.
 
 It then drives MyMCPs over HTTP like a person: onboarding and sign-in, the **Tailnets** page, the MCP form and an access token. It checks that the tailnet reaches **Connected**; that MCPs on it, by short name, full name and Tailscale address, save as ready and list the tools of the device; that a tool call through the gateway reaches the device, which sees it come from a tailnet address; that a host that is not a device of the tailnet is refused with the tailnet message, and that the same URL on **Internet** is not reachable; and that the sign-in link leads to the register page of the Headscale and, once registered there, turns the row **Connected**.
 

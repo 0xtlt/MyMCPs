@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use http::StatusCode;
 use mcps_support::*;
+use mymcps_core::config::TailnetControl;
 use mymcps_core::models::{Mcp, McpAuthType, McpTransport, Tailnet, Team, TeamRole, User};
 use mymcps_tailnet::test_support::{FakeLocalApi, fake_tailscaled, running_status, status_in};
 use mymcps_tailnet::{Tailnets, TailnetsConfig};
@@ -34,7 +35,12 @@ struct Lab {
 }
 
 impl Lab {
+    /// A server that allows any control server, as the tests of Headscale need.
     async fn new() -> Self {
+        Self::with_control(TailnetControl::Any).await
+    }
+
+    async fn with_control(control: TailnetControl) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let binary = fake_tailscaled(&dir.path().join("bin"), 0);
         let tailnets = Tailnets::new(TailnetsConfig {
@@ -42,13 +48,16 @@ impl Lab {
             data_dir: dir.path().join("data"),
         });
         let (fetcher, _calls) = mock_fetch(|call| mcp_answer(call, &json!([])));
-        let app = TestApp::with_upstream({
+        let app = TestApp::with_state(|config| config.tailnet_control = control, {
             let tailnets = tailnets.clone();
-            move |upstream| {
-                upstream
-                    .fetcher(fetcher)
-                    .address_guard(public_names())
-                    .tailnets(Some(tailnets))
+            |core| {
+                let upstream =
+                    mymcps_upstream::Upstream::builder(core.clone(), mymcps_web::state::builtins())
+                        .fetcher(fetcher)
+                        .address_guard(public_names())
+                        .tailnets(Some(tailnets))
+                        .build();
+                mymcps_web::state::AppState::with_upstream(core, upstream)
             }
         })
         .await;
@@ -642,6 +651,312 @@ async fn takes_the_tailnet_back_when_the_daemon_refuses_to_join() {
     // No row is left, and nothing of the daemon.
     assert!(tailnets_of(&lab.app, Team::ROOT_ID).await.is_empty());
     assert!(!lab.tailnet_dir(1).exists());
+}
+
+#[tokio::test]
+async fn does_not_start_a_tailnet_that_a_deletion_took_while_it_was_created() {
+    let lab = Lab::new().await;
+    let admin = create_admin(&lab.app).await;
+    // The deletion of the team that holds the new row landed between its
+    // insert and the start of its daemon: its id is tombstoned. The next
+    // id is the one the form is about to get; ids are never reused.
+    lab.tailnets.remove(1).await.unwrap();
+    // A daemon that would answer, were one started.
+    let api = lab.daemon(1, needs_login());
+
+    let refused = from_script(connect(
+        &lab.app,
+        &admin,
+        &[("name", "pro"), ("method", "link")],
+    ))
+    .send()
+    .await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        refused.text().contains("Could not connect"),
+        "{}",
+        refused.text()
+    );
+    // No orphan: no row, no daemon, no directory.
+    assert!(tailnets_of(&lab.app, Team::ROOT_ID).await.is_empty());
+    assert!(lab.tailnets.handle(1).is_none());
+    assert!(api.requests().is_empty(), "nothing was asked of a daemon");
+    assert!(!lab.tailnet_dir(1).exists());
+}
+
+#[tokio::test]
+async fn a_tailnet_created_next_to_a_team_deleted_leaves_no_daemon_of_that_team() {
+    let lab = Lab::new().await;
+    let root_owner = create_super_admin(&lab.app).await;
+    let team = create_team(&lab.app, "Research").await;
+    let owner = create_account(&lab.app, None).await;
+    join_team(&lab.app, team.id, &owner, TeamRole::Owner).await;
+    let theirs = lab.row(team.id, owner.id, "theirs").await;
+    let _theirs_api = lab.daemon(theirs.id, running_status());
+    lab.tailnets.ensure_running(theirs.id).await.unwrap();
+    let _new_api = lab.daemon(theirs.id + 1, needs_login());
+
+    let deletion = lab
+        .app
+        .post("/team?_method=DELETE")
+        .login_as(&owner)
+        .in_team(team.id)
+        .csrf()
+        .send();
+    let creation = connect(
+        &lab.app,
+        &root_owner,
+        &[("name", "pro"), ("method", "link")],
+    )
+    .send();
+    let (deleted, created) = tokio::join!(deletion, creation);
+    assert_redirect(&deleted, "/");
+    assert_redirect(&created, "/tailnets");
+
+    // The tailnet of the deleted team is gone for good, the new one of the
+    // other team is alive.
+    assert!(lab.tailnets.handle(theirs.id).is_none());
+    assert!(!lab.tailnet_dir(theirs.id).exists());
+    assert!(matches!(
+        lab.tailnets.ensure_running(theirs.id).await,
+        Err(mymcps_tailnet::Error::Removed(_))
+    ));
+    assert_eq!(tailnets_of(&lab.app, Team::ROOT_ID).await.len(), 1);
+    assert!(lab.tailnets.handle(theirs.id + 1).is_some());
+}
+
+#[tokio::test]
+async fn forgets_the_removed_ids_when_a_backup_replaces_the_database() {
+    let lab = Lab::new().await;
+    let _api = lab.daemon(1, running_status());
+    lab.tailnets.remove(1).await.unwrap();
+    assert!(matches!(
+        lab.tailnets.ensure_running(1).await,
+        Err(mymcps_tailnet::Error::Removed(1))
+    ));
+
+    // The backup brings back a tailnet with an id this process removed.
+    lab.app.state.database_replaced().await.unwrap();
+    let _api = lab.daemon(1, running_status());
+    lab.tailnets.ensure_running(1).await.unwrap();
+    assert!(lab.tailnets.handle(1).is_some());
+}
+
+// --- which control servers the operator allows ---
+
+async fn dialog_of(lab: &Lab, admin: &User) -> String {
+    get(&lab.app, admin, "/tailnets/new").await
+}
+
+#[tokio::test]
+async fn offers_the_control_server_only_when_the_operator_allows_other_servers() {
+    // Unset: Tailscale's own, and no field at all.
+    let official = Lab::with_control(TailnetControl::Official).await;
+    let admin = create_admin(&official.app).await;
+    let page = dialog_of(&official, &admin).await;
+    assert!(page.contains("id=\"connect-tailnet-name\""));
+    assert!(!page.contains("name=\"controlUrl\""), "{page}");
+    assert!(!page.contains("Control server"));
+
+    // `any`: a field to type the address in.
+    let any = Lab::with_control(TailnetControl::Any).await;
+    let admin = create_admin(&any.app).await;
+    let page = dialog_of(&any, &admin).await;
+    assert!(
+        page.contains("<input class=\"input\" id=\"connect-tailnet-control\" name=\"controlUrl\"")
+    );
+
+    // A list: a select, Tailscale first, with the origins and nothing else.
+    let listed = Lab::with_control(
+        TailnetControl::parse(Some("https://hs.example.com,http://10.0.0.2:8080")).unwrap(),
+    )
+    .await;
+    let admin = create_admin(&listed.app).await;
+    let page = dialog_of(&listed, &admin).await;
+    let select = between(
+        &page,
+        "<select class=\"input\" id=\"connect-tailnet-control\"",
+        "</select>",
+    );
+    assert!(select.contains("name=\"controlUrl\""));
+    assert!(
+        select.contains("<option value=\"\" selected>Tailscale</option>"),
+        "{select}"
+    );
+    assert!(
+        select.contains("<option value=\"https://hs.example.com\">https://hs.example.com</option>")
+    );
+    assert!(
+        select.contains("<option value=\"http://10.0.0.2:8080\">http://10.0.0.2:8080</option>")
+    );
+    assert_eq!(select.matches("<option").count(), 3);
+}
+
+#[tokio::test]
+async fn refuses_a_control_server_the_operator_does_not_allow() {
+    let lab =
+        Lab::with_control(TailnetControl::parse(Some("https://hs.example.com")).unwrap()).await;
+    let admin = create_admin(&lab.app).await;
+
+    for url in [
+        "https://evil.example.com",
+        "http://hs.example.com",
+        "http://127.0.0.1:8080",
+        "http://169.254.169.254",
+    ] {
+        let refused = from_script(connect(
+            &lab.app,
+            &admin,
+            &[("name", "pro"), ("method", "link"), ("controlUrl", url)],
+        ))
+        .send()
+        .await;
+        assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY, "{url}");
+        let text = refused.text();
+        assert!(text.contains("TAILNET_CONTROL_URLS"), "{url}: {text}");
+        assert!(
+            text.contains("id=\"connect-tailnet-control-error\""),
+            "{url}: {text}"
+        );
+    }
+    // Nothing was saved, and no daemon was started.
+    assert!(tailnets_of(&lab.app, Team::ROOT_ID).await.is_empty());
+    assert!(lab.tailnets.handle(1).is_none());
+
+    // The allowed one connects, and Tailscale's own needs no permission.
+    let api = lab.daemon(1, needs_login());
+    let allowed = connect(
+        &lab.app,
+        &admin,
+        &[
+            ("name", "hs"),
+            ("method", "link"),
+            ("controlUrl", "https://hs.example.com/"),
+        ],
+    )
+    .send()
+    .await;
+    assert_redirect(&allowed, "/tailnets");
+    assert_eq!(
+        api.requests_to("/localapi/v0/start")[0].json()["UpdatePrefs"]["ControlURL"],
+        "https://hs.example.com/"
+    );
+    let _api = lab.daemon(2, needs_login());
+    let official = connect(&lab.app, &admin, &[("name", "ts"), ("method", "link")])
+        .send()
+        .await;
+    assert_redirect(&official, "/tailnets");
+    assert_eq!(tailnets_of(&lab.app, Team::ROOT_ID).await.len(), 2);
+
+    // Only Tailscale's own: the field is not there, and a post that names one is refused.
+    let strict = Lab::with_control(TailnetControl::Official).await;
+    let admin = create_admin(&strict.app).await;
+    let refused = from_script(connect(
+        &strict.app,
+        &admin,
+        &[
+            ("name", "pro"),
+            ("method", "link"),
+            ("controlUrl", "https://hs.example.com"),
+        ],
+    ))
+    .send()
+    .await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let text = refused.text();
+    assert!(
+        text.contains("This tailnet could not be connected"),
+        "{text}"
+    );
+    assert!(text.contains("TAILNET_CONTROL_URLS"), "{text}");
+    assert!(tailnets_of(&strict.app, Team::ROOT_ID).await.is_empty());
+    let plain = connect(
+        &strict.app,
+        &admin,
+        &[
+            ("name", "pro"),
+            ("method", "link"),
+            ("controlUrl", "https://hs.example.com"),
+        ],
+    )
+    .send()
+    .await;
+    assert_redirect(&plain, "/tailnets");
+    assert!(
+        flash(&plain, "error")
+            .unwrap()
+            .contains("TAILNET_CONTROL_URLS")
+    );
+}
+
+#[tokio::test]
+async fn does_not_start_nor_sign_in_a_tailnet_whose_control_server_is_no_longer_allowed() {
+    // Connected while the operator allowed it; the operator no longer does.
+    let lab = Lab::with_control(TailnetControl::Official).await;
+    let admin = create_admin(&lab.app).await;
+    let pro = lab.row(Team::ROOT_ID, admin.id, "pro").await;
+    sqlx::query("update `tailnets` set `control_url` = ? where `id` = ?")
+        .bind("https://hs.example.com/")
+        .bind(pro.id)
+        .execute(&*lab.app.core.db)
+        .await
+        .unwrap();
+    let api = lab.daemon(pro.id, needs_login());
+    // Tailscale's own control server keeps working.
+    let own = lab.row(Team::ROOT_ID, admin.id, "own").await;
+    let _own_api = lab.daemon(own.id, running_status());
+
+    // The page says why, and starts no daemon for it.
+    let page = get(&lab.app, &admin, "/tailnets").await;
+    let row = table_rows(&page)
+        .into_iter()
+        .find(|row| row.contains(">pro<"))
+        .unwrap();
+    assert!(row.contains("badge badge--critical"), "{row}");
+    assert!(
+        row.contains("https://hs.example.com is not allowed"),
+        "{row}"
+    );
+    assert!(row.contains("TAILNET_CONTROL_URLS"), "{row}");
+    assert!(lab.tailnets.handle(pro.id).is_none());
+    assert!(lab.tailnets.handle(own.id).is_some());
+
+    // The way back is refused with the same words, before any daemon is asked.
+    let refused = sign_in_again(&lab.app, &admin, pro.id).send().await;
+    assert_redirect(&refused, "/tailnets");
+    let message = flash(&refused, "error").unwrap();
+    assert!(message.starts_with("Could not sign in again:"), "{message}");
+    assert!(message.contains("TAILNET_CONTROL_URLS"), "{message}");
+    assert!(api.requests().is_empty());
+    assert!(lab.tailnets.handle(pro.id).is_none());
+
+    // So does the start of every tailnet when the server boots.
+    let starts = lab.app.state.upstream.start_tailnets().await.unwrap();
+    let blocked = starts
+        .iter()
+        .find(|start| start.tailnet.id == pro.id)
+        .unwrap();
+    assert!(matches!(
+        &blocked.state,
+        Ok(mymcps_tailnet::TailnetState::Failed(message)) if message.contains("TAILNET_CONTROL_URLS")
+    ));
+    assert!(lab.tailnets.handle(pro.id).is_none());
+
+    // Allowed again (the operator restarts the server with the variable),
+    // it starts as before.
+    let allowed =
+        Lab::with_control(TailnetControl::parse(Some("https://hs.example.com")).unwrap()).await;
+    let admin = create_admin(&allowed.app).await;
+    let hs = allowed.row(Team::ROOT_ID, admin.id, "hs").await;
+    sqlx::query("update `tailnets` set `control_url` = ? where `id` = ?")
+        .bind("https://hs.example.com/")
+        .bind(hs.id)
+        .execute(&*allowed.app.core.db)
+        .await
+        .unwrap();
+    let _api = allowed.daemon(hs.id, needs_login());
+    get(&allowed.app, &admin, "/tailnets").await;
+    assert!(allowed.tailnets.handle(hs.id).is_some());
 }
 
 // --- deleting ---

@@ -156,6 +156,10 @@ impl AppState {
     /// that did not exist before the import, which only an instance without
     /// a user takes.
     pub async fn database_replaced(&self) -> Result<(), sqlx::Error> {
+        // The ids of the backup may be ones this process removed before.
+        if let Some(tailnets) = self.upstream.tailnets() {
+            tailnets.forget_removals();
+        }
         self.instance_settings_changed().await
     }
 }

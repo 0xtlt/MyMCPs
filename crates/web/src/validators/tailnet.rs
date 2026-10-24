@@ -1,8 +1,7 @@
 //! The tailnets of a team: what the Connect dialog submits, and the
 //! `{id}` of a tailnet in a path.
 
-use std::sync::LazyLock;
-
+use mymcps_core::config::TailnetControl;
 use mymcps_net::parse_http_url;
 use mymcps_vine as vine;
 use serde::Deserialize;
@@ -16,11 +15,11 @@ pub const MAX_NAME_LENGTH: usize = 40;
 /// the tailnet crate holds the same limit.
 const MAX_AUTH_KEY_LENGTH: usize = 1024;
 
-/// The control server of a Headscale: an http(s) URL that holds no secret.
-/// The URL is stored as it is and its host is shown in the list, so a user
-/// name, a password or a query are refused.
-fn control_server_url() -> vine::Rule {
-    vine::rule(|value, field| {
+/// The control server of a Headscale: an http(s) URL that holds no secret,
+/// and that the operator allows. The URL is stored as it is and its host is
+/// shown in the list, so a user name, a password or a query are refused.
+fn control_server_url(allowed: TailnetControl) -> vine::Rule {
+    vine::rule(move |value, field| {
         let Some(text) = value.as_str() else {
             return;
         };
@@ -41,6 +40,8 @@ fn control_server_url() -> vine::Rule {
                 "Control server URL must not include a query",
                 "controlServerUrl",
             );
+        } else if let Some(message) = allowed.refusal(Some(text)) {
+            field.report(&message, "controlServerNotAllowed");
         }
     })
 }
@@ -54,8 +55,10 @@ fn tailnet_name() -> vine::VineString {
 }
 
 /// What the Connect a tailnet dialog sends. `authKey` is only asked for, and
-/// only read, when the sign-in method is the key.
-pub static CREATE_TAILNET_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|| {
+/// only read, when the sign-in method is the key. `controlUrl` is refused
+/// unless the operator allows that control server (`TAILNET_CONTROL_URLS`).
+pub fn create_tailnet_validator(allowed: &TailnetControl) -> vine::Validator {
+    let allowed = allowed.clone();
     vine::global().create(vine::object! {
         "name" => tailnet_name(),
         "method" => vine::enum_(["link", "key"]),
@@ -67,10 +70,10 @@ pub static CREATE_TAILNET_VALIDATOR: LazyLock<vine::Validator> = LazyLock::new(|
         "controlUrl" => vine::string()
             .trim()
             .max_length(2048)
-            .use_rule(control_server_url())
+            .use_rule(control_server_url(allowed))
             .optional(),
     })
-});
+}
 
 /// What [`CREATE_TAILNET_VALIDATOR`] lets through.
 #[derive(Clone, Deserialize)]
@@ -118,6 +121,10 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+
+    /// The validator of a server that allows any control server.
+    static CREATE_TAILNET_VALIDATOR: std::sync::LazyLock<vine::Validator> =
+        std::sync::LazyLock::new(|| create_tailnet_validator(&TailnetControl::Any));
 
     fn messages(input: Value) -> Vec<(String, String)> {
         CREATE_TAILNET_VALIDATOR
@@ -200,5 +207,37 @@ mod tests {
                 "{url}"
             );
         }
+    }
+
+    #[test]
+    fn refuses_a_control_server_the_operator_does_not_allow() {
+        let input = |url: &str| json!({ "name": "pro", "method": "link", "controlUrl": url });
+        let official = create_tailnet_validator(&TailnetControl::Official);
+        let error = official
+            .validate(&input("https://hs.example.com"))
+            .unwrap_err();
+        assert_eq!(error.messages[0].field, "controlUrl");
+        assert!(error.messages[0].message.contains("TAILNET_CONTROL_URLS"));
+        // Tailscale's own, left empty, is always allowed.
+        assert!(official.validate(&input("")).is_ok());
+        assert!(
+            official
+                .validate(&json!({ "name": "pro", "method": "link" }))
+                .is_ok()
+        );
+
+        let listed = create_tailnet_validator(
+            &TailnetControl::parse(Some("https://hs.example.com")).unwrap(),
+        );
+        assert!(listed.validate(&input("https://hs.example.com")).is_ok());
+        assert!(listed.validate(&input("https://hs.example.com/")).is_ok());
+        for other in ["https://other.example.com", "http://hs.example.com"] {
+            assert!(listed.validate(&input(other)).is_err(), "{other}");
+        }
+        // Not a secret in the message.
+        let error = listed
+            .validate(&input("https://other.example.com/x"))
+            .unwrap_err();
+        assert!(!error.messages[0].message.contains("/x"));
     }
 }
