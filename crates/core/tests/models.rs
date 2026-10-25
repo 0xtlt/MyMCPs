@@ -3,7 +3,8 @@ use std::time::Duration;
 use mymcps_core::limiter::{Limiter, LimiterError};
 use mymcps_core::models::{
     AccessToken, ApprovalDecision, ApprovalRequest, ApprovalState, InstanceSetting, Invite, Mcp,
-    McpLogLevel, McpStatus, McpTransport, OauthClient, Tailnet, Team, TeamRole, User,
+    McpLogLevel, McpStatus, McpTransport, OauthClient, SIGNED_OUT_FOR_ANOTHER_TAILNET, Tailnet,
+    TailnetIdentity, Team, TeamRole, User,
 };
 use mymcps_core::{Config, Core, Db, Timestamp};
 
@@ -922,4 +923,95 @@ async fn a_team_connects_tailnets_that_its_mcps_use() {
     );
     assert_eq!(Tailnet::count_in_team(&**db, bob_team.id).await.unwrap(), 1);
     assert_eq!(other.mcp_count(&**db).await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn a_tailnet_signs_out_its_mcps_when_its_node_runs_in_another_tailnet() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let ada = admin(db).await;
+    let work = tailnet_of(db, Team::ROOT_ID, ada.id, "work").await;
+    let lab = tailnet_of(db, Team::ROOT_ID, ada.id, "lab").await;
+    let signed_in = |name: &'static str, tailnet: &Tailnet| {
+        let tailnet_id = tailnet.id;
+        async move {
+            let mut mcp = mcp_of(db, Team::ROOT_ID, ada.id, name).await;
+            mcp.tailnet_id = Some(tailnet_id);
+            mcp.auth_bearer = Some("bearer-ciphertext".into());
+            mcp.auth_header_value = Some("header-ciphertext".into());
+            mcp.oauth_client_id = Some("client".into());
+            mcp.oauth_access_token = Some("access-ciphertext".into());
+            mcp.oauth_refresh_token = Some("refresh-ciphertext".into());
+            mcp.oauth_token_url = Some("https://auth.example/token".into());
+            mcp.status = McpStatus::Ready;
+            mcp.renew_oauth_generation();
+            mcp.save(&**db).await.unwrap();
+            mcp
+        }
+    };
+    let wiki = signed_in("Wiki", &work).await;
+    let builds = signed_in("Builds", &lab).await;
+    let find = |id| async move { Mcp::find(&**db, id).await.unwrap().unwrap() };
+
+    // First found running: remembered, in lowercase, without its dots.
+    assert_eq!(
+        work.settle_identity(db, ".Tail1234.ts.net.").await.unwrap(),
+        TailnetIdentity::Bound
+    );
+    let work = Tailnet::find(&**db, work.id).await.unwrap().unwrap();
+    assert_eq!(work.magic_dns_suffix.as_deref(), Some("tail1234.ts.net"));
+    assert_eq!(
+        work.settle_identity(db, "tail1234.ts.net").await.unwrap(),
+        TailnetIdentity::Same
+    );
+    // A copy read before it was remembered finds it settled the same way.
+    let stale = Tailnet::for_tests(Team::ROOT_ID, ada.id, "work");
+    let stale = Tailnet {
+        id: work.id,
+        ..stale
+    };
+    assert_eq!(
+        stale.settle_identity(db, "tail1234.ts.net").await.unwrap(),
+        TailnetIdentity::Same
+    );
+    assert_eq!(find(wiki.id).await.auth_bearer, wiki.auth_bearer);
+
+    // Another tailnet: its MCPs lose what was entered for the first one.
+    assert_eq!(
+        work.settle_identity(db, "tail9999.ts.net").await.unwrap(),
+        TailnetIdentity::Changed { mcps: 1 }
+    );
+    let signed_out = find(wiki.id).await;
+    assert_eq!(signed_out.auth_bearer, None);
+    assert_eq!(signed_out.auth_header_value, None);
+    assert_eq!(signed_out.oauth_client_id, None);
+    assert_eq!(signed_out.oauth_access_token, None);
+    assert_eq!(signed_out.oauth_refresh_token, None);
+    assert_eq!(signed_out.oauth_token_url, None);
+    assert_ne!(signed_out.oauth_generation, wiki.oauth_generation);
+    assert!(signed_out.oauth_generation >= 0);
+    assert_eq!(signed_out.status, McpStatus::Error);
+    assert_eq!(
+        signed_out.last_error.as_deref(),
+        Some(SIGNED_OUT_FOR_ANOTHER_TAILNET)
+    );
+    assert_eq!(signed_out.tailnet_id, Some(work.id));
+    let work_now = Tailnet::find(&**db, work.id).await.unwrap().unwrap();
+    assert_eq!(
+        work_now.magic_dns_suffix.as_deref(),
+        Some("tail9999.ts.net")
+    );
+    // The MCPs of another tailnet keep theirs.
+    let untouched = find(builds.id).await;
+    assert_eq!(untouched.auth_bearer, builds.auth_bearer);
+    assert_eq!(untouched.oauth_access_token, builds.oauth_access_token);
+    assert_eq!(untouched.oauth_generation, builds.oauth_generation);
+    assert_eq!(untouched.status, McpStatus::Ready);
+
+    // A request that read the first tailnet after it moved finds the move
+    // done, and signs nothing out twice.
+    assert_eq!(
+        work.settle_identity(db, "tail9999.ts.net").await.unwrap(),
+        TailnetIdentity::Same
+    );
 }

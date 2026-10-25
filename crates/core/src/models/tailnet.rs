@@ -1,7 +1,28 @@
+use sqlx::SqlitePool;
 use sqlx::sqlite::SqliteExecutor;
 
 use crate::models::Mcp;
 use crate::time::Timestamp;
+
+/// Where the node of a tailnet is, against the tailnet it was first found
+/// running in. See [`Tailnet::settle_identity`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TailnetIdentity {
+    /// The tailnet it was first found in.
+    Same,
+    /// It runs for the first time: this tailnet is now the one its MCPs are for.
+    Bound,
+    /// Another tailnet. The credentials of its MCPs, entered for the first
+    /// one, were cleared, and this one is remembered instead.
+    Changed {
+        /// How many MCPs were signed out.
+        mcps: u64,
+    },
+}
+
+/// Why an MCP lost its credentials when its tailnet changed, for the MCP's
+/// page.
+pub const SIGNED_OUT_FOR_ANOTHER_TAILNET: &str = "The tailnet of this MCP was signed in to another Tailscale tailnet, so its saved credentials and OAuth sign-in were cleared. Enter them again, or connect it again";
 
 model! {
     /// A Tailscale tailnet a team connects, for its HTTP MCPs to reach
@@ -18,6 +39,11 @@ model! {
         pub control_url: Option<String>,
         /// The name of the node this server is in the tailnet.
         pub hostname: String,
+        /// The tailnet the node was first found running in, by its MagicDNS
+        /// suffix (`tail1234.ts.net`), in lowercase. `None` until then. The
+        /// credentials of its MCPs were entered for that tailnet: see
+        /// [`Tailnet::settle_identity`].
+        pub magic_dns_suffix: Option<String>,
         pub created_by: i64,
         pub created_at: Timestamp,
         pub updated_at: Option<Timestamp>,
@@ -104,6 +130,70 @@ impl Tailnet {
             .await
     }
 
+    /// Check that the node of this tailnet runs in the tailnet it was first
+    /// found running in, given the MagicDNS suffix the daemon reports now,
+    /// and remember it the first time.
+    ///
+    /// The node of a row can join another tailnet: a sign-in again with
+    /// another account, or a backup restored without the node's keys and
+    /// signed in again elsewhere. The same names and subnet addresses then
+    /// reach other machines, which the credentials of its MCPs were never
+    /// entered for. So the new tailnet is remembered, and in the same
+    /// transaction every MCP on it loses its secrets and its OAuth sign-in,
+    /// gets a new sign-in generation (a sign-in or renewal in flight is
+    /// dropped) and says why in its error.
+    ///
+    /// Compares with `self` first: a tailnet that did not move costs no write.
+    pub async fn settle_identity(
+        &self,
+        db: &SqlitePool,
+        magic_dns_suffix: &str,
+    ) -> Result<TailnetIdentity, sqlx::Error> {
+        let current = magic_dns_suffix.trim_matches('.').to_ascii_lowercase();
+        let mut saved = self.magic_dns_suffix.clone();
+        // Another request may settle the same move first: then this one reads
+        // what it left, which is the same tailnet. Three turns are plenty.
+        for _ in 0..3 {
+            if saved.as_deref() == Some(current.as_str()) {
+                return Ok(TailnetIdentity::Same);
+            }
+            let mut transaction = db.begin().await?;
+            // The tailnet moves only from what was read: the move and the
+            // clearing of its MCPs are one, or nothing.
+            let moved = sqlx::query(
+                "update `tailnets` set `magic_dns_suffix` = ?, `updated_at` = ? where `id` = ? and `magic_dns_suffix` is ?",
+            )
+            .bind(&current)
+            .bind(Timestamp::now())
+            .bind(self.id)
+            .bind(&saved)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if moved == 0 {
+                transaction.rollback().await?;
+                saved = sqlx::query_scalar::<_, Option<String>>(
+                    "select `magic_dns_suffix` from `tailnets` where `id` = ?",
+                )
+                .bind(self.id)
+                .fetch_optional(db)
+                .await?
+                .ok_or(sqlx::Error::RowNotFound)?;
+                continue;
+            }
+            if saved.is_none() {
+                transaction.commit().await?;
+                return Ok(TailnetIdentity::Bound);
+            }
+            let mcps = sign_out_mcps(&mut transaction, self.id).await?;
+            transaction.commit().await?;
+            return Ok(TailnetIdentity::Changed { mcps });
+        }
+        Err(sqlx::Error::Protocol(
+            "the tailnet of a node kept changing while it was checked".to_owned(),
+        ))
+    }
+
     /// How many tailnets a team has.
     pub async fn count_in_team<'e, E>(db: E, team_id: i64) -> Result<i64, sqlx::Error>
     where
@@ -114,4 +204,32 @@ impl Tailnet {
             .fetch_one(db)
             .await
     }
+}
+
+/// Clears the secrets and the OAuth sign-in of every MCP on tailnet `id`:
+/// they were entered for the tailnet it was before.
+async fn sign_out_mcps(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    id: i64,
+) -> Result<u64, sqlx::Error> {
+    // `random() & (2^52 - 1)`: a new generation, as `renew_oauth_generation`.
+    let mcps = sqlx::query(
+        "update `mcps` set `auth_bearer` = null, `auth_header_value` = null, \
+         `oauth_authorize_url` = null, `oauth_token_url` = null, `oauth_scopes` = null, \
+         `oauth_client_id` = null, `oauth_client_secret` = null, \
+         `oauth_access_token` = null, `oauth_refresh_token` = null, \
+         `oauth_token_expires_at` = null, `oauth_issuer` = null, `oauth_resource` = null, \
+         `oauth_redirect_uri` = null, `oauth_client_auth_method` = null, \
+         `oauth_token_type` = null, `oauth_required` = 0, \
+         `oauth_generation` = (random() & 4503599627370495), \
+         `status` = 'error', `last_error` = ?, `updated_at` = ? \
+         where `tailnet_id` = ?",
+    )
+    .bind(SIGNED_OUT_FOR_ANOTHER_TAILNET)
+    .bind(Timestamp::now())
+    .bind(id)
+    .execute(&mut **transaction)
+    .await?
+    .rows_affected();
+    Ok(mcps)
 }

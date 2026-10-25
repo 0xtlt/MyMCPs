@@ -303,7 +303,7 @@ pub const MIGRATIONS: &[Migration] = &[
     Migration {
         name: "database/migrations/1792840156000_add_tailnets",
         statements: &[
-            r#"create table `tailnets` (`id` integer not null primary key autoincrement, `team_id` integer not null, `name` varchar(120) not null, `control_url` varchar(2048) null, `hostname` varchar(63) not null, `created_by` integer not null, `created_at` datetime not null, `updated_at` datetime null, foreign key(`team_id`) references `teams`(`id`) on delete CASCADE)"#,
+            r#"create table `tailnets` (`id` integer not null primary key autoincrement, `team_id` integer not null, `name` varchar(120) not null, `control_url` varchar(2048) null, `hostname` varchar(63) not null, `magic_dns_suffix` varchar(253) null, `created_by` integer not null, `created_at` datetime not null, `updated_at` datetime null, foreign key(`team_id`) references `teams`(`id`) on delete CASCADE)"#,
             r#"create unique index `tailnets_team_id_name_unique` on `tailnets` (`team_id`, `name` collate nocase)"#,
             r#"alter table `mcps` add column `tailnet_id` integer null references `tailnets`(`id`) on delete SET NULL"#,
             r#"create index `mcps_tailnet_id_index` on `mcps` (`tailnet_id`)"#,

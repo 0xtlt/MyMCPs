@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::localapi::LocalClient;
+use crate::localapi::{LocalClient, Status};
 use crate::route;
 
 /// The peers of one tailnet, reached through its daemon. Cheap to clone.
@@ -14,11 +14,42 @@ use crate::route;
 pub struct TailnetHandle {
     id: i64,
     client: LocalClient,
+    /// The MagicDNS suffix of the only tailnet this handle carries traffic
+    /// in, see [`pinned_to`](Self::pinned_to).
+    pin: Option<String>,
 }
 
 impl TailnetHandle {
     pub(crate) fn new(id: i64, client: LocalClient) -> Self {
-        TailnetHandle { id, client }
+        TailnetHandle {
+            id,
+            client,
+            pin: None,
+        }
+    }
+
+    /// This handle, carrying traffic only while the node runs in the tailnet
+    /// of this MagicDNS suffix: once it is signed in to another one, every
+    /// [`route`](Self::route) and [`dial`](Self::dial) fails, so a
+    /// connection set up for the first tailnet never reaches the second.
+    pub fn pinned_to(mut self, magic_dns_suffix: &str) -> Self {
+        self.pin = Some(magic_dns_suffix.trim_matches('.').to_ascii_lowercase());
+        self
+    }
+
+    fn check_pin(&self, status: &Status) -> io::Result<()> {
+        match &self.pin {
+            Some(pin) if !status.magic_dns_suffix().eq_ignore_ascii_case(pin) => {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "the node is now signed in to another tailnet ({}, not {pin})",
+                        status.magic_dns_suffix()
+                    ),
+                ))
+            }
+            _ => Ok(()),
+        }
     }
 
     /// The tailnet this handle reaches.
@@ -51,6 +82,7 @@ impl TailnetHandle {
                 format!("the tailnet is not running: {}", status.backend_state),
             ));
         }
+        self.check_pin(&status)?;
         match route::resolve(&status, host) {
             Some(address) => Ok(Some(SocketAddr::new(address, port))),
             None if route::is_tailnet_only(&status, host) => Err(io::Error::new(
@@ -81,6 +113,7 @@ impl TailnetHandle {
             ));
         }
         let status = self.client.status().await?;
+        self.check_pin(&status)?;
         let routed = status.backend_state == "Running"
             && route::resolve(&status, &address.ip().to_string())
                 == Some(address.ip().to_canonical());

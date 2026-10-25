@@ -380,6 +380,97 @@ async fn pools_the_connections_to_a_tailnet_across_requests() {
     );
 }
 
+/// The status of the node once signed in to another tailnet, which has a
+/// `nas` and a `192.168.1.0/24` too: other machines, by the same names.
+fn status_of_another_tailnet() -> Value {
+    let status = running_status()
+        .to_string()
+        .replace("tail1234.ts.net", "tail9999.ts.net")
+        .replace("me@example.com", "someone-else@example.com");
+    serde_json::from_str(&status).unwrap()
+}
+
+#[tokio::test]
+async fn signs_out_the_mcps_of_a_tailnet_whose_node_joined_another_tailnet() {
+    let office = Office::new().await;
+    // Whatever the tailnet does not carry would reach this: nothing may.
+    let (fallback, reached) = mock_fetch(|_| not_found());
+    let upstream = office.upstream_falling_back_to(fallback);
+    let mut mcp = office.mcp_at("nas").await;
+    mcp.auth_type = McpAuthType::Bearer;
+    mcp.auth_bearer = encrypt(&office.core, "s3cret");
+    mcp.save(&*office.core.db).await.unwrap();
+    // The client also opens a stream with a GET in the background, whose
+    // moment is not ours: the POSTs are what the test counts.
+    let carried_the_bearer = || {
+        office
+            .server
+            .requests()
+            .iter()
+            .filter(|request| {
+                request.method == "POST" && request.header("authorization") == Some("Bearer s3cret")
+            })
+            .count()
+    };
+
+    // In the tailnet it joined first: the MCP connects, and that tailnet is
+    // the one its credentials are for from now on.
+    let connected = upstream.connect_http_upstream(&mut mcp).await.unwrap();
+    assert_eq!(connected.client.list_tools().await.unwrap().tools.len(), 1);
+    let tailnet = Tailnet::find(&*office.core.db, office.tailnet.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(tailnet.magic_dns_suffix.as_deref(), Some("tail1234.ts.net"));
+    let before = carried_the_bearer();
+    assert!(before > 0);
+
+    // The node is signed in to another tailnet (another account, or a backup
+    // restored without its keys).
+    office.api.set_status(status_of_another_tailnet());
+    status_expires().await;
+
+    // The session that was open stops at once: its network is the old one's.
+    let error = connected.client.list_tools().await.unwrap_err();
+    assert!(error.to_string().contains("another tailnet"), "{error}");
+    connected.close().await;
+    // A new connection with the MCP as it was read: refused, and its
+    // credentials are cleared.
+    let error = upstream
+        .connect_http_upstream(&mut mcp)
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        refused(&error).contains("signed in to another Tailscale tailnet"),
+        "{error}"
+    );
+    let saved = office.saved(&mcp).await;
+    assert_eq!(saved.auth_bearer, None);
+    assert_eq!(saved.status, McpStatus::Error);
+    assert_ne!(saved.oauth_generation, mcp.oauth_generation);
+    let tailnet = Tailnet::find(&*office.core.db, office.tailnet.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(tailnet.magic_dns_suffix.as_deref(), Some("tail9999.ts.net"));
+    // The same stale copy again: the tailnet is settled now, but the copy
+    // still holds what was cleared.
+    let error = upstream
+        .connect_http_upstream(&mut mcp)
+        .await
+        .err()
+        .unwrap();
+    assert!(refused(&error).contains("was changed"), "{error}");
+
+    // As saved now, the MCP reaches the new tailnet, without the bearer.
+    let mut current = office.saved(&mcp).await;
+    let connected = upstream.connect_http_upstream(&mut current).await.unwrap();
+    connected.close().await;
+    assert_eq!(carried_the_bearer(), before);
+    assert!(reached.all().is_empty(), "{:?}", reached.all());
+}
+
 #[tokio::test]
 async fn never_sends_the_credentials_elsewhere_when_the_route_disappears_mid_session() {
     let office = Office::new().await;

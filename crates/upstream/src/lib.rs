@@ -161,6 +161,11 @@ pub use session::{
 };
 pub use tailnet::TailnetStart;
 
+/// What a pooled tailnet network was made for: its label (with the name of
+/// the tailnet, for the errors) and the MagicDNS suffix of the tailnet the
+/// node ran in.
+type TailnetNetworkKey = (String, String);
+
 /// The gateway's side of every MCP it exposes. See the crate documentation.
 ///
 /// Built once and shared as an `Arc`. Cloning it is cheap, and clones share
@@ -186,9 +191,9 @@ pub struct Upstream {
     /// has a `tailscaled` to run (`TAILSCALED_BINARY`).
     tailnets: Option<Tailnets>,
     /// The network of each tailnet an MCP goes through, by tailnet id, with
-    /// the label it was made with: one per tailnet, so that its connections
-    /// are pooled.
-    tailnet_networks: Arc<Mutex<HashMap<i64, (String, OverlayNetwork)>>>,
+    /// the label and the tailnet (MagicDNS suffix) it was made for: one per
+    /// tailnet, so that its connections are pooled.
+    tailnet_networks: Arc<Mutex<HashMap<i64, (TailnetNetworkKey, OverlayNetwork)>>>,
 }
 
 impl Upstream {

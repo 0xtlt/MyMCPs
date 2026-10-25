@@ -2,11 +2,10 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
-## 2026-10-24
+## 2026-10-25
 
 ### Added
 
-- Each HTTP or npm MCP has a **Tool call timeout** in its dialog: how long a tool call waits for its answer, 60 seconds when left blank as before. A remote HTTP MCP may wait up to 300 seconds, since the server only holds a connection open meanwhile; an npm MCP up to 120 seconds, since its package runs on the server, in its sandbox, for the whole call. A tool that waits on purpose, such as `t3_thread_wait` of T3 Code, no longer fails at 60 seconds once its MCP is given more time. The registry tools take it as `timeout_seconds`.
 - **Tailnets**: the owners and admins of a team connect Tailscale tailnets on the new **Tailnets** page, up to 5 a team (`pro`, `perso`), with a sign-in link or a one-time auth key that is never stored, logged or shown again. Each tailnet is a `tailscaled` process of its own that MyMCPs runs in userspace networking: no root, no TUN, no change to the network of the server. The page shows whether each one is connected, signs one in again when its link or its key expired or it came back from a backup, and deletes it once no MCP uses it. A delete logs the device out of the tailnet where its control server is still allowed and Tailscale is on; otherwise it deletes the state on this server, key included, and says that the device stays in the admin console of the tailnet. See [docs/tailnets.md](docs/tailnets.md).
 - HTTP MCPs have a **Network** field: **Internet**, or a tailnet of their team. Through a tailnet the MCP reaches the devices of that tailnet, by MagicDNS name, short name (`http://nas:8080/mcp`) or Tailscale address, and its subnet routes; every request to its own server goes through the tailnet or fails, and the MCP says why. The other servers of its OAuth sign-in go through the tailnet when it carries them, and otherwise over the public network only when they are named by a DNS name, so a public OAuth provider must not be named by an IP address. Changing the network of an MCP clears its saved bearer token, header value and OAuth sign-in, as a change of origin does. `mcp_registry_list`, `mcp_registry_create` and `mcp_registry_update` read and set it as `tailnet`.
 - The Docker image holds `tailscaled` 1.104.2 from the official `tailscale/tailscale` image, named by `TAILSCALED_BINARY`. On a host install, unset uses the `tailscaled` of the `PATH`, and `off` turns tailnets off. A tailnet uses Tailscale's own control server unless the operator allows others, such as a Headscale, with `TAILNET_CONTROL_URLS` (`any`, or a comma-separated list of origins).
@@ -14,16 +13,29 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ### Changed
 
-- Released version [0.5.0](https://github.com/0xtlt/MyMCPs/releases/tag/v0.5.0).
-
-- A tool call that runs out of time now tells the agent so, for example "The remote MCP server did not answer within 60 seconds, the tool call timeout of this MCP.", instead of "Upstream tool call failed". The call log records the same sentence instead of "MCP error -32001: Request timed out", and says whether a remote server or an npm package was waited for.
 - Deleting a team, or a user whose personal team goes with them, also stops the `tailscaled` of its tailnets and deletes their state, and logs their devices out where their control server is still allowed and Tailscale is on. With Tailscale off, the state is deleted all the same and the message says that the devices stay in the admin console of their tailnets.
 
 ### Security
 
-- Updated tokio to 1.54.1, which fixes a race condition in its interval timer (RUSTSEC-2026-0384), and ctutils to 0.4.5, which fixes mask generation and `u128` comparisons that did not run in constant time (RUSTSEC-2026-0385).
 - Tailnets are built for teams that do not trust each other: a tailnet belongs to one team; its `tailscaled` is reached only through a Unix socket, which sandboxed npm MCPs cannot open on Linux; MyMCPs never asks it to dial loopback, link-local or its own device, even through a subnet route; the requests to the server of an MCP never leave its tailnet; the other servers of its OAuth sign-in are reached over the public network only when the tailnet does not carry them and they are named by a DNS name, never an IP address, a single-label name or a name of the tailnet, and the public network refuses IP addresses of loopback, private and link-local ranges (the metadata address included) and names that resolve to them, so codes, verifiers and tokens never go to the network of the server; a team cannot point a tailnet at its own control server unless `TAILNET_CONTROL_URLS` allows it, and one no longer allowed is never contacted again, not even to log out; the registry tools check the address of an MCP again whenever its network changes; sign-in links and keys stay out of the log.
-- An OAuth sign-in is bound to the address, the network and the sign-in the MCP had when it started. A code exchange, a registration or a token renewal that is waiting for its provider when an admin changes the MCP's URL or network, or clears or redoes its sign-in, is dropped: what the provider then issues is not saved onto the changed MCP and nothing is sent with it. A sign-in that was started before such a change is refused when the browser comes back, before its code is sent anywhere, even if the MCP is back where it started (a network switched and switched back, or two sign-ins with the same client): connect the MCP again. An edit that changes where an MCP goes also erases the OAuth tokens that a sign-in finishing at the same moment saved, instead of keeping them. Saving an MCP without changing where it goes or its sign-in (a new name, say) does not interrupt a sign-in or a renewal in progress, and a built-in MCP keeps its client secret as stored when it is saved unchanged.
+- An OAuth sign-in is bound to the address, the network and the sign-in the MCP had when it started. A code exchange, a registration or a token renewal that is waiting for its provider when an admin changes the MCP's URL or network, or clears or redoes its sign-in, or when the server of the MCP names another OAuth provider, is dropped: what the provider then issues is not saved onto the changed MCP and nothing is sent with it. A sign-in that was started before such a change is refused when the browser comes back, before its code is sent anywhere, even if the MCP is back where it started (a network switched and switched back, or two sign-ins with the same client): connect the MCP again. A sign-in dropped this way leaves the status of the MCP as it was. An edit that changes where an MCP goes also erases the OAuth tokens that a sign-in finishing at the same moment saved, instead of keeping them. Saving an MCP without changing where it goes or its sign-in (a new name, say) does not interrupt a sign-in or a renewal in progress, and a built-in MCP keeps its client secret as stored when it is saved unchanged.
+- A tailnet remembers the Tailscale tailnet its device first ran in. When the device is later signed in to another one (another account, or an imported backup signed in elsewhere), where the same names and subnet addresses are other machines, its MCPs lose their saved bearer token, header value and OAuth sign-in before any request goes through, and say why; the connections they kept stop at once.
+
+## 2026-10-24
+
+### Added
+
+- Each HTTP or npm MCP has a **Tool call timeout** in its dialog: how long a tool call waits for its answer, 60 seconds when left blank as before. A remote HTTP MCP may wait up to 300 seconds, since the server only holds a connection open meanwhile; an npm MCP up to 120 seconds, since its package runs on the server, in its sandbox, for the whole call. A tool that waits on purpose, such as `t3_thread_wait` of T3 Code, no longer fails at 60 seconds once its MCP is given more time. The registry tools take it as `timeout_seconds`.
+
+### Changed
+
+- Released version [0.5.0](https://github.com/0xtlt/MyMCPs/releases/tag/v0.5.0).
+
+- A tool call that runs out of time now tells the agent so, for example "The remote MCP server did not answer within 60 seconds, the tool call timeout of this MCP.", instead of "Upstream tool call failed". The call log records the same sentence instead of "MCP error -32001: Request timed out", and says whether a remote server or an npm package was waited for.
+
+### Security
+
+- Updated tokio to 1.54.1, which fixes a race condition in its interval timer (RUSTSEC-2026-0384), and ctutils to 0.4.5, which fixes mask generation and `u128` comparisons that did not run in constant time (RUSTSEC-2026-0385).
 
 ## 2026-10-21
 

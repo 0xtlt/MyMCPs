@@ -26,7 +26,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use mymcps_core::models::{Mcp, McpTransport, Tailnet};
+use mymcps_core::models::{Mcp, McpTransport, Tailnet, TailnetIdentity};
 use mymcps_net::{Fetcher, Overlay, OverlayNetwork, OverlayStream};
 use mymcps_tailnet::{TailnetState, Tailnets};
 use url::{Host, Url};
@@ -47,16 +47,20 @@ struct TailnetOverlay {
     tailnets: Tailnets,
     id: i64,
     label: String,
+    /// The MagicDNS suffix of the tailnet the MCPs' credentials are for: the
+    /// overlay carries nothing once the node is signed in to another one.
+    pin: String,
 }
 
 impl TailnetOverlay {
     fn handle(&self) -> io::Result<mymcps_tailnet::TailnetHandle> {
-        self.tailnets.handle(self.id).ok_or_else(|| {
+        let handle = self.tailnets.handle(self.id).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotConnected,
                 format!("{} is not running", self.label),
             )
-        })
+        })?;
+        Ok(handle.pinned_to(&self.pin))
     }
 }
 
@@ -156,18 +160,49 @@ impl Upstream {
             return Err(refusal(format!("Tailnet \"{}\": {message}", tailnet.name)));
         }
         let state = tailnets.state(id).await;
-        if !matches!(state, TailnetState::Running { .. }) {
+        let TailnetState::Running {
+            magic_dns_suffix, ..
+        } = &state
+        else {
             return Err(refusal(format!(
                 "Tailnet \"{}\" is not running: {}. Sign in again on the Tailnets page",
                 tailnet.name,
                 describe(&state)
             )));
+        };
+        // The credentials of the MCP were entered for the tailnet the node
+        // was first found in. Signed in to another one since, it is not that
+        // network: its MCPs are signed out, and this request, which holds the
+        // old credentials, is not sent.
+        if let TailnetIdentity::Changed { .. } = tailnet
+            .settle_identity(&self.core.db, magic_dns_suffix)
+            .await?
+        {
+            self.forget_tailnet(id);
+            return Err(refusal(format!(
+                "Tailnet \"{}\" was signed in to another Tailscale tailnet, so the saved credentials of its MCPs were cleared. Enter them again, or connect the MCP again",
+                tailnet.name
+            )));
+        }
+        // A request that read the MCP before that holds what was cleared: the
+        // sign-in generation, renewed with every clearing, tells it is stale.
+        if mcp.is_persisted() {
+            let generation: Option<i64> =
+                sqlx::query_scalar("select `oauth_generation` from `mcps` where `id` = ?")
+                    .bind(mcp.id)
+                    .fetch_optional(&*self.core.db)
+                    .await?;
+            if generation != Some(mcp.oauth_generation) {
+                return Err(refusal(
+                    "This MCP was changed while the request was prepared (its address, its network or its credentials). Try again",
+                ));
+            }
         }
 
         let (host, port) = overlay_host(url)
             .ok_or_else(|| refusal("The URL of this MCP has no host a tailnet can reach"))?;
         let routed = match tailnets.handle(id) {
-            Some(handle) => handle.route(&host, port).await,
+            Some(handle) => handle.pinned_to(magic_dns_suffix).route(&host, port).await,
             None => Err(io::Error::new(
                 io::ErrorKind::NotConnected,
                 "the tailnet stopped",
@@ -198,32 +233,42 @@ impl Upstream {
             }
         }
 
-        let network = self.tailnet_network(tailnets, &tailnet);
+        let network = self.tailnet_network(tailnets, &tailnet, magic_dns_suffix);
         Ok(Some(
             self.fetcher.public_only().through_requiring(&network, url),
         ))
     }
 
     /// The network of a tailnet, the same one for every request so that its
-    /// connections are pooled. A tailnet that was renamed gets a new one: the
-    /// name is in the errors.
-    fn tailnet_network(&self, tailnets: &Tailnets, tailnet: &Tailnet) -> OverlayNetwork {
-        let label = format!("tailnet \"{}\"", tailnet.name);
+    /// connections are pooled. A tailnet that was renamed, or whose node now
+    /// runs in another tailnet, gets a new one: the name is in the errors, and
+    /// the old network stays pinned to the old tailnet.
+    fn tailnet_network(
+        &self,
+        tailnets: &Tailnets,
+        tailnet: &Tailnet,
+        magic_dns_suffix: &str,
+    ) -> OverlayNetwork {
+        let key = (
+            format!("tailnet \"{}\"", tailnet.name),
+            magic_dns_suffix.to_ascii_lowercase(),
+        );
         let mut networks = self
             .tailnet_networks
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((known, network)) = networks.get(&tailnet.id)
-            && *known == label
+            && *known == key
         {
             return network.clone();
         }
         let network = OverlayNetwork::new(Arc::new(TailnetOverlay {
             tailnets: tailnets.clone(),
             id: tailnet.id,
-            label: label.clone(),
+            label: key.0.clone(),
+            pin: key.1.clone(),
         }));
-        networks.insert(tailnet.id, (label, network.clone()));
+        networks.insert(tailnet.id, (key, network.clone()));
         network
     }
 
