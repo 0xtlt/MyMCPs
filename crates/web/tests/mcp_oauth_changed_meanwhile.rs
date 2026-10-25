@@ -147,7 +147,15 @@ async fn lab() -> Lab {
 
 async fn lab_resolving(guard: AddressGuard) -> Lab {
     let gate = Arc::new(Gate::default());
-    let (fetcher, calls) = mock_fetch(provider(gate.clone()));
+    lab_with(gate.clone(), provider(gate), guard).await
+}
+
+async fn lab_with(
+    gate: Arc<Gate>,
+    answer: impl Fn(&Call) -> CannedResponse + Send + Sync + 'static,
+    guard: AddressGuard,
+) -> Lab {
+    let (fetcher, calls) = mock_fetch(answer);
     let app =
         TestApp::with_upstream(|upstream| upstream.fetcher(fetcher).address_guard(guard)).await;
     let admin = create_admin(&app).await;
@@ -500,6 +508,98 @@ async fn finishes_a_sign_in_when_the_mcp_was_saved_without_moving() {
     let callback = lab.callback(&start, &state).await;
 
     assert_eq!(callback.flashed("success"), Some(json!("OAuth connected")));
+}
+
+/// The MCP's metadata names `auth2.example` once `moved` is set, and that
+/// provider gives the client the id the first one gave (as a Client ID
+/// Metadata Document does): only the generation tells the sign-ins apart.
+fn provider_that_moves(
+    gate: Arc<Gate>,
+    moved: Arc<AtomicBool>,
+) -> impl Fn(&Call) -> CannedResponse + Send + Sync + 'static {
+    let first = provider(gate);
+    move |call| {
+        if !moved.load(Ordering::SeqCst) {
+            return first(call);
+        }
+        let url = call.url.as_str();
+        if url.contains("/.well-known/oauth-protected-resource") {
+            return json_response(json!({
+                "resource": format!("{}/mcp", call.origin()),
+                "authorization_servers": ["https://auth2.example"],
+            }));
+        }
+        match url {
+            "https://auth2.example/.well-known/oauth-authorization-server" => {
+                json_response(authorization_server("https://auth2.example"))
+            }
+            "https://auth2.example/register" => json_response(registered_client("client-1")),
+            _ => first(call),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn refuses_a_sign_in_finished_after_the_provider_of_the_mcp_changed() {
+    let gate = Arc::new(Gate::default());
+    let moved = Arc::new(AtomicBool::new(false));
+    let lab = lab_with(
+        gate.clone(),
+        provider_that_moves(gate, moved.clone()),
+        public_names(),
+    )
+    .await;
+    // Sign-in A with the first provider: nothing is saved but its client.
+    let (start, state) = lab.start().await;
+    let first = find_mcp(&lab.app, lab.mcp.id).await;
+    assert_eq!(first.oauth_access_token, None);
+    // The MCP now names another provider, and sign-in B registers there.
+    moved.store(true, Ordering::SeqCst);
+    lab.start().await;
+    let second = find_mcp(&lab.app, lab.mcp.id).await;
+    assert_eq!(
+        second.oauth_issuer.as_deref(),
+        Some("https://auth2.example")
+    );
+    assert_eq!(second.oauth_client_id, first.oauth_client_id);
+    lab.calls.clear();
+
+    let callback = lab.callback(&start, &state).await;
+
+    let error = callback.flashed("error").expect("the callback says why");
+    assert!(error.as_str().unwrap().contains("changed since"), "{error}");
+    // A's code was not sent to the new provider, and nothing was saved.
+    assert!(lab.calls.with_path(TOKEN).is_empty());
+    let saved = find_mcp(&lab.app, lab.mcp.id).await;
+    assert_eq!(saved.oauth_access_token, None);
+    assert_eq!(saved.oauth_refresh_token, None);
+}
+
+/// Sign-in A is held at the provider while sign-in B connects the MCP: A's
+/// result is dropped, and the MCP stays connected by B.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_dropped_sign_in_leaves_the_status_of_the_mcp_alone() {
+    let lab = lab().await;
+    let (start_a, state_a) = lab.start().await;
+    let (start_b, state_b) = lab.start().await;
+
+    lab.gate.arm(TOKEN);
+    let exchange_a = tokio::spawn(lab.callback(&start_a, &state_a));
+    lab.gate.reached().await;
+    let callback_b = lab.callback(&start_b, &state_b).await;
+    assert_eq!(
+        callback_b.flashed("success"),
+        Some(json!("OAuth connected"))
+    );
+    lab.gate.release();
+    let callback_a = exchange_a.await.unwrap();
+
+    let error = callback_a.flashed("error").expect("the callback says why");
+    assert!(error.as_str().unwrap().contains("changed while"), "{error}");
+    let saved = find_mcp(&lab.app, lab.mcp.id).await;
+    assert_eq!(saved.status, McpStatus::Ready);
+    assert_eq!(saved.last_error, None);
+    assert!(saved.oauth_access_token.is_some());
 }
 
 // An edit that moves the MCP clears its sign-in, and that is written, not

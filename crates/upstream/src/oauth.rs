@@ -426,7 +426,12 @@ pub fn uses_pasted_oauth_callback(mcp: &Mcp) -> bool {
 
 /// Tokens belong to the provider and client that issued them. Dropping them
 /// also leaves the MCP waiting for its account, so Connect stays available.
+///
+/// A new provider or client also ends the sign-ins begun with the old one,
+/// even when none has saved a token yet: one that finished later would save
+/// tokens of the old provider next to the new one's endpoints.
 fn forget_oauth_tokens(mcp: &mut Mcp) {
+    mcp.renew_oauth_generation();
     if present(&mcp.oauth_access_token).is_none() && present(&mcp.oauth_refresh_token).is_none() {
         return;
     }
@@ -435,7 +440,6 @@ fn forget_oauth_tokens(mcp: &mut Mcp) {
     mcp.oauth_token_expires_at = None;
     mcp.oauth_token_type = None;
     mcp.oauth_required = true;
-    mcp.renew_oauth_generation();
 }
 
 /// When an access token issued now stops being fresh.
@@ -1053,8 +1057,8 @@ impl Upstream {
             return Ok(());
         }
         let _ = self.reload(mcp).await;
-        Err(UpstreamError::other(
-            "The MCP was changed while its OAuth sign-in was running (its address, its network or its sign-in), so the result was dropped. Connect it again",
+        Err(UpstreamError::Superseded(
+            "The MCP was changed while its OAuth sign-in was running (its address, its network or its sign-in), so the result was dropped. Connect it again".to_owned(),
         ))
     }
 

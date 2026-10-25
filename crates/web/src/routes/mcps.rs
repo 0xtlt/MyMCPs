@@ -1503,9 +1503,13 @@ pub async fn oauth_callback(
                 500,
                 [code.as_str(), callback_state.as_str()],
             );
-            mcp.status = McpStatus::Error;
-            mcp.last_error = Some(reason.clone());
-            mcp.save(db).await?;
+            // A sign-in dropped because the MCP changed meanwhile says nothing
+            // of the MCP as it is now, which may be connected by another one.
+            if !error.is_superseded() {
+                mcp.status = McpStatus::Error;
+                mcp.last_error = Some(reason.clone());
+                mcp.save(db).await?;
+            }
             session.flash("error", reason);
         }
     }

@@ -67,8 +67,8 @@ impl OauthSession {
         if self.generation == mcp.oauth_generation {
             return Ok(());
         }
-        Err(UpstreamError::other(
-            "The MCP was changed since this OAuth sign-in started (its address, its network or its sign-in), so it was dropped. Connect it again",
+        Err(UpstreamError::Superseded(
+            "The MCP was changed since this OAuth sign-in started (its address, its network or its sign-in), so it was dropped. Connect it again".to_owned(),
         ))
     }
 }
