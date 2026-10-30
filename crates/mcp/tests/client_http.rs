@@ -158,6 +158,15 @@ impl When {
 }
 
 async fn scripted(State(script): State<Arc<Script>>, request: Request) -> Response {
+    // The client only ever asks the URL of the MCP. Anything else comes from
+    // another program of the machine that probes the ports which open on it
+    // (a development tool sends `GET /`), and is not the client's.
+    if request.uri().path() != "/mcp" {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap();
+    }
     let method = request.method().as_str().to_owned();
     let headers = request.headers().clone();
     let body = axum::body::to_bytes(request.into_body(), usize::MAX)
