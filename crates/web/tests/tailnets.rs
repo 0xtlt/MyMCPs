@@ -12,7 +12,9 @@ use http::StatusCode;
 use mcps_support::*;
 use mymcps_core::config::TailnetControl;
 use mymcps_core::models::{Mcp, McpAuthType, McpTransport, Tailnet, Team, TeamRole, User};
-use mymcps_tailnet::test_support::{FakeLocalApi, fake_tailscaled, running_status, status_in};
+use mymcps_tailnet::test_support::{
+    FakeLocalApi, eventually, fake_tailscaled, running_status, status_in,
+};
 use mymcps_tailnet::{Error as TailnetError, TailnetState, Tailnets, TailnetsConfig};
 use mymcps_web::testing::factories::{
     PASSWORD, create_account, create_admin, create_mcp, create_member, create_super_admin,
@@ -1053,6 +1055,10 @@ async fn deleting_a_tailnet_whose_control_server_is_no_longer_allowed_starts_no_
             // A daemon that was already running (started before the setting changed).
             lab.tailnets.ensure_running(pro.id).await.unwrap();
             assert!(lab.tailnets.handle(pro.id).is_some());
+            // Its process counts the run once it is going, which may be after
+            // `ensure_running` returns: counted before, it would look like a
+            // run of the deletion.
+            assert!(eventually(std::time::Duration::from_secs(5), || lab.runs() == 1).await);
         }
         let runs = lab.runs();
 
