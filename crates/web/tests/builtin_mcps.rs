@@ -9,10 +9,14 @@
 
 mod mcps_support;
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use http::StatusCode;
 use mcps_support::*;
 use mymcps_builtin::BuiltinEnv;
 use mymcps_core::Timestamp;
+use mymcps_core::gate::Gate;
 use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, User};
 use mymcps_core::secrets::{EnvironmentInput, decrypt_environment, merge_environment};
 use mymcps_google_ads::testing::{FakeGoogleAds, GOOGLE_ADS_SCOPE};
@@ -387,6 +391,84 @@ async fn strava_shares_the_callback_domain_and_never_the_client_secret_with_the_
     ] {
         assert!(!page.contains(secret), "{secret}");
     }
+}
+
+/// Saving an MCP whose credentials did not change writes them as they were.
+/// An access token being renewed at the provider is saved only if the
+/// client secret is still the stored string, so a new encryption of the same
+/// secret (another IV) would drop the rotated tokens, and the old refresh
+/// token is not good any more.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn strava_saves_a_rotated_token_when_the_mcp_is_renamed_during_the_refresh() {
+    let gate = Arc::new(Gate::default());
+    let (app, _calls) = app_with_strava({
+        let gate = gate.clone();
+        move |call| {
+            if call.path() != "/api/v3/oauth/token" {
+                return None;
+            }
+            gate.hold("token");
+            Some(strava_json(
+                json!({
+                    "token_type": "Bearer",
+                    "expires_in": 21600,
+                    "refresh_token": "strava-rotated-refresh-token",
+                    "access_token": "strava-rotated-access-token",
+                }),
+                200,
+            ))
+        }
+    })
+    .await;
+    let app = Arc::new(app);
+    let admin = create_admin(&app).await;
+    let mut mcp = create_strava_mcp(&app, admin.id, true, false).await;
+    mcp.oauth_token_expires_at = Some(Timestamp::now() - chrono::Duration::minutes(1));
+    mcp.save(&*app.core.db).await.unwrap();
+
+    // A request of the gateway renews the token, and waits for the provider.
+    gate.arm("token");
+    let refreshing = {
+        let upstream = app.state.upstream.clone();
+        let mut row = find_mcp(&app, mcp.id).await;
+        tokio::spawn(async move { upstream.refresh_oauth_access_token(&mut row).await })
+    };
+    gate.reached().await;
+
+    // The MCP is renamed meanwhile, its credentials as the dialog shows them.
+    let renaming = {
+        let app = app.clone();
+        let admin = admin.clone();
+        let form = with(
+            &with(&STRAVA_FORM, &[("oauthClientSecret", "")]),
+            &[("name", "Strava training")],
+        );
+        tokio::spawn(async move { put(&app, &admin, mcp.id, &form).await })
+    };
+    let renamed = async {
+        while find_mcp(&app, mcp.id).await.name != "Strava training" {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(20), renamed)
+        .await
+        .expect("the rename was saved");
+    gate.release();
+    refreshing.await.unwrap().expect("the refresh was saved");
+    let renamed = renaming.await.unwrap();
+    assert_eq!(renamed.flashed("success"), Some(json!("MCP updated")));
+
+    let saved = find_mcp(&app, mcp.id).await;
+    assert_eq!(saved.name, "Strava training");
+    assert_eq!(
+        decrypt(&app, &saved.oauth_access_token).as_deref(),
+        Some("strava-rotated-access-token")
+    );
+    assert_eq!(
+        decrypt(&app, &saved.oauth_refresh_token).as_deref(),
+        Some("strava-rotated-refresh-token")
+    );
+    assert_eq!(saved.status, McpStatus::Ready);
 }
 
 #[tokio::test]

@@ -17,6 +17,7 @@ mymcps-mcp.workspace = true
 mymcps-mcp-auth.workspace = true
 mymcps-builtin.workspace = true
 mymcps-node.workspace = true
+mymcps-tailnet.workspace = true
 tokio.workspace = true
 futures.workspace = true
 async-trait.workspace = true
@@ -32,6 +33,7 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 
 [dev-dependencies]
 mymcps-core = { workspace = true, features = ["test-util"] }
+mymcps-tailnet = { workspace = true, features = ["test-util"] }
 axum = "0.8"
 base64.workspace = true
 regex.workspace = true

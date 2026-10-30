@@ -18,6 +18,8 @@ use serde::de::DeserializeOwned;
 use tokio::time::{Instant, Sleep};
 use url::Url;
 
+use crate::overlay::{Origin, OverlayNetwork};
+
 const MAX_REDIRECTS: usize = 5;
 
 /// Most one upstream response may deliver, counted after decompression.
@@ -35,12 +37,12 @@ pub const MAX_UPSTREAM_ERROR_RESPONSE_BYTES: usize = 64 * 1024;
 pub const DEFAULT_USER_AGENT: &str = concat!("MyMCPs/", env!("CARGO_PKG_VERSION"));
 
 /// Node's HTTP client gave up on a connection that took longer than this to open.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Node's HTTP client gave up on a response that stayed silent for this long,
 /// before its headers or between two chunks of its body. A request without a
 /// timeout of its own, and an event stream left open, rely on it.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+pub(crate) const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Ports `fetch` refuses to connect to, whatever the host: those of mail, DNS,
 /// file sharing and other services that would take an HTTP request for commands
@@ -90,9 +92,24 @@ pub enum FetchError {
     /// The response broke off while its body was read.
     #[error("terminated")]
     Terminated(#[source] Arc<reqwest::Error>),
+    /// A [`Fetcher::public_only`] was asked for an IP address that is a
+    /// loopback, private, link-local or otherwise restricted one. Nothing was
+    /// sent.
+    #[error(
+        "{host} is a loopback, private or link-local address, which this request may not reach"
+    )]
+    RestrictedAddress { host: String },
     /// A [`Fetcher::offline`] was left with a request no answer was given for.
     #[error("fetch failed")]
     Offline,
+    /// The overlay network could not carry the request: its route or its
+    /// connection failed, or it did not answer. The reason comes from the
+    /// overlay and does not carry the URL.
+    #[error("fetch failed through {label}: {reason}")]
+    Overlay { label: String, reason: String },
+    /// The response broke off while its body was read from an overlay network.
+    #[error("terminated through {label}: {reason}")]
+    OverlayTerminated { label: String, reason: String },
     #[error("{0}")]
     Json(#[source] Arc<serde_json::Error>),
 }
@@ -355,6 +372,23 @@ impl reqwest::dns::Resolve for PublicOnlyResolver {
     }
 }
 
+/// Refuses a URL whose host is an IP address in a restricted network. The
+/// URL type has already read every spelling of an address (`0x7f.1`,
+/// `2130706433`, `[::ffff:127.0.0.1]`) as the address it is.
+fn refuse_restricted_literal(url: &Url) -> Result<(), FetchError> {
+    let address = match url.host() {
+        Some(url::Host::Ipv4(address)) => std::net::IpAddr::V4(address),
+        Some(url::Host::Ipv6(address)) => std::net::IpAddr::V6(address),
+        _ => return Ok(()),
+    };
+    if crate::address_guard::is_restricted_ip(address) {
+        return Err(FetchError::RestrictedAddress {
+            host: address.to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// The client of the requests that must not reach the network the instance
 /// runs in, see [`Fetcher::public_only`]. Apart from where it connects, it
 /// is [`shared_client`].
@@ -393,7 +427,7 @@ async fn before<T>(
     }
 }
 
-type ChunkStream = Pin<Box<dyn Stream<Item = Result<Bytes, FetchError>> + Send + Sync>>;
+pub(crate) type ChunkStream = Pin<Box<dyn Stream<Item = Result<Bytes, FetchError>> + Send + Sync>>;
 
 /// A body that is already there, as the stream of a body that arrives.
 fn whole_body(body: Result<Bytes, FetchError>) -> ChunkStream {
@@ -403,8 +437,21 @@ fn whole_body(body: Result<Bytes, FetchError>) -> ChunkStream {
     }
 }
 
+/// The reason phrase of a response: hyper only keeps one that is not the usual
+/// phrase of the status.
+pub(crate) fn status_text(status: StatusCode, reason: Option<&hyper::ext::ReasonPhrase>) -> String {
+    match reason {
+        Some(reason) => reason
+            .as_bytes()
+            .iter()
+            .map(|byte| char::from(*byte))
+            .collect(),
+        None => status.canonical_reason().unwrap_or_default().to_owned(),
+    }
+}
+
 /// A response as it comes back from one hop, before its body is limited.
-struct RawResponse {
+pub(crate) struct RawResponse {
     status: StatusCode,
     status_text: String,
     headers: HeaderMap,
@@ -412,17 +459,23 @@ struct RawResponse {
 }
 
 impl RawResponse {
+    pub(crate) fn new(
+        status: StatusCode,
+        status_text: String,
+        headers: HeaderMap,
+        chunks: ChunkStream,
+    ) -> Self {
+        Self {
+            status,
+            status_text,
+            headers,
+            chunks,
+        }
+    }
+
     fn from_network(response: reqwest::Response) -> Self {
         let status = response.status();
-        // hyper only keeps a reason phrase that is not the usual one for the status.
-        let status_text = match response.extensions().get::<hyper::ext::ReasonPhrase>() {
-            Some(reason) => reason
-                .as_bytes()
-                .iter()
-                .map(|byte| char::from(*byte))
-                .collect(),
-            None => status.canonical_reason().unwrap_or_default().to_owned(),
-        };
+        let status_text = status_text(status, response.extensions().get());
         let headers = response.headers().clone();
         let chunks = response.bytes_stream().map(|chunk| {
             chunk.map_err(|error| FetchError::Terminated(Arc::new(error.without_url())))
@@ -460,6 +513,14 @@ enum Transport {
         answer: Box<Answer>,
         rest: Arc<Transport>,
     },
+    /// What the overlay network routes goes through it, the rest through
+    /// `rest`, except the requests to `required`, which fail when the overlay
+    /// does not route them.
+    Overlay {
+        network: OverlayNetwork,
+        required: Option<Origin>,
+        rest: Arc<Transport>,
+    },
 }
 
 impl Transport {
@@ -476,6 +537,9 @@ impl Transport {
                     return Ok(RawResponse::from_network(response));
                 }
                 Transport::PublicNetwork => {
+                    // The resolver below only sees names: an address in the URL
+                    // is connected to as it is, so it is checked here.
+                    refuse_restricted_literal(&request.url)?;
                     let mut hop =
                         reqwest::Request::new(request.method.clone(), request.url.clone());
                     *hop.headers_mut() = request.headers.clone();
@@ -488,7 +552,40 @@ impl Transport {
                     Some(response) => return Ok(RawResponse::canned(response)),
                     None => transport = rest,
                 },
+                Transport::Overlay {
+                    network,
+                    required,
+                    rest,
+                } => match network.send(request).await? {
+                    Some(response) => return Ok(response),
+                    None if required
+                        .as_ref()
+                        .is_some_and(|origin| origin.contains(&request.url)) =>
+                    {
+                        return Err(network.unrouted(&request.url));
+                    }
+                    None => transport = rest,
+                },
             }
+        }
+    }
+
+    /// The transport with the network it falls back to made public-only, see
+    /// [`Fetcher::public_only`]. The overlay stays: what it routes is the
+    /// private network the operator chose to reach.
+    fn public_only(self: &Arc<Self>) -> Arc<Self> {
+        match &**self {
+            Transport::Network => Arc::new(Transport::PublicNetwork),
+            Transport::Overlay {
+                network,
+                required,
+                rest,
+            } => Arc::new(Transport::Overlay {
+                network: network.clone(),
+                required: required.clone(),
+                rest: rest.public_only(),
+            }),
+            _ => Arc::clone(self),
         }
     }
 }
@@ -740,15 +837,52 @@ impl Fetcher {
     /// The same fetcher, for a URL that must not lead into the network the
     /// instance runs in: over the network, the name is resolved where the
     /// connection is made, and a name that resolves to a loopback, private
-    /// or link-local address is not connected to. A check of the name made
-    /// before the request says nothing of what it resolves to by then. A
-    /// fetcher that does not use the network is returned as it is.
+    /// or link-local address is not connected to. A URL that names an IP
+    /// address instead of a name is refused, before anything is sent, when
+    /// the address is in such a network ([`FetchError::RestrictedAddress`]).
+    /// A check of the name made before the request says nothing of what it
+    /// resolves to by then. A fetcher that does not use the network is
+    /// returned as it is.
+    ///
+    /// Over an overlay network ([`through`](Self::through)), what the overlay
+    /// routes still goes through it, since an operator chose that network for
+    /// the MCP; only the rest is public-only.
     pub fn public_only(&self) -> Self {
-        match *self.transport {
-            Transport::Network => Self {
-                transport: Arc::new(Transport::PublicNetwork),
-            },
-            _ => self.clone(),
+        Self {
+            transport: self.transport.public_only(),
+        }
+    }
+
+    /// The same fetcher, with the requests the overlay network routes sent
+    /// through it. On every hop the overlay is asked where the host is: for an
+    /// address the request is sent there over the overlay (and over TLS for
+    /// `https`), for none it goes where this fetcher sends it. Answers added
+    /// to the result with [`answering`](Self::answering) are asked first.
+    pub fn through(&self, network: &OverlayNetwork) -> Self {
+        Self {
+            transport: Arc::new(Transport::Overlay {
+                network: network.clone(),
+                required: None,
+                rest: Arc::clone(&self.transport),
+            }),
+        }
+    }
+
+    /// [`through`](Self::through), except that the requests to the origin
+    /// (scheme, host and port) of `required` never fall back: when the overlay
+    /// does not route their host, they fail with [`FetchError::Overlay`]
+    /// without reaching the transport behind it, not even a public one. Use it
+    /// for the server an administrator pointed at the overlay, so that the
+    /// credentials sent to it cannot end up on another network when the
+    /// overlay stops routing it. The other origins behave as with `through`.
+    /// A URL that is not an HTTP one requires nothing.
+    pub fn through_requiring(&self, network: &OverlayNetwork, required: &Url) -> Self {
+        Self {
+            transport: Arc::new(Transport::Overlay {
+                network: network.clone(),
+                required: Origin::of(required),
+                rest: Arc::clone(&self.transport),
+            }),
         }
     }
 
@@ -877,11 +1011,12 @@ impl Default for Fetcher {
 
 impl fmt::Debug for Fetcher {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let transport = match *self.transport {
-            Transport::Network => "network",
-            Transport::PublicNetwork => "public network",
-            Transport::Offline => "offline",
-            Transport::Answering { .. } => "answering",
+        let transport = match &*self.transport {
+            Transport::Network => "network".to_owned(),
+            Transport::PublicNetwork => "public network".to_owned(),
+            Transport::Offline => "offline".to_owned(),
+            Transport::Answering { .. } => "answering".to_owned(),
+            Transport::Overlay { network, .. } => format!("overlay {}", network.label()),
         };
         formatter
             .debug_struct("Fetcher")

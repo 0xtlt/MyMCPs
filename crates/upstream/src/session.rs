@@ -9,6 +9,7 @@ use mymcps_core::models::Mcp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::error::UpstreamError;
 use crate::validators::OAUTH_SESSION_VALIDATOR;
 
 const OAUTH_SESSION_PREFIX: &str = "mcp_oauth:";
@@ -50,6 +51,26 @@ pub struct OauthSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
     pub client_id: String,
+    /// The sign-in of the MCP it began on ([`Mcp::oauth_generation`]). One
+    /// started before the generation field existed has none, as an MCP that
+    /// was never moved has none.
+    #[serde(default)]
+    pub generation: i64,
+}
+
+impl OauthSession {
+    /// Whether the MCP is still the one this authorization began on: not moved
+    /// to another URL or network since, and its sign-in not cleared, even if
+    /// it came back to where it was. Check it before the code is exchanged;
+    /// the provider is not asked for tokens that would be refused.
+    pub fn check_current(&self, mcp: &Mcp) -> Result<(), UpstreamError> {
+        if self.generation == mcp.oauth_generation {
+            return Ok(());
+        }
+        Err(UpstreamError::Superseded(
+            "The MCP was changed since this OAuth sign-in started (its address, its network or its sign-in), so it was dropped. Connect it again".to_owned(),
+        ))
+    }
 }
 
 /// What a flow that starts puts in the session.
@@ -69,9 +90,9 @@ fn oauth_session_key(state: &str) -> String {
 
 /// The JSON kept in the session, with its members in the order the Node app
 /// wrote them.
-fn session_payload(mcp_id: i64, start: &OauthStart) -> Value {
+fn session_payload(mcp: &Mcp, start: &OauthStart) -> Value {
     let mut payload = Map::new();
-    payload.insert("mcpId".to_owned(), Value::from(mcp_id));
+    payload.insert("mcpId".to_owned(), Value::from(mcp.id));
     payload.insert(
         "redirectUri".to_owned(),
         Value::from(start.redirect_uri.as_str()),
@@ -91,6 +112,7 @@ fn session_payload(mcp_id: i64, start: &OauthStart) -> Value {
         );
     }
     payload.insert("state".to_owned(), Value::from(start.state.as_str()));
+    payload.insert("generation".to_owned(), Value::from(mcp.oauth_generation));
     Value::Object(payload)
 }
 
@@ -105,7 +127,7 @@ pub fn start_oauth_session(
     mcp: &Mcp,
     start: OauthStart,
 ) -> OauthSession {
-    let payload = session_payload(mcp.id, &start);
+    let payload = session_payload(mcp, &start);
     let key = oauth_session_key(&start.state);
 
     // An abandoned authorization never reaches the callback that clears it.
@@ -144,6 +166,7 @@ pub fn start_oauth_session(
         authorization_server_url: start.authorization_server_url,
         resource: start.resource,
         client_id: start.client_id,
+        generation: mcp.oauth_generation,
     }
 }
 

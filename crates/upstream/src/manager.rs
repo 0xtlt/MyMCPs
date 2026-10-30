@@ -215,6 +215,9 @@ impl Upstream {
         }
 
         match self.probe(mcp).await {
+            // A renewal dropped because the MCP changed meanwhile says nothing
+            // of the MCP as it is now: its status is left as it is.
+            Err(error) if error.is_superseded() => return Ok(()),
             Ok(_) => {
                 mcp.status = McpStatus::Ready;
                 mcp.last_error = None;

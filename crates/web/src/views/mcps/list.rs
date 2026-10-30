@@ -181,6 +181,8 @@ fn endpoint_note(mcp: &McpView) -> Markup {
             span class="cell-sub cell-sub--critical" title=(error) { (error) }
         } @else if let (McpTransport::Npm, Some(installed)) = (mcp.transport, &mcp.npm_installed_version) {
             span class="cell-sub" { "installed " (installed) }
+        } @else if let Some(tailnet) = &mcp.tailnet {
+            span class="cell-sub" { "via tailnet " (tailnet) }
         }
     }
 }
@@ -322,6 +324,7 @@ fn list_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Marku
             span class="list-row__title" { (mcp.name) }
             span class="list-row__subtitle" {
                 (mcp.slug) " · " (transport_label(mcp.transport))
+                @if let Some(tailnet) = &mcp.tailnet { " · tailnet " (tailnet) }
                 @if !mcp.enabled { " · off" }
             }
         }

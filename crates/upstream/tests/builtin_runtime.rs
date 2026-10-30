@@ -1017,8 +1017,8 @@ async fn sends_the_admin_to_the_provider_and_stores_the_tokens_and_granted_scope
     assert_eq!(
         serde_json::to_string(&session.value(&format!("mcp_oauth:{state}")).unwrap()).unwrap(),
         format!(
-            r#"{{"mcpId":{},"redirectUri":"{CALLBACK}","authorizationServerUrl":"https://www.example.test","clientId":"123456","state":"{state}"}}"#,
-            mcp.id
+            r#"{{"mcpId":{},"redirectUri":"{CALLBACK}","authorizationServerUrl":"https://www.example.test","clientId":"123456","state":"{state}","generation":{}}}"#,
+            mcp.id, mcp.oauth_generation
         )
     );
     let oauth = read_oauth_session(&session, Some(&state)).unwrap();

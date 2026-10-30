@@ -288,12 +288,13 @@ impl Upstream {
             return Err(UpstreamError::other("HTTP MCP is missing a URL"));
         };
         let endpoint = parse_http_url(http_url, "MCP URL")?;
+        let tailnet_fetcher = self.tailnet_fetcher(mcp, &endpoint).await?;
         let headers = header_map(&self.build_upstream_headers(mcp))?;
         let unauthorized: Arc<Mutex<Option<UnauthorizedResponse>>> = Arc::default();
         let transport = StreamableHttpClientTransport::with_options(
             endpoint,
             Arc::new(DiagnosticFetch {
-                fetcher: self.fetcher.clone(),
+                fetcher: tailnet_fetcher.unwrap_or_else(|| self.fetcher.clone()),
                 unauthorized: Arc::clone(&unauthorized),
             }),
             StreamableHttpClientTransportOptions {

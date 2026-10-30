@@ -11,8 +11,7 @@ use axum::routing::{get, post, put};
 use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use mymcps_builtin::{BuiltinMcpDefinition, BuiltinOauthConfig, BuiltinPasswordConfig};
-use mymcps_core::Core;
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, Tailnet};
 use mymcps_core::redaction::{
     sanitize_diagnostic, sanitize_diagnostic_with, sanitize_mcp_diagnostic,
     sanitize_mcp_diagnostic_with,
@@ -20,6 +19,7 @@ use mymcps_core::redaction::{
 use mymcps_core::secrets::{
     EnvironmentInput, decrypt_environment, environment_has_name, merge_environment,
 };
+use mymcps_core::{Core, Db};
 use mymcps_net::parse_http_url;
 use mymcps_upstream::Upstream;
 use mymcps_upstream::validators::{OAUTH_CALLBACK_VALIDATOR, OAUTH_START_VALIDATOR};
@@ -47,7 +47,7 @@ use crate::validators::route_params::record_id;
 use crate::validators::session::FLASHED_RECORD_ID_VALIDATOR;
 use crate::views::mcps::{
     CreateDialog, Dialog, EDIT_DIALOG_ID, EditDialog, FormValues, McpForm, McpView, McpsPage,
-    PublicApp, ROWS_PER_PAGE, create_fragment, edit_fragment, mcps_page,
+    PublicApp, ROWS_PER_PAGE, TailnetChoice, create_fragment, edit_fragment, mcps_page,
 };
 use crate::views::shell::PageContext;
 
@@ -179,11 +179,43 @@ fn assign_npm_environment(
 
 fn apply_secrets(core: &Core, mcp: &mut Mcp, payload: &McpPayload) {
     if let Some(bearer) = filled(&payload.auth_bearer) {
-        mcp.auth_bearer = core.encrypt_secret(Some(bearer));
+        mcp.auth_bearer = core.encrypt_secret_keeping(mcp.auth_bearer.as_deref(), Some(bearer));
     }
     if let Some(value) = filled(&payload.auth_header_value) {
-        mcp.auth_header_value = core.encrypt_secret(Some(value));
+        mcp.auth_header_value =
+            core.encrypt_secret_keeping(mcp.auth_header_value.as_deref(), Some(value));
     }
+}
+
+/// Every column of the sign-in that [`forget_oauth_connection`] empties.
+const OAUTH_CONNECTION_COLUMNS: &[&str] = &[
+    "oauth_authorize_url",
+    "oauth_token_url",
+    "oauth_scopes",
+    "oauth_client_id",
+    "oauth_client_secret",
+    "oauth_access_token",
+    "oauth_refresh_token",
+    "oauth_token_expires_at",
+    "oauth_issuer",
+    "oauth_resource",
+    "oauth_redirect_uri",
+    "oauth_client_auth_method",
+    "oauth_token_type",
+    "oauth_required",
+];
+
+/// The secrets entered for one destination, which a move forgets.
+const DESTINATION_SECRET_COLUMNS: &[&str] = &["auth_bearer", "auth_header_value"];
+
+/// Forget the sign-in, and name a new one, so that an authorization started
+/// before can no longer finish. The row is written with these columns
+/// emptied whatever the edit read: tokens a code exchange saved since would
+/// look unchanged to a comparison with an empty read, and stay.
+fn forget_oauth_connection(mcp: &mut Mcp) {
+    mcp.renew_oauth_generation();
+    mcp.write_over(OAUTH_CONNECTION_COLUMNS);
+    clear_oauth_connection(mcp);
 }
 
 fn clear_oauth_connection(mcp: &mut Mcp) {
@@ -203,8 +235,10 @@ fn clear_oauth_connection(mcp: &mut Mcp) {
     mcp.oauth_required = false;
 }
 
-/// Clear secrets that no longer apply to the selected auth type.
-fn clear_unused_auth_secrets(mcp: &mut Mcp) {
+/// Clear secrets that no longer apply to the selected auth type. `was_auto`:
+/// the MCP signed in with OAuth until this edit, which is when its sign-in
+/// is forgotten.
+fn clear_unused_auth_secrets(mcp: &mut Mcp, was_auto: bool) {
     if mcp.auth_type != McpAuthType::Bearer {
         mcp.auth_bearer = None;
     }
@@ -213,7 +247,11 @@ fn clear_unused_auth_secrets(mcp: &mut Mcp) {
         mcp.auth_header_value = None;
     }
     if mcp.auth_type != McpAuthType::Auto {
-        clear_oauth_connection(mcp);
+        if was_auto {
+            forget_oauth_connection(mcp);
+        } else {
+            clear_oauth_connection(mcp);
+        }
     }
 }
 
@@ -269,10 +307,11 @@ fn assign_oauth_application(
     if mcp.oauth_client_id.as_deref() != Some(client_id.as_str())
         || saved_secret.as_deref() != Some(client_secret.as_str())
     {
-        clear_oauth_connection(mcp);
+        forget_oauth_connection(mcp);
     }
     mcp.oauth_client_id = Some(client_id);
-    mcp.oauth_client_secret = core.encrypt_secret(Some(&client_secret));
+    mcp.oauth_client_secret =
+        core.encrypt_secret_keeping(mcp.oauth_client_secret.as_deref(), Some(&client_secret));
     Vec::new()
 }
 
@@ -360,7 +399,8 @@ fn assign_password_sign_in(
     };
 
     mcp.builtin_username = Some(username);
-    mcp.builtin_password = core.encrypt_secret(Some(&password));
+    mcp.builtin_password =
+        core.encrypt_secret_keeping(mcp.builtin_password.as_deref(), Some(&password));
     mcp.builtin_permissions = Some(
         sign_in
             .permissions
@@ -545,25 +585,53 @@ pub async fn assign_mcp_from_payload(
         .npm_package
         .clone()
         .filter(|_| transport == McpTransport::Npm);
+    // Only an HTTP MCP is reached over a network, and a tailnet is only
+    // ever one of the team's, whatever id the form names.
+    let next_tailnet_id = match (transport, payload.tailnet_id) {
+        (McpTransport::Http, Some(id)) => {
+            match Tailnet::find_in_team(&*core.db, mcp.team_id, id).await? {
+                Some(tailnet) => Some(tailnet.id),
+                None => {
+                    return Err(ValidationError::single(
+                        "tailnetId",
+                        "tailnet",
+                        "Choose a tailnet of this team, or the internet",
+                    )
+                    .into());
+                }
+            }
+        }
+        _ => None,
+    };
+
     // A row that was never saved has no transport yet.
     let transport_changed = !mcp.is_persisted() || mcp.transport != transport;
-    let oauth_server_changed =
-        transport_changed || mcp.http_url != next_http_url || mcp.builtin_key != next_builtin_key;
+    // The network is part of where a request goes: the same URL names another
+    // machine on another network, which is not the one that was signed in to
+    // or given a secret.
+    let network_changed = mcp.tailnet_id != next_tailnet_id;
+    let oauth_server_changed = transport_changed
+        || network_changed
+        || mcp.http_url != next_http_url
+        || mcp.builtin_key != next_builtin_key;
     if oauth_server_changed {
-        clear_oauth_connection(mcp);
+        forget_oauth_connection(mcp);
     }
 
     // Saved secrets are write-only and were entered for one destination. They
-    // must not follow the MCP to another origin or package, where the probe
-    // after saving would hand them over. A new path or version keeps them.
+    // must not follow the MCP to another origin, network or package, where the
+    // probe after saving would hand them over. A new path or version keeps them.
     let credential_target_changed = transport_changed
+        || network_changed
         || http_origin(mcp.http_url.as_deref()) != http_origin(next_http_url.as_deref())
         || mcp.npm_package != next_npm_package;
     if credential_target_changed {
+        mcp.write_over(DESTINATION_SECRET_COLUMNS);
         mcp.auth_bearer = None;
         mcp.auth_header_value = None;
     }
 
+    mcp.tailnet_id = next_tailnet_id;
     mcp.name = payload.name.clone();
     mcp.slug = unique_slug(&*core.db, mcp.team_id, &payload.name, exclude_id).await?;
     mcp.description = payload
@@ -589,6 +657,7 @@ pub async fn assign_mcp_from_payload(
     mcp.tool_timeout_seconds = payload
         .tool_timeout_seconds
         .filter(|_| transport != McpTransport::Builtin);
+    let was_auto = mcp.auth_type == McpAuthType::Auto;
     // Built-in MCPs sign in the one way their provider supports.
     mcp.auth_type = match transport {
         McpTransport::Builtin => McpAuthType::Auto,
@@ -599,7 +668,7 @@ pub async fn assign_mcp_from_payload(
         .clone()
         .filter(|_| mcp.auth_type == McpAuthType::Header);
     mcp.enabled = payload.enabled.unwrap_or(false);
-    clear_unused_auth_secrets(mcp);
+    clear_unused_auth_secrets(mcp, was_auto);
     apply_secrets(core, mcp, payload);
     assign_builtin_credentials(upstream, mcp, payload)?;
     Ok(())
@@ -650,6 +719,19 @@ async fn find_mcp(
         None => None,
     };
     Ok(mcp.filter(|mcp| mcp.team_id == team.id()))
+}
+
+/// The tailnets of a team, for the Network field of the form and for the
+/// list to name the one an MCP goes through.
+async fn tailnet_choices(db: &Db, team_id: i64) -> Result<Vec<TailnetChoice>, sqlx::Error> {
+    Ok(Tailnet::of_team(&**db, team_id)
+        .await?
+        .into_iter()
+        .map(|tailnet| TailnetChoice {
+            id: tailnet.id,
+            name: tailnet.name,
+        })
+        .collect())
 }
 
 /// The registry, where every request of this page ends, with the query
@@ -729,9 +811,12 @@ async fn registry_page(
             .fetch_all(&*state.core.db)
             .await?;
     let tool_counts = state.known_tool_counts();
+    let tailnets = tailnet_choices(&state.core.db, team.team.id).await?;
     let views: Vec<McpView> = mcps
         .iter()
-        .map(|mcp| McpView::of(&state.upstream, mcp, tool_counts.get(&mcp.id).copied()))
+        .map(|mcp| {
+            McpView::of(&state.upstream, mcp, tool_counts.get(&mcp.id).copied()).through(&tailnets)
+        })
         .collect();
 
     let matching: Vec<&McpView> = views.iter().filter(|mcp| keeps(&query, mcp)).collect();
@@ -764,7 +849,8 @@ async fn registry_page(
         Open::Nothing => render(Dialog::None),
         Open::Gallery => render(Dialog::Gallery),
         Open::Create(template) => {
-            let form = McpForm::new(template.map(FormValues::from_template).unwrap_or_default());
+            let form = McpForm::new(template.map(FormValues::from_template).unwrap_or_default())
+                .with_tailnets(tailnets.clone());
             render(Dialog::Create(&CreateDialog {
                 template,
                 form: &form,
@@ -774,7 +860,7 @@ async fn registry_page(
         }
         Open::Edit(id) => match views.iter().find(|mcp| mcp.id == id) {
             Some(mcp) => {
-                let form = McpForm::new(FormValues::from_mcp(mcp));
+                let form = McpForm::new(FormValues::from_mcp(mcp)).with_tailnets(tailnets.clone());
                 render(Dialog::Edit(&EditDialog {
                     mcp,
                     form: &form,
@@ -847,8 +933,9 @@ pub async fn edit(
     }
 
     let tool_count = state.known_tool_counts().get(&mcp.id).copied();
-    let view = McpView::of(&state.upstream, &mcp, tool_count);
-    let form = McpForm::new(FormValues::from_mcp(&view));
+    let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
+    let view = McpView::of(&state.upstream, &mcp, tool_count).through(&tailnets);
+    let form = McpForm::new(FormValues::from_mcp(&view)).with_tailnets(tailnets);
     Ok(fragment(
         StatusCode::OK,
         edit_fragment(
@@ -886,8 +973,9 @@ fn refused_create(
     headers: &HeaderMap,
     input: &Map<String, Value>,
     error: &ValidationError,
+    tailnets: Vec<TailnetChoice>,
 ) -> Response {
-    let form = McpForm::refused(FormValues::from_input(input), error);
+    let form = McpForm::refused(FormValues::from_input(input), error).with_tailnets(tailnets);
     // The form says which template it started from. A built-in MCP has one
     // of its own whatever the form says.
     let template = match form.values.transport {
@@ -926,6 +1014,7 @@ pub async fn store(
     Input(mut input): Input,
 ) -> Result<Response, AppError> {
     let team = context.current_team()?;
+    let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
     list_environment_rows(&mut input);
     let payload: McpPayload = match CREATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
@@ -933,7 +1022,7 @@ pub async fn store(
         Err(error) => {
             let error = refusal(error)?;
             return Ok(refused_create(
-                &state, &context, &session, &headers, &input, &error,
+                &state, &context, &session, &headers, &input, &error, tailnets,
             ));
         }
     };
@@ -948,7 +1037,7 @@ pub async fn store(
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
             return Ok(refused_create(
-                &state, &context, &session, &headers, &input, &error,
+                &state, &context, &session, &headers, &input, &error, tailnets,
             ));
         }
         Err(AssignError::Database(error)) => return Err(error.into()),
@@ -975,12 +1064,10 @@ fn refused_update(
     session: &Session,
     headers: &HeaderMap,
     mcp: &Mcp,
-    input: &Map<String, Value>,
-    error: &ValidationError,
+    form: McpForm,
 ) -> Response {
     let tool_count = state.known_tool_counts().get(&mcp.id).copied();
-    let view = McpView::of(&state.upstream, mcp, tool_count);
-    let form = McpForm::refused(FormValues::from_input(input), error);
+    let view = McpView::of(&state.upstream, mcp, tool_count).through(&form.tailnets);
     let dialog = edit_fragment(
         context,
         &EditDialog {
@@ -1013,14 +1100,17 @@ pub async fn update(
         return Ok(not_found(&session, &headers, &uri));
     };
 
+    let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
     list_environment_rows(&mut input);
     let payload: McpPayload = match UPDATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
         Ok(payload) => payload,
         Err(error) => {
             let error = refusal(error)?;
+            let form =
+                McpForm::refused(FormValues::from_input(&input), &error).with_tailnets(tailnets);
             return Ok(refused_update(
-                &state, &context, &session, &headers, &saved, &input, &error,
+                &state, &context, &session, &headers, &saved, form,
             ));
         }
     };
@@ -1032,8 +1122,10 @@ pub async fn update(
     match assign_mcp_from_payload(&state.upstream, &mut mcp, &payload, Some(saved.id)).await {
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
+            let form =
+                McpForm::refused(FormValues::from_input(&input), &error).with_tailnets(tailnets);
             return Ok(refused_update(
-                &state, &context, &session, &headers, &saved, &input, &error,
+                &state, &context, &session, &headers, &saved, form,
             ));
         }
         Err(AssignError::Database(error)) => return Err(error.into()),
@@ -1380,6 +1472,15 @@ pub async fn oauth_callback(
         return Ok(to_registry());
     };
 
+    // An authorization that began before the MCP was moved or signed out is
+    // not this MCP's to finish, and says nothing about the MCP as it is now:
+    // its status stays as it is.
+    if let Err(error) = oauth.check_current(&mcp) {
+        session.flash("error", error.to_string());
+        session.flash(EDITING_KEY, mcp.id);
+        return Ok(to_registry());
+    }
+
     let granted_scope = granted_scope_from_callback(query.get("scope"));
     let connected = match upstream
         .exchange_authorization_code(&mut mcp, &oauth, &code, granted_scope.as_deref())
@@ -1402,9 +1503,13 @@ pub async fn oauth_callback(
                 500,
                 [code.as_str(), callback_state.as_str()],
             );
-            mcp.status = McpStatus::Error;
-            mcp.last_error = Some(reason.clone());
-            mcp.save(db).await?;
+            // A sign-in dropped because the MCP changed meanwhile says nothing
+            // of the MCP as it is now, which may be connected by another one.
+            if !error.is_superseded() {
+                mcp.status = McpStatus::Error;
+                mcp.last_error = Some(reason.clone());
+                mcp.save(db).await?;
+            }
             session.flash("error", reason);
         }
     }

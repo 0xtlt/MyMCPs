@@ -101,7 +101,7 @@ async fn discovers_registers_redirects_exchanges_and_refreshes_a_notion_style_mc
     assert_eq!(mcp.oauth_client_auth_method.as_deref(), Some("none"));
     let state = state.unwrap();
     assert!(session.has(&format!("mcp_oauth:{state}")));
-    // The state is 24 random bytes, and the session holds what the Node app kept.
+    // The state is 24 random bytes, and the session holds what the Node app kept, and the generation of the sign-in.
     assert_eq!(state.len(), 32);
     let saved = session.value(&format!("mcp_oauth:{state}")).unwrap();
     assert_eq!(
@@ -113,7 +113,8 @@ async fn discovers_registers_redirects_exchanges_and_refreshes_a_notion_style_mc
             "resource",
             "clientId",
             "codeVerifier",
-            "state"
+            "state",
+            "generation"
         ]
     );
 

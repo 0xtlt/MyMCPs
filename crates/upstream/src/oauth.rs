@@ -11,7 +11,7 @@ use mymcps_builtin::oauth::{
     parse_oauth_scopes, refresh_builtin_tokens, requested_builtin_scopes,
 };
 use mymcps_core::crypto::random_base64url;
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::models::{Mcp, McpAuthType, McpOauthBasis, McpStatus, McpTransport};
 use mymcps_core::public_url::PublicUrlError;
 use mymcps_core::{Config, Timestamp};
 use mymcps_mcp_auth::{
@@ -157,7 +157,15 @@ fn oauth_fetch_error(error: FetchError) -> HttpFetchError {
         | FetchError::Offline
         | FetchError::InvalidRedirectUrl
         | FetchError::BodyNotAllowed
+        | FetchError::Overlay { .. }
+        | FetchError::OverlayTerminated { .. }
         | FetchError::InvalidHeader { .. } => HttpFetchError::network(error),
+        // The public network refused an address in the URL: the same refusal
+        // as the check of a discovered endpoint, wherever it surfaces.
+        FetchError::RestrictedAddress { host } => HttpFetchError::other(RestrictedEndpointError {
+            label: "OAuth endpoint".to_owned(),
+            hostname: host,
+        }),
         other => HttpFetchError::other(other),
     }
 }
@@ -169,25 +177,41 @@ fn oauth_fetch_error(error: FetchError) -> HttpFetchError {
 /// MCP's own host pass: the operator entered that one.
 struct OAuthEndpoints {
     fetcher: Fetcher,
-    /// Refuses a discovered URL that leads into a network the MCP is not part of.
-    guard: DiscoveredEndpointGuard,
+    /// Refuses a discovered URL that leads into a network the MCP is not part
+    /// of. `None` for an MCP that is in a private network, as one on a
+    /// tailnet is: nothing is refused by name, as for an MCP on a private
+    /// address, and the fetcher carries the rule instead: what the tailnet
+    /// does not route goes to the public network, which refuses an IP address
+    /// of a restricted network and every name that resolves to one, and a host
+    /// that is only the tailnet's never gets there.
+    guard: Option<DiscoveredEndpointGuard>,
 }
 
 impl OAuthEndpoints {
+    async fn check(&self, target: &Url, label: &str) -> Result<(), RestrictedEndpointError> {
+        match &self.guard {
+            Some(guard) => guard.assert_allowed(target, label).await,
+            None => Ok(()),
+        }
+    }
+
     async fn assert_allowed(&self, target: &Url, label: &str) -> Result<(), UpstreamError> {
-        Ok(self.guard.assert_allowed(target, label).await?)
+        Ok(self.check(target, label).await?)
     }
 }
 
 impl HttpFetch for OAuthEndpoints {
     async fn fetch(&self, request: HttpRequest) -> Result<HttpResponse, HttpFetchError> {
-        self.guard
-            .assert_allowed(&request.url, "OAuth endpoint")
+        self.check(&request.url, "OAuth endpoint")
             .await
             .map_err(HttpFetchError::other)?;
         // The name was checked a moment ago, and is resolved again to
         // connect: whoever answers for it may say something else by then.
-        let fetcher = if self.guard.must_be_public(&request.url).await {
+        let public_only = match &self.guard {
+            Some(guard) => guard.must_be_public(&request.url).await,
+            None => false,
+        };
+        let fetcher = if public_only {
             self.fetcher.public_only()
         } else {
             self.fetcher.clone()
@@ -402,7 +426,12 @@ pub fn uses_pasted_oauth_callback(mcp: &Mcp) -> bool {
 
 /// Tokens belong to the provider and client that issued them. Dropping them
 /// also leaves the MCP waiting for its account, so Connect stays available.
+///
+/// A new provider or client also ends the sign-ins begun with the old one,
+/// even when none has saved a token yet: one that finished later would save
+/// tokens of the old provider next to the new one's endpoints.
 fn forget_oauth_tokens(mcp: &mut Mcp) {
+    mcp.renew_oauth_generation();
     if present(&mcp.oauth_access_token).is_none() && present(&mcp.oauth_refresh_token).is_none() {
         return;
     }
@@ -427,7 +456,7 @@ fn token_expiry(expires_in: Option<f64>) -> Timestamp {
 }
 
 impl Upstream {
-    fn oauth_endpoints_for(&self, mcp: &Mcp) -> Result<OAuthEndpoints, UpstreamError> {
+    async fn oauth_endpoints_for(&self, mcp: &Mcp) -> Result<OAuthEndpoints, UpstreamError> {
         let http_url = present(&mcp.http_url).filter(|_| mcp.transport == McpTransport::Http);
         let Some(http_url) = http_url else {
             return Err(UpstreamError::other(
@@ -435,9 +464,19 @@ impl Upstream {
             ));
         };
         let mcp_url = parse_http_url(http_url, "MCP URL")?;
+        // An MCP on a tailnet is in a private network: every request of its
+        // flow to its own origin goes through the tailnet, which carries what
+        // its devices serve, and fails when it stops routing that origin. The
+        // other origins (a provider on the internet) go to public addresses.
+        if let Some(fetcher) = self.tailnet_fetcher(mcp, &mcp_url).await? {
+            return Ok(OAuthEndpoints {
+                fetcher,
+                guard: None,
+            });
+        }
         Ok(OAuthEndpoints {
             fetcher: self.fetcher.clone(),
-            guard: self.addresses.discovered_endpoint_guard(&mcp_url),
+            guard: Some(self.addresses.discovered_endpoint_guard(&mcp_url)),
         })
     }
 
@@ -783,7 +822,8 @@ impl Upstream {
             return self.start_builtin_oauth_flow(session, mcp);
         }
 
-        let endpoints = self.oauth_endpoints_for(mcp)?;
+        let basis = mcp.oauth_basis();
+        let endpoints = self.oauth_endpoints_for(mcp).await?;
         let redirect_uri = self.oauth_redirect_uri(mcp)?;
         let context = self.discover_oauth_context(mcp, &endpoints).await?;
         let issuer = authorization_server(&context.authorization_server_url)?;
@@ -880,7 +920,7 @@ impl Upstream {
         }
 
         self.save_oauth_configuration(mcp, &context, &client, &redirect_uri, registered)?;
-        mcp.save(&*self.core.db).await?;
+        self.save_oauth_step(mcp, &basis).await?;
         start_oauth_session(
             session,
             mcp,
@@ -912,6 +952,9 @@ impl Upstream {
         code: &str,
         granted_scope: Option<&str>,
     ) -> Result<(), UpstreamError> {
+        // Before anything is asked of the provider: a sign-in that began on
+        // another destination or sign-in has no code worth exchanging.
+        oauth.check_current(mcp)?;
         let client = self
             .client_information_from_mcp(mcp)
             .filter(|client| client.client_id == oauth.client_id);
@@ -920,6 +963,7 @@ impl Upstream {
                 "OAuth client information is no longer available",
             ));
         };
+        let basis = mcp.oauth_basis();
 
         if mcp.transport == McpTransport::Builtin {
             let tokens = self
@@ -946,7 +990,7 @@ impl Upstream {
             mcp.oauth_scopes = (!scopes.is_empty()).then(|| scopes.join(" "));
             mcp.status = McpStatus::Ready;
             mcp.last_error = None;
-            mcp.save(&*self.core.db).await?;
+            self.save_oauth_step(mcp, &basis).await?;
             return Ok(());
         }
 
@@ -956,7 +1000,7 @@ impl Upstream {
             ));
         };
 
-        let endpoints = self.oauth_endpoints_for(mcp)?;
+        let endpoints = self.oauth_endpoints_for(mcp).await?;
         let metadata = self
             .metadata_for_authorization_server(mcp, &oauth.authorization_server_url, &endpoints)
             .await?;
@@ -988,8 +1032,34 @@ impl Upstream {
         );
         mcp.status = McpStatus::Ready;
         mcp.last_error = None;
-        mcp.save(&*self.core.db).await?;
+        self.save_oauth_step(mcp, &basis).await?;
         Ok(())
+    }
+
+    /// Save what an OAuth step changed, if the MCP is still what the step
+    /// started from (`basis`, taken before its first request).
+    ///
+    /// A step makes requests of its own, to the destination and with the
+    /// sign-in the MCP had then. An admin can move the MCP to another URL or
+    /// network, or clear or redo its sign-in, while they are in flight; what
+    /// they return was issued by, and for, the old one. The check and the
+    /// write are the one `update` statement, so a change cannot slip between
+    /// them, and it compares values, so a change that was undone (a network
+    /// switched and switched back) still shows by the sign-in it cleared.
+    /// When the row moved, nothing is written and the step fails: its tokens
+    /// are dropped, and `mcp` is read again, without them.
+    async fn save_oauth_step(
+        &self,
+        mcp: &mut Mcp,
+        basis: &McpOauthBasis,
+    ) -> Result<(), UpstreamError> {
+        if mcp.save_if_basis_holds(&*self.core.db, basis).await? {
+            return Ok(());
+        }
+        let _ = self.reload(mcp).await;
+        Err(UpstreamError::Superseded(
+            "The MCP was changed while its OAuth sign-in was running (its address, its network or its sign-in), so the result was dropped. Connect it again".to_owned(),
+        ))
     }
 
     /// Read the row again, dropping changes that were not saved.
@@ -1087,6 +1157,7 @@ impl Upstream {
         if mcp.auth_type != McpAuthType::Auto {
             return Ok(());
         }
+        let basis = mcp.oauth_basis();
 
         let refresh = self.core.decrypt_secret(mcp.oauth_refresh_token.as_deref());
         let is_fresh = mcp
@@ -1110,7 +1181,7 @@ impl Upstream {
                     scope: None,
                 },
             );
-            mcp.save(&*self.core.db).await?;
+            self.save_oauth_step(&mut mcp, &basis).await?;
             return Ok(());
         }
 
@@ -1128,7 +1199,7 @@ impl Upstream {
 
         // The token endpoint is discovered again for every refresh, so it is checked
         // again as well, as is the saved resource indicator.
-        let endpoints = self.oauth_endpoints_for(&mcp)?;
+        let endpoints = self.oauth_endpoints_for(&mcp).await?;
         let metadata = self
             .metadata_for_authorization_server(&mcp, &authorization_server_url, &endpoints)
             .await?;
@@ -1156,7 +1227,7 @@ impl Upstream {
                 scope: tokens.scope,
             },
         );
-        mcp.save(&*self.core.db).await?;
+        self.save_oauth_step(&mut mcp, &basis).await?;
         Ok(())
     }
 }
@@ -1164,6 +1235,28 @@ impl Upstream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_request_an_overlay_could_not_carry_is_a_network_error() {
+        let overlay = || FetchError::Overlay {
+            label: "tailnet \"Office\"".to_owned(),
+            reason: "no connection within 10 s".to_owned(),
+        };
+        assert!(oauth_fetch_error(overlay()).is_network());
+        assert!(oauth_fetch_error(FetchError::Offline).is_network());
+        // A refusal of the gateway's own is not one.
+        assert!(!oauth_fetch_error(FetchError::Timeout).is_network());
+    }
+
+    #[test]
+    fn an_address_the_public_network_refused_is_a_restricted_endpoint() {
+        let error = oauth_fetch_error(FetchError::RestrictedAddress {
+            host: "169.254.169.254".to_owned(),
+        });
+        assert!(!error.is_network());
+        let message = error.to_string();
+        assert!(message.contains("169.254.169.254"), "{message}");
+    }
 
     #[test]
     fn writes_an_origin_without_its_trailing_slash() {

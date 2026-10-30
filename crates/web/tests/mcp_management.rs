@@ -6,7 +6,7 @@
 mod support;
 
 use mymcps_core::models::{
-    McpAuthType, McpStatus, McpTransport, OauthClient, Team, TeamRole, User,
+    McpAuthType, McpStatus, McpTransport, OauthClient, Tailnet, Team, TeamRole, User,
 };
 use mymcps_gateway::access_token::{self, NewOauthGrant};
 use mymcps_gateway::mcp_management::{ManagementActor, ManagementError, McpRegistryManager};
@@ -159,6 +159,16 @@ async fn call_refused(
     assert_eq!(result["isError"], json!(true), "{result}");
     assert!(result.get("structuredContent").is_none());
     result_text(&result).to_owned()
+}
+
+/// `mcp_registry_update` with `arguments`, expected to succeed.
+async fn update_ok(gateway: &TestGateway, plaintext: &str, arguments: Value) -> Value {
+    call_ok(gateway, plaintext, "mcp_registry_update", arguments).await
+}
+
+/// `mcp_registry_update` with `arguments`, expected to be refused: its text.
+async fn update_refused(gateway: &TestGateway, plaintext: &str, arguments: Value) -> String {
+    call_refused(gateway, plaintext, "mcp_registry_update", arguments).await
 }
 
 async fn mcp_in(
@@ -760,6 +770,128 @@ async fn sets_how_long_a_tool_call_waits_and_keeps_it_when_not_given() {
     .await;
     assert_eq!(result["mcp"]["timeout_seconds"], 60);
     assert_eq!(mcp_named(&gateway, "docs").await.tool_timeout_seconds, None);
+}
+
+/// A tailnet of a team, as if connected earlier.
+async fn tailnet_in(gateway: &TestGateway, team_id: i64, user: &User, name: &str) -> Tailnet {
+    Tailnet::create_for_tests(&**gateway.db(), team_id, user.id, name).await
+}
+
+#[tokio::test]
+async fn reads_and_sets_the_tailnet_of_an_http_mcp_by_name() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    bearer_mcp(&gateway, &admin).await;
+    let pro = tailnet_in(&gateway, Team::ROOT_ID, &admin, "Pro").await;
+    let other_team = create_team(&gateway, "Other").await;
+    tailnet_in(&gateway, other_team.id, &admin, "Theirs").await;
+
+    let listed = call_ok(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    assert_eq!(listed["mcps"][0]["tailnet"], Value::Null);
+
+    // By name, whatever its case.
+    let result = update_ok(
+        &gateway,
+        &manager,
+        json!({ "slug": "docs", "tailnet": "pro" }),
+    )
+    .await;
+    assert_eq!(result["mcp"]["tailnet"], "Pro");
+    assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, Some(pro.id));
+    let listed = call_ok(&gateway, &manager, "mcp_registry_list", json!({})).await;
+    assert_eq!(listed["mcps"][0]["tailnet"], "Pro");
+
+    // Another change leaves it as it is.
+    update_ok(
+        &gateway,
+        &manager,
+        json!({ "slug": "docs", "description": "New" }),
+    )
+    .await;
+    assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, Some(pro.id));
+
+    // The team's own tailnets only, and the refusal says which they are.
+    for name in ["Theirs", "nope"] {
+        let refused = update_refused(
+            &gateway,
+            &manager,
+            json!({ "slug": "docs", "tailnet": name }),
+        )
+        .await;
+        assert!(
+            refused.contains(&format!("Tailnet \"{name}\" was not found in this team")),
+            "{refused}"
+        );
+        assert!(refused.contains("Its tailnets: Pro."), "{refused}");
+    }
+    assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, Some(pro.id));
+
+    // A new MCP can name one, and null or an empty name goes back to the internet.
+    let created = call_ok(
+        &gateway,
+        &manager,
+        "mcp_registry_create",
+        json!({ "name": "Grafana", "transport": "http", "url": "https://grafana.tail1234.ts.net/mcp", "tailnet": "Pro" }),
+    )
+    .await;
+    assert_eq!(created["mcp"]["tailnet"], "Pro");
+    assert_eq!(
+        mcp_named(&gateway, "grafana").await.tailnet_id,
+        Some(pro.id)
+    );
+    for cleared in [json!(null), json!("")] {
+        update_ok(
+            &gateway,
+            &manager,
+            json!({ "slug": "docs", "tailnet": cleared }),
+        )
+        .await;
+        assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, None);
+        update_ok(
+            &gateway,
+            &manager,
+            json!({ "slug": "docs", "tailnet": "Pro" }),
+        )
+        .await;
+    }
+
+    // A tailnet is a name.
+    let refused = update_refused(&gateway, &manager, json!({ "slug": "docs", "tailnet": 7 })).await;
+    assert!(
+        refused.contains("tailnet must be the name of a tailnet of the team"),
+        "{refused}"
+    );
+}
+
+#[tokio::test]
+async fn names_no_tailnet_for_a_team_that_has_none_and_none_for_an_npm_mcp() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    bearer_mcp(&gateway, &admin).await;
+
+    let refused = update_refused(
+        &gateway,
+        &manager,
+        json!({ "slug": "docs", "tailnet": "pro" }),
+    )
+    .await;
+    assert!(refused.contains("this team has no tailnet"), "{refused}");
+
+    tailnet_in(&gateway, Team::ROOT_ID, &admin, "pro").await;
+    let package = package_mcp(&gateway, &admin).await;
+    let refused = update_refused(
+        &gateway,
+        &manager,
+        json!({ "slug": package.slug, "tailnet": "pro" }),
+    )
+    .await;
+    assert!(
+        refused.contains("Only an HTTP MCP can be reached through a tailnet"),
+        "{refused}"
+    );
+    assert_eq!(mcp_named(&gateway, &package.slug).await.tailnet_id, None);
 }
 
 #[tokio::test]
@@ -1457,6 +1589,64 @@ async fn does_not_let_an_agent_move_an_mcp_into_the_network_of_the_instance() {
 }
 
 #[tokio::test]
+async fn does_not_let_an_agent_leave_a_tailnet_for_the_network_of_the_instance() {
+    let gateway = gateway_guarded(|_| {}, guard_with_internal_names()).await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    let pro = tailnet_in(&gateway, Team::ROOT_ID, &admin, "Pro").await;
+    // Put by a person: on the tailnet, a private address is a device behind
+    // a subnet router.
+    create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "Router".into();
+        mcp.slug = "router".into();
+        mcp.http_url = Some("http://10.0.0.5:8080/mcp".into());
+        mcp.tailnet_id = Some(pro.id);
+    })
+    .await;
+    gateway.upstreams.clear();
+
+    for tailnet in [json!(null), json!("")] {
+        let refusal = update_refused(
+            &gateway,
+            &manager,
+            json!({ "slug": "router", "tailnet": tailnet }),
+        )
+        .await;
+        assert!(
+            refusal.starts_with("Invalid url: the host is a loopback, private or link-local"),
+            "{refusal}"
+        );
+    }
+    // Refused before it was saved, and before anything was probed.
+    assert_eq!(mcp_named(&gateway, "router").await.tailnet_id, Some(pro.id));
+    assert!(gateway.upstreams.requests().is_empty());
+
+    // Left as it is on its tailnet, it is still the person's to rename.
+    update_ok(
+        &gateway,
+        &manager,
+        json!({ "slug": "router", "description": "Behind the router", "tailnet": "Pro" }),
+    )
+    .await;
+
+    // A public address can leave a tailnet.
+    create_mcp(&gateway, admin.id, |mcp| {
+        mcp.name = "Docs".into();
+        mcp.slug = "docs".into();
+        mcp.http_url = Some("https://public.example/mcp".into());
+        mcp.tailnet_id = Some(pro.id);
+    })
+    .await;
+    update_ok(
+        &gateway,
+        &manager,
+        json!({ "slug": "docs", "tailnet": null }),
+    )
+    .await;
+    assert_eq!(mcp_named(&gateway, "docs").await.tailnet_id, None);
+}
+
+#[tokio::test]
 async fn keeps_the_secrets_of_an_url_out_of_what_the_agent_reads_back() {
     let gateway = gateway().await;
     let admin = create_admin(&gateway).await;
@@ -1802,4 +1992,78 @@ async fn opens_the_link_of_an_mcp_only_for_the_team_it_is_in() {
         .await;
     assert_eq!(started.redirect_path().as_deref(), Some("/mcps"));
     assert!(gateway.upstreams.requests().is_empty());
+}
+
+#[tokio::test]
+async fn clears_the_secrets_and_the_sign_in_when_the_network_changes_and_says_so() {
+    let gateway = gateway().await;
+    let admin = create_admin(&gateway).await;
+    let manager = grant(&gateway, &admin, MANAGE).await;
+    let pro = tailnet_in(&gateway, Team::ROOT_ID, &admin, "Pro").await;
+    let home = tailnet_in(&gateway, Team::ROOT_ID, &admin, "Home").await;
+    let core = gateway.core().clone();
+
+    // Internet to a tailnet, a tailnet to the internet, and one tailnet to
+    // another: the same URL, but not the same machine.
+    for (slug, from, to, expected) in [
+        ("online-to-pro", None, json!("Pro"), Some(pro.id)),
+        ("pro-to-online", Some(pro.id), json!(null), None),
+        ("pro-to-home", Some(pro.id), json!("Home"), Some(home.id)),
+    ] {
+        create_mcp(&gateway, admin.id, |mcp| {
+            mcp.name = slug.into();
+            mcp.slug = slug.into();
+            mcp.http_url = Some("https://docs.example/mcp".into());
+            mcp.tailnet_id = from;
+            mcp.auth_type = McpAuthType::Bearer;
+            mcp.auth_bearer = core.encrypt_secret(Some("bearer-secret-value"));
+            mcp.oauth_access_token = core.encrypt_secret(Some("access-token"));
+            mcp.oauth_client_id = Some("registered-client".into());
+        })
+        .await;
+
+        let result = update_ok(&gateway, &manager, json!({ "slug": slug, "tailnet": to })).await;
+
+        let cleared = result["cleared_secrets"].as_array().unwrap();
+        assert!(cleared.contains(&json!("bearer_token")), "{slug}: {result}");
+        assert!(
+            cleared.contains(&json!("oauth_connection")),
+            "{slug}: {result}"
+        );
+        assert!(result["notes"].to_string().contains("network"), "{result}");
+        let saved = mcp_named(&gateway, slug).await;
+        assert_eq!(saved.auth_bearer, None, "{slug}");
+        assert_eq!(saved.oauth_access_token, None, "{slug}");
+        assert_eq!(saved.oauth_client_id, None, "{slug}");
+        assert_eq!(saved.tailnet_id, expected, "{slug}");
+    }
+
+    // The same network, named again, keeps them; so does a new token sent
+    // with the new network.
+    bearer_mcp(&gateway, &admin).await;
+    update_ok(
+        &gateway,
+        &manager,
+        json!({ "slug": "docs", "tailnet": "Pro" }),
+    )
+    .await;
+    let again = update_ok(
+        &gateway,
+        &manager,
+        json!({ "slug": "docs", "tailnet": "pro", "description": "Same network" }),
+    )
+    .await;
+    assert_eq!(again["cleared_secrets"], json!([]));
+    update_ok(
+        &gateway,
+        &manager,
+        json!({ "slug": "docs", "tailnet": "Home", "bearer_token": "fresh-token" }),
+    )
+    .await;
+    let saved = mcp_named(&gateway, "docs").await;
+    assert_eq!(saved.tailnet_id, Some(home.id));
+    assert_eq!(
+        decrypted(&gateway, &saved.auth_bearer).as_deref(),
+        Some("fresh-token")
+    );
 }

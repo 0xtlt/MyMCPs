@@ -92,6 +92,10 @@ macro_rules! model {
             /// The row as the database holds it, to tell which columns changed.
             #[doc(hidden)]
             pub stored: Option<Box<$name>>,
+            /// Columns the next `save` writes whether or not they differ
+            /// from `stored`. See [`Self::write_over`].
+            #[doc(hidden)]
+            pub forced: Vec<&'static str>,
         }
 
         impl<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> for $name {
@@ -101,6 +105,7 @@ macro_rules! model {
                     id: row.try_get("id")?,
                     $( $field: row.try_get(stringify!($field))?, )+
                     stored: None,
+                    forced: Vec::new(),
                 };
                 model.remember();
                 Ok(model)
@@ -114,7 +119,18 @@ macro_rules! model {
             fn remember(&mut self) {
                 let mut copy = self.clone();
                 copy.stored = None;
+                copy.forced = Vec::new();
                 self.stored = Some(Box::new(copy));
+                self.forced = Vec::new();
+            }
+
+            /// Have the next `save` write these columns, with the value they
+            /// hold now, even when it equals what was read. A column that
+            /// was read empty and is cleared looks unchanged, but the row may
+            /// have been given a value since: a value that is cleared on
+            /// purpose has to be written, not inferred from a comparison.
+            pub fn write_over(&mut self, columns: &[&'static str]) {
+                self.forced.extend_from_slice(columns);
             }
 
             /// Whether the row exists in the database, as far as this value knows.
@@ -168,15 +184,50 @@ macro_rules! model {
                 let Some(stored) = self.stored.clone() else {
                     return self.insert(db).await;
                 };
-                if true $( && self.$field == stored.$field )+ {
-                    return Ok(());
+                self.update_changed(db, stored, |_| {}).await.map(|_| ())
+            }
+
+            /// Write the columns that changed since the row was read, only if
+            /// the row still matches what `condition` appends to the `where`
+            /// clause (each part starting with ` and `), in the one `update`
+            /// statement that writes them: nothing can change the row between
+            /// the check and the write. Returns whether the row was written.
+            /// A row that was never stored, or that no longer matches, is
+            /// left alone, and so is this value. Does nothing, and returns
+            /// `true`, when nothing changed.
+            pub async fn save_if<'e, E>(
+                &mut self,
+                db: E,
+                condition: impl FnOnce(&mut sqlx::QueryBuilder<sqlx::Sqlite>),
+            ) -> Result<bool, sqlx::Error>
+            where
+                E: sqlx::sqlite::SqliteExecutor<'e>,
+            {
+                let Some(stored) = self.stored.clone() else {
+                    return Ok(false);
+                };
+                self.update_changed(db, stored, condition).await
+            }
+
+            async fn update_changed<'e, E>(
+                &mut self,
+                db: E,
+                stored: Box<Self>,
+                condition: impl FnOnce(&mut sqlx::QueryBuilder<sqlx::Sqlite>),
+            ) -> Result<bool, sqlx::Error>
+            where
+                E: sqlx::sqlite::SqliteExecutor<'e>,
+            {
+                if self.forced.is_empty() $( && self.$field == stored.$field )+ {
+                    return Ok(true);
                 }
+                let touched = self.clone();
                 model!(@touch_updated self $updated);
 
                 let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(concat!("update `", $table, "` set "));
                 let mut first = true;
                 $(
-                    if self.$field != stored.$field {
+                    if self.$field != stored.$field || self.forced.contains(&stringify!($field)) {
                         if !first {
                             query.push(", ");
                         }
@@ -188,9 +239,14 @@ macro_rules! model {
                 let _ = first;
                 query.push(" where `id` = ");
                 query.push_bind(self.id);
-                query.build().execute(db).await?;
-                self.remember();
-                Ok(())
+                condition(&mut query);
+                let written = query.build().execute(db).await?.rows_affected() > 0;
+                if written {
+                    self.remember();
+                } else {
+                    *self = touched;
+                }
+                Ok(written)
             }
 
             pub async fn delete<'e, E>(&self, db: E) -> Result<(), sqlx::Error>

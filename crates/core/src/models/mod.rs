@@ -12,6 +12,7 @@ mod mcp;
 mod mcp_call_log;
 mod oauth;
 mod passkey;
+mod tailnet;
 mod team;
 mod two_factor;
 mod user;
@@ -20,10 +21,13 @@ pub use access_token::{AccessToken, ScopeMode, TokenSource};
 pub use approval_request::{ApprovalDecision, ApprovalRequest, ApprovalState};
 pub use instance_setting::{GatewayToolMode, InstanceSetting, McpLogLevel};
 pub use invite::Invite;
-pub use mcp::{DEFAULT_TOOL_TIMEOUT_SECONDS, Mcp, McpAuthType, McpStatus, McpTransport};
+pub use mcp::{
+    DEFAULT_TOOL_TIMEOUT_SECONDS, Mcp, McpAuthType, McpOauthBasis, McpStatus, McpTransport,
+};
 pub use mcp_call_log::{CallErrorCategory, CallOutcome, McpCallLog};
 pub use oauth::{OauthAuthorizationCode, OauthClient};
 pub use passkey::Passkey;
+pub use tailnet::{SIGNED_OUT_FOR_ANOTHER_TAILNET, Tailnet, TailnetIdentity};
 pub use team::{AccountRemovalRefusal, Membership, Team, TeamMember, TeamRole};
 pub use two_factor::{RECOVERY_CODES, RecoveryCode};
 pub use user::User;

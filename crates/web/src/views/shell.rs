@@ -155,7 +155,7 @@ where
     }
 }
 
-fn head(context: &PageContext, title: &str) -> Markup {
+fn head(context: &PageContext, title: &str, extra: Markup) -> Markup {
     html! {
         head {
             meta charset="utf-8";
@@ -170,6 +170,7 @@ fn head(context: &PageContext, title: &str) -> Markup {
             link rel="apple-touch-icon" href=(asset_url("brand/apple-touch-icon.png"));
             link rel="stylesheet" href=(asset_url("css/app.css"));
             script type="module" src=(asset_url("js/app.js")) nonce=(context.nonce) {}
+            (extra)
         }
     }
 }
@@ -277,6 +278,8 @@ fn sidebar(context: &PageContext, user: &User) -> Markup {
                 p class="nav-section" { "Gateway" }
                 (nav_item(context, "/mcps", "plug", "MCPs"))
                 (nav_item(context, "/tokens", "key-round", "Access tokens"))
+                // Connecting a network and signing in to it is for those who manage the team.
+                @if context.is_team_admin() { (nav_item(context, "/tailnets", "network", "Tailnets")) }
                 @if context.pending_approvals > 0 {
                     a class="nav-item" href="/approvals" aria-current=[approvals_current.then_some("page")]
                         aria-label=(format!("Approvals, {} waiting", context.pending_approvals)) {
@@ -333,13 +336,25 @@ pub fn app_page(
     content: Markup,
     page_overlays: Markup,
 ) -> Markup {
+    app_page_with_head(context, title, html! {}, content, page_overlays)
+}
+
+/// [`app_page`] with more in `<head>`, such as the `<meta http-equiv="refresh">`
+/// of a page that waits for something to happen on the server.
+pub fn app_page_with_head(
+    context: &PageContext,
+    title: &str,
+    extra_head: Markup,
+    content: Markup,
+    page_overlays: Markup,
+) -> Markup {
     let Some(user) = &context.user else {
         return auth_page(context, title, content);
     };
     html! {
         (DOCTYPE)
         html lang="en" data-sidebar=[context.sidebar_collapsed.then_some("collapsed")] {
-            (head(context, title))
+            (head(context, title, extra_head))
             body class="app" {
                 a class="skip-link" href="#main" { "Skip to content" }
                 header class="topbar" {
@@ -383,7 +398,7 @@ pub fn auth_page(context: &PageContext, title: &str, content: Markup) -> Markup 
     html! {
         (DOCTYPE)
         html lang="en" {
-            (head(context, title))
+            (head(context, title, html! {}))
             body class="auth" {
                 main class="auth__main" id="main" {
                     (content)

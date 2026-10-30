@@ -17,7 +17,9 @@ updates:
     open-pull-requests-limit: 10
 
   # Base images in the Dockerfile: the Rust toolchain that compiles the server,
-  # the Debian runtime, and the Node.js that runs npm MCP packages.
+  # the Debian runtime, the Node.js that runs npm MCP packages, and the
+  # Tailscale image `tailscaled` is copied from (a bump there needs
+  # TAILSCALE_VERSION in the Dockerfile updated too).
   # A Rust bump also needs RUST_TOOLCHAIN updated in the workflows and `rust`
   # in mise.toml, and a Node.js bump NODE_VERSION in the Dockerfile and `node`
   # in mise.toml; `cargo test -p xtask` fails until they agree. The Debian release is chosen by hand: both the rust and the

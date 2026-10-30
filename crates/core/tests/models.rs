@@ -3,7 +3,8 @@ use std::time::Duration;
 use mymcps_core::limiter::{Limiter, LimiterError};
 use mymcps_core::models::{
     AccessToken, ApprovalDecision, ApprovalRequest, ApprovalState, InstanceSetting, Invite, Mcp,
-    McpLogLevel, McpStatus, McpTransport, OauthClient, Team, TeamRole, User,
+    McpLogLevel, McpStatus, McpTransport, OauthClient, SIGNED_OUT_FOR_ANOTHER_TAILNET, Tailnet,
+    TailnetIdentity, Team, TeamRole, User,
 };
 use mymcps_core::{Config, Core, Db, Timestamp};
 
@@ -160,6 +161,70 @@ async fn save_writes_only_the_columns_that_changed() {
         mcp.refresh(&**db).await,
         Err(sqlx::Error::RowNotFound)
     ));
+}
+
+#[tokio::test]
+async fn a_column_cleared_on_purpose_is_written_even_when_the_row_was_read_empty() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let user = admin(db).await;
+    let mut mcp = mcp_of(db, Team::ROOT_ID, user.id, "Notion").await;
+
+    // An edit reads the row with no token and clears it, while another
+    // request saves one.
+    let mut edit = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    mcp.oauth_access_token = core.encrypt_secret(Some("saved-meanwhile"));
+    mcp.save(&**db).await.unwrap();
+
+    edit.oauth_access_token = None;
+    edit.name = "Renamed".into();
+    edit.save(&**db).await.unwrap();
+    let after = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    assert_eq!(after.name, "Renamed");
+    assert!(
+        after.oauth_access_token.is_some(),
+        "unchanged as far as the edit knows: not written"
+    );
+
+    // Cleared on purpose, it is written whatever the edit read.
+    mcp.oauth_access_token = None;
+    mcp.save(&**db).await.unwrap();
+    let mut edit = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    mcp.oauth_access_token = core.encrypt_secret(Some("saved-again"));
+    mcp.save(&**db).await.unwrap();
+    edit.oauth_access_token = None;
+    edit.oauth_refresh_token = None;
+    edit.write_over(&["oauth_access_token", "oauth_refresh_token"]);
+    edit.save(&**db).await.unwrap();
+    let after = Mcp::find(&**db, mcp.id).await.unwrap().unwrap();
+    assert_eq!(after.oauth_access_token, None);
+    // Written once: the next save of the same value is a save of nothing.
+    assert!(edit.forced.is_empty());
+}
+
+#[tokio::test]
+async fn a_secret_that_did_not_change_keeps_its_ciphertext() {
+    let (core, _dir) = core().await;
+    let saved = core.encrypt_secret(Some("client-secret"));
+    assert_eq!(
+        core.encrypt_secret_keeping(saved.as_deref(), Some("client-secret")),
+        saved
+    );
+    let changed = core.encrypt_secret_keeping(saved.as_deref(), Some("another-secret"));
+    assert_ne!(changed, saved);
+    assert_eq!(
+        core.decrypt_secret(changed.as_deref()).as_deref(),
+        Some("another-secret")
+    );
+    // Nothing saved, or another APP_KEY's ciphertext that cannot be read: encrypted anew.
+    for saved in [None, Some("not-ciphertext")] {
+        let fresh = core.encrypt_secret_keeping(saved, Some("client-secret"));
+        assert_eq!(
+            core.decrypt_secret(fresh.as_deref()).as_deref(),
+            Some("client-secret")
+        );
+    }
+    assert_eq!(core.encrypt_secret_keeping(saved.as_deref(), None), None);
 }
 
 #[test]
@@ -716,4 +781,245 @@ async fn the_instance_always_keeps_a_super_admin() {
     );
     transaction.commit().await.unwrap();
     assert!(is_super_admin(grace.id).await);
+}
+
+async fn tailnet_of(db: &Db, team_id: i64, created_by: i64, name: &str) -> Tailnet {
+    Tailnet::create_for_tests(&**db, team_id, created_by, name).await
+}
+
+#[tokio::test]
+async fn a_team_connects_tailnets_that_its_mcps_use() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let ada = admin(db).await;
+    let (bob, bob_team) = account(db, "bob@example.com", Some("Bob")).await;
+
+    let work = tailnet_of(db, Team::ROOT_ID, ada.id, "work").await;
+    let mut lab = tailnet_of(db, Team::ROOT_ID, ada.id, "Lab").await;
+    let other = tailnet_of(db, bob_team.id, bob.id, "work").await;
+    assert!(work.is_persisted() && work.id > 0);
+    assert!(work.created_at.to_string().len() > 10 && work.updated_at.is_some());
+    assert_eq!(work.control_url, None);
+
+    // Listed by team and by name, whatever the case; counted per team.
+    let names = |tailnets: Vec<Tailnet>| -> Vec<String> {
+        tailnets.into_iter().map(|tailnet| tailnet.name).collect()
+    };
+    assert_eq!(
+        names(Tailnet::of_team(&**db, Team::ROOT_ID).await.unwrap()),
+        ["Lab", "work"]
+    );
+    assert_eq!(
+        names(Tailnet::of_team(&**db, bob_team.id).await.unwrap()),
+        ["work"]
+    );
+    assert_eq!(
+        Tailnet::count_in_team(&**db, Team::ROOT_ID).await.unwrap(),
+        2
+    );
+    assert_eq!(Tailnet::count_in_team(&**db, bob_team.id).await.unwrap(), 1);
+    assert_eq!(Tailnet::count_in_team(&**db, 999).await.unwrap(), 0);
+
+    // Found by id in its own team only.
+    let found = Tailnet::find_in_team(&**db, Team::ROOT_ID, work.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.hostname, "mymcps-work");
+    assert!(
+        Tailnet::find_in_team(&**db, bob_team.id, work.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        Tailnet::find_in_team(&**db, Team::ROOT_ID, other.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // A name is unique in a team, and free in another.
+    let mut duplicate = Tailnet::for_tests(Team::ROOT_ID, ada.id, "work");
+    assert!(duplicate.insert(&**db).await.is_err());
+    // Whatever its case: lookups by name ignore it, so the index does too.
+    for name in ["WORK", "Work", "lab"] {
+        let mut variant = Tailnet::for_tests(Team::ROOT_ID, ada.id, name);
+        let error = variant.insert(&**db).await.unwrap_err();
+        assert!(
+            error
+                .as_database_error()
+                .is_some_and(|error| error.is_unique_violation()),
+            "{name}: {error}"
+        );
+    }
+    assert_eq!(
+        Tailnet::count_in_team(&**db, Team::ROOT_ID).await.unwrap(),
+        2
+    );
+
+    // Only the columns that changed are written.
+    lab.control_url = Some("https://headscale.example.com".into());
+    lab.save(&**db).await.unwrap();
+    let lab = Tailnet::find(&**db, lab.id).await.unwrap().unwrap();
+    assert_eq!(
+        lab.control_url.as_deref(),
+        Some("https://headscale.example.com")
+    );
+    assert_eq!(lab.name, "Lab");
+
+    // MCPs reach their upstream through one tailnet, or none.
+    let mut tagged = mcp_of(db, Team::ROOT_ID, ada.id, "Wiki").await;
+    tagged.tailnet_id = Some(work.id);
+    tagged.save(&**db).await.unwrap();
+    let mut second = mcp_of(db, Team::ROOT_ID, ada.id, "Build").await;
+    second.tailnet_id = Some(work.id);
+    second.save(&**db).await.unwrap();
+    let direct = mcp_of(db, Team::ROOT_ID, ada.id, "Direct").await;
+    assert_eq!(direct.tailnet_id, None);
+    let direct = Mcp::find(&**db, direct.id).await.unwrap().unwrap();
+    assert_eq!(direct.tailnet_id, None);
+
+    let using = work.mcps(&**db).await.unwrap();
+    assert_eq!(
+        using
+            .iter()
+            .map(|mcp| mcp.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Build", "Wiki"]
+    );
+    assert_eq!(using[1].tailnet_id, Some(work.id));
+    assert_eq!(work.mcp_count(&**db).await.unwrap(), 2);
+    assert_eq!(lab.mcp_count(&**db).await.unwrap(), 0);
+    assert!(lab.mcps(&**db).await.unwrap().is_empty());
+
+    // A tailnet that does not exist cannot be used.
+    let mut stray = mcp_of(db, Team::ROOT_ID, ada.id, "Stray").await;
+    stray.tailnet_id = Some(9999);
+    assert!(stray.save(&**db).await.is_err());
+
+    // Deleting a tailnet leaves its MCPs, on the direct network.
+    sqlx::query("delete from `tailnets` where `id` = ?")
+        .bind(work.id)
+        .execute(&**db)
+        .await
+        .unwrap();
+    let wiki = Mcp::find(&**db, tagged.id).await.unwrap().unwrap();
+    assert_eq!(wiki.tailnet_id, None);
+    assert_eq!(wiki.name, "Wiki");
+
+    // Deleting a team deletes its tailnets, not those of other teams.
+    let mut kept = mcp_of(db, bob_team.id, bob.id, "Kept").await;
+    kept.tailnet_id = Some(other.id);
+    kept.save(&**db).await.unwrap();
+    sqlx::query("delete from `teams` where `id` = ?")
+        .bind(Team::ROOT_ID)
+        .execute(&**db)
+        .await
+        .unwrap();
+    assert_eq!(
+        Tailnet::count_in_team(&**db, Team::ROOT_ID).await.unwrap(),
+        0
+    );
+    assert_eq!(Tailnet::count_in_team(&**db, bob_team.id).await.unwrap(), 1);
+    assert_eq!(other.mcp_count(&**db).await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn a_tailnet_signs_out_its_mcps_when_its_node_runs_in_another_tailnet() {
+    let (core, _dir) = core().await;
+    let db = &core.db;
+    let ada = admin(db).await;
+    let work = tailnet_of(db, Team::ROOT_ID, ada.id, "work").await;
+    let lab = tailnet_of(db, Team::ROOT_ID, ada.id, "lab").await;
+    let signed_in = |name: &'static str, tailnet: &Tailnet| {
+        let tailnet_id = tailnet.id;
+        async move {
+            let mut mcp = mcp_of(db, Team::ROOT_ID, ada.id, name).await;
+            mcp.tailnet_id = Some(tailnet_id);
+            mcp.auth_bearer = Some("bearer-ciphertext".into());
+            mcp.auth_header_value = Some("header-ciphertext".into());
+            mcp.oauth_client_id = Some("client".into());
+            mcp.oauth_access_token = Some("access-ciphertext".into());
+            mcp.oauth_refresh_token = Some("refresh-ciphertext".into());
+            mcp.oauth_token_url = Some("https://auth.example/token".into());
+            mcp.status = McpStatus::Ready;
+            mcp.renew_oauth_generation();
+            mcp.save(&**db).await.unwrap();
+            mcp
+        }
+    };
+    let wiki = signed_in("Wiki", &work).await;
+    let builds = signed_in("Builds", &lab).await;
+    // An MCP of the same tailnet that needs no sign-in.
+    let mut open = mcp_of(db, Team::ROOT_ID, ada.id, "Open").await;
+    open.tailnet_id = Some(work.id);
+    open.status = McpStatus::Ready;
+    open.save(&**db).await.unwrap();
+    let find = |id| async move { Mcp::find(&**db, id).await.unwrap().unwrap() };
+
+    // First found running: remembered, in lowercase, without its dots.
+    assert_eq!(
+        work.settle_identity(db, ".Tail1234.ts.net.").await.unwrap(),
+        TailnetIdentity::Bound
+    );
+    let work = Tailnet::find(&**db, work.id).await.unwrap().unwrap();
+    assert_eq!(work.magic_dns_suffix.as_deref(), Some("tail1234.ts.net"));
+    assert_eq!(
+        work.settle_identity(db, "tail1234.ts.net").await.unwrap(),
+        TailnetIdentity::Same
+    );
+    // A copy read before it was remembered finds it settled the same way.
+    let stale = Tailnet::for_tests(Team::ROOT_ID, ada.id, "work");
+    let stale = Tailnet {
+        id: work.id,
+        ..stale
+    };
+    assert_eq!(
+        stale.settle_identity(db, "tail1234.ts.net").await.unwrap(),
+        TailnetIdentity::Same
+    );
+    assert_eq!(find(wiki.id).await.auth_bearer, wiki.auth_bearer);
+
+    // Another tailnet: its MCPs lose what was entered for the first one.
+    assert_eq!(
+        work.settle_identity(db, "tail9999.ts.net").await.unwrap(),
+        TailnetIdentity::Changed { mcps: 2 }
+    );
+    let signed_out = find(wiki.id).await;
+    // Signed in with OAuth, it waits for its account again, so Connect shows.
+    assert!(signed_out.oauth_required);
+    assert!(!find(open.id).await.oauth_required);
+    assert_eq!(signed_out.auth_bearer, None);
+    assert_eq!(signed_out.auth_header_value, None);
+    assert_eq!(signed_out.oauth_client_id, None);
+    assert_eq!(signed_out.oauth_access_token, None);
+    assert_eq!(signed_out.oauth_refresh_token, None);
+    assert_eq!(signed_out.oauth_token_url, None);
+    assert_ne!(signed_out.oauth_generation, wiki.oauth_generation);
+    assert!(signed_out.oauth_generation >= 0);
+    assert_eq!(signed_out.status, McpStatus::Error);
+    assert_eq!(
+        signed_out.last_error.as_deref(),
+        Some(SIGNED_OUT_FOR_ANOTHER_TAILNET)
+    );
+    assert_eq!(signed_out.tailnet_id, Some(work.id));
+    let work_now = Tailnet::find(&**db, work.id).await.unwrap().unwrap();
+    assert_eq!(
+        work_now.magic_dns_suffix.as_deref(),
+        Some("tail9999.ts.net")
+    );
+    // The MCPs of another tailnet keep theirs.
+    let untouched = find(builds.id).await;
+    assert_eq!(untouched.auth_bearer, builds.auth_bearer);
+    assert_eq!(untouched.oauth_access_token, builds.oauth_access_token);
+    assert_eq!(untouched.oauth_generation, builds.oauth_generation);
+    assert_eq!(untouched.status, McpStatus::Ready);
+
+    // A request that read the first tailnet after it moved finds the move
+    // done, and signs nothing out twice.
+    assert_eq!(
+        work.settle_identity(db, "tail9999.ts.net").await.unwrap(),
+        TailnetIdentity::Same
+    );
 }

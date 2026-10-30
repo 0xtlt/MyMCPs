@@ -1626,6 +1626,7 @@ dependencies = [
  "mymcps-core",
  "mymcps-node",
  "mymcps-sandbox",
+ "mymcps-tailnet",
  "mymcps-upstream",
  "mymcps-web",
  "rpassword",
@@ -1677,6 +1678,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "ipnet",
+ "mymcps-core",
  "mymcps-vine",
  "rand",
  "regex",
@@ -1821,12 +1823,18 @@ dependencies = [
  "bytes",
  "futures",
  "http",
+ "http-body-util",
  "hyper",
+ "hyper-util",
  "reqwest",
+ "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-rustls",
+ "tower-service",
  "url",
 ]
 
@@ -1882,6 +1890,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "mymcps-tailnet"
+version = "0.5.0"
+dependencies = [
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "mymcps-vine",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "mymcps-upstream"
 version = "0.5.0"
 dependencies = [
@@ -1898,6 +1927,7 @@ dependencies = [
  "mymcps-mcp-auth",
  "mymcps-net",
  "mymcps-node",
+ "mymcps-tailnet",
  "mymcps-vine",
  "regex",
  "serde",
@@ -1943,6 +1973,7 @@ dependencies = [
  "mymcps-net",
  "mymcps-node",
  "mymcps-strava",
+ "mymcps-tailnet",
  "mymcps-upstream",
  "mymcps-vine",
  "mymcps-web",

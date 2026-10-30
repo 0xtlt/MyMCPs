@@ -75,6 +75,18 @@ pub enum UpstreamError {
     #[error(transparent)]
     Database(Arc<sqlx::Error>),
 
+    /// The MCP reaches its server through a tailnet that cannot carry the
+    /// request: Tailscale is off on this server, the tailnet is gone or not
+    /// running, or the host is not one of its devices. The message says which.
+    #[error("{0}")]
+    Tailnet(String),
+
+    /// An OAuth step was dropped: the MCP was moved, or its sign-in cleared
+    /// or made again, since the step began. It says nothing of the MCP as it
+    /// is now, so its status is left as it is.
+    #[error("{0}")]
+    Superseded(String),
+
     /// Anything else, with the message the Node app gave it.
     #[error("{0}")]
     Other(String),
@@ -121,6 +133,18 @@ impl UpstreamError {
     /// (`RestrictedEndpointError`).
     pub fn is_restricted_endpoint(&self) -> bool {
         matches!(self, Self::RestrictedEndpoint(_))
+    }
+
+    /// The MCP's tailnet could not carry the request, see
+    /// [`UpstreamError::Tailnet`].
+    pub fn is_tailnet_error(&self) -> bool {
+        matches!(self, Self::Tailnet(_))
+    }
+
+    /// An OAuth step was dropped because the MCP changed meanwhile, see
+    /// [`UpstreamError::Superseded`].
+    pub fn is_superseded(&self) -> bool {
+        matches!(self, Self::Superseded(_))
     }
 
     /// The error of a built-in MCP, when that is what failed.

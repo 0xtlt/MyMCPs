@@ -69,6 +69,12 @@ pub struct Config {
     /// `NODE_BINARY`: path to the Node.js binary that runs npm MCPs, when it
     /// is not the `node` of the `PATH`.
     pub node_binary: Option<String>,
+    /// `TAILSCALED_BINARY` as configured: a path, or `off`. Use
+    /// [`Config::tailscaled`] to read it.
+    pub tailscaled_binary: Option<String>,
+    /// `TAILNET_CONTROL_URLS`: the control servers a tailnet may use besides
+    /// Tailscale's own. Unset, there are none.
+    pub tailnet_control: TailnetControl,
     /// `NPM_SANDBOX`: whether npm MCPs run in the sandbox of the kernel. On
     /// unless it is `off`; a server that cannot enforce it then starts none.
     pub npm_sandbox: bool,
@@ -140,6 +146,8 @@ impl Config {
             app_url: get("APP_URL").map(str::to_string),
             data_dir,
             node_binary: get("NODE_BINARY").map(str::to_string),
+            tailscaled_binary: get("TAILSCALED_BINARY").map(str::to_string),
+            tailnet_control: TailnetControl::parse(get("TAILNET_CONTROL_URLS"))?,
             npm_sandbox,
         })
     }
@@ -157,6 +165,9 @@ impl Config {
             app_url: Some("http://localhost:3333".into()),
             data_dir: data_dir.into(),
             node_binary: None,
+            // Whatever the machine has installed, tests join no tailnet.
+            tailscaled_binary: Some("off".into()),
+            tailnet_control: TailnetControl::default(),
             npm_sandbox: true,
         }
     }
@@ -173,6 +184,13 @@ impl Config {
         self.environment == Environment::Test
     }
 
+    /// The `tailscaled` binary that joins tailnets, or `None` when the
+    /// feature is off: see [`locate_tailscaled`].
+    pub fn tailscaled(&self) -> Option<PathBuf> {
+        let search_path = std::env::var_os("PATH");
+        locate_tailscaled(self.tailscaled_binary.as_deref(), search_path.as_deref())
+    }
+
     /// `db.sqlite3` in the data directory, `test.sqlite3` under test.
     pub fn database_path(&self) -> PathBuf {
         self.data_dir.join(if self.is_test() {
@@ -180,6 +198,183 @@ impl Config {
         } else {
             "db.sqlite3"
         })
+    }
+}
+
+/// The control servers a tailnet may use (`TAILNET_CONTROL_URLS`).
+///
+/// A tailnet's `tailscaled` talks to its control server, and that server
+/// steers it: redirects, ping requests and node-to-node calls make the daemon
+/// send HTTP requests of its own, which the routing of MyMCPs does not see.
+/// A server that anyone may point at their own control server would let a team
+/// aim those requests at the network of the instance, so only the operator
+/// decides which other servers are allowed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum TailnetControl {
+    /// Tailscale's own control server only: the default.
+    #[default]
+    Official,
+    /// Any `http` or `https` control server (`any`).
+    Any,
+    /// Tailscale's, and the control servers of these origins, such as
+    /// `https://headscale.example.com`.
+    Origins(Vec<String>),
+}
+
+impl TailnetControl {
+    /// Reads `TAILNET_CONTROL_URLS`: unset or blank is [`Official`](Self::Official),
+    /// `any` is [`Any`](Self::Any), and otherwise a comma-separated list of
+    /// `http` or `https` origins (no user name, password, path or query).
+    pub fn parse(value: Option<&str>) -> Result<Self> {
+        let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok(Self::Official);
+        };
+        let items: Vec<&str> = value
+            .split(',')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .collect();
+        if items.iter().any(|item| item.eq_ignore_ascii_case("any")) {
+            return if items.len() == 1 {
+                Ok(Self::Any)
+            } else {
+                Err(Error::Config(
+                    "TAILNET_CONTROL_URLS is either `any` or a list of origins, not both".into(),
+                ))
+            };
+        }
+        let mut origins: Vec<String> = Vec::new();
+        for item in items {
+            let origin = origin_of(item).ok_or_else(|| {
+                Error::Config(format!(
+                    "TAILNET_CONTROL_URLS must be `any` or comma-separated http(s) origins \
+                     such as https://headscale.example.com, not \"{item}\""
+                ))
+            })?;
+            if !origins.contains(&origin) {
+                origins.push(origin);
+            }
+        }
+        Ok(Self::Origins(origins))
+    }
+
+    /// Whether a tailnet may use this control server. `None`, which is
+    /// Tailscale's, is always allowed.
+    pub fn allows(&self, control_url: Option<&str>) -> bool {
+        let Some(url) = control_url.map(str::trim).filter(|url| !url.is_empty()) else {
+            return true;
+        };
+        match self {
+            Self::Official => false,
+            Self::Any => url::Url::parse(url)
+                .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.has_host()),
+            Self::Origins(origins) => {
+                origin_of_url(url).is_some_and(|origin| origins.contains(&origin))
+            }
+        }
+    }
+
+    /// Whether a tailnet may name a control server other than Tailscale's:
+    /// what the Connect dialog offers a field for.
+    pub fn allows_other_servers(&self) -> bool {
+        !matches!(self, Self::Official)
+    }
+
+    /// The origins to choose from, when the operator named them.
+    pub fn origins(&self) -> &[String] {
+        match self {
+            Self::Origins(origins) => origins,
+            _ => &[],
+        }
+    }
+
+    /// Why a tailnet may not use this control server, or `None` when it may.
+    pub fn refusal(&self, control_url: Option<&str>) -> Option<String> {
+        if self.allows(control_url) {
+            return None;
+        }
+        let shown = control_url
+            .and_then(origin_of_url)
+            .unwrap_or_else(|| "this control server".to_owned());
+        Some(match self {
+            Self::Official => format!(
+                "{shown} is not allowed: this server only connects tailnets to the Tailscale control server. An operator allows others with TAILNET_CONTROL_URLS"
+            ),
+            _ => format!(
+                "{shown} is not an allowed control server on this server. An operator allows it with TAILNET_CONTROL_URLS"
+            ),
+        })
+    }
+}
+
+/// The origin of `text` when it is a bare `http(s)` origin.
+fn origin_of(text: &str) -> Option<String> {
+    let url = url::Url::parse(text).ok()?;
+    let bare = url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && matches!(url.path(), "" | "/");
+    bare.then(|| origin_of_parsed(&url)).flatten()
+}
+
+/// The origin of an `http(s)` URL, whatever its path.
+fn origin_of_url(text: &str) -> Option<String> {
+    origin_of_parsed(&url::Url::parse(text.trim()).ok()?)
+}
+
+fn origin_of_parsed(url: &url::Url) -> Option<String> {
+    (matches!(url.scheme(), "http" | "https") && url.has_host())
+        .then(|| url.origin().ascii_serialization())
+}
+
+/// The name of the Tailscale daemon.
+const TAILSCALED_NAME: &str = if cfg!(windows) {
+    "tailscaled.exe"
+} else {
+    "tailscaled"
+};
+
+/// Absolute path of `tailscaled`, or `None` when tailnets are off.
+///
+/// `TAILSCALED_BINARY` (`configured`) decides: `off` turns the feature off,
+/// a path is the binary, and when it is unset the first `tailscaled` on
+/// `search_path` is. A path that is not an executable file turns the
+/// feature off, as does no `tailscaled` on the `PATH`.
+///
+/// The result is always absolute: a bare name must never reach spawn, where
+/// the child's own `PATH` would decide what it is. Relative entries of the
+/// `PATH` are skipped for the same reason.
+pub fn locate_tailscaled(
+    configured: Option<&str>,
+    search_path: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let configured = configured.map(str::trim).filter(|value| !value.is_empty());
+    if configured.is_some_and(|value| value.eq_ignore_ascii_case("off")) {
+        return None;
+    }
+    if let Some(path) = configured {
+        let path = std::path::absolute(path).ok()?;
+        return is_executable_file(&path).then_some(path);
+    }
+    std::env::split_paths(search_path?)
+        .filter(|directory| directory.is_absolute())
+        .map(|directory| directory.join(TAILSCALED_NAME))
+        .find(|candidate| is_executable_file(candidate))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        metadata.is_file()
     }
 }
 
@@ -376,6 +571,177 @@ mod tests {
             );
         }
         assert!(Config::for_tests("tmp").npm_sandbox);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn finds_tailscaled_unless_it_is_off() {
+        use std::ffi::OsString;
+        use std::os::unix::fs::PermissionsExt;
+
+        let write = |directory: &Path, name: &str, mode: u32| {
+            let path = directory.join(name);
+            fs::write(&path, b"#!/bin/sh\n").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+            path
+        };
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let first_binary = write(first.path(), "tailscaled", 0o755);
+        let second_binary = write(second.path(), "tailscaled", 0o755);
+        let search = |directories: &[&Path]| -> OsString {
+            std::env::join_paths(directories.iter().map(|directory| directory.as_os_str())).unwrap()
+        };
+        let both = search(&[first.path(), second.path()]);
+
+        // Unset: the first one of the PATH.
+        assert_eq!(
+            locate_tailscaled(None, Some(&both)),
+            Some(first_binary.clone())
+        );
+        assert_eq!(
+            locate_tailscaled(Some("  "), Some(&both)),
+            Some(first_binary)
+        );
+        // None on the PATH, or no PATH: off.
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(
+            locate_tailscaled(None, Some(&search(&[empty.path()]))),
+            None
+        );
+        assert_eq!(locate_tailscaled(None, None), None);
+        // A file that is not executable is not found, and the search goes on.
+        let locked = tempfile::tempdir().unwrap();
+        write(locked.path(), "tailscaled", 0o644);
+        assert_eq!(
+            locate_tailscaled(None, Some(&search(&[locked.path(), second.path()]))),
+            Some(second_binary.clone())
+        );
+        // A relative entry of the PATH is never searched.
+        assert_eq!(
+            locate_tailscaled(None, Some(std::ffi::OsStr::new("relative/bin"))),
+            None
+        );
+
+        // A path is the binary, wherever the PATH points.
+        assert_eq!(
+            locate_tailscaled(second_binary.to_str(), Some(&both)),
+            Some(second_binary.clone())
+        );
+        let missing = first.path().join("missing");
+        assert_eq!(locate_tailscaled(missing.to_str(), Some(&both)), None);
+        let locked_binary = locked.path().join("tailscaled");
+        assert_eq!(locate_tailscaled(locked_binary.to_str(), Some(&both)), None);
+
+        // `off` is off, whatever else is there.
+        for off in ["off", "OFF", " Off "] {
+            assert_eq!(locate_tailscaled(Some(off), Some(&both)), None, "{off}");
+        }
+    }
+
+    #[test]
+    fn reads_the_control_servers_a_tailnet_may_use() {
+        let parse = |value: Option<&str>| TailnetControl::parse(value);
+        assert_eq!(parse(None).unwrap(), TailnetControl::Official);
+        assert_eq!(parse(Some("  ")).unwrap(), TailnetControl::Official);
+        for any in ["any", " ANY "] {
+            assert_eq!(parse(Some(any)).unwrap(), TailnetControl::Any);
+        }
+        let listed = parse(Some(
+            "https://Headscale.example.com/, http://10.0.0.2:8080 ,https://headscale.example.com",
+        ))
+        .unwrap();
+        assert_eq!(
+            listed,
+            TailnetControl::Origins(vec![
+                "https://headscale.example.com".into(),
+                "http://10.0.0.2:8080".into()
+            ])
+        );
+        for bad in [
+            "any,https://hs.example.com",
+            "hs.example.com",
+            "ftp://hs.example.com",
+            "https://user:pw@hs.example.com",
+            "https://hs.example.com/path",
+            "https://hs.example.com/?x=1",
+            "https://hs.example.com,nope",
+        ] {
+            assert!(parse(Some(bad)).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn decides_which_control_servers_are_allowed() {
+        let official = TailnetControl::Official;
+        let any = TailnetControl::Any;
+        let listed =
+            TailnetControl::parse(Some("https://hs.example.com,http://10.0.0.2:8080")).unwrap();
+        // Tailscale's own is always allowed.
+        for control in [&official, &any, &listed] {
+            assert!(control.allows(None));
+            assert!(control.allows(Some("")));
+            assert!(control.refusal(None).is_none());
+        }
+        assert!(!official.allows(Some("https://hs.example.com/")));
+        assert!(!official.allows_other_servers());
+        assert!(any.allows(Some("https://hs.example.com/")));
+        assert!(any.allows(Some("http://127.0.0.1:8080/")));
+        assert!(!any.allows(Some("ftp://hs.example.com")));
+        assert!(any.allows_other_servers());
+        assert!(listed.allows(Some("https://HS.example.com/anything")));
+        assert!(listed.allows(Some("https://hs.example.com:443/")));
+        assert!(listed.allows(Some("http://10.0.0.2:8080/")));
+        assert!(!listed.allows(Some("http://10.0.0.2:8081/")));
+        assert!(!listed.allows(Some("http://hs.example.com/")));
+        assert!(!listed.allows(Some("https://evil.example.com/")));
+        assert!(!listed.allows(Some("not a url")));
+        assert_eq!(listed.origins().len(), 2);
+
+        let message = official.refusal(Some("https://hs.example.com/")).unwrap();
+        assert!(message.contains("https://hs.example.com"), "{message}");
+        assert!(message.contains("TAILNET_CONTROL_URLS"), "{message}");
+        assert!(
+            listed
+                .refusal(Some("https://evil.example.com/x?k=secret"))
+                .unwrap()
+                .contains("TAILNET_CONTROL_URLS")
+        );
+        assert!(
+            !listed
+                .refusal(Some("https://evil.example.com/x?k=secret"))
+                .unwrap()
+                .contains("secret")
+        );
+    }
+
+    #[test]
+    fn reads_the_tailnet_settings_from_the_environment() {
+        let config = |name: &str, value: Option<&str>| {
+            let mut pairs = vec![("NODE_ENV", "test"), ("APP_KEY", TEST_APP_KEY)];
+            pairs.extend(value.map(|value| (name, value)));
+            Config::from_vars(&vars(&pairs))
+        };
+        let binary = |value| config("TAILSCALED_BINARY", value).unwrap();
+        assert_eq!(binary(None).tailscaled_binary, None);
+        assert_eq!(binary(Some("")).tailscaled_binary, None);
+        assert_eq!(
+            binary(Some(" /usr/local/bin/tailscaled ")).tailscaled_binary,
+            Some("/usr/local/bin/tailscaled".to_string())
+        );
+        assert_eq!(binary(Some("off")).tailscaled(), None);
+        assert_eq!(Config::for_tests("tmp").tailscaled(), None);
+
+        let control = |value| config("TAILNET_CONTROL_URLS", value);
+        assert_eq!(
+            control(Some("any")).unwrap().tailnet_control,
+            TailnetControl::Any
+        );
+        assert!(control(Some("nope")).is_err());
+        assert_eq!(
+            Config::for_tests("tmp").tailnet_control,
+            TailnetControl::Official
+        );
     }
 
     #[test]

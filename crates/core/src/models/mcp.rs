@@ -121,10 +121,126 @@ model! {
         /// answer, in seconds. `None` waits [`DEFAULT_TOOL_TIMEOUT_SECONDS`].
         /// Read it with [`Mcp::tool_timeout`].
         pub tool_timeout_seconds: Option<i64>,
+        /// The tailnet of its team that an HTTP MCP reaches its upstream
+        /// through. `None`: the direct network.
+        pub tailnet_id: Option<i64>,
+        /// Names the sign-in this MCP holds, and the destination it is for.
+        /// It is replaced whenever the MCP is moved or its sign-in is
+        /// cleared ([`Mcp::renew_oauth_generation`]). A sign-in that is
+        /// started carries it, and its callback is refused once it is no
+        /// longer the MCP's: a destination that was left and come back to is
+        /// not the one the sign-in began on.
+        pub oauth_generation: i64,
+    }
+}
+
+/// What a step of an OAuth flow started from: where the MCP goes (its
+/// transport, URL, network and built-in provider) and the sign-in it holds
+/// (the client, the provider and the tokens, as saved: ciphertext is compared
+/// as stored). A step that makes requests before it saves what they returned
+/// saves it with [`Mcp::save_if_basis_holds`], which writes only while the row
+/// is still exactly this.
+///
+/// That catches a change the step did not see, however far it went: another
+/// URL or network, a sign-in that was cleared or made again, and a change
+/// that was then undone, which leaves the sign-in cleared.
+#[derive(Debug, Clone)]
+pub struct McpOauthBasis {
+    transport: McpTransport,
+    http_url: Option<String>,
+    tailnet_id: Option<i64>,
+    builtin_key: Option<String>,
+    auth_type: McpAuthType,
+    oauth_issuer: Option<String>,
+    oauth_resource: Option<String>,
+    oauth_redirect_uri: Option<String>,
+    oauth_authorize_url: Option<String>,
+    oauth_token_url: Option<String>,
+    oauth_client_id: Option<String>,
+    oauth_client_secret: Option<String>,
+    oauth_client_auth_method: Option<String>,
+    oauth_access_token: Option<String>,
+    oauth_refresh_token: Option<String>,
+    oauth_generation: i64,
+}
+
+impl McpOauthBasis {
+    /// The `and` parts of a `where` clause that holds only for a row that is
+    /// this basis. `is` compares a missing value to a missing value.
+    fn push_conditions(&self, query: &mut sqlx::QueryBuilder<sqlx::Sqlite>) {
+        query.push(" and `transport` = ");
+        query.push_bind(self.transport);
+        query.push(" and `auth_type` = ");
+        query.push_bind(self.auth_type);
+        query.push(" and `oauth_generation` = ");
+        query.push_bind(self.oauth_generation);
+        query.push(" and `tailnet_id` is ");
+        query.push_bind(self.tailnet_id);
+        for (column, value) in [
+            ("http_url", &self.http_url),
+            ("builtin_key", &self.builtin_key),
+            ("oauth_issuer", &self.oauth_issuer),
+            ("oauth_resource", &self.oauth_resource),
+            ("oauth_redirect_uri", &self.oauth_redirect_uri),
+            ("oauth_authorize_url", &self.oauth_authorize_url),
+            ("oauth_token_url", &self.oauth_token_url),
+            ("oauth_client_id", &self.oauth_client_id),
+            ("oauth_client_secret", &self.oauth_client_secret),
+            ("oauth_client_auth_method", &self.oauth_client_auth_method),
+            ("oauth_access_token", &self.oauth_access_token),
+            ("oauth_refresh_token", &self.oauth_refresh_token),
+        ] {
+            query.push(format!(" and `{column}` is "));
+            query.push_bind(value.clone());
+        }
     }
 }
 
 impl Mcp {
+    /// What an OAuth step that starts now starts from.
+    pub fn oauth_basis(&self) -> McpOauthBasis {
+        McpOauthBasis {
+            transport: self.transport,
+            http_url: self.http_url.clone(),
+            tailnet_id: self.tailnet_id,
+            builtin_key: self.builtin_key.clone(),
+            auth_type: self.auth_type,
+            oauth_issuer: self.oauth_issuer.clone(),
+            oauth_resource: self.oauth_resource.clone(),
+            oauth_redirect_uri: self.oauth_redirect_uri.clone(),
+            oauth_authorize_url: self.oauth_authorize_url.clone(),
+            oauth_token_url: self.oauth_token_url.clone(),
+            oauth_client_id: self.oauth_client_id.clone(),
+            oauth_client_secret: self.oauth_client_secret.clone(),
+            oauth_client_auth_method: self.oauth_client_auth_method.clone(),
+            oauth_access_token: self.oauth_access_token.clone(),
+            oauth_refresh_token: self.oauth_refresh_token.clone(),
+            oauth_generation: self.oauth_generation,
+        }
+    }
+
+    /// Name a new sign-in: the one that was started before is no longer this
+    /// MCP's. The value is drawn rather than counted, so that two edits that
+    /// each read the row and each clear it cannot end on the same one.
+    pub fn renew_oauth_generation(&mut self) {
+        self.oauth_generation = (rand::random::<u64>() >> 12) as i64;
+    }
+
+    /// Save what changed in this value if the row is still `basis`, in one
+    /// `update` statement: a row that was edited meanwhile (or deleted) is
+    /// not written, not even in part, and `false` says so. This value then
+    /// keeps its unsaved changes: drop it.
+    pub async fn save_if_basis_holds<'e, E>(
+        &mut self,
+        db: E,
+        basis: &McpOauthBasis,
+    ) -> Result<bool, sqlx::Error>
+    where
+        E: sqlx::sqlite::SqliteExecutor<'e>,
+    {
+        self.save_if(db, |query| basis.push_conditions(query)).await
+    }
+
     /// How long a tool call of this MCP waits for its answer: the timeout
     /// saved for it, or [`DEFAULT_TOOL_TIMEOUT_SECONDS`], and never more
     /// than its transport allows.
