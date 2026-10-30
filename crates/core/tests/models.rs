@@ -951,6 +951,11 @@ async fn a_tailnet_signs_out_its_mcps_when_its_node_runs_in_another_tailnet() {
     };
     let wiki = signed_in("Wiki", &work).await;
     let builds = signed_in("Builds", &lab).await;
+    // An MCP of the same tailnet that needs no sign-in.
+    let mut open = mcp_of(db, Team::ROOT_ID, ada.id, "Open").await;
+    open.tailnet_id = Some(work.id);
+    open.status = McpStatus::Ready;
+    open.save(&**db).await.unwrap();
     let find = |id| async move { Mcp::find(&**db, id).await.unwrap().unwrap() };
 
     // First found running: remembered, in lowercase, without its dots.
@@ -979,9 +984,12 @@ async fn a_tailnet_signs_out_its_mcps_when_its_node_runs_in_another_tailnet() {
     // Another tailnet: its MCPs lose what was entered for the first one.
     assert_eq!(
         work.settle_identity(db, "tail9999.ts.net").await.unwrap(),
-        TailnetIdentity::Changed { mcps: 1 }
+        TailnetIdentity::Changed { mcps: 2 }
     );
     let signed_out = find(wiki.id).await;
+    // Signed in with OAuth, it waits for its account again, so Connect shows.
+    assert!(signed_out.oauth_required);
+    assert!(!find(open.id).await.oauth_required);
     assert_eq!(signed_out.auth_bearer, None);
     assert_eq!(signed_out.auth_header_value, None);
     assert_eq!(signed_out.oauth_client_id, None);

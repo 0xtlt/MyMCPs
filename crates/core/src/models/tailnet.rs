@@ -213,6 +213,9 @@ async fn sign_out_mcps(
     id: i64,
 ) -> Result<u64, sqlx::Error> {
     // `random() & (2^52 - 1)`: a new generation, as `renew_oauth_generation`.
+    // An MCP that held OAuth tokens is left waiting for its account, as
+    // `forget_oauth_tokens` leaves it, so Connect stays available: the
+    // right-hand sides read the row as it was before this update.
     let mcps = sqlx::query(
         "update `mcps` set `auth_bearer` = null, `auth_header_value` = null, \
          `oauth_authorize_url` = null, `oauth_token_url` = null, `oauth_scopes` = null, \
@@ -220,7 +223,9 @@ async fn sign_out_mcps(
          `oauth_access_token` = null, `oauth_refresh_token` = null, \
          `oauth_token_expires_at` = null, `oauth_issuer` = null, `oauth_resource` = null, \
          `oauth_redirect_uri` = null, `oauth_client_auth_method` = null, \
-         `oauth_token_type` = null, `oauth_required` = 0, \
+         `oauth_token_type` = null, \
+         `oauth_required` = (`auth_type` = 'auto' and \
+             (coalesce(`oauth_access_token`, '') != '' or coalesce(`oauth_refresh_token`, '') != '')), \
          `oauth_generation` = (random() & 4503599627370495), \
          `status` = 'error', `last_error` = ?, `updated_at` = ? \
          where `tailnet_id` = ?",
