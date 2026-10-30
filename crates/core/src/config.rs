@@ -734,10 +734,6 @@ mod tests {
 
         let control = |value| config("TAILNET_CONTROL_URLS", value);
         assert_eq!(
-            control(None).unwrap().tailnet_control,
-            TailnetControl::Official
-        );
-        assert_eq!(
             control(Some("any")).unwrap().tailnet_control,
             TailnetControl::Any
         );

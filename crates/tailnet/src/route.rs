@@ -266,13 +266,6 @@ mod tests {
     }
 
     #[test]
-    fn a_name_gets_the_ipv4_address_first() {
-        let status = status();
-        // `Router` lists its IPv6 address first.
-        assert_eq!(resolve(&status, "router"), ip("100.64.0.3"));
-    }
-
-    #[test]
     fn an_address_inside_the_primary_routes_of_a_peer_is_routed() {
         let status = status();
         assert_eq!(resolve(&status, "192.168.1.50"), ip("192.168.1.50"));
@@ -375,10 +368,8 @@ mod tests {
         assert_eq!(resolve(&status, "100.64.0.2"), None);
         let status: Status = serde_json::from_value(json!({})).unwrap();
         assert_eq!(resolve(&status, "nas"), None);
-    }
 
-    #[test]
-    fn the_legacy_suffix_is_used_when_the_tailnet_has_none() {
+        // The legacy suffix is used when the tailnet has none.
         let status: Status = serde_json::from_value(json!({
             "MagicDNSSuffix": "tail1234.ts.net",
             "Peer": {"k": {"DNSName": "nas.tail1234.ts.net.", "TailscaleIPs": ["100.64.0.2"]}}

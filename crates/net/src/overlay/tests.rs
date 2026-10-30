@@ -599,6 +599,12 @@ async fn the_public_network_refuses_restricted_ip_addresses_before_sending() {
             "{host}: {error}"
         );
     }
+    // Nor is a name of this machine.
+    assert!(
+        get(&fetcher, &format!("http://localhost:{port}/"))
+            .await
+            .is_err()
+    );
     assert_eq!(accepted.load(Ordering::SeqCst), 0);
     assert!(overlay.requests().is_empty());
 
@@ -625,6 +631,15 @@ async fn the_public_network_refuses_restricted_ip_addresses_before_sending() {
         assert_eq!(response.text().await.unwrap(), "overlay", "{host}");
     }
     assert_eq!(accepted.load(Ordering::SeqCst), 1);
+
+    // A fetcher that does not use the network is left as it is.
+    let fetcher = Fetcher::offline().through(&network(&overlay)).public_only();
+    let response = get(&fetcher, "http://192.168.1.10/").await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let error = get(&fetcher, "http://elsewhere.example/")
+        .await
+        .unwrap_err();
+    assert!(matches!(error, FetchError::Offline), "{error}");
 }
 
 #[tokio::test]
@@ -652,45 +667,6 @@ async fn an_error_of_the_overlay_route_never_falls_back_to_the_network() {
     let mut response = get(&fetcher, "https://auth.example/token").await.unwrap();
     assert_eq!(response.text().await.unwrap(), "fallback");
     assert_eq!(fallback.load(Ordering::SeqCst), 1);
-}
-
-#[tokio::test]
-async fn keeps_the_overlay_when_the_rest_must_be_public() {
-    let (port, accepted) = counting_local_server().await;
-    let (overlay, _) = serving(&["mcp.tailnet.test"], "overlay");
-    let network = network(&overlay);
-    let local = format!("http://localhost:{port}/");
-
-    // The overlay carries what it routes, even though the address is a private one.
-    let fetcher = Fetcher::shared().through(&network).public_only();
-    let mut response = get(&fetcher, "http://mcp.tailnet.test/").await.unwrap();
-    assert_eq!(response.text().await.unwrap(), "overlay");
-
-    // Whatever it does not carry is held to public addresses.
-    assert!(get(&fetcher, &local).await.is_err());
-    assert_eq!(accepted.load(Ordering::SeqCst), 0);
-
-    // Without the restriction the same request is answered.
-    let fetcher = Fetcher::shared().through(&network);
-    assert_eq!(
-        get(&fetcher, &local).await.unwrap().status(),
-        StatusCode::OK
-    );
-    assert_eq!(accepted.load(Ordering::SeqCst), 1);
-
-    // A fetcher that does not use the network is left as it is.
-    let fetcher = Fetcher::offline().through(&network).public_only();
-    assert_eq!(
-        get(&fetcher, "http://mcp.tailnet.test/")
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::OK
-    );
-    let error = get(&fetcher, "http://elsewhere.example/")
-        .await
-        .unwrap_err();
-    assert!(matches!(error, FetchError::Offline), "{error}");
 }
 
 #[tokio::test]

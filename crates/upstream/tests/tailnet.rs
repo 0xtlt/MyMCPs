@@ -832,20 +832,27 @@ async fn refuses_an_oauth_endpoint_at_an_ip_address_the_tailnet_does_not_route()
 // What the gateway refuses before it connects
 
 #[tokio::test]
-async fn refuses_a_tailnet_mcp_when_tailscale_is_off_on_the_server() {
+async fn refuses_a_tailnet_nobody_started_or_any_when_tailscale_is_off_on_the_server() {
     let fixture = Fixture::new().await;
     let tailnet = fixture.tailnet("Office").await;
     let mut mcp = fixture
         .mcp(&tailnet, &format!("http://{NAS}:8080/mcp"))
         .await;
+
+    let message = refused(&fixture.upstream().probe(&mut mcp).await.unwrap_err());
+    assert!(message.contains("is not running"), "{message}");
+    assert!(message.contains("Tailnets page"), "{message}");
+
     let upstream = Upstream::builder(fixture.core.core.clone(), BuiltinRegistry::default())
         .tailnets(None)
         .build();
-
     let message = refused(&upstream.probe(&mut mcp).await.unwrap_err());
     assert!(message.contains("Tailscale is turned off"), "{message}");
     let message = refused(&start_oauth(&upstream, &mut mcp).await.unwrap_err());
     assert!(message.contains("Tailscale is turned off"), "{message}");
+    // And the server starts no tailnet.
+    assert!(upstream.start_tailnets().await.unwrap().is_empty());
+    upstream.stop_tailnets().await;
 }
 
 #[tokio::test]
@@ -900,20 +907,6 @@ async fn refuses_a_tailnet_that_is_not_running() {
         assert!(office.dials().is_empty(), "{state}");
         assert!(office.server.requests().is_empty(), "{state}");
     }
-}
-
-#[tokio::test]
-async fn refuses_a_tailnet_nobody_started() {
-    let fixture = Fixture::new().await;
-    let tailnet = fixture.tailnet("Office").await;
-    let mut mcp = fixture
-        .mcp(&tailnet, &format!("http://{NAS}:8080/mcp"))
-        .await;
-
-    let message = refused(&fixture.upstream().probe(&mut mcp).await.unwrap_err());
-
-    assert!(message.contains("is not running"), "{message}");
-    assert!(message.contains("Tailnets page"), "{message}");
 }
 
 #[tokio::test]
@@ -1018,16 +1011,4 @@ async fn starts_the_tailnet_of_every_team_and_says_where_each_stands() {
     upstream.stop_tailnets().await;
     assert!(fixture.tailnets.handle(office.id).is_none());
     assert!(fixture.tailnets.handle(theirs.id).is_none());
-}
-
-#[tokio::test]
-async fn starts_nothing_when_tailscale_is_off() {
-    let fixture = Fixture::new().await;
-    fixture.tailnet("Office").await;
-    let upstream = Upstream::builder(fixture.core.core.clone(), BuiltinRegistry::default())
-        .tailnets(None)
-        .build();
-
-    assert!(upstream.start_tailnets().await.unwrap().is_empty());
-    upstream.stop_tailnets().await;
 }

@@ -292,7 +292,7 @@ mod supervisor {
     }
 
     #[test]
-    fn a_path_is_made_absolute_and_its_dots_are_folded() {
+    fn a_path_is_made_absolute_and_its_dots_are_folded_as_the_state_directory_is() {
         let cwd = std::env::current_dir().unwrap();
         assert_eq!(crate::tailnets::absolute(Path::new("tmp")), cwd.join("tmp"));
         assert_eq!(
@@ -302,6 +302,14 @@ mod supervisor {
         assert_eq!(
             crate::tailnets::absolute(Path::new("/var/../data/./tmp")),
             Path::new("/data/tmp")
+        );
+        // The state directory is the one the registry uses, made absolute the same way.
+        let fixture = Fixture::new(0);
+        let data = fixture.dir.path().join("data");
+        assert_eq!(crate::state_dir(&data, 1), fixture.tailnet_dir(1));
+        assert_eq!(
+            crate::state_dir(Path::new("tmp/../data/."), 7),
+            cwd.join("data").join("tailnets").join("7")
         );
     }
 
@@ -436,9 +444,10 @@ mod connect {
     async fn with_a_key_it_starts_the_node_authorised_and_starts_its_login() {
         let fixture = Fixture::new(0);
         let api = fixture.with_api(1, status_in("NeedsLogin")).await;
+        // The key is sent trimmed.
         let mut options = options(
             "mymcps",
-            Some("tskey-auth-kABCDEF123456-secretsecretsecret"),
+            Some("  tskey-auth-kABCDEF123456-secretsecretsecret \n"),
         );
         options.control_url = Some(Url::parse("https://headscale.example.com").unwrap());
 
@@ -491,12 +500,19 @@ mod connect {
 
     #[tokio::test]
     async fn without_a_key_it_starts_the_node_and_asks_for_a_login() {
+        // An empty key is none.
+        for key in [None, Some(""), Some(" \n")] {
+            without_a_key(key).await;
+        }
+    }
+
+    async fn without_a_key(key: Option<&str>) {
         let fixture = Fixture::new(0);
         let api = fixture.with_api(1, status_in("NeedsLogin")).await;
 
         fixture
             .tailnets
-            .connect(1, options("mymcps", None))
+            .connect(1, options("mymcps", key))
             .await
             .unwrap();
 
@@ -632,34 +648,6 @@ mod connect {
     }
 
     #[tokio::test]
-    async fn a_key_is_trimmed_and_an_empty_one_means_none() {
-        let fixture = Fixture::new(0);
-        let api = fixture.with_api(1, status_in("NeedsLogin")).await;
-
-        fixture
-            .tailnets
-            .connect(1, options("mymcps", Some("  tskey-auth-x \n")))
-            .await
-            .unwrap();
-        assert_eq!(
-            api.requests_to("/localapi/v0/start")[0].json()["AuthKey"],
-            "tskey-auth-x"
-        );
-
-        fixture
-            .tailnets
-            .connect(1, options("mymcps", Some("")))
-            .await
-            .unwrap();
-        assert!(
-            api.requests_to("/localapi/v0/start")[1]
-                .json()
-                .get("AuthKey")
-                .is_none()
-        );
-    }
-
-    #[tokio::test]
     async fn the_key_is_not_in_the_debug_output_nor_in_an_error() {
         let secret = "tskey-auth-kSECRET123-0123456789abcdef";
         let debug = format!("{:?}", options("mymcps", Some(secret)));
@@ -682,20 +670,6 @@ mod connect {
 
 mod remove {
     use super::*;
-
-    #[test]
-    fn the_state_directory_is_the_one_the_registry_uses_and_is_absolute() {
-        let fixture = Fixture::new(0);
-        let data = fixture.dir.path().join("data");
-        assert_eq!(crate::state_dir(&data, 1), fixture.tailnet_dir(1));
-
-        // A relative data directory is made absolute, with its dots folded,
-        // as the registry does it.
-        let here = std::env::current_dir().unwrap();
-        let relative = crate::state_dir(std::path::Path::new("tmp/../data/."), 7);
-        assert!(relative.is_absolute(), "{}", relative.display());
-        assert_eq!(relative, here.join("data").join("tailnets").join("7"));
-    }
 
     #[tokio::test]
     async fn the_state_is_deleted_without_a_registry_or_a_daemon() {
@@ -848,7 +822,7 @@ mod lifecycle {
         while !removal.is_finished() {
             match fixture.tailnets.ensure_running(1).await {
                 Err(Error::Removed(1)) => refused += 1,
-                Ok(()) => assert!(!alive_runs_again(&fixture), "a second daemon started"),
+                Ok(()) => assert!(fixture.runs() <= 1, "a second daemon started"),
                 Err(other) => panic!("{other}"),
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -867,10 +841,6 @@ mod lifecycle {
         ));
         assert!(!fixture.tailnet_dir(1).exists());
         assert_eq!(fixture.tailnets.state(1).await, TailnetState::Stopped);
-    }
-
-    fn alive_runs_again(fixture: &Fixture) -> bool {
-        fixture.runs() > 1
     }
 
     #[tokio::test]
@@ -1027,17 +997,6 @@ mod route_and_dial {
         assert!(crate::is_not_routed(&error), "{error}");
         assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
         assert!(error.to_string().contains("192.168.1.20"), "{error}");
-        // A tailnet that cannot be asked is another error.
-        let down = fixture.with_api(2, status_in("NeedsLogin")).await;
-        let error = fixture
-            .tailnets
-            .handle(2)
-            .unwrap()
-            .route("192.168.1.20", 22)
-            .await
-            .unwrap_err();
-        assert!(!crate::is_not_routed(&error), "{error}");
-        drop(down);
     }
 
     #[tokio::test]
@@ -1073,6 +1032,8 @@ mod route_and_dial {
         let error = handle.route("nas", 80).await.unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::NotConnected);
         assert!(error.to_string().contains("NeedsLogin"), "{error}");
+        // A tailnet that cannot be asked is not one that does not route.
+        assert!(!crate::is_not_routed(&error), "{error}");
 
         drop(api);
         let error = handle.route("nas", 80).await.unwrap_err();
