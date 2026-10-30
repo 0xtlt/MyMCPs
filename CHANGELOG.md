@@ -2,7 +2,7 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
-## 2026-10-25
+## 2026-10-30
 
 ### Added
 
