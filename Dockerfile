@@ -35,7 +35,7 @@ FROM tailscale/tailscale:v1.104.2@sha256:b11583ad2e93e4671128538c88cf11f460444a5
 # The Rust version in this tag is the toolchain of the project: the workflows
 # install the same one (crates/xtask/tests/container_image.rs checks it), and
 # its Debian release is the one the runtime stage runs on.
-FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-trixie@sha256:e6cd1d294a300601eaaa4a294b337e5f0826f427fb2d481e9f76e69e7981e244 AS build
+FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-trixie@sha256:b8e062b1c3a80183df83d9ba187cadd2b5ab84bc78d453dbfeb2fccd5f982247 AS build
 
 ARG TARGETARCH
 
