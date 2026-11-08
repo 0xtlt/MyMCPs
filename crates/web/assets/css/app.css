@@ -2350,6 +2350,11 @@
     color: var(--mm-color-text-secondary);
   }
 
+  /* An identifier inside a value ("Claude Desktop (mmcp_c3d4…)") stays on one line. */
+  .key-value > dd .text-code-md {
+    white-space: nowrap;
+  }
+
   .key-value {
     display: flex;
     flex-direction: column;
@@ -3688,8 +3693,11 @@
     text-align: center;
     color: var(--mm-color-text-default);
 
+    /* The second line is the subtitle: one step smaller, secondary. */
     & > span {
       display: block;
+      font: var(--mm-text-heading-xl);
+      letter-spacing: var(--mm-tracking-xl);
       color: var(--mm-color-text-tertiary);
     }
   }

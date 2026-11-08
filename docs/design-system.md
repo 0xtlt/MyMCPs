@@ -45,7 +45,7 @@ data goes in a class or a `data-` attribute (see [Dynamic values](#dynamic-value
 - Identifiers (slugs, tool names, header names, env vars, URLs, token prefixes) are code
   everywhere: `.code` in prose, `.text-code-*` in values, `.input--mono` in fields. A string
   with `backticks` goes through `views::inline_code`.
-- A choice with a description is an option card; a label-only choice is a plain radio.
+- A set of choices in a form or a dialog is a set of option cards; the description is optional.
 - Controls are 32px (Medium). They become 44px (Large) by themselves under 768px and inside
   `.control-lg` (auth screens); tables, card headers, banners, list rows, pagination, toolbars,
   menus and toasts stay Medium. Force a size with `.button--lg` / `.button--md`.

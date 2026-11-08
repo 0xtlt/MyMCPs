@@ -141,7 +141,7 @@ pub fn email_form(context: &PageContext, user: &User, form: &FormState) -> Marku
     html! {
         form method="post" action="/settings/email?_method=PATCH" data-async {
             (context.csrf_field())
-            (dialog_header("change-email-title", "Change email", "Confirm the change with your current password"))
+            (dialog_header("change-email-title", "Change email", "Confirm the change with your password"))
             div class="dialog__body" {
                 div class="field" {
                     label class="field__label" for="new-email" { "New email" }
