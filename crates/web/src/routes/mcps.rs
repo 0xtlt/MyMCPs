@@ -11,7 +11,7 @@ use axum::routing::{get, post, put};
 use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use mymcps_builtin::{BuiltinMcpDefinition, BuiltinOauthConfig, BuiltinPasswordConfig};
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport, Tailnet};
+use mymcps_core::models::{Mcp, McpAuthType, McpHealth, McpStatus, McpTransport, Tailnet};
 use mymcps_core::redaction::{
     sanitize_diagnostic, sanitize_diagnostic_with, sanitize_mcp_diagnostic,
     sanitize_mcp_diagnostic_with,
@@ -215,24 +215,7 @@ const DESTINATION_SECRET_COLUMNS: &[&str] = &["auth_bearer", "auth_header_value"
 fn forget_oauth_connection(mcp: &mut Mcp) {
     mcp.renew_oauth_generation();
     mcp.write_over(OAUTH_CONNECTION_COLUMNS);
-    clear_oauth_connection(mcp);
-}
-
-fn clear_oauth_connection(mcp: &mut Mcp) {
-    mcp.oauth_authorize_url = None;
-    mcp.oauth_token_url = None;
-    mcp.oauth_scopes = None;
-    mcp.oauth_client_id = None;
-    mcp.oauth_client_secret = None;
-    mcp.oauth_access_token = None;
-    mcp.oauth_refresh_token = None;
-    mcp.oauth_token_expires_at = None;
-    mcp.oauth_issuer = None;
-    mcp.oauth_resource = None;
-    mcp.oauth_redirect_uri = None;
-    mcp.oauth_client_auth_method = None;
-    mcp.oauth_token_type = None;
-    mcp.oauth_required = false;
+    mcp.clear_oauth_connection();
 }
 
 /// Clear secrets that no longer apply to the selected auth type. `was_auto`:
@@ -250,7 +233,7 @@ fn clear_unused_auth_secrets(mcp: &mut Mcp, was_auto: bool) {
         if was_auto {
             forget_oauth_connection(mcp);
         } else {
-            clear_oauth_connection(mcp);
+            mcp.clear_oauth_connection();
         }
     }
 }
@@ -570,6 +553,8 @@ pub async fn assign_mcp_from_payload(
     exclude_id: Option<i64>,
 ) -> Result<(), AssignError> {
     let core = upstream.core();
+    // What it connected to and with before this edit.
+    let before = mcp.probe_basis();
     let transport = payload.transport;
     let next_http_url = match transport {
         McpTransport::Http => Some(normalized_http_url(
@@ -671,14 +656,20 @@ pub async fn assign_mcp_from_payload(
     clear_unused_auth_secrets(mcp, was_auto);
     apply_secrets(core, mcp, payload);
     assign_builtin_credentials(upstream, mcp, payload)?;
+    // What was known of it was found with what it connected to and with
+    // before: it holds no longer. A new name or a switch keeps it.
+    if mcp.probe_basis() != before {
+        mcp.mark_untested();
+    }
     Ok(())
 }
 
 /// Whether saving left something for the admin to do in the dialog: connect an
 /// account, or correct a sign-in the provider just rejected.
 fn needs_attention(upstream: &Upstream, mcp: &Mcp) -> bool {
-    mcp.oauth_required
-        || (mcp.status == McpStatus::Error
+    let health = mcp.health();
+    health.awaits_sign_in()
+        || (health.is_failing()
             && upstream
                 .builtin_mcp(mcp.builtin_key.as_deref())
                 .is_some_and(|definition| definition.password().is_some()))
@@ -1163,6 +1154,7 @@ pub async fn destroy(
     mcp.delete(&*state.core.db).await?;
     discard_sandbox(&state.upstream, mcp.id).await;
     discard_uploads(&state.upstream, mcp.id).await;
+    state.upstream.forget_tool_count(mcp.id);
     session.flash("success", "MCP deleted");
     Ok(navigate(&headers, &registry(&uri)))
 }
@@ -1185,8 +1177,32 @@ pub async fn toggle(
         .validate(&Value::Object(input))
         .ok()
         .and_then(|toggle| toggle.get("enabled").and_then(Value::as_bool));
-    mcp.enabled = asked.unwrap_or(!mcp.enabled);
-    mcp.save(&*state.core.db).await?;
+    let db = &*state.core.db;
+    let written = match asked {
+        Some(enabled) => {
+            mcp.enabled = enabled;
+            mcp.save(db).await?;
+            true
+        }
+        // A switch that says nothing flips what was read, and only that:
+        // two flips sent at once must not both land, and undo each other.
+        None => {
+            let read = mcp.enabled;
+            mcp.enabled = !read;
+            mcp.save_if(db, |query| {
+                query.push(" and `enabled` = ");
+                query.push_bind(read);
+            })
+            .await?
+        }
+    };
+    if !written {
+        // Switched meanwhile, or deleted: report what it is now.
+        match Mcp::find(db, mcp.id).await? {
+            Some(current) => mcp = current,
+            None => return Ok(not_found(&session, &headers, &uri)),
+        }
+    }
     session.flash(
         "success",
         if mcp.enabled {
@@ -1482,6 +1498,7 @@ pub async fn oauth_callback(
     }
 
     let granted_scope = granted_scope_from_callback(query.get("scope"));
+    let basis = mcp.probe_basis();
     let connected = match upstream
         .exchange_authorization_code(&mut mcp, &oauth, &code, granted_scope.as_deref())
         .await
@@ -1505,10 +1522,12 @@ pub async fn oauth_callback(
             );
             // A sign-in dropped because the MCP changed meanwhile says nothing
             // of the MCP as it is now, which may be connected by another one.
-            if !error.is_superseded() {
-                mcp.status = McpStatus::Error;
-                mcp.last_error = Some(reason.clone());
-                mcp.save(db).await?;
+            // One that still holds a sign-in keeps it, and what was known
+            // of it: a failed attempt to sign in again takes nothing away.
+            if !error.is_superseded() && !mcp.holds_oauth_sign_in() {
+                mcp.set_health(McpHealth::SignInRejected(reason.clone()));
+                // Unless the MCP changed while the sign-in ran.
+                mcp.save_probe_result(db, &basis).await?;
             }
             session.flash("error", reason);
         }

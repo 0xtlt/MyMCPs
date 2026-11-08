@@ -418,3 +418,105 @@ async fn sweeps_on_start_for_what_a_previous_run_left_and_deletes_the_files_of_a
     assert_eq!(fixture.stored(MCP), None);
     fixture.store.remove_all(MCP).await.unwrap();
 }
+
+/// A body that sends `first`, then waits for the sender to be dropped or used.
+fn held(
+    first: &'static str,
+) -> (
+    tokio::sync::oneshot::Sender<()>,
+    impl futures::Stream<Item = Result<Bytes, Infallible>> + Send + 'static,
+) {
+    let (release, wait) = tokio::sync::oneshot::channel::<()>();
+    let body =
+        stream::iter([Ok::<_, Infallible>(Bytes::from(first))]).chain(stream::once(async move {
+            let _ = wait.await;
+            Ok(Bytes::new())
+        }));
+    (release, body)
+}
+
+#[tokio::test]
+async fn keeps_nothing_of_an_upload_whose_request_was_abandoned_halfway() {
+    let fixture = Fixture::new();
+    let file = target(1_000);
+    let (_release, body_held) = held("half");
+    let store = fixture.store.clone();
+    let abandoned = file.clone();
+    let task = tokio::spawn(async move { store.save(MCP, &abandoned, body_held).await });
+    while fixture.stored(MCP).is_none_or(|names| names.is_empty()) {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    task.abort();
+    let _ = task.await;
+
+    assert_eq!(fixture.stored(MCP), Some(vec![]));
+    // The link can be tried again.
+    fixture
+        .store
+        .save(MCP, &file, body(&["whole"]))
+        .await
+        .unwrap();
+    assert_eq!(fixture.text(MCP, &file.id).await.as_deref(), Some("whole"));
+}
+
+#[tokio::test]
+async fn shares_the_room_of_an_mcp_between_uploads_sent_at_the_same_time() {
+    let fixture = Fixture::new();
+    for _ in 0..49 {
+        fixture.waiting(MCP, 1, now_ms() + HOUR_MS);
+    }
+    let (release, body_held) = held("first");
+    let store = fixture.store.clone();
+    let first = tokio::spawn(async move { store.save(MCP, &target(1_000), body_held).await });
+    while fixture.stored(MCP).is_none_or(|names| names.len() < 99) {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    // The fiftieth place is taken by the upload under way.
+    assert_eq!(
+        refusal(
+            fixture
+                .store
+                .save(MCP, &target(1_000), body(&["second"]))
+                .await
+        ),
+        Some(UploadRefusal::Full)
+    );
+    release.send(()).unwrap();
+    first.await.unwrap().unwrap();
+
+    std::fs::remove_dir_all(fixture.store.root()).unwrap();
+    for _ in 0..3 {
+        fixture.waiting(MCP, 25_000_000, now_ms() + HOUR_MS);
+    }
+    fixture.waiting(MCP, 24_999_990, now_ms() + HOUR_MS);
+    // 10 bytes of room: 6 for the first upload, so not 6 more for the second.
+    let (release, body_held) = held("123456");
+    let store = fixture.store.clone();
+    let first = tokio::spawn(async move { store.save(MCP, &target(1_000), body_held).await });
+    // Wait for its 6 bytes to be written, which follows counting them.
+    let arrived = |fixture: &Fixture| {
+        std::fs::read_dir(fixture.directory(MCP))
+            .into_iter()
+            .flatten()
+            .any(|entry| entry.unwrap().metadata().unwrap().len() == 6)
+    };
+    while !arrived(&fixture) {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(
+        refusal(
+            fixture
+                .store
+                .save(MCP, &target(1_000), body(&["abcdef"]))
+                .await
+        ),
+        Some(UploadRefusal::Full)
+    );
+    fixture
+        .store
+        .save(MCP, &target(1_000), body(&["abcd"]))
+        .await
+        .unwrap();
+    release.send(()).unwrap();
+    first.await.unwrap().unwrap();
+}

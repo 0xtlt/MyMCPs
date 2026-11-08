@@ -114,6 +114,9 @@ pub struct FakeOptions {
     pub smtp: SmtpBehaviour,
     /// What the IMAP server says it can do, instead of [`CAPABILITIES`].
     pub capabilities: Option<Vec<&'static str>>,
+    /// End SELECT and EXAMINE without `[READ-ONLY]` or `[READ-WRITE]`, as
+    /// some servers do.
+    pub omit_access_code: bool,
 }
 
 /// What the IMAP server says it can do: what iCloud does, as far as the tools go.
@@ -1003,11 +1006,16 @@ impl ImapConnection {
         self.line("* 0 RECENT").await?;
         self.line("* OK [UIDVALIDITY 1] UIDs valid").await?;
         let (access, command) = if read_only {
-            ("READ-ONLY", "EXAMINE")
+            ("[READ-ONLY] ", "EXAMINE")
         } else {
-            ("READ-WRITE", "SELECT")
+            ("[READ-WRITE] ", "SELECT")
         };
-        self.line(&format!("{tag} OK [{access}] {command} completed"))
+        let access = if locked(&self.state).options.omit_access_code {
+            ""
+        } else {
+            access
+        };
+        self.line(&format!("{tag} OK {access}{command} completed"))
             .await
     }
 

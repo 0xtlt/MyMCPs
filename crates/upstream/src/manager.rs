@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::models::{Mcp, McpAuthType, McpTransport, ProbeOutcome};
 use mymcps_core::redaction::sanitize_mcp_diagnostic;
 use mymcps_mcp::client::ClientError;
 use serde::{Deserialize, Serialize};
@@ -56,18 +56,23 @@ impl Upstream {
     ///
     /// `mcp` is read again when its OAuth access token had to be renewed.
     pub async fn probe(&self, mcp: &mut Mcp) -> Result<Vec<UpstreamTool>, UpstreamError> {
+        let turn = self.tool_counts().start();
         let listed = self.list_tools(mcp).await;
-        let mut counts = self
-            .known_tool_counts
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match &listed {
-            Ok(tools) => counts.insert(mcp.id, tools.len()),
-            // What it listed before says nothing about it now.
-            Err(_) => counts.remove(&mcp.id),
-        };
-        drop(counts);
+        // What it listed before says nothing about it now when it fails.
+        let count = listed.as_ref().ok().map(Vec::len);
+        self.tool_counts().finish(mcp.id, turn, count);
         listed
+    }
+
+    fn tool_counts(&self) -> std::sync::MutexGuard<'_, ToolCounts> {
+        self.known_tool_counts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Forget what an MCP that was deleted listed.
+    pub fn forget_tool_count(&self, mcp_id: i64) {
+        self.tool_counts().counts.remove(&mcp_id);
     }
 
     async fn list_tools(&self, mcp: &mut Mcp) -> Result<Vec<UpstreamTool>, UpstreamError> {
@@ -88,10 +93,7 @@ impl Upstream {
     /// the server started, by MCP id. Nothing is stored: an MCP that was not
     /// asked yet, or that could not answer the last time, is absent.
     pub fn known_tool_counts(&self) -> HashMap<i64, usize> {
-        self.known_tool_counts
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        self.tool_counts().known()
     }
 
     /// Every tool of these MCPs, under its name in the eager gateway. An MCP
@@ -172,97 +174,144 @@ impl Upstream {
 
     /// Listing built-in tools is local, so health comes from one authenticated
     /// provider request instead.
-    async fn test_builtin_and_update_status(&self, mcp: &mut Mcp) -> Result<(), UpstreamError> {
-        let had_access_token = self
-            .core
-            .decrypt_secret(mcp.oauth_access_token.as_deref())
-            .is_some();
+    async fn probe_builtin(&self, mcp: &mut Mcp, held_token: bool) -> ProbeOutcome {
         match self.verify_builtin(mcp).await {
-            Ok(()) => {
-                mcp.status = McpStatus::Ready;
-                mcp.last_error = None;
-                mcp.oauth_required = false;
-            }
-            Err(error) => {
-                // Connect only repairs an OAuth sign-in. A rejected password is an error
-                // to fix in the form.
-                let authorization_required = error.is_authorization_error()
+            Ok(()) => ProbeOutcome::Reached,
+            // Connect only repairs an OAuth sign-in. A rejected password is
+            // an error to fix in the form.
+            Err(error)
+                if error.is_authorization_error()
                     && self
                         .builtin_mcp(mcp.builtin_key.as_deref())
-                        .is_some_and(|definition| definition.oauth().is_some());
-                if authorization_required && !had_access_token {
-                    mcp.status = McpStatus::Draft;
-                    mcp.last_error = Some("OAuth authorization required".to_owned());
-                } else {
-                    mcp.status = McpStatus::Error;
-                    mcp.last_error = Some(self.diagnostic(&error, mcp));
+                        .is_some_and(|definition| definition.oauth().is_some()) =>
+            {
+                ProbeOutcome::SignInRefused {
+                    held_token,
+                    reason: self.diagnostic(&error, mcp),
                 }
-                mcp.oauth_required = authorization_required;
             }
+            Err(error) => ProbeOutcome::Failed(self.diagnostic(&error, mcp)),
         }
-        mcp.save(&*self.core.db).await?;
-        Ok(())
     }
 
-    /// Test the connection to an MCP and save what was found: its status,
-    /// the reason when it cannot be used, and whether it waits for an OAuth
-    /// authorization.
+    /// What connecting to an HTTP or npm MCP found. `None`: a renewal of its
+    /// sign-in was dropped because the MCP changed meanwhile, which says
+    /// nothing of the MCP as it is now.
+    async fn probe_connection(&self, mcp: &mut Mcp, held_token: bool) -> Option<ProbeOutcome> {
+        Some(match self.probe(mcp).await {
+            Err(error) if error.is_superseded() => return None,
+            Ok(_) => ProbeOutcome::Reached,
+            // Only an MCP that signs in by itself can be given a sign-in by
+            // Connect. A static credential that is refused is an error to
+            // fix in the form.
+            Err(error)
+                if mcp.transport == McpTransport::Http
+                    && mcp.auth_type == McpAuthType::Auto
+                    && error.is_unauthorized() =>
+            {
+                let reason = if let UpstreamError::Unauthorized(details) = &error {
+                    self.diagnostic(&format!("OAuth token rejected. {details}"), mcp)
+                } else {
+                    "OAuth token was rejected by the MCP server (HTTP 401). Re-authorize this MCP."
+                        .to_owned()
+                };
+                ProbeOutcome::SignInRefused { held_token, reason }
+            }
+            Err(error) => ProbeOutcome::Failed(self.diagnostic(&error, mcp)),
+        })
+    }
+
+    /// Test the connection to an MCP and save what was found
+    /// ([`Mcp::mark_probed`]): its status, the reason when it cannot be used,
+    /// and whether it waits for an OAuth authorization.
+    ///
+    /// The result is saved only if the MCP is still what the test started
+    /// from ([`Mcp::save_probe_result`]): one that was edited, signed in
+    /// again or signed out while the test ran is read again instead, and
+    /// keeps what that change left. A test of a stale copy is dropped the
+    /// same way.
     ///
     /// Fails only when the row cannot be saved.
     pub async fn test_and_update_status(&self, mcp: &mut Mcp) -> Result<(), UpstreamError> {
-        if mcp.transport == McpTransport::Builtin {
-            return self.test_builtin_and_update_status(mcp).await;
-        }
-
-        match self.probe(mcp).await {
-            // A renewal dropped because the MCP changed meanwhile says nothing
-            // of the MCP as it is now: its status is left as it is.
-            Err(error) if error.is_superseded() => return Ok(()),
-            Ok(_) => {
-                mcp.status = McpStatus::Ready;
-                mcp.last_error = None;
-                mcp.oauth_required = false;
+        let basis = mcp.probe_basis();
+        let held_token = self
+            .core
+            .decrypt_secret(mcp.oauth_access_token.as_deref())
+            .is_some();
+        let outcome = if mcp.transport == McpTransport::Builtin {
+            self.probe_builtin(mcp, held_token).await
+        } else {
+            match self.probe_connection(mcp, held_token).await {
+                Some(outcome) => outcome,
+                None => return Ok(()),
             }
-            Err(error) => {
-                let authorization_required = error.is_unauthorized();
-
-                if mcp.transport == McpTransport::Http
-                    && mcp.auth_type == McpAuthType::Auto
-                    && authorization_required
-                {
-                    let has_oauth_access_token = self
-                        .core
-                        .decrypt_secret(mcp.oauth_access_token.as_deref())
-                        .is_some();
-                    mcp.status = if has_oauth_access_token {
-                        McpStatus::Error
-                    } else {
-                        McpStatus::Draft
-                    };
-                    mcp.last_error = Some(if !has_oauth_access_token {
-                        "OAuth authorization required".to_owned()
-                    } else if let UpstreamError::Unauthorized(details) = &error {
-                        self.diagnostic(&format!("OAuth token rejected. {details}"), mcp)
-                    } else {
-                        "OAuth token was rejected by the MCP server (HTTP 401). Re-authorize this MCP."
-                            .to_owned()
-                    });
-                    mcp.oauth_required = true;
-                } else {
-                    mcp.status = McpStatus::Error;
-                    mcp.last_error = Some(self.diagnostic(&error, mcp));
-                    mcp.oauth_required = false;
-                }
-            }
+        };
+        mcp.mark_probed(outcome);
+        let basis = basis.after_renewal(mcp);
+        if !mcp.save_probe_result(&*self.core.db, &basis).await? {
+            tracing::debug!(
+                mcp_id = mcp.id,
+                "Dropped the result of a test of an MCP that changed while it ran"
+            );
+            // Gone meanwhile: nothing is left to report on.
+            let _ = self.reload(mcp).await;
         }
-        mcp.save(&*self.core.db).await?;
         Ok(())
+    }
+}
+
+/// How many tools each MCP listed the last time it was asked, by MCP id,
+/// with the turn of the listing that said so: a listing that started before
+/// another, and finished after it, does not replace what it found.
+#[derive(Debug, Default)]
+pub(crate) struct ToolCounts {
+    turns: u64,
+    counts: HashMap<i64, (u64, Option<usize>)>,
+}
+
+impl ToolCounts {
+    fn start(&mut self) -> u64 {
+        self.turns += 1;
+        self.turns
+    }
+
+    fn finish(&mut self, mcp_id: i64, turn: u64, count: Option<usize>) {
+        match self.counts.get(&mcp_id) {
+            Some((latest, _)) if *latest > turn => {}
+            _ => {
+                self.counts.insert(mcp_id, (turn, count));
+            }
+        }
+    }
+
+    fn known(&self) -> HashMap<i64, usize> {
+        self.counts
+            .iter()
+            .filter_map(|(id, (_, count))| count.map(|count| (*id, count)))
+            .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_listing_that_started_earlier_does_not_replace_a_later_one() {
+        let mut counts = ToolCounts::default();
+        let slow = counts.start();
+        let fast = counts.start();
+        counts.finish(1, fast, Some(3));
+        counts.finish(1, slow, Some(9));
+        assert_eq!(counts.known().get(&1), Some(&3));
+        // A later failure says nothing is known any more.
+        let failed = counts.start();
+        counts.finish(1, failed, None);
+        assert_eq!(counts.known().get(&1), None);
+        counts.finish(2, counts.turns, Some(1));
+        counts.counts.remove(&2);
+        assert!(counts.known().is_empty());
+    }
 
     #[test]
     fn splits_a_name_at_its_first_separator() {

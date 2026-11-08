@@ -243,6 +243,75 @@ async fn an_authenticator_app_is_turned_on_with_a_code_and_the_password() {
 }
 
 #[tokio::test]
+async fn turning_the_app_on_twice_at_once_keeps_the_codes_it_showed() {
+    let app = TestApp::new().await;
+    let user = account(&app, "ada@example.com").await;
+    let shown = app.get("/settings/two-factor").login_as(&user).send().await;
+    let secret: String = shown
+        .text()
+        .split("id=\"authenticator-secret\">")
+        .nth(1)
+        .and_then(|rest| rest.split('<').next())
+        .expect("the key of the app")
+        .replace(' ', "");
+
+    // The form sent twice: both requests read the account before either
+    // turned the app on.
+    let typed = code(&secret, 0);
+    let enable = || {
+        app.post("/settings/two-factor")
+            .session(shown.session())
+            .csrf()
+            .form(&[("code", typed.as_str()), ("currentPassword", PASSWORD)])
+            .send()
+    };
+    let (first, second) = tokio::join!(enable(), enable());
+
+    let shown_codes: Vec<Vec<String>> = [&first, &second]
+        .into_iter()
+        .filter_map(|response| response.flashed("recoveryCodes"))
+        .map(|codes| serde_json::from_value(codes).unwrap())
+        .collect();
+    assert_eq!(shown_codes.len(), 1, "the codes were made twice");
+    assert_eq!(
+        RecoveryCode::remaining(&*app.core.db, user.id)
+            .await
+            .unwrap(),
+        8
+    );
+    // The codes that were shown are the ones that work.
+    assert!(
+        RecoveryCode::consume(&*app.core.db, user.id, &shown_codes[0][0])
+            .await
+            .unwrap()
+    );
+    assert!(reload(&app, &user).await.has_authenticator());
+}
+
+#[tokio::test]
+async fn removing_the_protection_also_removes_an_app_turned_on_since_the_account_was_read() {
+    let app = TestApp::new().await;
+    let user = account(&app, "ada@example.com").await;
+    // Read while it had nothing, as a request that began before the app.
+    let mut stale = reload(&app, &user).await;
+    protect(&app, &user).await;
+
+    let mut transaction = app.core.db.begin().await.unwrap();
+    stale.remove_protection(&mut transaction).await.unwrap();
+    transaction.commit().await.unwrap();
+
+    let stored = reload(&app, &user).await;
+    assert!(!stored.has_authenticator());
+    assert!(stored.two_factor_secret.is_none());
+    assert_eq!(
+        RecoveryCode::remaining(&*app.core.db, user.id)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn the_authenticator_app_is_turned_off_with_the_password() {
     let app = TestApp::new().await;
     let user = account(&app, "ada@example.com").await;

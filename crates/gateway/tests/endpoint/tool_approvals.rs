@@ -1732,3 +1732,52 @@ async fn lets_go_of_what_expired_when_a_request_comes_in() {
         [recent_log.id]
     );
 }
+
+#[tokio::test]
+async fn neither_counts_nor_lets_anyone_decide_the_calls_of_a_token_that_no_longer_works() {
+    let gateway = crm_gateway().await;
+    let db = gateway.db();
+    let admin = create_admin(db).await;
+    let request = waiting_request(&gateway, &admin, 42).await;
+    let waiting = |waiting: bool| {
+        let mut query = ApprovalService::visible_to(admin_scope(&admin));
+        ApprovalService::push_waiting(&mut query, Timestamp::now(), waiting);
+        query
+    };
+    let ids = async |waiting_now: bool| -> Vec<i64> {
+        waiting(waiting_now)
+            .build_query_as::<ApprovalRequest>()
+            .fetch_all(&**db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|request| request.id)
+            .collect()
+    };
+    assert_eq!(ids(true).await, [request.id]);
+    assert!(ids(false).await.is_empty());
+
+    let mut token = find_token(db, request.access_token_id).await;
+    assert!(
+        mymcps_gateway::access_token::revoke(db, &mut token)
+            .await
+            .unwrap()
+    );
+
+    assert_eq!(
+        gateway
+            .approvals
+            .pending_count(admin_scope(&admin))
+            .await
+            .unwrap(),
+        0
+    );
+    assert!(ids(true).await.is_empty());
+    assert_eq!(ids(false).await, [request.id]);
+    let mcp = Mcp::find(&**db, request.mcp_id).await.unwrap().unwrap();
+    assert!(!gateway.decide(&mcp, Decision::Approve, &admin).await);
+    assert_eq!(
+        find_request(&gateway, request.id).await.status,
+        ApprovalDecision::Pending
+    );
+}

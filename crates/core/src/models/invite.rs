@@ -1,5 +1,7 @@
+use sqlx::sqlite::SqliteExecutor;
+
 use crate::crypto::random_hex;
-use crate::models::TeamRole;
+use crate::models::{Team, TeamRole};
 use crate::time::Timestamp;
 
 model! {
@@ -31,6 +33,19 @@ impl Invite {
 
     pub fn is_usable(&self) -> bool {
         !self.is_accepted() && !self.is_expired()
+    }
+
+    /// Whether the member who sent the invite may still give its role: they
+    /// are still in the team, with a role that ranks as high. An invite of
+    /// someone removed or demoted since is not to be accepted. Ask it in
+    /// the transaction that accepts the invite.
+    pub async fn creator_may_grant<'e, E>(&self, db: E) -> Result<bool, sqlx::Error>
+    where
+        E: SqliteExecutor<'e>,
+    {
+        Ok(Team::role_of(db, self.team_id, self.created_by)
+            .await?
+            .is_some_and(|role| role.may_grant(self.role)))
     }
 
     pub fn generate_token() -> String {

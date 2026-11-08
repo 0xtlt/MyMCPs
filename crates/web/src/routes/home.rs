@@ -15,8 +15,7 @@ use axum::routing::get;
 use chrono::{DateTime, Duration, Utc};
 use http::{HeaderMap, StatusCode};
 use mymcps_core::models::{
-    AccessToken, GatewayToolMode, Mcp, McpCallLog, McpLogLevel, McpStatus, Membership, TokenSource,
-    User,
+    AccessToken, GatewayToolMode, Mcp, McpCallLog, McpLogLevel, Membership, TokenStatus, User,
 };
 use mymcps_core::{Db, Timestamp};
 use mymcps_vine as vine;
@@ -188,14 +187,9 @@ pub fn tools_exposed(mcps: &[Mcp], counts: &HashMap<i64, usize>) -> Option<Tools
     })
 }
 
-/// When the connection of a token ends: an OAuth connection lives as long
-/// as it can be refreshed.
+/// When the connection of a token ends: see [`AccessToken::connection_expires_at`].
 pub fn connection_expires_at(token: &AccessToken) -> Option<Timestamp> {
-    if token.source == TokenSource::Oauth {
-        token.oauth_refresh_expires_at.or(token.expires_at)
-    } else {
-        token.expires_at
-    }
+    token.connection_expires_at()
 }
 
 /// Where a token stands, as its badge says it.
@@ -208,17 +202,19 @@ pub enum TokenState {
     Revoked,
 }
 
+/// [`AccessToken::status_at`], with the active tokens that end within a week apart.
 pub fn token_state(token: &AccessToken, now: Timestamp) -> TokenState {
-    if token.is_revoked() {
-        TokenState::Revoked
-    } else if !token.is_active() {
-        TokenState::Expired
-    } else if connection_expires_at(token)
-        .is_some_and(|expires_at| expires_at <= now + Duration::days(SOON_DAYS))
-    {
-        TokenState::Expiring
-    } else {
-        TokenState::Active
+    match token.status_at(now) {
+        TokenStatus::Revoked => TokenState::Revoked,
+        TokenStatus::Expired => TokenState::Expired,
+        TokenStatus::Active
+            if token
+                .connection_expires_at()
+                .is_some_and(|expires_at| expires_at <= now + Duration::days(SOON_DAYS)) =>
+        {
+            TokenState::Expiring
+        }
+        TokenStatus::Active => TokenState::Active,
     }
 }
 
@@ -265,7 +261,7 @@ impl Home {
     pub fn mcps_awaiting_authorization(&self) -> Vec<&Mcp> {
         self.mcps
             .iter()
-            .filter(|mcp| mcp.enabled && mcp.oauth_required)
+            .filter(|mcp| mcp.enabled && mcp.health().awaits_sign_in())
             .collect()
     }
 
@@ -273,7 +269,7 @@ impl Home {
     pub fn mcps_in_error(&self) -> Vec<&Mcp> {
         self.mcps
             .iter()
-            .filter(|mcp| mcp.enabled && !mcp.oauth_required && mcp.status == McpStatus::Error)
+            .filter(|mcp| mcp.enabled && mcp.health().is_failing())
             .collect()
     }
 
@@ -293,7 +289,7 @@ impl Home {
         let since = self.now - Duration::days(SOON_DAYS);
         self.tokens
             .iter()
-            .filter(|token| token.is_active())
+            .filter(|token| token.status_at(self.now).is_active())
             .filter(|token| token.last_used_at.is_some_and(|used_at| used_at >= since))
             .count()
     }
@@ -509,6 +505,7 @@ pub async fn show(
 
 #[cfg(test)]
 mod tests {
+    use mymcps_core::models::TokenSource;
     use serde_json::json;
 
     use super::*;
@@ -599,8 +596,26 @@ mod tests {
         };
         assert_eq!(token_state(&oauth(days(30)), now), TokenState::Active);
         assert_eq!(token_state(&oauth(days(2)), now), TokenState::Expiring);
-        assert_eq!(token_state(&oauth(days(-2)), now), TokenState::Expired);
+        // Its last access token works a little longer than its refresh token.
+        assert_eq!(token_state(&oauth(days(-2)), now), TokenState::Expiring);
+        let ended = AccessToken {
+            expires_at: Some(now - Duration::days(2)),
+            ..oauth(days(-2))
+        };
+        assert_eq!(token_state(&ended, now), TokenState::Expired);
         assert_eq!(token_state(&oauth(None), now), TokenState::Expiring);
+
+        // A client that cannot refresh: the connection ends with its access token.
+        let unrefreshable = AccessToken {
+            source: TokenSource::Oauth,
+            expires_at: Some(now - Duration::minutes(1)),
+            ..Default::default()
+        };
+        assert_eq!(token_state(&unrefreshable, now), TokenState::Expired);
+        assert_eq!(
+            connection_expires_at(&unrefreshable),
+            unrefreshable.expires_at
+        );
     }
 
     #[test]

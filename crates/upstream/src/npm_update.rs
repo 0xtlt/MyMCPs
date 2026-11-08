@@ -91,14 +91,23 @@ impl Upstream {
     }
 
     async fn run_latest_tracking_updates(&self) -> Result<McpNpmUpdateRunResult, UpstreamError> {
-        let mcps: Vec<Mcp> =
-            sqlx::query_as("select * from `mcps` where `transport` = ? order by `id` asc")
+        let ids: Vec<i64> =
+            sqlx::query_scalar("select `id` from `mcps` where `transport` = ? order by `id` asc")
                 .bind(McpTransport::Npm)
                 .fetch_all(&*self.core.db)
                 .await?;
         let mut result = McpNpmUpdateRunResult::default();
 
-        for mut mcp in mcps {
+        for id in ids {
+            // Read each one as it is when its turn comes: the updates before
+            // it can take minutes, and it may have been edited or deleted
+            // meanwhile. A test of what it was would be dropped.
+            let Some(mut mcp) = Mcp::find(&*self.core.db, id).await? else {
+                continue;
+            };
+            if mcp.transport != McpTransport::Npm {
+                continue;
+            }
             if !is_tracking_latest(mcp.transport, mcp.npm_version.as_deref()) {
                 result.skipped += 1;
                 continue;

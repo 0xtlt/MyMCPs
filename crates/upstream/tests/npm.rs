@@ -265,6 +265,8 @@ async fn updates_a_latest_tracking_npm_mcp_by_installing_it_again_then_testing_i
             value: Some("1.1.0".to_owned()),
         }],
     );
+    // Saved: the result of a test is kept only for the MCP as it is saved.
+    mcp.save(&*server.core.db).await.unwrap();
     server
         .upstream
         .update_mcp_to_latest(&mut mcp)

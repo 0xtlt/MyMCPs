@@ -183,7 +183,7 @@ pub struct Upstream {
     /// The renewal of the OAuth tokens of an MCP that is under way, by MCP id.
     pending_refreshes: Arc<Mutex<HashMap<i64, oauth::PendingRefresh>>>,
     /// How many tools each MCP listed the last time, by MCP id.
-    known_tool_counts: Arc<Mutex<HashMap<i64, usize>>>,
+    known_tool_counts: Arc<Mutex<manager::ToolCounts>>,
     /// The update of the latest-tracking npm MCPs that is under way.
     pending_npm_updates: Arc<Mutex<Option<npm_update::PendingNpmUpdates>>>,
     npm_update_runtime: Option<Arc<dyn NpmUpdateRuntime>>,

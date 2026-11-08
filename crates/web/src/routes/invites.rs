@@ -139,6 +139,10 @@ pub async fn store(
         )));
     }
 
+    // The checks and the insert are one transaction, which takes the write
+    // lock when it begins: two requests for the same address cannot both
+    // find no pending invite and each create one.
+    let mut transaction = db.begin().await?;
     // An address that has an account may join: it is refused only when it
     // is in this team already.
     let member: Option<i64> = sqlx::query_scalar(
@@ -148,9 +152,10 @@ pub async fn store(
     )
     .bind(team.id())
     .bind(&email)
-    .fetch_optional(&**db)
+    .fetch_optional(&mut *transaction)
     .await?;
     if member.is_some() {
+        transaction.rollback().await?;
         session.flash("error", "That person is already a member of this team");
         return Ok(navigate(&headers, &team_page));
     }
@@ -162,9 +167,10 @@ pub async fn store(
     .bind(team.id())
     .bind(&email)
     .bind(Timestamp::now())
-    .fetch_optional(&**db)
+    .fetch_optional(&mut *transaction)
     .await?;
     if pending.is_some() {
+        transaction.rollback().await?;
         session.flash("error", "A pending invite already exists for that email");
         return Ok(navigate(&headers, &team_page));
     }
@@ -178,7 +184,8 @@ pub async fn store(
         expires_at: Timestamp::now() + chrono::Duration::days(INVITE_DAYS),
         ..Default::default()
     };
-    invite.insert(&**db).await?;
+    invite.insert(&mut *transaction).await?;
+    transaction.commit().await?;
     session.flash("success", "Invite created");
     session.flash(CREATED_INVITE_KEY, invite.id);
     Ok(navigate(&headers, &team_page))
@@ -225,6 +232,9 @@ where
     let Some(invite) = find_by_token(db, &token).await?.filter(Invite::is_usable) else {
         return Ok(None);
     };
+    if !invite.creator_may_grant(db).await? {
+        return Ok(None);
+    }
     Ok(Team::find(db, invite.team_id)
         .await?
         .map(|team| (invite, team)))
@@ -331,6 +341,11 @@ pub async fn accept(
             transaction.rollback().await?;
             return Ok(invalid());
         };
+        // Whoever sent it may have been removed or demoted since.
+        if !invite.creator_may_grant(&mut *transaction).await? {
+            transaction.rollback().await?;
+            return Ok(invalid());
+        }
         let already = Team::role_of(&mut *transaction, invite.team_id, user.id).await?;
         if already.is_none() {
             Team::attach(&mut *transaction, invite.team_id, user.id, invite.role).await?;
@@ -377,6 +392,10 @@ pub async fn accept(
         transaction.rollback().await?;
         return Ok(invalid());
     };
+    if !invite.creator_may_grant(&mut *transaction).await? {
+        transaction.rollback().await?;
+        return Ok(invalid());
+    }
     if User::find_by_email(&mut *transaction, &invite.email)
         .await?
         .is_some()

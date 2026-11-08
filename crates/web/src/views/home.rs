@@ -5,7 +5,7 @@
 
 use maud::{Markup, html};
 use mymcps_core::models::{
-    AccessToken, CallOutcome, Mcp, McpCallLog, McpStatus, McpTransport, TokenSource,
+    AccessToken, CallOutcome, Mcp, McpCallLog, McpHealth, McpStatus, McpTransport, TokenSource,
 };
 
 use crate::routes::home::{
@@ -442,18 +442,18 @@ fn status_badge(status: McpStatus) -> Markup {
 
 /// What an MCP row says under the name, from what is stored about it.
 fn mcp_subtitle(mcp: &Mcp) -> String {
-    if mcp.oauth_required {
-        return format!("{} · awaiting OAuth", transport(mcp));
-    }
-    match mcp.status {
-        McpStatus::Error => mcp
+    match mcp.health() {
+        McpHealth::AwaitingSignIn | McpHealth::SignInRejected(_) => {
+            format!("{} · awaiting OAuth", transport(mcp))
+        }
+        McpHealth::Failing(_) => mcp
             .last_error
             .clone()
             .filter(|error| !error.is_empty())
             .unwrap_or_else(|| format!("{} · connection failed", transport(mcp))),
-        McpStatus::Draft => format!("{} · not tested yet", transport(mcp)),
-        McpStatus::Ready if mcp.enabled => transport(mcp).to_string(),
-        McpStatus::Ready => format!("{} · disabled", transport(mcp)),
+        McpHealth::Untested => format!("{} · not tested yet", transport(mcp)),
+        McpHealth::Ready if mcp.enabled => transport(mcp).to_string(),
+        McpHealth::Ready => format!("{} · disabled", transport(mcp)),
     }
 }
 
@@ -480,10 +480,13 @@ fn mcp_row(mcp: &Mcp, admin: bool) -> Markup {
 /// Connection status: the MCPs that need someone first, then the ready
 /// ones, summed up in one row when there are more than three.
 fn mcps_card(home: &Home) -> Markup {
-    let needs_someone = |mcp: &&Mcp| mcp.oauth_required || mcp.status != McpStatus::Ready;
+    let needs_someone = |mcp: &&Mcp| mcp.health().needs_attention();
     let mut waiting: Vec<&Mcp> = home.mcps.iter().filter(needs_someone).collect();
     // Authorization first, then errors, then the ones never tested.
-    waiting.sort_by_key(|mcp| (!mcp.oauth_required, mcp.status != McpStatus::Error));
+    waiting.sort_by_key(|mcp| {
+        let health = mcp.health();
+        (!health.awaits_sign_in(), !health.is_failing())
+    });
     let ready: Vec<&Mcp> = home.mcps.iter().filter(|mcp| !needs_someone(mcp)).collect();
     let hidden = waiting.len().saturating_sub(SIDE_ROWS);
     let disabled = ready.iter().filter(|mcp| !mcp.enabled).count();

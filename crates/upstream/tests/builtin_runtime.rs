@@ -479,6 +479,8 @@ async fn fails_for_a_built_in_mcp_this_instance_does_not_have() {
         "Unknown built-in MCP: none"
     );
 
+    // Saved first: a test of a copy that is not the row is dropped.
+    unknown.save(&*core.db).await.unwrap();
     upstream.test_and_update_status(&mut unknown).await.unwrap();
     assert_eq!(unknown.status, McpStatus::Error);
     assert_eq!(
@@ -1046,7 +1048,8 @@ async fn sends_the_admin_to_the_provider_and_stores_the_tokens_and_granted_scope
     );
     assert_eq!(saved.oauth_scopes.as_deref(), Some("read items:read_all"));
     assert_eq!(saved.oauth_token_type.as_deref(), Some("Bearer"));
-    assert_eq!(saved.status, McpStatus::Ready);
+    // Signed in, and not tested yet: the callback tests it next.
+    assert_eq!(saved.status, McpStatus::Draft);
     assert_eq!(saved.last_error, None);
     assert!(!saved.oauth_required);
     assert!(saved.oauth_token_expires_at.unwrap() > Timestamp::now() + Duration::hours(5));

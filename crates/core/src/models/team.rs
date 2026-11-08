@@ -250,8 +250,28 @@ impl Team {
     }
 
     /// Take someone out of a team. The access tokens they made there stop
-    /// working: a token acts for the person who made it.
+    /// working: a token acts for the person who made it. So do the invites
+    /// they sent that nobody accepted yet: an invite lets someone in on the
+    /// word of a member, and they are no longer one.
     pub async fn detach(
+        transaction: &mut Transaction<'_, Sqlite>,
+        team_id: i64,
+        user_id: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "delete from `invites` \
+             where `team_id` = ? and `created_by` = ? and `accepted_at` is null",
+        )
+        .bind(team_id)
+        .bind(user_id)
+        .execute(&mut **transaction)
+        .await?;
+        Self::detach_keeping_invites(transaction, team_id, user_id).await
+    }
+
+    /// [`Self::detach`], but the invites stay: an account that is deleted
+    /// hands them to an owner of the team instead.
+    async fn detach_keeping_invites(
         transaction: &mut Transaction<'_, Sqlite>,
         team_id: i64,
         user_id: i64,
@@ -327,7 +347,7 @@ impl Team {
                     .await?;
                 continue;
             }
-            Self::detach(transaction, team_id, user_id).await?;
+            Self::detach_keeping_invites(transaction, team_id, user_id).await?;
             Self::ensure_owner(transaction, team_id).await?;
         }
 

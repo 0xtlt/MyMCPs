@@ -2,6 +2,31 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-11-08
+
+### Changed
+
+- An MCP whose address, network, package, secrets or sign-in is edited shows as not tested until its next test, instead of keeping the status of its old settings. After an OAuth sign-in it shows **draft** until the test that follows has finished.
+- An OAuth connection now stays active until both its access token and its refresh token have expired; one from a client without refresh support ends with its access token. The tokens page, its badge and the home page show the same expiry, and the tokens page no longer says "No expiry" for such a connection.
+- Approval requests from a revoked or expired access token leave the pending count and the **Waiting** list, appear under **Past**, and can no longer be approved or denied.
+
+### Fixed
+
+- A test of an MCP, from the page or from npm auto-update, no longer overwrites a status that an edit, an OAuth sign-in or a tailnet sign-out changed while it ran. "Needs attention" is now the same on the home page, the MCP list and the MCP form.
+- The approval page no longer says that a call can no longer run when its OAuth connection can still refresh. A slow MCP no longer holds up the other gated calls of the same access token while a request is being summarised.
+- Replying with `send_message` in iCloud Mail sets the **Answered** flag again when the server opens a mailbox read-only without saying so, and reports a warning instead of failing silently when the flag cannot be set.
+- An npm MCP that is deleted or reinstalled while a call is starting no longer has its directories recreated, and an install that a running process uses is no longer deleted by two updates in a row.
+- An upload that is cancelled partway no longer blocks its link for an hour, and uploads sent at the same time can no longer go over an MCP's storage limit together.
+- Turning an authenticator app on twice at once no longer voids the recovery codes just shown, and removing a user's sign-in protection always clears their authenticator. A user without a team who opens two pages at once gets one personal team, not two.
+- After a sign-in, a leftover return address from an earlier approval or invite link no longer redirects a later sign-in.
+- Two invites to the same address can no longer be created at once.
+- Turning auto-update on and off quickly no longer leaves it running while it is off. Connecting a tailnet or signing it in again no longer races its removal, and two connects no longer both start a sign-in.
+
+### Security
+
+- An invite stops working once the person who sent it leaves the team or no longer may give its role, and a member's pending invites are deleted when they are removed from the team. Before, a removed or demoted admin's earlier invite could still bring someone in as an admin.
+- A Google Ads write call that was approved is refused if the account changed since its summary was shown (another bidding strategy, a budget that became shared), instead of applying changes nobody approved. Make the call again to ask for a new approval. The check is kept in memory, so a call approved before a restart runs as before.
+
 ## 2026-10-30
 
 ### Added

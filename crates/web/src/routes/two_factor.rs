@@ -156,7 +156,7 @@ struct Enabling {
 pub async fn enable(
     State(state): State<AppState>,
     session: Session,
-    CurrentUser(mut user): CurrentUser,
+    CurrentUser(user): CurrentUser,
     Input(input): Input,
 ) -> Result<Response, AppError> {
     if user.has_authenticator() {
@@ -189,7 +189,17 @@ pub async fn enable(
         return Ok(back(FormState::with_error("code", message, &Map::new())));
     };
 
+    // The account as it is now, under the write lock: another request may
+    // have turned the app on, or added a passkey, since this one was read.
     let mut transaction = state.core.db.begin().await?;
+    let Some(mut user) = User::find(&mut *transaction, user.id).await? else {
+        return Err(AppError::Unauthorized);
+    };
+    if user.has_authenticator() {
+        transaction.rollback().await?;
+        session.forget(SETUP_KEY);
+        return Ok(redirect_to("/settings"));
+    }
     let was_protected = user.is_protected(&mut *transaction).await?;
     user.enable_authenticator(
         &mut transaction,

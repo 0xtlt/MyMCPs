@@ -948,10 +948,16 @@ async fn send_message(
             // The message is out. Nothing below may fail the call, or the agent
             // would send it a second time.
             let saved = save_to(client, "\\Sent", &copy, &["\\Seen"]).await.ok().flatten();
-            if let Some(reply) = &message.reply
-                && open_mailbox(client, &reply.mailbox, Access::Write).await.is_ok()
-            {
-                client.store(&[reply.uid], &["\\Answered"], true, false).await;
+            let mut warnings = Vec::new();
+            if saved.is_none() {
+                warnings.push("The message was sent, but its copy could not be saved to the Sent mailbox. Do not send it again.");
+            }
+            if let Some(reply) = &message.reply {
+                let is_marked = open_mailbox(client, &reply.mailbox, Access::Write).await.is_ok()
+                    && client.store(&[reply.uid], &["\\Answered"], true, false).await;
+                if !is_marked {
+                    warnings.push("The reply was sent, but the original message could not be marked as answered. Do not send it again.");
+                }
             }
 
             let mut result = Map::new();
@@ -960,13 +966,12 @@ async fn send_message(
             if !rejected.is_empty() {
                 result.insert("rejected".into(), json!(rejected));
             }
-            match saved {
-                Some(saved) => result.insert("saved_to".into(), json!(saved.mailbox)),
-                None => result.insert(
-                    "warning".into(),
-                    json!("The message was sent, but its copy could not be saved to the Sent mailbox. Do not send it again."),
-                ),
-            };
+            if let Some(saved) = saved {
+                result.insert("saved_to".into(), json!(saved.mailbox));
+            }
+            if !warnings.is_empty() {
+                result.insert("warning".into(), json!(warnings.join(" ")));
+            }
             Ok(Value::Object(result))
         })
         .await

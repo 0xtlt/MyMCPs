@@ -467,9 +467,24 @@ pub async fn update(
     transaction.commit().await
 }
 
-pub async fn revoke(db: &Db, token: &mut AccessToken) -> Result<(), sqlx::Error> {
+/// Revoke a token. Only the first revocation is written: of two made at
+/// once, or one made after another, the time the token stopped working stays
+/// the first. `false` when it was already revoked, and `token` is then read
+/// again, with the time it was.
+pub async fn revoke(db: &Db, token: &mut AccessToken) -> Result<bool, sqlx::Error> {
     token.revoked_at = Some(Timestamp::now());
-    token.save(&**db).await
+    let revoked = token
+        .save_if(&**db, |query| {
+            query.push(" and `revoked_at` is null");
+        })
+        .await?;
+    if !revoked {
+        match token.refresh(&**db).await {
+            Ok(()) | Err(sqlx::Error::RowNotFound) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(revoked)
 }
 
 async fn attach_mcps<'e, E>(executor: E, token_id: i64, mcp_ids: &[i64]) -> Result<(), sqlx::Error>

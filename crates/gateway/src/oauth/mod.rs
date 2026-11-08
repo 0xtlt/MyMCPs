@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use mymcps_core::crypto::{constant_time_eq, random_base64url};
-use mymcps_core::models::{OauthAuthorizationCode, OauthClient, Team};
+use mymcps_core::models::{AccessToken, OauthAuthorizationCode, OauthClient, Team};
 use mymcps_core::public_url::PublicUrlError;
 use mymcps_core::redaction::sanitize_diagnostic;
 use mymcps_core::{Config, Core, Timestamp};
@@ -336,11 +336,9 @@ fn push_unused_clients(query: &mut QueryBuilder<Sqlite>, active_since: Timestamp
              and (`access_tokens`.`updated_at` >= ",
         )
         .push_bind(active_since)
-        .push(" or (`access_tokens`.`revoked_at` is null and (`access_tokens`.`expires_at` > ")
-        .push_bind(now)
-        .push(" or `access_tokens`.`oauth_refresh_expires_at` > ")
-        .push_bind(now)
-        .push("))))");
+        .push(" or ");
+    AccessToken::push_active_condition(query, "access_tokens", now);
+    query.push("))");
 }
 
 /// The OAuth server of one instance.

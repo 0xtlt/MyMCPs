@@ -153,7 +153,9 @@ impl User {
         self.save(&mut **transaction).await
     }
 
-    /// Stop asking for a code, and forget the secret.
+    /// Stop asking for a code, and forget the secret. The columns are
+    /// written whatever this value read: an app turned on since it was read
+    /// is turned off too, not left on because it looked off already.
     pub async fn disable_authenticator(
         &mut self,
         transaction: &mut Transaction<'_, Sqlite>,
@@ -161,7 +163,25 @@ impl User {
         self.two_factor_secret = None;
         self.two_factor_confirmed_at = None;
         self.two_factor_last_step = None;
+        self.write_over(&[
+            "two_factor_secret",
+            "two_factor_confirmed_at",
+            "two_factor_last_step",
+        ]);
         self.save(&mut **transaction).await
+    }
+
+    /// Whether the account of `user_id` is protected as the database holds
+    /// it now, not as a value read earlier says. Run it in the transaction
+    /// that acts on the answer.
+    pub async fn is_protected_now(
+        transaction: &mut Transaction<'_, Sqlite>,
+        user_id: i64,
+    ) -> Result<bool, sqlx::Error> {
+        match Self::find(&mut **transaction, user_id).await? {
+            Some(user) => user.is_protected(&mut **transaction).await,
+            None => Ok(false),
+        }
     }
 
     /// Whether `code` is one the authenticator app of this account shows
@@ -208,7 +228,7 @@ impl User {
         &self,
         transaction: &mut Transaction<'_, Sqlite>,
     ) -> Result<(), sqlx::Error> {
-        if !self.is_protected(&mut **transaction).await? {
+        if !Self::is_protected_now(transaction, self.id).await? {
             RecoveryCode::delete_all(&mut **transaction, self.id).await?;
         }
         Ok(())

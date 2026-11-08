@@ -163,6 +163,7 @@ impl Related {
         &self,
         request: &ApprovalRequest,
         summary: Option<&SavedApprovalSummary>,
+        now: Timestamp,
     ) -> Option<ApprovalView> {
         let (mcp, access_token) = self.origin(request)?;
         let decider = request
@@ -174,6 +175,7 @@ impl Related {
             access_token,
             decider,
             summary,
+            now,
         ))
     }
 }
@@ -189,20 +191,16 @@ pub async fn index(
     let now = Timestamp::now();
     let scope = scope_of(&user, &team);
     // Requests made within the same second are listed the last one first.
+    // One clock sorts the requests and draws them.
     let mut waiting = ApprovalService::visible_to(scope);
-    waiting
-        .push(
-            " and `approval_requests`.`status` = 'pending' and `approval_requests`.`expires_at` > ",
-        )
-        .push_bind(now)
-        .push(" order by `approval_requests`.`created_at` desc, `approval_requests`.`id` desc");
+    ApprovalService::push_waiting(&mut waiting, now, true);
+    waiting.push(" order by `approval_requests`.`created_at` desc, `approval_requests`.`id` desc");
     let waiting: Vec<ApprovalRequest> = waiting.build_query_as().fetch_all(&**db).await?;
     let mut past = ApprovalService::visible_to(scope);
+    ApprovalService::push_waiting(&mut past, now, false);
     past.push(
-        " and (`approval_requests`.`status` <> 'pending' or `approval_requests`.`expires_at` <= ",
+        " order by `approval_requests`.`created_at` desc, `approval_requests`.`id` desc limit ",
     )
-    .push_bind(now)
-    .push(") order by `approval_requests`.`created_at` desc, `approval_requests`.`id` desc limit ")
     .push_bind(MAX_LISTED_PAST_REQUESTS);
     let past: Vec<ApprovalRequest> = past.build_query_as().fetch_all(&**db).await?;
 
@@ -212,7 +210,7 @@ pub async fn index(
     let views = |requests: &[ApprovalRequest]| -> Vec<ApprovalView> {
         requests
             .iter()
-            .filter_map(|request| related.view(request, approvals.summary(request).as_ref()))
+            .filter_map(|request| related.view(request, approvals.summary(request).as_ref(), now))
             .collect()
     };
 
@@ -287,9 +285,10 @@ pub async fn show(
     // Read from the stored request, for someone who may read it: nothing
     // here comes from what the agent can still change.
     let approvals = &state.mcp_gateway.approvals;
+    let now = Timestamp::now();
     let summary = approvals.summary(&request);
     let arguments = approvals.arguments_text(&request);
-    let Some(approval) = related.view(&request, summary.as_ref()) else {
+    let Some(approval) = related.view(&request, summary.as_ref(), now) else {
         return Ok(not_found());
     };
     Ok(page(approval_page(
@@ -298,7 +297,7 @@ pub async fn show(
             approval: &approval,
             summary: summary.as_ref(),
             arguments: arguments.as_deref(),
-            runnable: mcp.enabled && access_token.is_usable(),
+            runnable: mcp.enabled && access_token.status_at(now).is_active(),
         },
     )))
 }

@@ -291,14 +291,23 @@ impl ApprovalService {
         if mode == ToolApprovalMode::Auto {
             return Ok(ApprovalGate::Open);
         }
-        let access_token_id = call.access_token.id;
-        self.in_turn(access_token_id, self.decided(&mut call)).await
+        match self.decided(&mut call).await {
+            Ok(gate) => Ok(gate),
+            Err(RequestError::Refused(ApprovalRefusal(message))) => Ok(held(
+                CallErrorCategory::ToolError,
+                "The call was refused before asking for approval",
+                message,
+            )),
+            Err(RequestError::Failed(error)) => Err(error),
+        }
     }
 
     // The gateway serves parallel requests. A call that asks first reads what
     // is already waiting, then adds to it: two calls of the same access token
     // doing that at once would both add, past the limit, or twice for the
-    // same call.
+    // same call. Reading and adding happen in the turn of the call; asking
+    // the MCP what the tool does, which goes over the network, happens
+    // between two turns, so that a slow MCP holds up nobody else.
     /// Run `task` once the earlier tasks of the same access token have finished.
     async fn in_turn<T>(&self, access_token_id: i64, task: impl Future<Output = T>) -> T {
         let queued = Queued::join(&self.inner.turns, access_token_id);
@@ -307,8 +316,38 @@ impl ApprovalService {
     }
 
     /// What the last request for this very call says, or a new request for it.
-    async fn decided(&self, call: &mut GatedCall<'_>) -> Result<ApprovalGate, ApprovalError> {
+    async fn decided(&self, call: &mut GatedCall<'_>) -> Result<ApprovalGate, RequestError> {
+        let access_token_id = call.access_token.id;
         let hash = arguments_hash(call.args);
+        if let Some(gate) = self
+            .in_turn(access_token_id, self.settled(call, &hash))
+            .await?
+        {
+            return Ok(gate);
+        }
+
+        let summary = self.summarize(call).await?;
+
+        // Another call may have asked for the same thing, or filled the
+        // line, while the MCP was asked: both are read again.
+        let call = &*call;
+        self.in_turn(access_token_id, async {
+            if let Some(gate) = self.settled(call, &hash).await? {
+                return Ok(gate);
+            }
+            let request = self.request(call, hash, &summary).await?;
+            Ok(self.waiting(&request, call, true))
+        })
+        .await
+    }
+
+    /// What the requests already made answer the call: the gate, or `None`
+    /// when a new request has to be made for it. Fails when it cannot be.
+    async fn settled(
+        &self,
+        call: &GatedCall<'_>,
+        hash: &str,
+    ) -> Result<Option<ApprovalGate>, RequestError> {
         let latest: Option<ApprovalRequest> = sqlx::query_as(
             "select * from `approval_requests` \
              where `access_token_id` = ? and `mcp_id` = ? and `tool_name` = ? \
@@ -318,7 +357,7 @@ impl ApprovalService {
         .bind(call.access_token.id)
         .bind(call.mcp.id)
         .bind(call.tool_name)
-        .bind(&hash)
+        .bind(hash)
         .bind(Timestamp::now())
         .fetch_optional(&*self.core().db)
         .await?;
@@ -327,35 +366,28 @@ impl ApprovalService {
             match latest.status {
                 ApprovalDecision::Approved => {
                     if self.consume(latest).await? {
-                        return Ok(ApprovalGate::Open);
+                        return Ok(Some(ApprovalGate::Open));
                     }
                 }
                 ApprovalDecision::Denied => {
                     // Said once. The same call made again is a new request, for the day
                     // the person changes their mind.
                     self.consume(latest).await?;
-                    return Ok(held(
+                    return Ok(Some(held(
                         CallErrorCategory::ApprovalDenied,
                         "A person denied this call",
                         format!(
                             "Denied: a person refused this call to {} on {} in MyMCPs, and it was not run. Do not make it again unless they ask you to.",
                             call.tool_name, call.mcp.name
                         ),
-                    ));
+                    )));
                 }
-                ApprovalDecision::Pending => return Ok(self.waiting(latest, call, false)),
+                ApprovalDecision::Pending => return Ok(Some(self.waiting(latest, call, false))),
             }
         }
 
-        match self.request(call, hash).await {
-            Ok(request) => Ok(self.waiting(&request, call, true)),
-            Err(RequestError::Refused(ApprovalRefusal(message))) => Ok(held(
-                CallErrorCategory::ToolError,
-                "The call was refused before asking for approval",
-                message,
-            )),
-            Err(RequestError::Failed(error)) => Err(error),
-        }
+        self.check_room(call).await?;
+        Ok(None)
     }
 
     fn waiting(
@@ -403,15 +435,16 @@ impl ApprovalService {
         )
     }
 
-    /// Put a call to a person. Fails when it is not one to put to them.
-    async fn request(
-        &self,
-        call: &mut GatedCall<'_>,
-        arguments_hash: String,
-    ) -> Result<ApprovalRequest, RequestError> {
-        let (tool_name, mcp_name) = (call.tool_name, call.mcp.name.clone());
-        let serialized = json_stringify(&Value::Object(call.args.cloned().unwrap_or_default()));
-        if serialized.len() > MAX_ARGUMENT_BYTES {
+    /// The arguments of the call as they are stored.
+    fn serialized_arguments(call: &GatedCall<'_>) -> String {
+        json_stringify(&Value::Object(call.args.cloned().unwrap_or_default()))
+    }
+
+    /// Fails when the call is not one to put to a person, or this access
+    /// token has too many calls waiting already.
+    async fn check_room(&self, call: &GatedCall<'_>) -> Result<(), RequestError> {
+        let (tool_name, mcp_name) = (call.tool_name, &call.mcp.name);
+        if Self::serialized_arguments(call).len() > MAX_ARGUMENT_BYTES {
             return Err(ApprovalRefusal(format!(
                 "{tool_name} on {mcp_name} needs the approval of a person, who cannot be shown arguments of more than {} KB. Make the call smaller.",
                 MAX_ARGUMENT_BYTES / 1024
@@ -419,15 +452,13 @@ impl ApprovalService {
             .into());
         }
 
-        let core = self.core();
-        let now = Timestamp::now();
         let waiting: i64 = sqlx::query_scalar(
             "select count(*) from `approval_requests` \
              where `access_token_id` = ? and `status` = 'pending' and `expires_at` > ?",
         )
         .bind(call.access_token.id)
-        .bind(now)
-        .fetch_one(&*core.db)
+        .bind(Timestamp::now())
+        .fetch_one(&*self.core().db)
         .await?;
         if waiting >= MAX_PENDING_PER_TOKEN {
             return Err(ApprovalRefusal(format!(
@@ -435,16 +466,27 @@ impl ApprovalService {
             ))
             .into());
         }
+        Ok(())
+    }
 
-        let summary = self.summarize(call).await?;
-        let summary = serde_json::to_value(&summary)
+    /// Put a call to a person, once [`Self::check_room`] let it through.
+    async fn request(
+        &self,
+        call: &GatedCall<'_>,
+        arguments_hash: String,
+        summary: &SavedApprovalSummary,
+    ) -> Result<ApprovalRequest, RequestError> {
+        let core = self.core();
+        let now = Timestamp::now();
+        let serialized = Self::serialized_arguments(call);
+        let summary = serde_json::to_value(summary)
             .map(|summary| json_stringify(&summary))
             .unwrap_or_default();
         let mut request = ApprovalRequest {
             public_id: random_base64url(24),
             mcp_id: call.mcp.id,
             access_token_id: call.access_token.id,
-            tool_name: tool_name.to_owned(),
+            tool_name: call.tool_name.to_owned(),
             arguments: core.encrypt_secret(Some(&serialized)).unwrap_or_default(),
             arguments_hash,
             summary: core.encrypt_secret(Some(&summary)).unwrap_or_default(),
@@ -501,22 +543,26 @@ impl ApprovalService {
     }
 
     /// Mark a decided request as acted on by the agent. Only one of two calls
-    /// made at the same moment gets the approval.
+    /// made at the same moment gets the approval, and none once it expired.
     async fn consume(&self, request: &ApprovalRequest) -> Result<bool, sqlx::Error> {
+        let now = Timestamp::now();
         let consumed = sqlx::query(
             "update `approval_requests` set `consumed_at` = ? \
-             where `id` = ? and `status` = ? and `consumed_at` is null",
+             where `id` = ? and `status` = ? and `consumed_at` is null and `expires_at` > ?",
         )
-        .bind(Timestamp::now())
+        .bind(now)
         .bind(request.id)
         .bind(request.status)
+        .bind(now)
         .execute(&*self.core().db)
         .await?;
         Ok(consumed.rows_affected() == 1)
     }
 
     /// Record what a person decided. False when the request was decided in the
-    /// meantime or has expired. An approval gives the agent a day to run the call.
+    /// meantime, has expired, or its access token no longer works: nobody
+    /// decides a call that cannot run. An approval gives the agent a day to
+    /// run the call.
     pub async fn decide(
         &self,
         request: &ApprovalRequest,
@@ -545,7 +591,9 @@ impl ApprovalService {
             .push(" where `id` = ")
             .push_bind(request.id)
             .push(" and `status` = 'pending' and `expires_at` > ")
-            .push_bind(now);
+            .push_bind(now)
+            .push(" and ");
+        Self::push_token_active(&mut update, now);
         let decided = update.build().execute(&*self.core().db).await?;
         Ok(decided.rows_affected() == 1)
     }
@@ -602,12 +650,36 @@ impl ApprovalService {
         query
     }
 
+    /// The access token that made the request still works: a request it
+    /// made cannot run otherwise. A condition on `approval_requests`.
+    fn push_token_active(query: &mut QueryBuilder<Sqlite>, now: Timestamp) {
+        query.push(
+            "exists (select 1 from `access_tokens` \
+             where `access_tokens`.`id` = `approval_requests`.`access_token_id` and ",
+        );
+        AccessToken::push_active_condition(query, "access_tokens", now);
+        query.push(")");
+    }
+
+    /// Narrow [`Self::visible_to`] to the requests that wait for a decision
+    /// at `now`: pending, not expired, and made by an access token that still
+    /// works. `waiting = false` selects every other request.
+    pub fn push_waiting(query: &mut QueryBuilder<Sqlite>, now: Timestamp, waiting: bool) {
+        query.push(if waiting { " and (" } else { " and not (" });
+        query
+            .push(
+                "`approval_requests`.`status` = 'pending' and `approval_requests`.`expires_at` > ",
+            )
+            .push_bind(now)
+            .push(" and ");
+        Self::push_token_active(query, now);
+        query.push(")");
+    }
+
     /// How many requests wait for a decision this person can make in the team.
     pub async fn pending_count(&self, scope: ApprovalScope) -> Result<i64, sqlx::Error> {
         let mut query = Self::visible_rows("select count(*)", scope);
-        query
-            .push(" and `status` = 'pending' and `expires_at` > ")
-            .push_bind(Timestamp::now());
+        Self::push_waiting(&mut query, Timestamp::now(), true);
         query.build_query_scalar().fetch_one(&*self.core().db).await
     }
 
@@ -670,6 +742,75 @@ mod tests {
 
     fn lines(service: &ApprovalService) -> usize {
         service.inner.turns.lock().unwrap().len()
+    }
+
+    /// An approved request of an access token, which expires at `expires_at`.
+    async fn approved_request(core: &TestCore, expires_at: Timestamp) -> ApprovalRequest {
+        use mymcps_core::models::{Team, TokenSource};
+        let db = &*core.core.db;
+        let mut user = User {
+            email: "approver@example.com".into(),
+            password: "not-a-password-hash".into(),
+            session_version: 1,
+            ..Default::default()
+        };
+        user.insert(db).await.unwrap();
+        let mut mcp = Mcp {
+            name: "CRM".into(),
+            slug: "crm".into(),
+            transport: McpTransport::Http,
+            http_url: Some("https://crm.example/mcp".into()),
+            enabled: true,
+            created_by: user.id,
+            team_id: Team::ROOT_ID,
+            ..Default::default()
+        };
+        mcp.insert(db).await.unwrap();
+        let mut token = AccessToken {
+            name: "Claude".into(),
+            token_hash: "hash".into(),
+            token_prefix: "mcp_hash".into(),
+            source: TokenSource::Manual,
+            created_by: user.id,
+            team_id: Team::ROOT_ID,
+            ..Default::default()
+        };
+        token.insert(db).await.unwrap();
+        let mut request = ApprovalRequest {
+            public_id: random_base64url(24),
+            mcp_id: mcp.id,
+            access_token_id: token.id,
+            tool_name: "delete_contact".into(),
+            status: ApprovalDecision::Approved,
+            decided_by: Some(user.id),
+            decided_at: Some(Timestamp::now()),
+            expires_at,
+            ..Default::default()
+        };
+        request.insert(db).await.unwrap();
+        request
+    }
+
+    #[tokio::test]
+    async fn does_not_spend_an_approval_that_has_expired() {
+        let (service, core) = service().await;
+        // Read while it was still good, spent after it expired.
+        let request =
+            approved_request(&core, Timestamp::now() - chrono::Duration::seconds(1)).await;
+        assert!(!service.consume(&request).await.unwrap());
+        let stored = ApprovalRequest::find(&*core.core.db, request.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.consumed_at, None);
+    }
+
+    #[tokio::test]
+    async fn spends_an_approval_once_while_it_is_good() {
+        let (service, core) = service().await;
+        let request = approved_request(&core, Timestamp::now() + chrono::Duration::hours(1)).await;
+        assert!(service.consume(&request).await.unwrap());
+        assert!(!service.consume(&request).await.unwrap());
     }
 
     #[tokio::test]

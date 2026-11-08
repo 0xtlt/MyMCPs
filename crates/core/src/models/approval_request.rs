@@ -49,14 +49,24 @@ model! {
 
 impl ApprovalRequest {
     pub fn is_expired(&self) -> bool {
-        self.expires_at <= Timestamp::now()
+        self.is_expired_at(Timestamp::now())
+    }
+
+    pub fn is_expired_at(&self, now: Timestamp) -> bool {
+        self.expires_at <= now
     }
 
     pub fn state(&self) -> ApprovalState {
+        self.state_at(Timestamp::now())
+    }
+
+    /// Where the request stands at `now`: a page that sorts requests with
+    /// one clock draws them with the same.
+    pub fn state_at(&self, now: Timestamp) -> ApprovalState {
         match self.status {
             ApprovalDecision::Denied => ApprovalState::Denied,
             ApprovalDecision::Approved if self.consumed_at.is_some() => ApprovalState::Used,
-            _ if self.is_expired() => ApprovalState::Expired,
+            _ if self.is_expired_at(now) => ApprovalState::Expired,
             ApprovalDecision::Approved => ApprovalState::Approved,
             ApprovalDecision::Pending => ApprovalState::Pending,
         }

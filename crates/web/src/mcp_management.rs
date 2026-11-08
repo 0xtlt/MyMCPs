@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use mymcps_core::models::{Mcp, McpStatus, McpTransport, Tailnet, Team};
+use mymcps_core::models::{Mcp, McpHealth, McpStatus, McpTransport, Tailnet, Team};
 use mymcps_core::redaction::{sanitize_diagnostic, sanitize_mcp_diagnostic};
 use mymcps_gateway::mcp_management::{
     ManagementActor, ManagementError, McpFields, McpRegistryManager,
@@ -437,9 +437,10 @@ impl WebMcpRegistry {
     /// The result of testing an MCP, with the link to connect it when it
     /// waits for OAuth.
     fn test_report(&self, mcp: &Mcp) -> Value {
-        let ok = mcp.status == McpStatus::Ready;
+        let health = mcp.health();
+        let ok = health == McpHealth::Ready;
         let (auth_link, auth_link_problem) =
-            if !ok && mcp.oauth_required && uses_oauth(&self.upstream, mcp) {
+            if health.awaits_sign_in() && uses_oauth(&self.upstream, mcp) {
                 match self.auth_url(mcp) {
                     Ok(link) => (Some(link), None),
                     Err(ManagementError::Refused(message)) => (None, Some(message)),
@@ -451,8 +452,8 @@ impl WebMcpRegistry {
         json!({
             "status": mcp.status.as_str(),
             "ok": ok,
-            "error": if ok { None } else { mcp.last_error.clone() },
-            "oauth_required": mcp.oauth_required,
+            "error": health.reason(),
+            "oauth_required": health.awaits_sign_in(),
             "auth_link": auth_link,
             "auth_link_problem": auth_link_problem,
             "tool_count": self.upstream.known_tool_counts().get(&mcp.id).copied(),
@@ -635,6 +636,7 @@ impl McpRegistryManager for WebMcpRegistry {
             .map_err(failed)?;
         discard_sandbox(&self.upstream, mcp.id).await;
         discard_uploads(&self.upstream, mcp.id).await;
+        self.upstream.forget_tool_count(mcp.id);
         Ok(json!({
             "deleted": true,
             "mcp": { "id": mcp.id, "name": mcp.name, "slug": mcp.slug },

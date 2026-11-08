@@ -4,7 +4,7 @@
 use chrono::{DateTime, Utc};
 use maud::{Markup, html};
 use mymcps_core::Timestamp;
-use mymcps_core::models::{AccessToken, Mcp, ScopeMode, TokenSource};
+use mymcps_core::models::{AccessToken, Mcp, ScopeMode, TokenSource, TokenStatus};
 use mymcps_gateway::access_token;
 use serde_json::Value;
 
@@ -53,11 +53,11 @@ impl StatusFilter {
         }
     }
 
-    pub fn shows(self, token: &AccessToken) -> bool {
+    pub fn shows(self, row: &TokenRow) -> bool {
         match self {
             Self::All => true,
-            Self::Active => token.is_active(),
-            Self::Inactive => !token.is_active(),
+            Self::Active => row.is_active(),
+            Self::Inactive => !row.is_active(),
         }
     }
 }
@@ -100,25 +100,35 @@ impl ListView {
     }
 }
 
-/// A token of the list with the MCPs it is limited to.
+/// A token of the list with the MCPs it is limited to, and where it stands
+/// at the time the page is drawn.
 #[derive(Debug, Clone)]
 pub struct TokenRow {
     pub token: AccessToken,
     pub mcp_ids: Vec<i64>,
+    pub status: TokenStatus,
 }
 
 impl TokenRow {
+    pub fn new(token: AccessToken, mcp_ids: Vec<i64>, now: Timestamp) -> Self {
+        Self {
+            status: token.status_at(now),
+            token,
+            mcp_ids,
+        }
+    }
+
     fn is_manual(&self) -> bool {
         self.token.source == TokenSource::Manual
     }
 
-    /// An OAuth connection can be revoked until it is, a manual token while it works.
+    pub fn is_active(&self) -> bool {
+        self.status.is_active()
+    }
+
+    /// A token, or an OAuth connection, can be revoked while it works.
     pub fn can_revoke(&self) -> bool {
-        if self.is_manual() {
-            self.token.is_usable()
-        } else {
-            !self.token.is_revoked()
-        }
+        self.is_active()
     }
 
     /// An OAuth connection that was allowed to manage MCPs, while it works.
@@ -128,25 +138,23 @@ impl TokenRow {
 
     /// The permission to manage MCPs can be taken off while the connection works.
     pub fn can_remove_mcp_management(&self) -> bool {
-        self.manages_mcps() && self.token.is_active()
+        self.manages_mcps() && self.is_active()
     }
 
+    /// Expired and revoked tokens: the ones nothing can use any more.
     pub fn can_delete(&self) -> bool {
-        !self.token.is_active()
+        !self.is_active()
     }
 
     /// Only manual tokens that are not revoked: the secret is never rotated.
     pub fn can_edit(&self) -> bool {
-        self.is_manual() && !self.token.is_revoked()
+        self.is_manual() && self.status != TokenStatus::Revoked
     }
 
-    /// The refresh-token expiry of an OAuth connection, the expiry of a manual token.
+    /// When the token, or the OAuth connection, stops working: the date its
+    /// badge goes by.
     fn display_expires_at(&self) -> Option<Timestamp> {
-        if self.is_manual() {
-            self.token.expires_at
-        } else {
-            self.token.oauth_refresh_expires_at
-        }
+        self.token.connection_expires_at()
     }
 
     fn scope_label(&self) -> String {
@@ -205,15 +213,11 @@ fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-fn status_badge(token: &AccessToken) -> Markup {
-    html! {
-        @if token.is_revoked() {
-            span class="badge" { "Revoked" }
-        } @else if token.is_active() {
-            span class="badge badge--success" { "Active" }
-        } @else {
-            span class="badge badge--warning" { "Expired" }
-        }
+fn status_badge(status: TokenStatus) -> Markup {
+    match status {
+        TokenStatus::Revoked => html! { span class="badge" { "Revoked" } },
+        TokenStatus::Active => html! { span class="badge badge--success" { "Active" } },
+        TokenStatus::Expired => html! { span class="badge badge--warning" { "Expired" } },
     }
 }
 
@@ -804,7 +808,7 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                     None => "Never",
                 }
             }
-            td { (status_badge(token)) }
+            td { (status_badge(row.status)) }
             td class="cell-end" {
                 span class="row-actions" {
                     (row_forms(context, view, row))
@@ -822,7 +826,7 @@ fn mobile_row(view: &ListView, row: &TokenRow) -> Markup {
             span class="list-row__text" {
                 span class="cluster" {
                     span class="list-row__title" { (token.name) }
-                    (status_badge(token))
+                    (status_badge(row.status))
                 }
                 span class="list-row__subtitle" {
                     (row.source_label()) " · " (row.identifier()) " · " (row.scope_label())

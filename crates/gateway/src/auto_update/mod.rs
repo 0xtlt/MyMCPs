@@ -57,6 +57,10 @@ pub struct McpAutoUpdateScheduler {
     upstream: Arc<Upstream>,
     clock: Arc<dyn Clock>,
     job: Mutex<Option<JoinHandle<()>>>,
+    /// Held for the whole of a resync: two of them, each reading the
+    /// settings while the other runs, could otherwise end in the wrong
+    /// order and leave a job running for settings that turned it off.
+    resyncing: tokio::sync::Mutex<()>,
 }
 
 impl std::fmt::Debug for McpAutoUpdateScheduler {
@@ -80,6 +84,7 @@ impl McpAutoUpdateScheduler {
             upstream,
             clock,
             job: Mutex::new(None),
+            resyncing: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -109,7 +114,10 @@ impl McpAutoUpdateScheduler {
 
     /// Replace the running job with whatever instance settings currently say.
     /// Stops the job when auto-update is off or the cron expression is invalid.
+    /// Resyncs run one after the other, each reading the settings after
+    /// the one before it ended: the last to start has the last word.
     pub async fn resync(&self) -> Result<(), sqlx::Error> {
+        let _resyncing = self.resyncing.lock().await;
         self.stop();
 
         if !self.should_schedule() {

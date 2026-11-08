@@ -1062,3 +1062,106 @@ async fn builds_invite_links_from_the_public_url_without_its_trailing_slash() {
         invite.token
     )));
 }
+
+#[tokio::test]
+async fn two_invites_for_the_same_address_at_once_make_one() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+
+    let (first, second) = tokio::join!(
+        create(&app, &admin, "twice@example.com"),
+        create(&app, &admin, "twice@example.com"),
+    );
+    assert_redirect(&first, "/team");
+    assert_redirect(&second, "/team");
+    assert_eq!(count(&app, "select count(*) from `invites`").await, 1);
+}
+
+#[tokio::test]
+async fn an_invite_of_someone_removed_from_the_team_lets_nobody_in() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let sent = create_invite(&app, admin.id, |invite| {
+        invite.email = "kept@example.com".into();
+        invite.role = TeamRole::Admin;
+    })
+    .await;
+    let accepted = create_invite(&app, admin.id, |invite| {
+        invite.email = "joined@example.com".into();
+        invite.accepted_at = Some(Timestamp::now());
+    })
+    .await;
+    // Removing them took their pending invite.
+    let mut transaction = app.core.db.begin().await.unwrap();
+    Team::detach(&mut transaction, Team::ROOT_ID, admin.id)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert!(
+        Invite::find(&*app.core.db, sent.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    // What was accepted is history, and stays.
+    assert!(
+        Invite::find(&*app.core.db, accepted.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    // An invite of theirs that is somehow still there is refused too.
+    let stray = create_invite(&app, admin.id, |invite| {
+        invite.email = "stray@example.com".into();
+        invite.role = TeamRole::Admin;
+    })
+    .await;
+    let response = accept(&app, &stray.token, "Stray", "password123").await;
+    assert_redirect(&response, "/");
+    assert_eq!(response.flashed("error"), Some(json!(INVALID_INVITE)));
+    assert!(
+        User::find_by_email(&*app.core.db, "stray@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn an_invite_for_a_role_its_sender_no_longer_has_lets_nobody_in() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    let invite = create_invite(&app, admin.id, |invite| {
+        invite.email = "climber@example.com".into();
+        invite.role = TeamRole::Admin;
+    })
+    .await;
+    // Demoted to a member, who may give no role.
+    sqlx::query("update `team_user` set `role` = ? where `team_id` = ? and `user_id` = ?")
+        .bind(TeamRole::Member)
+        .bind(Team::ROOT_ID)
+        .bind(admin.id)
+        .execute(&*app.core.db)
+        .await
+        .unwrap();
+
+    let shown = app.get(&format!("/invite/{}", invite.token)).send().await;
+    assert_redirect(&shown, "/");
+    let response = accept(&app, &invite.token, "Climber", "password123").await;
+    assert_redirect(&response, "/");
+    assert_eq!(response.flashed("error"), Some(json!(INVALID_INVITE)));
+    assert!(
+        User::find_by_email(&*app.core.db, "climber@example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !Invite::find(&*app.core.db, invite.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_accepted()
+    );
+}

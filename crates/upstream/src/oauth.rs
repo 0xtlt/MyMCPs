@@ -11,7 +11,7 @@ use mymcps_builtin::oauth::{
     parse_oauth_scopes, refresh_builtin_tokens, requested_builtin_scopes,
 };
 use mymcps_core::crypto::random_base64url;
-use mymcps_core::models::{Mcp, McpAuthType, McpOauthBasis, McpStatus, McpTransport};
+use mymcps_core::models::{Mcp, McpAuthType, McpOauthBasis, McpTransport};
 use mymcps_core::public_url::PublicUrlError;
 use mymcps_core::{Config, Timestamp};
 use mymcps_mcp_auth::{
@@ -439,7 +439,7 @@ fn forget_oauth_tokens(mcp: &mut Mcp) {
     mcp.oauth_refresh_token = None;
     mcp.oauth_token_expires_at = None;
     mcp.oauth_token_type = None;
-    mcp.oauth_required = true;
+    mcp.mark_awaiting_sign_in();
 }
 
 /// When an access token issued now stops being fresh.
@@ -735,7 +735,6 @@ impl Upstream {
         if let Some(scope) = tokens.scope.filter(|scope| !scope.is_empty()) {
             mcp.oauth_scopes = Some(scope);
         }
-        mcp.oauth_required = false;
     }
 
     /// Ask the provider of a built-in MCP for tokens.
@@ -988,8 +987,8 @@ impl Upstream {
             );
             // Never keep the scopes of an earlier authorization for these tokens.
             mcp.oauth_scopes = (!scopes.is_empty()).then(|| scopes.join(" "));
-            mcp.status = McpStatus::Ready;
-            mcp.last_error = None;
+            // Signed in, not tested yet: the caller tests it next.
+            mcp.mark_untested();
             self.save_oauth_step(mcp, &basis).await?;
             return Ok(());
         }
@@ -1030,8 +1029,8 @@ impl Upstream {
                 scope: tokens.scope,
             },
         );
-        mcp.status = McpStatus::Ready;
-        mcp.last_error = None;
+        // Signed in, not tested yet: the caller tests it next.
+        mcp.mark_untested();
         self.save_oauth_step(mcp, &basis).await?;
         Ok(())
     }

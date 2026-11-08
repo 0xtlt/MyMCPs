@@ -318,7 +318,9 @@ pub async fn store(
     {
         return Ok(refuse("This passkey is already one of an account"));
     }
-    let was_protected = user.is_protected(&mut *transaction).await?;
+    // As the account is now: an app or a passkey may have been added since
+    // this request read it, and its recovery codes are not to be replaced.
+    let was_protected = User::is_protected_now(&mut transaction, user.id).await?;
     let mut passkey = Passkey {
         user_id: user.id,
         name,
