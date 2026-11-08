@@ -36,7 +36,16 @@ fn error_page(nonce: String, status: StatusCode) -> Markup {
         sidebar_collapsed: false,
         is_fetch: false,
     };
-    if status == StatusCode::NOT_FOUND {
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        // Not a failure: the person only has to wait. Neutral, as "Page not found" is.
+        let card = error_card(
+            "clock",
+            false,
+            "Too many requests",
+            "Wait a moment, then try again.",
+        );
+        auth_page(&context, "Too many requests", card)
+    } else if status == StatusCode::NOT_FOUND {
         let card = error_card(
             "search",
             false,
@@ -72,6 +81,20 @@ pub async fn error_pages_layer(request: Request, next: Next) -> Response {
     let Some(ErrorStatus(status)) = response.extensions().get::<ErrorStatus>().copied() else {
         return response;
     };
+    // A refused attempt keeps its headers (Retry-After, the rate limit); a
+    // browser reads it on the error page, any other client as it was sent.
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        if !browser || method == Method::HEAD {
+            return response;
+        }
+        let mut page = (status, Html(error_page(nonce, status).into_string())).into_response();
+        for (name, value) in response.headers() {
+            if name != CONTENT_TYPE && name != http::header::CONTENT_LENGTH {
+                page.headers_mut().append(name.clone(), value.clone());
+            }
+        }
+        return page;
+    }
     if method == Method::HEAD {
         return status.into_response();
     }

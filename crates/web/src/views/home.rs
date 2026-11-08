@@ -80,13 +80,13 @@ fn context_bar(home: &Home, stats: &Stats) -> Markup {
             html! { dd class="stat__value" { (value) } }
         } else {
             html! {
-                dd class="stat__value" title=[stats.logging_off.then_some("Call logging is off")] { "—" }
+                dd class="stat__value stat__value--empty" title=[stats.logging_off.then_some("Call logging is off")] { "—" }
             }
         }
     };
     html! {
         div class="context-bar hide-mobile" {
-            button type="button" class="range" popovertarget="home-range" { (query.range.label()) (icon("chevron-down")) }
+            button type="button" class="chip" popovertarget="home-range" { (query.range.label()) (icon("chevron-down")) }
             div class="menu menu--start" id="home-range" popover role="menu" {
                 @for range in [LogRange::Hours24, LogRange::Days7, LogRange::Days30] {
                     a class="menu__item" role="menuitemradio" aria-checked=(if range == query.range { "true" } else { "false" })
@@ -99,8 +99,9 @@ fn context_bar(home: &Home, stats: &Stats) -> Markup {
                 div class="stat" { dt class="stat__label" { "Avg. duration" } (unknown(format!("{} ms", number(stats.metrics.average_duration_ms)))) }
                 div class="stat" {
                     dt class="stat__label" { "Tools exposed" }
-                    dd class="stat__value" {
-                        @match home.tools { Some(tools) => { (number(tools.tools as i64)) }, None => { "—" } }
+                    @match home.tools {
+                        Some(tools) => { dd class="stat__value" { (number(tools.tools as i64)) } },
+                        None => { dd class="stat__value stat__value--empty" { "—" } },
                     }
                 }
             }
@@ -124,7 +125,10 @@ fn hero_card(context: &PageContext, home: &Home) -> Markup {
     let query = &home.query;
     // The address MCP clients use needs APP_URL, as the sidebar's does.
     let gateway_url = context.gateway_url().filter(|_| context.app_url_configured);
-    let tool_mode = format!("Tool mode: {}", home.tool_mode.as_str());
+    let tool_mode = format!(
+        "Tool mode: {}",
+        crate::views::label(home.tool_mode.as_str())
+    );
     html! {
         div class="hero-card" {
             div class="hero-card__row" {
@@ -150,10 +154,11 @@ fn hero_card(context: &PageContext, home: &Home) -> Markup {
             div class="hero-card__row" {
                 div class="cluster hide-mobile" {
                     // The tool mode is a setting of the instance, which an administrator changes.
+                    // A setting, not a control: quiet text, so it does not compete with the client menu next to it.
                     @if home.admin {
-                        a class="chip" href="/settings" { (tool_mode) }
+                        a class="hero-card__note" href="/settings" { (tool_mode) }
                     } @else {
-                        span class="chip" { (tool_mode) }
+                        span class="hero-card__note" { (tool_mode) }
                     }
                     button type="button" class="chip" popovertarget="home-client" { "Client: " (query.client.label()) (icon("chevron-down")) }
                     div class="menu menu--start" id="home-client" popover role="menu" {
@@ -193,8 +198,14 @@ fn no_mcps_card(classes: &str, admin: bool) -> Markup {
 }
 
 fn attention_item(href: &str, icon_name: &str, text: &str) -> Markup {
+    // The chip takes the tone its badge has elsewhere: an MCP in error and
+    // failed calls are critical, what waits for the person is a warning.
+    let class = match icon_name {
+        "unplug" | "circle-alert" => "attention__item attention__item--critical",
+        _ => "attention__item attention__item--warning",
+    };
     html! {
-        a class="attention__item" href=(href) {
+        a class=(class) href=(href) {
             (icon(icon_name)) span class="truncate" { (text) } (icon("chevron-right"))
         }
     }
@@ -286,13 +297,16 @@ fn attention(home: &Home) -> Markup {
     }
 }
 
-/// A count in the footer of a KPI card: tinted when it says something.
-fn count_badge(count: i64, tone: &str, sign: &str) -> Markup {
+/// A count in the footer of a KPI card. A growth is a chip, as the change
+/// of the activity card is; a plain count is part of the sentence.
+fn count_badge(count: i64, growth: bool) -> Markup {
     html! {
-        @if count > 0 {
-            span class=(format!("badge badge--{tone} badge--no-dot")) { (sign) (number(count)) }
-        } @else {
+        @if count > 0 && growth {
+            span class="badge badge--success badge--no-dot" { "+" (number(count)) }
+        } @else if growth {
             span class="badge badge--no-dot" { "0" }
+        } @else {
+            span class="kpi__count" { (number(count)) }
         }
     }
 }
@@ -305,7 +319,7 @@ fn kpis(home: &Home) -> Markup {
                 p class="kpi__label" { "MCPs" }
                 p class="kpi__value" { (number(home.mcps.len() as i64)) }
                 p class="kpi__footer" {
-                    (count_badge(home.recent_mcps() as i64, "success", "+"))
+                    (count_badge(home.recent_mcps() as i64, true))
                     span class="hide-mobile" { "in the last 30 days" } span class="hide-desktop" { "in 30 days" }
                 }
             }
@@ -318,7 +332,7 @@ fn kpis(home: &Home) -> Markup {
                     }
                 } @else {
                     // Tool lists are not stored: a count is known once an MCP was asked for its tools.
-                    p class="kpi__value" { "—" }
+                    p class="kpi__value kpi__value--empty" { "—" }
                     p class="kpi__footer" { span { "listed on first use" } }
                 }
             }
@@ -326,7 +340,7 @@ fn kpis(home: &Home) -> Markup {
                 p class="kpi__label" { "Active tokens" }
                 p class="kpi__value" { (number(home.active_tokens() as i64)) }
                 p class="kpi__footer" {
-                    (count_badge(home.tokens_used_recently() as i64, "success", ""))
+                    (count_badge(home.tokens_used_recently() as i64, false))
                     span { "used this week" }
                 }
             }
@@ -335,7 +349,7 @@ fn kpis(home: &Home) -> Markup {
                     p class="kpi__label" { "Teammates" }
                     p class="kpi__value" { (number(members)) }
                     p class="kpi__footer" {
-                        (count_badge(invites, "info", ""))
+                        (count_badge(invites, false))
                         span { (if invites == 1 { "pending invite" } else { "pending invites" }) }
                     }
                 }
@@ -432,12 +446,7 @@ pub fn activity_content(activity: &Activity, mcps: &[Mcp]) -> Markup {
 }
 
 fn status_badge(status: McpStatus) -> Markup {
-    let tone = match status {
-        McpStatus::Ready => "badge badge--success",
-        McpStatus::Error => "badge badge--critical",
-        McpStatus::Draft => "badge badge--warning",
-    };
-    html! { span class=(tone) { (status.as_str()) } }
+    crate::views::mcp_status_badge(status)
 }
 
 /// What an MCP row says under the name, from what is stored about it.
@@ -470,9 +479,14 @@ fn mcp_row(mcp: &Mcp, admin: bool) -> Markup {
             span class="tile" { (icon(mcp_icon(mcp))) }
             span class="list-row__text" {
                 span class="list-row__title" { (mcp.name) }
-                span class="list-row__subtitle" { (mcp_subtitle(mcp)) }
+                // A failure keeps two lines of its reason, as the MCPs table shows it in full.
+                span class=(if mcp.status == McpStatus::Error { "list-row__subtitle list-row__subtitle--clamp" } else { "list-row__subtitle" })
+                    title=[(mcp.status == McpStatus::Error).then(|| mcp_subtitle(mcp))] {
+                    (mcp_subtitle(mcp))
+                }
             }
-            (status_badge(mcp.status))
+            // A disabled MCP reads "Disabled", neutral, as in the MCPs table.
+            @if mcp.enabled { (status_badge(mcp.status)) } @else { span class="badge" { "Disabled" } }
         }
     }
 }
@@ -522,7 +536,8 @@ fn mcps_card(home: &Home) -> Markup {
                             @if disabled > 0 { " · " (number(disabled as i64)) " disabled" }
                         }
                     }
-                    (status_badge(McpStatus::Ready))
+                    // Green only when all of them are: the subtitle counts the disabled ones.
+                    @if disabled == 0 { (status_badge(McpStatus::Ready)) }
                 }
             } @else {
                 @for mcp in &ready { (mcp_row(mcp, home.admin)) }
@@ -550,12 +565,7 @@ fn token_row(home: &Home, token: &AccessToken) -> Markup {
                     }
                 }
             }
-            @match state {
-                TokenState::Active => { span class="badge badge--success" { "Active" } },
-                TokenState::Expiring => { span class="badge badge--warning" { "Expiring" } },
-                TokenState::Expired => { span class="badge" { "Expired" } },
-                TokenState::Revoked => { span class="badge" { "Revoked" } },
-            }
+            (crate::views::token_state_badge(state))
         }
     }
 }

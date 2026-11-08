@@ -283,7 +283,7 @@ async fn only_an_administrator_is_offered_and_given_a_backup() {
 
     let page = app.get("/settings").login_as(&admin).send().await.text();
     assert!(page.contains(
-        "<h2 class=\"section__title\" id=\"backup-title\">Backup <span class=\"badge badge--info badge--no-dot\">Super admin</span></h2>"
+        "<h2 class=\"section__title\" id=\"backup-title\">Backup <span class=\"badge badge--no-dot\">Super admin</span></h2>"
     ));
     assert!(page.contains("Export everything this instance stores to one encrypted file. Import it on the setup screen of a new instance."));
     assert!(page.contains("<span class=\"detail-row__label\">Export backup</span>"));

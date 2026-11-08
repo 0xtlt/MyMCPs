@@ -605,7 +605,8 @@ impl<'a> Field<'a> {
             div class="field" data-show-when=[self.show_when.map(|(condition, _)| condition)]
                 hidden[self.show_when.is_some_and(|(_, holds)| !holds)] {
                 label class="field__label" for=(self.id) { (self.label) }
-                input class="input" id=(self.id) name=(self.name) type=(self.kind) value=[(!self.value.is_empty()).then_some(self.value)]
+                // An identifier (URL, package, header name) is written as code, as it is everywhere it is shown.
+                input class=(if self.verbatim { "input input--mono" } else { "input" }) id=(self.id) name=(self.name) type=(self.kind) value=[(!self.value.is_empty()).then_some(self.value)]
                     inputmode=[self.inputmode] placeholder=[self.placeholder] autocomplete="off"
                     autocapitalize=[self.verbatim.then_some("off")] spellcheck=[self.verbatim.then_some("false")]
                     autofocus[self.autofocus] required[self.required] data-optional-when=[self.optional_when]
@@ -968,12 +969,15 @@ fn form_errors(form: &McpForm) -> Markup {
     }
 }
 
-fn dialog_header(title_id: &str, title: &str, subtitle: &str) -> Markup {
+/// `subtitle_code`: the subtitle is an identifier (the slug), written as code.
+fn dialog_header(title_id: &str, title: &str, subtitle: &str, subtitle_code: bool) -> Markup {
     html! {
         div class="dialog__header" {
             div class="dialog__heading" {
                 h2 class="dialog__title" id=(title_id) { (title) }
-                p class="dialog__subtitle" { (subtitle) }
+                p class="dialog__subtitle" {
+                    @if subtitle_code { span class="text-code-md" { (subtitle) } } @else { (subtitle) }
+                }
             }
             button type="button" class="icon-button" data-dialog-close aria-label="Close" { (icon("x")) }
         }
@@ -1028,7 +1032,7 @@ pub fn create_fragment(context: &PageContext, dialog: &CreateDialog) -> Markup {
     };
 
     html! {
-        (dialog_header("new-mcp-title", &title, subtitle))
+        (dialog_header("new-mcp-title", &title, subtitle, false))
         form class="dialog__body" id="new-mcp-form" method="post" action="/mcps" data-async {
             (context.csrf_field())
             // Names the dialog again when the form comes back refused. It is not saved.
@@ -1072,9 +1076,9 @@ impl EditDialog<'_> {
 
 fn status_class(status: McpStatus) -> &'static str {
     match status {
-        McpStatus::Ready => "status status--success push-end",
-        McpStatus::Draft => "status status--warning push-end",
-        McpStatus::Error => "status status--critical push-end",
+        McpStatus::Ready => "badge badge--success push-end",
+        McpStatus::Draft => "badge badge--warning push-end",
+        McpStatus::Error => "badge badge--critical push-end",
     }
 }
 
@@ -1220,7 +1224,7 @@ pub fn edit_fragment(context: &PageContext, dialog: &EditDialog) -> Markup {
     };
 
     html! {
-        (dialog_header("edit-mcp-title", &format!("Edit {}", mcp.name), &mcp.slug))
+        (dialog_header("edit-mcp-title", &format!("Edit {}", mcp.name), &mcp.slug, true))
         form class="dialog__body" id="edit-mcp-form" method="post" action=(format!("/mcps/{}?_method=PUT", mcp.id)) data-async {
             (context.csrf_field())
             @if builtin { (builtin_choices(&form.values.builtin_key)) }
@@ -1247,12 +1251,12 @@ pub fn edit_fragment(context: &PageContext, dialog: &EditDialog) -> Markup {
                     @let class = if mcp.oauth_pasted_callback { "button button--secondary" } else { "button button--secondary hide-desktop" };
                     (oauth_link(context, mcp, "Re-authorize", class, true))
                 }
-                span class=(status_class(mcp.status)) { (mcp.status.as_str()) }
+                span class=(status_class(mcp.status)) { (crate::views::mcp_status_label(mcp.status)) }
             }
             (fields)
         }
         div class="dialog__footer" {
-            button type="submit" class="button button--critical dialog__footer-start" form="edit-mcp-delete" { "Delete" }
+            button type="submit" class="button button--critical-text dialog__footer-start" form="edit-mcp-delete" { "Delete" }
             button type="button" class="button button--secondary" data-dialog-close { "Cancel" }
             button type="submit" class="button button--primary" form="edit-mcp-form" { "Save changes" }
         }
@@ -1263,7 +1267,7 @@ pub fn edit_fragment(context: &PageContext, dialog: &EditDialog) -> Markup {
             form id="edit-mcp-update" method="post" action=(format!("/mcps/{}/update", mcp.id)) data-async hidden { (context.csrf_field()) }
         }
         form id="edit-mcp-delete" method="post" action=(format!("/mcps/{}?_method=DELETE", mcp.id))
-            data-confirm=(format!("Delete {}?", mcp.name)) data-confirm-label="Delete" data-confirm-tone="critical" hidden {
+            data-confirm="This cannot be undone." data-confirm-title=(format!("Delete {}?", mcp.name)) data-confirm-label="Delete" data-confirm-tone="critical" hidden {
             (context.csrf_field())
         }
     }

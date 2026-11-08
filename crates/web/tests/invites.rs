@@ -351,12 +351,12 @@ async fn lists_members_and_invites() {
 
     // The administrator, with their name; they cannot remove themselves.
     assert!(page.contains("<span class=\"cell-title\">Test User</span><span class=\"cell-sub cell-sub--secondary\">admin@example.com</span>"));
-    assert!(page.contains("<span class=\"badge badge--info\">admin</span>"));
+    assert!(page.contains("<span class=\"badge badge--no-dot\">Admin</span>"));
     assert!(page.contains("<td class=\"cell-end cell-tertiary\">You</td>"));
     assert!(!page.contains(&format!("action=\"/members/{}?_method=DELETE\"", admin.id)));
     // A member without a name goes by their email.
     assert!(page.contains("<span class=\"cell-title\">member@example.com</span></div>"));
-    assert!(page.contains("<span class=\"badge\">member</span>"));
+    assert!(page.contains("<span class=\"badge badge--no-dot\">Member</span>"));
     assert!(page.contains(&format!(
         "action=\"/members/{}?_method=DELETE\" data-confirm=\"member@example.com loses access to Root Team.",
         member.id

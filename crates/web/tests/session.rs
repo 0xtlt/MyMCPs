@@ -100,6 +100,42 @@ async fn rate_limits_repeated_credential_attempts_by_resolved_client_ip() {
 }
 
 #[tokio::test]
+async fn shows_a_throttled_browser_a_page_with_the_same_status_and_headers() {
+    let app = TestApp::new().await;
+    create_admin_with(&app, "browser@example.com").await;
+    let from_browser = async || {
+        app.post("/login")
+            .header("x-forwarded-for", "198.51.100.78")
+            .header("accept", "text/html")
+            .csrf()
+            .form(&[("email", "browser@example.com"), ("password", "wrong")])
+            .send()
+            .await
+    };
+    for _ in 0..5 {
+        assert_ne!(from_browser().await.status, StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    let limited = from_browser().await;
+    assert_eq!(limited.status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        limited
+            .header("retry-after")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+            > 0
+    );
+    assert!(limited.header("x-ratelimit-limit").is_some());
+    let page = limited.text();
+    assert!(page.contains("<html"));
+    assert!(
+        page.contains("<h1 class=\"auth-card__title\" id=\"error-title\">Too many requests</h1>")
+    );
+    assert!(page.contains("Wait a moment, then try again."));
+}
+
+#[tokio::test]
 async fn does_not_charge_successful_logins_against_the_credential_failure_budget() {
     let app = TestApp::new().await;
     create_admin_with(&app, "successful@example.com").await;
@@ -163,7 +199,7 @@ async fn allows_an_authenticated_user_to_reach_the_dashboard() {
     assert!(page.contains(
         "<button type=\"button\" class=\"nav-item\" popovertarget=\"team-menu\" aria-label=\"Team: Root Team. Switch team\">"
     ));
-    assert!(page.contains("<span class=\"nav-user__role\">admin</span>"));
+    assert!(page.contains("<span class=\"nav-user__role\">Admin</span>"));
 
     // A signed-in person has no business on the login page.
     let login = app.get("/login").login_as(&admin).send().await;
@@ -183,7 +219,7 @@ async fn a_member_does_not_see_the_administration_entries() {
     for entry in ["/logs", "/analytics", "/invites", "/users"] {
         assert!(!page.contains(&format!("href=\"{entry}\"")), "{entry}");
     }
-    assert!(page.contains("<span class=\"nav-user__role\">member</span>"));
+    assert!(page.contains("<span class=\"nav-user__role\">Member</span>"));
 }
 
 #[tokio::test]

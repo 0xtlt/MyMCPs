@@ -310,7 +310,7 @@ async fn invites_to_connect_a_first_tailnet() {
 
     let page = get(&lab.app, &admin, "/tailnets").await;
     assert!(page.contains("<h1 class=\"page-header__title\">Tailnets</h1>"));
-    assert!(page.contains("No tailnet yet"));
+    assert!(page.contains("No tailnets yet"));
     assert!(page.contains(
         "Connect a Tailscale network, then choose it on an HTTP MCP to reach its devices."
     ));
@@ -425,7 +425,7 @@ async fn refreshes_while_a_tailnet_is_not_settled_and_connect_stays_a_plain_link
     let api = lab.daemon(pro.id, status_in("Starting"));
 
     let page = get(&lab.app, &admin, "/tailnets").await;
-    assert!(page.contains("badge badge--neutral\">Starting"));
+    assert!(page.contains("badge badge--info\">Starting"));
     assert!(page.contains("http-equiv=\"refresh\""));
     // The script would open the dialog on a page that reloads itself every
     // few seconds, and the reload would empty it while it is being filled.

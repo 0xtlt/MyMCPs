@@ -121,27 +121,45 @@ async fn populate(app: &TestApp, admin: &User) {
     .await;
 }
 
-/// The value and the footer of the KPI card with this label, as text.
+/// The value and the footer of the KPI card with this label, as text. A
+/// value that is not known ("—") is marked empty, and only that one.
 fn kpi(page: &str, label: &str) -> (String, String) {
     let card = between(
         page,
         &format!("<p class=\"kpi__label\">{label}</p>"),
         "</div>",
     );
+    let (class, value) = between(card, "<p class=\"kpi__value", "</p>")
+        .split_once('>')
+        .unwrap();
+    let value = text_of(value);
+    assert_eq!(
+        class.contains("kpi__value--empty"),
+        value == "—",
+        "{label}: {class}"
+    );
     (
-        text_of(between(card, "<p class=\"kpi__value\">", "</p>")),
+        value,
         text_of(between(card, "<p class=\"kpi__footer\">", "</p>")),
     )
 }
 
-/// The figure of the context bar under this label.
+/// The figure of the context bar under this label. A figure that is not
+/// known ("—") is marked empty, and only that one.
 fn stat<'a>(page: &'a str, label: &str) -> &'a str {
-    let value = between(
+    let (class, value) = between(
         page,
-        &format!("<dt class=\"stat__label\">{label}</dt><dd class=\"stat__value\""),
+        &format!("<dt class=\"stat__label\">{label}</dt><dd class=\"stat__value"),
         "</dd>",
+    )
+    .split_once('>')
+    .unwrap();
+    assert_eq!(
+        class.contains("stat__value--empty"),
+        value == "—",
+        "{label}: {class}"
     );
-    &value[value.find('>').unwrap() + 1..]
+    value
 }
 
 /// The rows of the card whose title has this id: title, subtitle and badge.
@@ -161,11 +179,13 @@ fn rows_of(page: &str, title_id: &str) -> Vec<(String, String, String)> {
                         .unwrap()
                         .1,
                 ),
-                text_of(between(
-                    row,
-                    "<span class=\"list-row__subtitle\">",
-                    "</span></span>",
-                )),
+                // The subtitle of an MCP in error also has `list-row__subtitle--clamp`.
+                text_of(
+                    between(row, "<span class=\"list-row__subtitle", "</span></span>")
+                        .split_once('>')
+                        .unwrap()
+                        .1,
+                ),
                 badge,
             )
         })
@@ -212,7 +232,7 @@ async fn shows_an_administrator_the_whole_dashboard() {
         "<span class=\"copy-field__value\" id=\"gateway-url\">http://localhost:3333/mcp</span>"
     ));
     assert!(card.contains("data-copy-target=\"#gateway-url\" aria-label=\"Copy gateway URL\""));
-    assert!(card.contains("<a class=\"chip\" href=\"/settings\">Tool mode: eager</a>"));
+    assert!(card.contains("<a class=\"hero-card__note\" href=\"/settings\">Tool mode: Eager</a>"));
     assert!(card.contains("popovertarget=\"home-client\">Client: Claude Code"));
     assert!(card.contains("aria-checked=\"false\" href=\"/?client=codex\">Codex</a>"));
     assert!(card.contains("aria-checked=\"true\" href=\"/\">Claude Code</a>"));
@@ -224,13 +244,15 @@ async fn shows_an_administrator_the_whole_dashboard() {
 
     // What needs someone, each with where it is dealt with.
     let attention = between(&page, "<div class=\"attention\">", "</section>");
-    let items: Vec<(&str, String)> = attention
-        .split("<a class=\"attention__item\" href=\"")
+    let items: Vec<(&str, &str, String)> = attention
+        .split("<a class=\"attention__item attention__item--")
         .skip(1)
         .map(|item| {
+            let (tone, rest) = item.split_once("\" href=\"").unwrap();
             (
-                item.split('"').next().unwrap(),
-                text_of(&item[item.find('>').unwrap() + 1..]),
+                tone,
+                rest.split('"').next().unwrap(),
+                text_of(&rest[rest.find('>').unwrap() + 1..]),
             )
         })
         .collect();
@@ -246,15 +268,22 @@ async fn shows_an_administrator_the_whole_dashboard() {
         items,
         [
             (
+                "warning",
                 format!("/mcps/{strava}/edit").as_str(),
                 "Strava needs authorization".to_string()
             ),
             (
+                "critical",
                 format!("/mcps/{sentry}/edit").as_str(),
                 "Sentry is in error".to_string()
             ),
-            ("/tokens", "1 token expires this week".to_string()),
             (
+                "warning",
+                "/tokens",
+                "1 token expires this week".to_string()
+            ),
+            (
+                "critical",
                 "/logs?range=7d&amp;outcome=error",
                 "2 errors in the last 7 days".to_string()
             ),
@@ -279,6 +308,10 @@ async fn shows_an_administrator_the_whole_dashboard() {
         kpi(&page, "Teammates"),
         ("2".into(), "1pending invite".into())
     );
+    // Only a growth is a badge, and green: a plain count is a figure.
+    assert!(page.contains("<span class=\"badge badge--success badge--no-dot\">+4</span>"));
+    assert!(page.contains("<span class=\"kpi__count\">2</span><span>used this week</span>"));
+    assert!(page.contains("<span class=\"kpi__count\">1</span><span>pending invite</span>"));
 
     // The activity of the last 14 days, against the 14 days before.
     let activity = between(
@@ -341,17 +374,25 @@ async fn shows_an_administrator_the_whole_dashboard() {
             (
                 "Strava".to_string(),
                 "Built-in · awaiting OAuth".to_string(),
-                "draft".to_string()
+                "Draft".to_string()
             ),
             (
                 "Sentry".into(),
                 "OAuth token rejected (HTTP 401)".into(),
-                "error".into()
+                "Error".into()
             ),
-            ("Notion".into(), "HTTP".into(), "ready".into()),
-            ("Retired".into(), "HTTP · disabled".into(), "ready".into()),
+            ("Notion".into(), "HTTP".into(), "Ready".into()),
+            (
+                "Retired".into(),
+                "HTTP · disabled".into(),
+                "Disabled".into()
+            ),
         ]
     );
+    // The reason of a failure keeps two lines, and is whole in its title.
+    assert!(page.contains(
+        "<span class=\"list-row__subtitle list-row__subtitle--clamp\" title=\"OAuth token rejected (HTTP 401)\">OAuth token rejected (HTTP 401)</span>"
+    ));
     // The tokens, the most recently used first.
     let tokens = rows_of(&page, "home-tokens-title");
     assert_eq!(
@@ -411,7 +452,7 @@ async fn shows_a_member_nothing_of_the_call_log() {
     assert!(page.contains(
         "<span class=\"copy-field__value\" id=\"gateway-url\">http://localhost:3333/mcp</span>"
     ));
-    assert!(page.contains("<span class=\"chip\">Tool mode: eager</span>"));
+    assert!(page.contains("<span class=\"hero-card__note\">Tool mode: Eager</span>"));
     assert!(page.contains("href=\"/tokens?install=1&amp;client=claude\""));
     let attention = text_of(between(&page, "<div class=\"attention\">", "</section>"));
     // The MCPs of the team, and nothing of the access tokens of the others:
@@ -556,10 +597,10 @@ async fn shows_no_rate_without_calls_to_compute_it_from() {
     let page = app.get("/").login_as(&admin).send().await.text();
     assert_eq!(stat(&page, "Tool calls"), "1");
     assert!(page.contains(
-        "<dt class=\"stat__label\">Success rate</dt><dd class=\"stat__value\" title=\"Call logging is off\">—</dd>"
+        "<dt class=\"stat__label\">Success rate</dt><dd class=\"stat__value stat__value--empty\" title=\"Call logging is off\">—</dd>"
     ));
     assert!(page.contains(
-        "<dt class=\"stat__label\">Avg. duration</dt><dd class=\"stat__value\" title=\"Call logging is off\">—</dd>"
+        "<dt class=\"stat__label\">Avg. duration</dt><dd class=\"stat__value stat__value--empty\" title=\"Call logging is off\">—</dd>"
     ));
     // One call, and nothing before it to compare with: no change badge.
     let activity = between(
@@ -658,7 +699,9 @@ async fn counts_the_tools_of_the_mcps_that_listed_them() {
     );
     assert_eq!(stat(&page, "Tools exposed"), "1,234");
     // Tool calls that wait for this person, as the navigation counts them.
-    assert!(page.contains("<a class=\"attention__item\" href=\"/approvals\">"));
+    assert!(
+        page.contains("<a class=\"attention__item attention__item--warning\" href=\"/approvals\">")
+    );
     assert!(page.contains("2 tool calls wait for approval"));
 
     let page = render(HashMap::from([(never_listed.id, 7)]), 1).await;
@@ -685,10 +728,11 @@ async fn sums_up_the_ready_mcps_when_there_are_many() {
     assert!(page.contains("<span>4 MCPs behind one endpoint.</span>"));
     assert_eq!(
         rows_of(&page, "home-mcps-title"),
+        // Not all of them are enabled: the summary is not green, and has no badge.
         [(
             "5 MCPs".to_string(),
             "4 enabled · 1 disabled".to_string(),
-            "ready".to_string()
+            String::new()
         )]
     );
     assert!(!page.contains("<div class=\"attention\">"));
@@ -714,17 +758,17 @@ async fn sums_up_the_ready_mcps_when_there_are_many() {
             (
                 "Broken".to_string(),
                 "HTTP · connection failed".to_string(),
-                "error".to_string()
+                "Error".to_string()
             ),
             (
                 "Draft".into(),
                 "npm · not tested yet".into(),
-                "draft".into()
+                "Draft".into()
             ),
             (
                 "5 other MCPs".into(),
                 "4 enabled · 1 disabled".into(),
-                "ready".into()
+                String::new()
             ),
         ]
     );

@@ -49,13 +49,22 @@ fn timeline_of(page: &str) -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// The figure under a label of the metric strip.
+/// The figure of the KPI card under this label. A figure that is not known
+/// ("—") is marked empty, and only that one.
 fn metric<'a>(page: &'a str, label: &str) -> &'a str {
-    between(
+    let (class, value) = between(
         page,
-        &format!("<dt class=\"metric__label\">{label}</dt><dd class=\"metric__value\">"),
+        &format!("<dt class=\"kpi__label\">{label}</dt><dd class=\"kpi__value"),
         "</dd>",
     )
+    .split_once('>')
+    .unwrap();
+    assert_eq!(
+        class.contains("kpi__value--empty"),
+        value == "—",
+        "{label}: {class}"
+    );
+    value
 }
 
 #[tokio::test]
@@ -82,14 +91,14 @@ async fn restricts_logs_and_analytics_to_admins() {
     assert_eq!(logs.status, StatusCode::OK);
     assert!(
         logs.text()
-            .contains("<h1 class=\"page-header__title\">MCP call logs</h1>")
+            .contains("<h1 class=\"page-header__title\">Logs</h1>")
     );
     let analytics = app.get("/analytics").login_as(&admin).send().await;
     assert_eq!(analytics.status, StatusCode::OK);
     assert!(
         analytics
             .text()
-            .contains("<h1 class=\"page-header__title\">MCP analytics</h1>")
+            .contains("<h1 class=\"page-header__title\">Analytics</h1>")
     );
 }
 
@@ -183,7 +192,7 @@ async fn filters_logs_and_returns_the_selected_detail() {
         "search__fail",
         "Agent token (mcp_agent…)",
         "192.0.2.12",
-        "tool error",
+        "Tool error",
         "Upstream tool returned an error",
         "\"query\": \"private value\"",
         "\"text\": \"private result\"",
@@ -316,14 +325,16 @@ async fn calculates_analytics_metrics_buckets_and_breakdowns() {
     let page = response.text();
 
     assert!(
-        page.contains("range=7d&amp;timeZone=Europe%2FParis\" aria-current=\"true\">7 days</a>")
+        page.contains(
+            "range=7d&amp;timeZone=Europe%2FParis\" aria-checked=\"true\">Last 7 days</a>"
+        )
     );
     assert_eq!(field_value(&page, "timeZone"), "Europe/Paris");
     assert!(page.contains("Successful and failed tool-call attempts in Europe/Paris (UTC+0"));
-    assert_eq!(metric(&page, "Total calls"), "2");
+    assert_eq!(metric(&page, "Tool calls"), "2");
     assert_eq!(metric(&page, "Success rate"), "50.0%");
     assert_eq!(metric(&page, "Error rate"), "50.0%");
-    assert_eq!(metric(&page, "Average duration"), "200 ms");
+    assert_eq!(metric(&page, "Avg. duration"), "200 ms");
     assert_eq!(
         table_rows(&page, "id=\"top-mcps-title\""),
         [["Analytics MCP", "2", "1", "200 ms"]]
@@ -344,7 +355,7 @@ async fn calculates_analytics_metrics_buckets_and_breakdowns() {
     assert_eq!(
         timeline[6],
         (
-            today.format("%b %-d").to_string(),
+            today.format("%-d %b").to_string(),
             "2".to_string(),
             "1".to_string()
         )
@@ -408,11 +419,11 @@ async fn filters_analytics_by_an_exact_custom_time_range() {
     assert_eq!(response.status, StatusCode::OK);
     let page = response.text();
 
-    assert!(page.contains("aria-current=\"page\">Custom</a>"));
-    assert_eq!(metric(&page, "Total calls"), "2");
+    assert!(page.contains("data-dialog-open=\"#custom-range\" aria-checked=\"true\">"));
+    assert_eq!(metric(&page, "Tool calls"), "2");
     assert_eq!(metric(&page, "Success rate"), "50.0%");
     assert_eq!(metric(&page, "Error rate"), "50.0%");
-    assert_eq!(metric(&page, "Average duration"), "200 ms");
+    assert_eq!(metric(&page, "Avg. duration"), "200 ms");
 
     // Four hours, by the hour, from the start to the minute.
     let timeline = timeline_of(&page);
@@ -497,7 +508,10 @@ async fn keeps_custom_instants_exact_across_daylight_saving_transitions() {
         let response = analytics(start, end).await;
         assert_eq!(response.status, StatusCode::OK);
         let page = response.text();
-        assert!(page.contains("aria-current=\"page\">Custom</a>"), "{start}");
+        assert!(
+            page.contains("data-dialog-open=\"#custom-range\" aria-checked=\"true\">"),
+            "{start}"
+        );
         assert_eq!(field_value(&page, "timeZone"), "Europe/Paris");
         assert_eq!(
             (
@@ -535,12 +549,12 @@ async fn keeps_custom_instants_exact_across_daylight_saving_transitions() {
         let page = response.text();
         assert!(
             page.contains(
-                "range=7d&amp;timeZone=Europe%2FParis\" aria-current=\"true\">7 days</a>"
+                "range=7d&amp;timeZone=Europe%2FParis\" aria-checked=\"true\">Last 7 days</a>"
             ),
             "{start}"
         );
         assert!(
-            !page.contains("aria-current=\"page\">Custom</a>"),
+            !page.contains("data-dialog-open=\"#custom-range\" aria-checked=\"true\">"),
             "{start}"
         );
         let config = range_config(Range::Custom, zone, Some(start), Some(end), Utc::now());
@@ -604,11 +618,32 @@ fn cuts_periods_and_buckets_as_luxon_did() {
             edge(buckets.last().unwrap()),
         );
         assert_eq!(
-            answer, expected,
+            answer,
+            day_first(&expected),
             "now {now}, zone {zone_input:?}, range {range}, from {start:?} to {end:?}"
         );
         assert_eq!(buckets.len(), config.count);
     }
+}
+
+/// Luxon labelled a day month first ("Oct 2"); the page labels it day first
+/// ("2 Oct"), as it writes every other date.
+fn day_first(answer: &str) -> String {
+    let words: Vec<&str> = answer.split(' ').collect();
+    if words[2] != "day" {
+        return answer.to_string();
+    }
+    let label = |month: &str, rest: &str| {
+        let (day, bounds) = rest.split_once('@').unwrap();
+        format!("{day} {month}@{bounds}")
+    };
+    [
+        words[..6].join(" "),
+        label(words[6], words[7]),
+        label(words[8], words[9]),
+        words[10..].join(" "),
+    ]
+    .join(" ")
 }
 
 #[tokio::test]
@@ -949,7 +984,7 @@ async fn tells_what_was_not_captured_of_a_call() {
         "</dialog>",
     );
     for shown in [
-        "<p class=\"banner__title\">upstream exception</p><p>No error summary available.</p>",
+        "<p class=\"banner__title\">Upstream exception</p><p>No error summary available.</p>",
         "<p class=\"banner__title\">Arguments were not captured</p><p>The metadata logging level was active for this call.</p>",
         "<p class=\"banner__title\">Response was not captured</p><p>Response capture was not active for this call.</p>",
         "<dt>MCP</dt><dd>Unknown</dd>",
@@ -979,15 +1014,16 @@ async fn shows_an_empty_period_and_follows_the_viewers_time_zone() {
     let page = response.text();
     // Seven days of UTC, until the page script names the viewer's zone.
     assert!(page.contains(
-        "href=\"/analytics?range=7d&amp;timeZone=UTC\" aria-current=\"true\">7 days</a>"
+        "href=\"/analytics?range=7d&amp;timeZone=UTC\" aria-checked=\"true\">Last 7 days</a>"
     ));
     let sync = between(&page, "data-timezone-sync hidden>", "</form>");
     assert!(sync.contains("name=\"range\" value=\"7d\""));
     assert!(sync.contains("name=\"timeZone\" value=\"UTC\" data-timezone"));
-    assert_eq!(metric(&page, "Total calls"), "0");
-    assert_eq!(metric(&page, "Success rate"), "0.0%");
-    assert_eq!(metric(&page, "Error rate"), "0.0%");
-    assert_eq!(metric(&page, "Average duration"), "0 ms");
+    assert_eq!(metric(&page, "Tool calls"), "0");
+    // Without a call, a rate is unknown, not zero.
+    assert_eq!(metric(&page, "Success rate"), "—");
+    assert_eq!(metric(&page, "Error rate"), "—");
+    assert_eq!(metric(&page, "Avg. duration"), "—");
     assert!(page.contains("<p class=\"empty-state__title\">No calls in this period</p>"));
     assert!(
         page.contains("Choose another time range or make a tool call through the MCP gateway.")
@@ -1003,7 +1039,7 @@ async fn shows_an_empty_period_and_follows_the_viewers_time_zone() {
         .send()
         .await
         .text();
-    assert!(day.contains("aria-current=\"true\">24 hours</a>"));
+    assert!(day.contains("aria-checked=\"true\">Last 24 hours</a>"));
 
     for query in [
         "range=1y",
@@ -1042,7 +1078,7 @@ async fn draws_the_timeline_on_the_server() {
     assert!(page.contains(
         "<h2 class=\"card__title\" id=\"timeline-title\">Calls and errors over time</h2>"
     ));
-    assert!(page.contains("Successful and failed tool-call attempts in UTC (UTC+00:00)."));
+    assert!(page.contains("Successful and failed tool-call attempts in UTC (UTC+00:00)</p>"));
     let chart = between(&page, "<div class=\"line-chart\">", "</table>");
     assert!(chart.contains("<svg class=\"line-chart__svg\" viewBox=\"0 0 23 4\" preserveAspectRatio=\"none\" role=\"img\" aria-label=\"Calls and errors over the selected time range\">"));
     assert_eq!(chart.matches("class=\"line-chart__hit\"").count(), 24);
@@ -1149,7 +1185,7 @@ async fn applies_and_preserves_a_custom_date_and_time_range() {
     )
     .await
     .text();
-    assert!(shared.contains("aria-current=\"page\">Custom</a>"));
+    assert!(shared.contains("data-dialog-open=\"#custom-range\" aria-checked=\"true\">"));
     assert!(!shared.contains("data-timezone-sync"));
     assert!(!shared.contains("data-timezone>"));
     assert_eq!(field_value(&shared, "start"), "2026-10-24T00:30Z");
@@ -1287,7 +1323,7 @@ async fn refuses_a_custom_range_it_cannot_use() {
         dialog.contains("data-dialog-return=\"/analytics?range=7d&amp;timeZone=Europe%2FParis\"")
     );
     assert!(!dialog.contains("field__error"));
-    assert!(page.contains("aria-current=\"true\">7 days</a>"));
+    assert!(page.contains("aria-checked=\"true\">Last 7 days</a>"));
     // The viewer's zone still applies, and keeps the dialog open.
     let sync = between(&page, "data-timezone-sync hidden>", "</form>");
     assert!(sync.contains("name=\"range\" value=\"custom\""));

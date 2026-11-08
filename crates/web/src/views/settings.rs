@@ -141,7 +141,7 @@ pub fn email_form(context: &PageContext, user: &User, form: &FormState) -> Marku
     html! {
         form method="post" action="/settings/email?_method=PATCH" data-async {
             (context.csrf_field())
-            (dialog_header("change-email-title", "Change email", "Confirm the change with your current password"))
+            (dialog_header("change-email-title", "Change email", "Confirm the change with your password"))
             div class="dialog__body" {
                 div class="field" {
                     label class="field__label" for="new-email" { "New email" }
@@ -149,7 +149,16 @@ pub fn email_form(context: &PageContext, user: &User, form: &FormState) -> Marku
                         autofocus[fresh] aria-invalid=[error.invalid()] aria-describedby=[error.described_by(None)];
                     (error.line())
                 }
-                (password_field(form, "email-current-password", "currentPassword", "Current password", "current-password", false))
+                // The password that confirms a change reads the same in every dialog.
+                (password_field_with_help(
+                    form,
+                    "email-current-password",
+                    "currentPassword",
+                    "Your password",
+                    "current-password",
+                    false,
+                    Some("Your account password, to confirm it is you."),
+                ))
             }
             (dialog_footer("Save email"))
         }
@@ -196,7 +205,7 @@ pub fn backup_form(context: &PageContext, form: &FormState) -> Markup {
                     form,
                     "backup-current-password",
                     "currentPassword",
-                    "Current password",
+                    "Your password",
                     "current-password",
                     false,
                     Some("Your account password, to confirm it is you."),
@@ -216,12 +225,15 @@ pub(crate) fn form_dialog(id: &str, title_id: &str, open: bool, form: Markup) ->
     }
 }
 
+/// A row of a Settings card: the name leads, the line under it (a value or
+/// what the action does) is secondary, as in a toggle row, so every row of
+/// the page reads the same way.
 fn detail_row(label: &str, value: &str, action: Option<(&str, &str)>) -> Markup {
     html! {
         div class="detail-row" {
             div class="detail-row__text" {
                 span class="detail-row__label" { (label) }
-                span class="detail-row__value" { (value) }
+                span class="detail-row__description" { (value) }
             }
             @if let Some((label, dialog)) = action {
                 button type="button" class="button button--secondary" data-dialog-open=(dialog) { (label) }
@@ -260,7 +272,7 @@ fn backup_section() -> Markup {
     html! {
         section class="section" aria-labelledby="backup-title" {
             div class="section__intro" {
-                h2 class="section__title" id="backup-title" { "Backup " span class="badge badge--info badge--no-dot" { "Super admin" } }
+                h2 class="section__title" id="backup-title" { "Backup " span class="badge badge--no-dot" { "Super admin" } }
                 p class="section__description" { "Export everything this instance stores to one encrypted file. Import it on the setup screen of a new instance." }
             }
             div class="card" {
@@ -344,7 +356,7 @@ fn tool_mode_card(
             input type="radio" class="radio" name="gatewayToolMode" value=(value) checked[current == value] autofocus[autofocus];
             span class="option-card__text" {
                 span class="option-card__title" { (title) }
-                span class="option-card__description" { (description) }
+                span class="option-card__description" { (crate::views::inline_code(description)) }
             }
         }
     }
@@ -372,7 +384,7 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
     html! {
         section class="section" aria-labelledby="instance-title" {
             div class="section__intro" {
-                h2 class="section__title" id="instance-title" { "My Instance " span class="badge badge--info badge--no-dot" { "Super admin" } }
+                h2 class="section__title" id="instance-title" { "My instance " span class="badge badge--no-dot" { "Super admin" } }
                 p class="section__description" { "Configure settings that apply to everyone using this MyMCPs instance." }
             }
             form class="card" method="post" action="/settings/mcp-logging?_method=PATCH" {
@@ -393,10 +405,10 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
 
                     fieldset class="field-group" aria-describedby=[tool_mode.described_by(None)] {
                         legend class="field-group__label" { "Default MCP tool mode" }
-                        p class="field-group__help" { "Used when a client does not send X-MyMCPs-Tool-Mode. A request header always overrides this default." }
+                        p class="field-group__help" { "Used when a client does not send " code class="code" { "X-MyMCPs-Tool-Mode" } ". A request header always overrides this default." }
                         div class="option-cards" {
-                            (tool_mode_card("eager", "Eager", "Expose every allowed upstream tool in tools/list.", &values.tool_mode, focused("gatewayToolMode")))
-                            (tool_mode_card("lazy", "Lazy", "Expose only list_mcps, tool_search, and call_tool until tools are requested.", &values.tool_mode, false))
+                            (tool_mode_card("eager", "Eager", "Expose every allowed upstream tool in `tools/list`.", &values.tool_mode, focused("gatewayToolMode")))
+                            (tool_mode_card("lazy", "Lazy", "Expose only `list_mcps`, `tool_search`, and `call_tool` until tools are requested.", &values.tool_mode, false))
                         }
                         (tool_mode.line())
                     }
@@ -467,7 +479,7 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
                     div class="grid grid--2" {
                         div class="field" {
                             label class="field__label" for="auto-update-cron" { "Auto-update schedule" }
-                            input class="input" id="auto-update-cron" name="mcpAutoUpdateCron" type="text" value=(values.cron)
+                            input class="input input--mono" id="auto-update-cron" name="mcpAutoUpdateCron" type="text" value=(values.cron)
                                 placeholder=(DEFAULT_MCP_AUTO_UPDATE_CRON) autocomplete="off" spellcheck="false" autofocus[focused("mcpAutoUpdateCron")] aria-invalid=[cron.invalid()]
                                 aria-describedby=[cron.described_by(Some("auto-update-cron-help"))];
                             (cron.line())

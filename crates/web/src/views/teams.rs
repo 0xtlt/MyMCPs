@@ -43,13 +43,10 @@ pub(crate) fn has_name(user: &User) -> bool {
         .is_some_and(|name| !name.is_empty())
 }
 
+/// A role is an attribute, not a state: a neutral badge without a dot, as
+/// every attribute badge is.
 pub(crate) fn role_badge(role: TeamRole) -> Markup {
-    let class = match role {
-        TeamRole::Owner => "badge badge--brand",
-        TeamRole::Admin => "badge badge--info",
-        TeamRole::Member => "badge",
-    };
-    html! { span class=(class) { (role.as_str()) } }
+    html! { span class="badge badge--no-dot" { (crate::views::label(role.as_str())) } }
 }
 
 pub(crate) fn card_header(id: &str, title: &str, subtitle: &str) -> Markup {
@@ -211,28 +208,24 @@ fn general(context: &PageContext, team: &TeamPage) -> Markup {
     let current = &team.team.team;
     let description = current.description.as_deref().unwrap_or("");
     html! {
-        section class="section" aria-labelledby="team-general-title" {
-            div class="section__intro" {
-                h2 class="section__title" id="team-general-title" { "General" }
-                p class="section__description" {
-                    "MCPs, access tokens, approvals and call logs belong to a team. Only its members see them."
-                }
-            }
+        // A full-width card with its header inside, like Members and Invites below.
+        section class="card" aria-labelledby="team-general-title" {
+            (card_header("team-general-title", "General", "MCPs, access tokens, approvals and call logs belong to a team. Only its members see them."))
             @if team.team.role.is_admin() {
-                form class="card" method="post" action="/team?_method=PATCH" {
+                form method="post" action="/team?_method=PATCH" {
                     (context.csrf_field())
                     div class="card__body" {
-                        div class="stack" {
+                        div class="grid grid--2" {
                             (text_field(team.team_form, "team-name", "name", "Name", &shown(team.team_form, "name", &current.name), false))
                             (text_field(team.team_form, "team-description", "description", "Description", &shown(team.team_form, "description", description), true))
                         }
                     }
                     footer class="card__footer" {
-                        button type="submit" class="button button--secondary" { "Save team" }
+                        button type="submit" class="button button--primary" { "Save team" }
                     }
                 }
             } @else {
-                div class="card" {
+                div {
                     div class="detail-row" {
                         div class="detail-row__text" {
                             span class="detail-row__label" { "Name" }
@@ -266,16 +259,13 @@ fn danger_zone(context: &PageContext, team: &TeamPage) -> Markup {
         None
     };
     html! {
-        section class="section" aria-labelledby="team-danger-title" {
-            div class="section__intro" {
-                h2 class="section__title" id="team-danger-title" { "Danger zone" }
-                p class="section__description" { "Deleting a team removes its access tokens, call logs and invites for good." }
-            }
-            div class="card" {
+        section class="card" aria-labelledby="team-danger-title" {
+            (card_header("team-danger-title", "Danger zone", "Deleting a team removes its access tokens, call logs and invites for good."))
+            div {
                 div class="detail-row" {
                     div class="detail-row__text" {
                         span class="detail-row__label" { "Delete this team" }
-                        span class="detail-row__value" {
+                        span class="detail-row__description" {
                             @match reason {
                                 Some(reason) => { (reason) }
                                 None => { "Its members keep their accounts and their other teams." }
@@ -283,13 +273,13 @@ fn danger_zone(context: &PageContext, team: &TeamPage) -> Markup {
                         }
                     }
                     @if reason.is_some() {
-                        button type="button" class="button button--secondary" disabled { "Delete team" }
+                        button type="button" class="button button--critical-text" disabled { "Delete team" }
                     } @else {
                         form method="post" action="/team?_method=DELETE"
                             data-confirm=(format!("{} is deleted with its access tokens, call logs and invites. This cannot be undone.", current.name))
                             data-confirm-title=(format!("Delete {}?", current.name)) data-confirm-label="Delete team" data-confirm-tone="critical" {
                             (context.csrf_field())
-                            button type="submit" class="button button--secondary" { "Delete team" }
+                            button type="submit" class="button button--critical-text" { "Delete team" }
                         }
                     }
                 }
@@ -490,9 +480,9 @@ fn team_names(row: &UserRow) -> String {
 fn instance_badge(row: &UserRow) -> Markup {
     html! {
         @if row.user.is_super_admin {
-            span class="badge badge--info" { "Super admin" }
+            span class="badge badge--no-dot" { "Super admin" }
         } @else {
-            span class="badge" { "User" }
+            span class="badge badge--no-dot" { "User" }
         }
     }
 }

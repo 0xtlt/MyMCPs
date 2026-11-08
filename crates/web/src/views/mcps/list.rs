@@ -78,7 +78,7 @@ fn filters(query: &McpListQuery) -> [Filter<'_>; 3] {
                 .into_iter()
                 .map(|status| Choice {
                     value: status.as_str(),
-                    label: status.as_str(),
+                    label: crate::views::mcp_status_label(status),
                 })
                 .collect(),
             current: query.status.map(|status| status.as_str()),
@@ -112,7 +112,7 @@ fn filters(query: &McpListQuery) -> [Filter<'_>; 3] {
                 .into_iter()
                 .map(|label| Choice {
                     value: label,
-                    label,
+                    label: auth_display(label),
                 })
                 .collect(),
             current: query.auth.as_deref(),
@@ -122,6 +122,20 @@ fn filters(query: &McpListQuery) -> [Filter<'_>; 3] {
             },
         },
     ]
+}
+
+/// How an auth type reads in the table and its filter: an attribute badge,
+/// sentence case like every other label.
+fn auth_display(value: &'static str) -> &'static str {
+    match value {
+        "auto" => "Auto",
+        "bearer" => "Bearer",
+        "header" => "Header",
+        "oauth" => "OAuth",
+        "password" => "Password",
+        "none" => "None",
+        other => other,
+    }
 }
 
 /// `8 MCPs · 7 enabled`: what the search and the filters keep.
@@ -155,11 +169,13 @@ fn toolbar(page: &McpsPage) -> Markup {
     }
 }
 
-fn status_tone(status: McpStatus) -> &'static str {
-    match status {
-        McpStatus::Ready => "success",
-        McpStatus::Draft => "warning",
-        McpStatus::Error => "critical",
+/// The badge of an MCP in the table and the list. A disabled MCP is not what
+/// its status says to agents: it reads "Disabled", neutral.
+fn status_badge(mcp: &McpView) -> Markup {
+    if mcp.enabled {
+        crate::views::mcp_status_badge(mcp.status)
+    } else {
+        html! { span class="badge" { "Disabled" } }
     }
 }
 
@@ -178,7 +194,7 @@ fn endpoint_note(mcp: &McpView) -> Markup {
         .filter(|error| mcp.status == McpStatus::Error && !error.is_empty());
     html! {
         @if let Some(error) = error {
-            span class="cell-sub cell-sub--critical" title=(error) { (error) }
+            span class="cell-sub" title=(error) { (error) }
         } @else if let (McpTransport::Npm, Some(installed)) = (mcp.transport, &mcp.npm_installed_version) {
             span class="cell-sub" { "installed " (installed) }
         } @else if let Some(tailnet) = &mcp.tailnet {
@@ -251,7 +267,7 @@ fn row_menu(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Marku
                 }
             }
             form method="post" action=(format!("/mcps/{}?_method=DELETE", mcp.id))
-                data-confirm=(format!("Delete {}?", mcp.name)) data-confirm-label="Delete" data-confirm-tone="critical" {
+                data-confirm="This cannot be undone." data-confirm-title=(format!("Delete {}?", mcp.name)) data-confirm-label="Delete" data-confirm-tone="critical" {
                 (context.csrf_field())
                 button type="submit" class="menu__item menu__item--critical" role="menuitem" { (icon("trash")) "Delete" }
             }
@@ -262,7 +278,7 @@ fn row_menu(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Marku
 fn table_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Markup {
     html! {
         tr {
-            td { span class=(format!("status status--{}", status_tone(mcp.status))) { (mcp.status.as_str()) } }
+            td { (status_badge(mcp)) }
             td {
                 div class="cell-media" {
                     span class="tile" { (icon(mcp.icon)) }
@@ -273,7 +289,7 @@ fn table_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Mark
                 }
             }
             (endpoint_cell(mcp))
-            td { code class="code" { (mcp.auth_label()) } }
+            td { span class="badge badge--no-dot" { (auth_display(mcp.auth_label())) } }
             @match mcp.tool_count {
                 Some(count) => { td class="cell-secondary tabular" { (grouped(count)) } }
                 None => { td class="cell-tertiary" { "—" } }
@@ -300,7 +316,7 @@ fn table_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Mark
                 }
             } @else {
                 td {
-                    @if mcp.enabled { span class="status status--success" { "on" } } @else { span class="status" { "off" } }
+                    @if mcp.enabled { span class="badge badge--success" { "On" } } @else { span class="badge" { "Off" } }
                 }
                 td class="cell-end" {}
             }
@@ -312,12 +328,6 @@ fn table_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Mark
 /// holds the actions the table has in its row menu. For a member of the
 /// team, who changes nothing of an MCP, it opens nothing.
 fn list_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Markup {
-    // A disabled MCP is not what its status says to agents: its badge is neutral.
-    let badge = if mcp.enabled {
-        format!("badge badge--{}", status_tone(mcp.status))
-    } else {
-        "badge".to_string()
-    };
     let content = html! {
         span class="tile" { (icon(mcp.icon)) }
         span class="list-row__text" {
@@ -328,7 +338,7 @@ fn list_row(context: &PageContext, mcp: &McpView, query: &McpListQuery) -> Marku
                 @if !mcp.enabled { " · off" }
             }
         }
-        span class=(badge) { (mcp.status.as_str()) }
+        (status_badge(mcp))
     };
     html! {
         @if context.is_team_admin() {
@@ -373,14 +383,17 @@ fn pagination(page: &McpsPage) -> Markup {
 
 fn table_footer(page: &McpsPage) -> Markup {
     html! {
+        // The page size sits beside the pagination, where Logs has its page size chip.
         div class="table-footer" {
-            p class="table-footer__note" { (ROWS_PER_PAGE) " rows per page" }
-            (pagination(page))
+            div class="cluster cluster--nowrap push-end" {
+                p class="table-footer__note" { (ROWS_PER_PAGE) " per page" }
+                (pagination(page))
+            }
         }
     }
 }
 
-fn empty_registry(context: &PageContext, page: &McpsPage) -> Markup {
+fn empty_registry(context: &PageContext) -> Markup {
     html! {
         div class="card" {
             div class="empty-state" {
@@ -393,12 +406,7 @@ fn empty_registry(context: &PageContext, page: &McpsPage) -> Markup {
                         p class="empty-state__description" { "An admin of this team adds the MCPs its agents can reach." }
                     }
                 }
-                @if context.is_team_admin() {
-                    // Under 768px the header action sits right above the card: the second button would repeat it.
-                    a class="button button--secondary hide-mobile" href=(href("/mcps/new", page.query, &[])) data-dialog-open="#add-mcp" {
-                        (icon("plus")) "Add MCP"
-                    }
-                }
+                // The page header holds the action: an empty state repeats none.
             }
         }
     }
@@ -423,7 +431,7 @@ fn no_match() -> Markup {
 pub(super) fn registry(context: &PageContext, page: &McpsPage) -> Markup {
     // Nothing to search or to filter before the first MCP.
     if page.registered == 0 {
-        return empty_registry(context, page);
+        return empty_registry(context);
     }
     let query = page.query;
     html! {

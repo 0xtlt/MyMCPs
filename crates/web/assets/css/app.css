@@ -64,6 +64,7 @@
     /* Primitives (Figma collection "Primitives"). Do not use in components. */
     --mm-slate-0: #ffffff;
     --mm-slate-25: #fafbfb;
+    --mm-slate-40: #f7f9fa; /* the light canvas: a step off the white of cards */
     --mm-slate-50: #f4f6f7;
     --mm-slate-100: #eceff1;
     --mm-slate-150: #e4e8eb;
@@ -77,8 +78,10 @@
     --mm-slate-700: #3d4850;
     --mm-slate-750: #2f3940;
     --mm-slate-800: #252d33;
+    --mm-slate-825: #20272d; /* dark floating surfaces: a step above resting cards */
     --mm-slate-850: #1b2228;
     --mm-slate-900: #141a1e;
+    --mm-slate-925: #101519; /* the dark canvas: a step above the frame, below the cards */
     --mm-slate-950: #0b0f12;
     --mm-slate-1000: #050708;
     --mm-brand-50: #eef3f6;
@@ -120,7 +123,7 @@
     --mm-color-bg-frame: light-dark(var(--mm-slate-950), var(--mm-slate-1000));
     --mm-color-bg-frame-hover: light-dark(var(--mm-slate-900), var(--mm-slate-950));
     --mm-color-bg-frame-selected: light-dark(var(--mm-slate-850), var(--mm-slate-900));
-    --mm-color-bg-canvas: light-dark(var(--mm-slate-0), var(--mm-slate-900));
+    --mm-color-bg-canvas: light-dark(var(--mm-slate-40), var(--mm-slate-925));
     --mm-color-bg-page: light-dark(var(--mm-slate-50), var(--mm-slate-950));
     --mm-color-bg-surface: light-dark(var(--mm-slate-0), var(--mm-slate-850));
     --mm-color-bg-surface-secondary: light-dark(var(--mm-slate-25), #171d22);
@@ -130,15 +133,22 @@
     --mm-color-bg-fill-secondary-hover: light-dark(var(--mm-slate-150), var(--mm-slate-750));
     --mm-color-bg-fill-brand: light-dark(var(--mm-brand-500), var(--mm-brand-100));
     --mm-color-bg-fill-brand-hover: light-dark(var(--mm-brand-600), var(--mm-brand-50));
-    --mm-color-bg-fill-critical: light-dark(var(--mm-red-500), var(--mm-red-400));
-    --mm-color-bg-fill-critical-hover: light-dark(var(--mm-red-600), var(--mm-red-500));
-    --mm-color-bg-fill-disabled: light-dark(var(--mm-slate-50), var(--mm-slate-850));
+    --mm-color-bg-fill-critical: var(--mm-red-500); /* white text stays above 4.5:1 in both themes */
+    --mm-color-bg-fill-critical-hover: var(--mm-red-600);
+    --mm-color-bg-fill-disabled: light-dark(var(--mm-slate-50), var(--mm-slate-800));
     --mm-color-bg-brand-subtle: light-dark(var(--mm-brand-50), var(--mm-brand-800));
     --mm-color-bg-neutral: light-dark(var(--mm-slate-100), var(--mm-slate-800));
     --mm-color-bg-success: light-dark(var(--mm-green-50), var(--mm-green-950));
     --mm-color-bg-warning: light-dark(var(--mm-amber-50), var(--mm-amber-950));
     --mm-color-bg-critical: light-dark(var(--mm-red-50), var(--mm-red-950));
     --mm-color-bg-info: light-dark(var(--mm-cyan-50), var(--mm-cyan-950));
+    /* The current choice of a menu: the brand tint, two steps above the floating surface in dark. */
+    --mm-color-bg-selected: light-dark(var(--mm-brand-50), var(--mm-brand-700));
+    --mm-color-text-selected: light-dark(var(--mm-brand-500), var(--mm-slate-25));
+    --mm-color-bg-chip-active: light-dark(var(--mm-brand-100), var(--mm-brand-700));
+    --mm-color-text-chip-active: light-dark(var(--mm-brand-700), var(--mm-slate-25));
+    /* The selected segment: the surface in light, a step above the track in dark. */
+    --mm-color-bg-segment-selected: light-dark(var(--mm-slate-0), var(--mm-slate-700));
 
     --mm-color-text-default: light-dark(var(--mm-slate-900), var(--mm-slate-50));
     --mm-color-text-secondary: light-dark(var(--mm-slate-650), var(--mm-slate-300));
@@ -155,6 +165,8 @@
     --mm-color-text-warning: light-dark(var(--mm-amber-900), var(--mm-amber-300));
     --mm-color-text-critical: light-dark(var(--mm-red-900), var(--mm-red-300));
     --mm-color-text-info: light-dark(var(--mm-cyan-900), var(--mm-cyan-300));
+    /* A destructive action written as text (row Delete, menu item): the red of the critical button. */
+    --mm-color-text-critical-strong: light-dark(var(--mm-red-600), var(--mm-red-300));
 
     --mm-color-icon-default: light-dark(var(--mm-slate-900), var(--mm-slate-50));
     --mm-color-icon-secondary: light-dark(var(--mm-slate-500), var(--mm-slate-400));
@@ -171,22 +183,35 @@
 
     --mm-color-border-default: light-dark(var(--mm-slate-200), var(--mm-slate-750));
     --mm-color-border-secondary: light-dark(var(--mm-slate-100), var(--mm-slate-800));
-    --mm-color-border-strong: light-dark(var(--mm-slate-300), var(--mm-slate-700));
+    --mm-color-border-strong: light-dark(var(--mm-slate-400), var(--mm-slate-650));
+    /* The edge of a control (field, checkbox, radio): at least 3:1 against its surface. */
+    --mm-color-border-control: light-dark(var(--mm-slate-450), var(--mm-slate-500));
     --mm-color-border-focus: light-dark(var(--mm-brand-500), var(--mm-brand-300));
     --mm-color-border-critical: light-dark(var(--mm-red-500), var(--mm-red-400));
     --mm-color-border-frame: light-dark(var(--mm-slate-800), var(--mm-slate-850));
+    --mm-color-border-panel: light-dark(transparent, var(--mm-slate-800));
+    /* The shade at the edge of a scrolling dialog body. */
+    --mm-color-scroll-shade: light-dark(
+      color-mix(in srgb, var(--mm-slate-950) 14%, transparent),
+      color-mix(in srgb, var(--mm-slate-1000) 60%, transparent)
+    );
 
     --mm-color-chart-primary: light-dark(var(--mm-brand-500), var(--mm-brand-300));
     --mm-color-chart-secondary: light-dark(var(--mm-brand-200), var(--mm-brand-600));
-    --mm-color-chart-muted: light-dark(var(--mm-slate-200), var(--mm-slate-750));
+    --mm-color-chart-muted: light-dark(var(--mm-slate-450), var(--mm-slate-500));
     --mm-color-chart-critical: var(--mm-red-400);
 
     /* Not in Figma (it draws no floating surface in Dark): a hairline around dialogs, side panels
        and menus in dark mode, where their shadow cannot be seen. */
     --mm-color-border-floating: light-dark(transparent, var(--mm-color-border-default));
+    /* Menus and side panels float over cards: in dark they sit one tonal step above them. */
+    --mm-color-bg-floating: light-dark(var(--mm-slate-0), var(--mm-slate-825));
 
     /* The overlay behind dialogs (Figma: bg/frame at 55% opacity, no blur). */
-    --mm-color-backdrop: color-mix(in srgb, var(--mm-color-bg-frame) 55%, transparent);
+    --mm-color-backdrop: light-dark(
+      color-mix(in srgb, var(--mm-slate-950) 55%, transparent),
+      color-mix(in srgb, var(--mm-slate-1000) 72%, transparent)
+    );
 
     /* Scale (Figma collection "Scale"). 1rem = 16px. */
     --mm-space-0: 0;
@@ -220,14 +245,15 @@
     --mm-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     --mm-font-weight-regular: 400;
     --mm-font-weight-medium: 500;
+    --mm-font-weight-semibold: 600; /* headings */
 
-    --mm-text-heading-4xl: var(--mm-font-weight-medium) 3rem / 3.5rem var(--mm-font-sans);
-    --mm-text-heading-3xl: var(--mm-font-weight-medium) 2rem / 2.5rem var(--mm-font-sans);
-    --mm-text-heading-2xl: var(--mm-font-weight-medium) 1.5rem / 2rem var(--mm-font-sans);
-    --mm-text-heading-xl: var(--mm-font-weight-medium) 1.25rem / 1.75rem var(--mm-font-sans);
-    --mm-text-heading-lg: var(--mm-font-weight-medium) 1rem / 1.5rem var(--mm-font-sans);
-    --mm-text-heading-md: var(--mm-font-weight-medium) 0.875rem / 1.25rem var(--mm-font-sans);
-    --mm-text-heading-sm: var(--mm-font-weight-medium) 0.8125rem / 1.25rem var(--mm-font-sans);
+    --mm-text-heading-4xl: var(--mm-font-weight-semibold) 3rem / 3.5rem var(--mm-font-sans);
+    --mm-text-heading-3xl: var(--mm-font-weight-semibold) 2rem / 2.5rem var(--mm-font-sans);
+    --mm-text-heading-2xl: var(--mm-font-weight-semibold) 1.5rem / 2rem var(--mm-font-sans);
+    --mm-text-heading-xl: var(--mm-font-weight-semibold) 1.25rem / 1.75rem var(--mm-font-sans);
+    --mm-text-heading-lg: var(--mm-font-weight-semibold) 1rem / 1.5rem var(--mm-font-sans);
+    --mm-text-heading-md: var(--mm-font-weight-semibold) 0.875rem / 1.25rem var(--mm-font-sans);
+    --mm-text-heading-sm: var(--mm-font-weight-semibold) 0.8125rem / 1.25rem var(--mm-font-sans);
     --mm-text-body-lg: var(--mm-font-weight-regular) 0.875rem / 1.25rem var(--mm-font-sans);
     --mm-text-body-lg-medium: var(--mm-font-weight-medium) 0.875rem / 1.25rem var(--mm-font-sans);
     --mm-text-body-md: var(--mm-font-weight-regular) 0.8125rem / 1.25rem var(--mm-font-sans);
@@ -249,14 +275,13 @@
     --mm-tracking-none: 0; /* body/xs and code */
 
     /* Elevation (Figma effect styles). */
-    --mm-shadow-100: 0 0 2px rgb(11 15 18 / 22%), 0 2px 12px rgb(11 15 18 / 3%), 0 4px 16px rgb(11 15 18 / 2%),
-      0 4px 48px rgb(11 15 18 / 2%);
+    /* Resting surfaces (cards, tables): a hairline and a 1px lift, the same in both themes. Real
+       shadows are kept for what floats (menus, dialogs, side panels, toasts). */
+    --mm-shadow-100: 0 0 0 var(--mm-border-width) var(--mm-color-border-default), 0 1px 2px rgb(11 15 18 / 4%);
     --mm-shadow-300: 0 0 2px rgb(11 15 18 / 20%), 0 2px 4px rgb(11 15 18 / 5%), 0 6px 12px rgb(11 15 18 / 6%),
       0 12px 24px rgb(11 15 18 / 6%);
     --mm-shadow-600: 0 0 2px rgb(11 15 18 / 20%), 0 4px 8px rgb(11 15 18 / 6%), 0 12px 24px rgb(11 15 18 / 8%),
       0 32px 64px rgb(11 15 18 / 12%);
-    --mm-shadow-button: 0 1px 2px rgb(11 15 18 / 16%), 0 3px 6px rgb(11 15 18 / 12%),
-      inset 0 1px 4px rgb(255 255 255 / 18%), inset 0 0 2px rgb(255 255 255 / 10%);
     --mm-shadow-input: 0 1px 2px rgb(11 15 18 / 5%);
 
     /* Sizes used by components. */
@@ -271,6 +296,7 @@
     --mm-size-focus-ring: 2px;
     --mm-size-grid-fit: 20rem; /* 320: narrowest column of a .grid--fit */
     --mm-size-line: 1.25rem; /* 20: one line of body text */
+    --mm-size-title-line: 1.75rem; /* 28: one line of a dialog or side panel title */
     --mm-size-page-max: 80rem; /* 1280: widest page content */
     --mm-size-page-narrow: 45rem; /* 720: a single column of text */
     --mm-size-sidebar-drawer: 17.5rem; /* 280: the sidebar as a drawer on mobile */
@@ -317,6 +343,7 @@
     --mm-size-toast-max: 26rem; /* 416 */
     --mm-size-option-min: 10rem; /* 160: narrowest option card */
     --mm-size-code-max: 22.5rem; /* 360: a code block scrolls beyond */
+    --mm-size-banner-code: 7.5rem; /* 120: a server answer inside a banner scrolls beyond */
     --mm-opacity-busy: 0.72;
     --mm-opacity-muted: 0.6; /* shortcut hint on the frame */
 
@@ -699,7 +726,6 @@
   .button--primary {
     color: var(--mm-color-text-on-brand);
     background: var(--mm-color-bg-fill-brand);
-    box-shadow: var(--mm-shadow-button);
 
     &:hover {
       background: var(--mm-color-bg-fill-brand-hover);
@@ -709,10 +735,19 @@
   .button--critical {
     color: var(--mm-color-text-on-critical);
     background: var(--mm-color-bg-fill-critical);
-    box-shadow: var(--mm-shadow-button);
 
     &:hover {
       background: var(--mm-color-bg-fill-critical-hover);
+    }
+  }
+
+  /* A destructive action that is not the main one of its place (a row's Delete): quiet, in the
+     colour of the menu's critical item. */
+  .button--critical-text {
+    color: var(--mm-color-text-critical-strong);
+
+    &:hover {
+      background: var(--mm-color-bg-critical);
     }
   }
 
@@ -721,8 +756,8 @@
   }
 
   .button:is(:disabled, [aria-disabled="true"]):not([aria-busy="true"]) {
-    color: var(--mm-color-text-disabled);
-    background: var(--mm-color-bg-fill-disabled);
+    color: var(--mm-color-text-tertiary);
+    background: var(--mm-color-bg-fill-secondary);
     box-shadow: none;
     cursor: not-allowed;
 
@@ -951,6 +986,13 @@
     overflow-wrap: anywhere;
   }
 
+  /* Inside a sentence the chip sits tight against its punctuation: a hairline of padding, on the
+     text baseline. Alone (a table cell) it keeps its 6px. */
+  :is(p, li, span, dd) > .code {
+    padding-inline: var(--mm-space-050);
+    vertical-align: baseline;
+  }
+
   .kbd {
     display: inline-block;
     flex: none;
@@ -1010,7 +1052,6 @@
     inline-size: var(--mm-size-tile-lg);
     block-size: var(--mm-size-tile-lg);
     border-radius: var(--mm-radius-250);
-    color: var(--mm-color-icon-default);
 
     & > .icon {
       inline-size: var(--mm-size-icon-md);
@@ -1045,11 +1086,16 @@
     align-items: flex-start;
     gap: var(--mm-space-300);
     padding: var(--mm-space-400);
+    --banner-title: var(--mm-color-text-info);
+    --banner-fill: var(--mm-color-bg-info);
+
+    border: var(--mm-border-width) solid color-mix(in srgb, var(--banner-icon) 28%, transparent);
     border-radius: var(--mm-radius-300);
     font: var(--mm-text-body-md);
     letter-spacing: var(--mm-tracking-md);
-    color: var(--mm-color-text-info);
-    background: var(--mm-color-bg-info);
+    /* The tone is carried by the icon, the title and a soft wash; the text reads as body text. */
+    color: var(--mm-color-text-secondary);
+    background: color-mix(in srgb, var(--banner-fill) 60%, var(--mm-color-bg-surface));
 
     & > .icon {
       inline-size: var(--mm-size-icon-lg);
@@ -1060,20 +1106,20 @@
 
   .banner--success {
     --banner-icon: var(--mm-color-icon-success);
-    color: var(--mm-color-text-success);
-    background: var(--mm-color-bg-success);
+    --banner-title: var(--mm-color-text-success);
+    --banner-fill: var(--mm-color-bg-success);
   }
 
   .banner--warning {
     --banner-icon: var(--mm-color-icon-warning);
-    color: var(--mm-color-text-warning);
-    background: var(--mm-color-bg-warning);
+    --banner-title: var(--mm-color-text-warning);
+    --banner-fill: var(--mm-color-bg-warning);
   }
 
   .banner--critical {
     --banner-icon: var(--mm-color-icon-critical);
-    color: var(--mm-color-text-critical);
-    background: var(--mm-color-bg-critical);
+    --banner-title: var(--mm-color-text-critical);
+    --banner-fill: var(--mm-color-bg-critical);
   }
 
   .banner__content {
@@ -1085,8 +1131,25 @@
     overflow-wrap: anywhere;
   }
 
+  /* A terminal state (expired, denied): neutral, as its badge is. */
+  .banner--neutral {
+    --banner-icon: var(--mm-color-icon-neutral);
+    --banner-title: var(--mm-color-text-default);
+    --banner-fill: var(--mm-color-bg-neutral);
+  }
+
+  /* What a server answered (status, headers), under the sentence: a bounded code block. */
+  .banner__code {
+    max-block-size: var(--mm-size-banner-code);
+    margin-block-start: var(--mm-space-100);
+    border-radius: var(--mm-radius-200);
+    background: var(--mm-color-bg-surface-tertiary);
+  }
+
   .banner__title {
     font: var(--mm-text-body-md-medium);
+    font-weight: var(--mm-font-weight-semibold);
+    color: var(--banner-title);
   }
 
   .banner .button {
@@ -1133,7 +1196,7 @@
   }
 
   .empty-state__title {
-    font: var(--mm-text-heading-md);
+    font: var(--mm-text-heading-lg); /* the size of a card title */
     color: var(--mm-color-text-default);
   }
 
@@ -1230,6 +1293,7 @@
   }
 
   .field__optional {
+    margin-inline-start: var(--mm-space-100);
     font: var(--mm-text-body-md);
     color: var(--mm-color-text-tertiary);
   }
@@ -1257,7 +1321,7 @@
     min-inline-size: 0;
     block-size: var(--mm-control-height);
     padding-inline: var(--mm-field-inset);
-    border: var(--mm-border-width) solid var(--mm-color-border-strong);
+    border: var(--mm-border-width) solid var(--mm-color-border-control);
     border-radius: var(--mm-field-radius);
     font: var(--mm-field-font);
     letter-spacing: var(--mm-tracking-md);
@@ -1280,7 +1344,8 @@
   }
 
   .input[aria-invalid="true"],
-  .input-group:has([aria-invalid="true"]) {
+  .input:user-invalid,
+  .input-group:has([aria-invalid="true"], .input-group__control:user-invalid) {
     border-color: var(--mm-color-border-critical);
 
     &:focus,
@@ -1475,7 +1540,7 @@
     block-size: var(--mm-size-check);
     /* Centres the 16px box on the first 20px text line. */
     margin-block: var(--mm-space-050);
-    border: var(--mm-border-width) solid var(--mm-color-border-strong);
+    border: var(--mm-border-width) solid var(--mm-color-border-control);
     background: var(--mm-color-bg-input);
     appearance: none;
     cursor: pointer;
@@ -1640,6 +1705,7 @@
     flex: 1 1 0;
     flex-direction: column;
     min-inline-size: 0;
+    text-wrap: pretty;
   }
 
   .option-card__title {
@@ -1684,8 +1750,9 @@
   }
 
   .chip--active {
-    color: var(--mm-color-text-brand);
-    background: var(--mm-color-bg-brand-subtle);
+    /* A chip that holds a value is stronger than a resting chip, in both themes. */
+    color: var(--mm-color-text-chip-active);
+    background: var(--mm-color-bg-chip-active);
 
     & .icon {
       color: var(--mm-color-icon-brand);
@@ -1693,7 +1760,7 @@
 
     &:is(button, a):hover,
     &[aria-expanded="true"] {
-      background: var(--mm-color-bg-brand-subtle);
+      background: var(--mm-color-bg-chip-active);
     }
   }
 
@@ -1738,7 +1805,7 @@
     block-size: var(--mm-size-chip);
     padding-inline: var(--mm-space-300);
     border-radius: var(--mm-radius-full);
-    font: var(--mm-text-body-sm-medium);
+    font: var(--mm-text-body-md-medium); /* the size of a tab */
     letter-spacing: var(--mm-tracking-sm);
     white-space: nowrap;
     color: var(--mm-color-text-secondary);
@@ -1754,8 +1821,8 @@
     &:is([aria-selected="true"], [aria-current], [aria-pressed="true"]),
     &:has(:checked) {
       color: var(--mm-color-text-default);
-      background: var(--mm-color-bg-surface);
-      box-shadow: var(--mm-shadow-input);
+      background: var(--mm-color-bg-segment-selected);
+      box-shadow: 0 0 0 var(--mm-border-width) var(--mm-color-border-default), var(--mm-shadow-input);
     }
 
     &:has(:focus-visible) {
@@ -1872,6 +1939,7 @@
     &[aria-current="page"] {
       color: var(--mm-color-text-on-frame-active);
       background: var(--mm-color-bg-frame-selected);
+      box-shadow: inset 0 0 0 var(--mm-border-width) var(--mm-color-border-frame);
 
       & > .icon {
         color: var(--mm-color-icon-on-frame-active);
@@ -2012,7 +2080,8 @@
   /* Page Header (Figma: Navigation / Page Header): title, one sentence, one primary action. */
   .page-header {
     display: flex;
-    align-items: center;
+    /* The actions stay on the title's line whatever the length of the subtitle. */
+    align-items: flex-start;
     gap: var(--mm-space-600);
     min-inline-size: 0;
   }
@@ -2032,6 +2101,8 @@
   }
 
   .page-header__subtitle {
+    /* A readable measure: the subtitle wraps at the width of a single-column page. */
+    max-inline-size: var(--mm-size-page-narrow);
     font: var(--mm-text-body-lg);
     letter-spacing: var(--mm-tracking-md);
     color: var(--mm-color-text-secondary);
@@ -2202,7 +2273,8 @@
   }
 
   .card__title {
-    font: var(--mm-text-heading-md);
+    /* One step above the 13-14px rows a card holds. */
+    font: var(--mm-text-heading-lg);
     letter-spacing: var(--mm-tracking-md);
     color: var(--mm-color-text-default);
   }
@@ -2240,7 +2312,14 @@
   .kpi__value {
     font: var(--mm-text-heading-2xl);
     letter-spacing: var(--mm-tracking-2xl);
+    font-variant-numeric: tabular-nums;
     color: var(--mm-color-text-default);
+  }
+
+  /* No figure to show ("—"): the value keeps its place, quieter than a number. */
+  .kpi__value.kpi__value--empty,
+  .stat__value.stat__value--empty {
+    color: var(--mm-color-text-tertiary);
   }
 
   .kpi__footer {
@@ -2253,7 +2332,7 @@
     letter-spacing: var(--mm-tracking-sm);
     color: var(--mm-color-text-tertiary);
 
-    & > :not(.badge) {
+    & > :not(.badge, .kpi__count) {
       flex: 1 1 0;
       min-inline-size: 0;
       overflow: hidden;
@@ -2262,23 +2341,18 @@
     }
   }
 
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--mm-space-100);
-    min-inline-size: 0;
-  }
-
-  .metric__label {
-    font: var(--mm-text-body-sm);
-    letter-spacing: var(--mm-tracking-sm);
+  /* A plain count that starts the footer sentence ("3 used this week"): a word of it, not a chip. */
+  .kpi__count {
+    flex: none;
+    margin-inline-end: calc(var(--mm-space-100) - var(--mm-space-200));
+    font-weight: var(--mm-font-weight-medium);
+    font-variant-numeric: tabular-nums;
     color: var(--mm-color-text-secondary);
   }
 
-  .metric__value {
-    font: var(--mm-text-heading-xl);
-    letter-spacing: var(--mm-tracking-xl);
-    color: var(--mm-color-text-default);
+  /* An identifier inside a value ("Claude Desktop (mmcp_c3d4…)") stays on one line. */
+  .key-value > dd .text-code-md {
+    white-space: nowrap;
   }
 
   .key-value {
@@ -2363,6 +2437,15 @@
     color: var(--mm-color-text-secondary);
   }
 
+  /* A reason that matters (an MCP in error): two lines before it is cut. */
+  .list-row__subtitle--clamp {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
   .list-row__meta {
     flex: none;
     font: var(--mm-text-body-sm);
@@ -2413,7 +2496,8 @@
     flex-direction: column;
     min-inline-size: 0;
     overflow: hidden;
-    border: var(--mm-border-width) solid var(--mm-color-border-secondary);
+    /* The default border: a code block stays enclosed on a floating surface in dark. */
+    border: var(--mm-border-width) solid var(--mm-color-border-default);
     border-radius: var(--mm-radius-300);
     background: var(--mm-color-bg-surface-tertiary);
   }
@@ -2452,6 +2536,11 @@
   }
 
   /* Template Card (Figma: Data / Template Card): one entry of the MCP gallery. */
+  /* On the Popular tab every card would carry the same tag: it is left out there. */
+  [data-filter]:has([role="tab"][data-filter-value="popular"][aria-selected="true"]) .template-card__popular {
+    display: none;
+  }
+
   .template-card {
     display: flex;
     flex-direction: column;
@@ -2461,7 +2550,8 @@
     padding: var(--mm-space-400);
     border: var(--mm-border-width) solid var(--mm-color-border-default);
     border-radius: var(--mm-radius-400);
-    background: var(--mm-color-bg-surface);
+    /* In dark the tiles sit a step off the dialog, not on outlines alone. */
+    background: light-dark(var(--mm-color-bg-surface), var(--mm-color-bg-surface-secondary));
   }
 
   .template-card__header {
@@ -2634,6 +2724,19 @@
     cursor: pointer;
   }
 
+  /* Inside a card, toggles are divided rows like the other rows of a card, not boxes in a box.
+     Alone (a dialog), a toggle keeps its outline. */
+  .card .setting-row {
+    padding-inline: 0;
+    border-width: var(--mm-border-width) 0 0;
+    border-color: var(--mm-color-border-secondary);
+    border-radius: 0;
+  }
+
+  .card .setting-row + .setting-row {
+    margin-block-start: calc(-1 * var(--mm-space-500));
+  }
+
   .setting-row__text {
     display: flex;
     flex: 1 1 0;
@@ -2650,7 +2753,7 @@
   .setting-row__description {
     font: var(--mm-text-body-sm);
     letter-spacing: var(--mm-tracking-sm);
-    color: var(--mm-color-text-tertiary);
+    color: var(--mm-color-text-secondary);
   }
 
   /* Numbered steps (Figma: Install dialog). <ol class="steps"><li class="step">…</li></ol> */
@@ -2669,10 +2772,6 @@
     letter-spacing: var(--mm-tracking-md);
     color: var(--mm-color-text-secondary);
     counter-increment: step;
-
-    &:first-child {
-      color: var(--mm-color-text-default);
-    }
 
     &::before {
       content: counter(step);
@@ -2826,6 +2925,12 @@
     & tbody tr[aria-selected="true"],
     & tbody tr:has([aria-current="true"]) {
       background: var(--mm-color-bg-brand-subtle);
+    }
+
+    /* On the tint of a selected row a neutral badge keeps its edge: the surface and a hairline. */
+    & tbody tr:is([aria-selected="true"], :has([aria-current="true"])) .badge:not(.badge--success, .badge--warning, .badge--critical, .badge--info, .badge--brand) {
+      background: var(--mm-color-bg-surface);
+      box-shadow: inset 0 0 0 var(--mm-border-width) var(--mm-color-border-default);
     }
   }
 
@@ -3024,6 +3129,12 @@
     color: var(--mm-color-text-secondary);
   }
 
+  /* The page size menu of Logs: the note, with a chevron. */
+  .table-footer .range {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+  }
+
   @media (width < 48rem) {
     .table-footer {
       flex-wrap: wrap;
@@ -3147,11 +3258,25 @@
   }
 
   .dialog__header {
+    position: relative;
     display: flex;
     flex: none;
     align-items: flex-start;
     gap: var(--mm-space-400);
-    padding: var(--mm-space-500) var(--mm-space-400) var(--mm-space-300) var(--mm-space-600);
+    padding: var(--mm-space-500) var(--mm-space-600) var(--mm-space-300);
+  }
+
+  /* The close button sits in the corner, out of the flow: the subtitle wraps at the width of the
+     body; only the title keeps room for the button. */
+  .dialog__header > .icon-button:last-child {
+    position: absolute;
+    inset-block-start: calc(var(--mm-space-500) + (var(--mm-size-title-line) - var(--mm-size-control-md)) / 2);
+    inset-inline-end: var(--mm-space-400);
+    margin: 0;
+  }
+
+  .dialog__header:has(> .icon-button:last-child) .dialog__title {
+    padding-inline-end: calc(var(--mm-size-control-md) + var(--mm-space-200));
   }
 
   .dialog__heading {
@@ -3186,6 +3311,14 @@
     overscroll-behavior: contain;
     scrollbar-width: thin;
     scrollbar-color: var(--mm-color-border-strong) transparent;
+    /* Scroll shadows: a soft shade at an edge only while content continues past it. The two
+       surface-coloured covers scroll with the content and hide the shades at the ends. */
+    background:
+      linear-gradient(var(--mm-color-bg-surface) 30%, transparent) top / 100% var(--mm-space-1000) no-repeat local,
+      linear-gradient(transparent, var(--mm-color-bg-surface) 70%) bottom / 100% var(--mm-space-1000) no-repeat local,
+      radial-gradient(farthest-side at 50% 0, var(--mm-color-scroll-shade), transparent) top / 100% var(--mm-space-300) no-repeat scroll,
+      radial-gradient(farthest-side at 50% 100%, var(--mm-color-scroll-shade), transparent) bottom / 100% var(--mm-space-300) no-repeat scroll,
+      var(--mm-color-bg-surface);
 
     /* The body scrolls, so its blocks keep their own height. */
     & > * {
@@ -3219,7 +3352,7 @@
     }
 
     .dialog__header {
-      padding-inline-start: var(--mm-space-400);
+      padding-inline: var(--mm-space-400);
     }
 
     .dialog__body {
@@ -3241,7 +3374,7 @@
    */
   .drawer {
     position: fixed;
-    inset: var(--mm-size-drawer-offset) var(--mm-size-drawer-offset) auto auto;
+    inset: var(--mm-size-drawer-offset) var(--mm-size-drawer-offset) var(--mm-size-drawer-offset) auto;
     z-index: var(--mm-z-sticky);
     flex-direction: column;
     inline-size: calc(100% - 2 * var(--mm-size-drawer-offset));
@@ -3254,7 +3387,7 @@
     border: 0;
     border-radius: var(--mm-radius-500);
     color: var(--mm-color-text-default);
-    background: var(--mm-color-bg-surface);
+    background: var(--mm-color-bg-floating);
     box-shadow: 0 0 0 var(--mm-border-width) var(--mm-color-border-floating), var(--mm-shadow-600);
     transition:
       opacity var(--mm-duration-base) var(--mm-ease),
@@ -3284,10 +3417,19 @@
   .drawer__header {
     display: flex;
     flex: none;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--mm-space-300);
-    padding: var(--mm-space-400) var(--mm-space-300) var(--mm-space-400) var(--mm-space-500);
+    padding: var(--mm-space-500) var(--mm-space-400) var(--mm-space-400) var(--mm-space-500);
     border-block-end: var(--mm-border-width) solid var(--mm-color-border-secondary);
+  }
+
+  /* On the title's line: the badge and the close button are centred on its 28px. */
+  :is(.dialog__header, .drawer__header) > .badge {
+    margin-block-start: calc((var(--mm-size-title-line) - var(--mm-size-badge)) / 2);
+  }
+
+  :is(.dialog__header, .drawer__header) > .icon-button {
+    margin-block: calc((var(--mm-size-title-line) - var(--mm-size-control-md)) / 2);
   }
 
   .drawer__heading {
@@ -3298,8 +3440,8 @@
   }
 
   .drawer__title {
-    font: var(--mm-text-heading-md);
-    letter-spacing: var(--mm-tracking-md);
+    font: var(--mm-text-heading-xl);
+    letter-spacing: var(--mm-tracking-xl);
     color: var(--mm-color-text-default);
   }
 
@@ -3327,9 +3469,11 @@
     flex: none;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--mm-space-200);
-    padding: var(--mm-space-300) var(--mm-space-500);
+    padding: var(--mm-space-400) var(--mm-space-500);
     border-block-start: var(--mm-border-width) solid var(--mm-color-border-secondary);
+    background: var(--mm-color-bg-surface-secondary);
   }
 
   @media (width < 48rem) {
@@ -3364,7 +3508,7 @@
     border: 0;
     border-radius: var(--mm-radius-300);
     color: var(--mm-color-text-default);
-    background: var(--mm-color-bg-surface);
+    background: var(--mm-color-bg-floating);
     box-shadow: 0 0 0 var(--mm-border-width) var(--mm-color-border-floating), var(--mm-shadow-300);
     /* Under the invoker, right edges aligned; flips when there is no room. */
     position-area: block-end span-inline-start;
@@ -3386,6 +3530,13 @@
   /* Left edges aligned (under a filter chip). */
   .menu--start {
     position-area: block-end span-inline-end;
+  }
+
+  /* The team switcher's menu is as wide as the navigation row that opens it. */
+  @supports (min-inline-size: anchor-size(width)) {
+    .menu--nav {
+      min-inline-size: anchor-size(width);
+    }
   }
 
   .menu__item {
@@ -3410,15 +3561,15 @@
     &:hover,
     &:focus-visible {
       outline: none;
-      background: var(--mm-color-bg-fill-secondary);
+      background: var(--mm-color-bg-fill-secondary-hover);
     }
 
     /* The current choice: a link (aria-checked, aria-current) or a radio of a form inside the item. */
     &:is([aria-checked="true"], [aria-current]),
     &:has(:checked) {
       font: var(--mm-text-body-md-medium);
-      color: var(--mm-color-text-brand);
-      background: var(--mm-color-bg-brand-subtle);
+      color: var(--mm-color-text-selected);
+      background: var(--mm-color-bg-selected);
     }
 
     &:has(:focus-visible) {
@@ -3434,7 +3585,7 @@
   }
 
   .menu__item--critical {
-    color: var(--mm-color-text-critical);
+    color: var(--mm-color-text-critical-strong);
 
     & > .icon {
       color: var(--mm-color-icon-critical);
@@ -3519,10 +3670,12 @@
     color: var(--mm-color-text-secondary);
   }
 
+  /* The range summary is secondary to the KPI cards below: quieter values. */
   .stat__value {
     font: var(--mm-text-heading-sm);
     letter-spacing: var(--mm-tracking-md);
-    color: var(--mm-color-text-default);
+    font-variant-numeric: tabular-nums;
+    color: var(--mm-color-text-secondary);
   }
 
   /* Hero (Figma: Home): greeting, gateway endpoint card, attention chips, all centred. */
@@ -3530,18 +3683,21 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--mm-space-800);
-    padding: var(--mm-space-1000) 0 var(--mm-space-800);
+    gap: var(--mm-space-500);
+    padding: var(--mm-space-300) 0;
   }
 
   .hero__greeting {
-    font: var(--mm-text-heading-3xl);
-    letter-spacing: var(--mm-tracking-3xl);
+    font: var(--mm-text-heading-2xl);
+    letter-spacing: var(--mm-tracking-2xl);
     text-align: center;
     color: var(--mm-color-text-default);
 
+    /* The second line is the subtitle: one step smaller, secondary. */
     & > span {
       display: block;
+      font: var(--mm-text-heading-xl);
+      letter-spacing: var(--mm-tracking-xl);
       color: var(--mm-color-text-tertiary);
     }
   }
@@ -3553,9 +3709,21 @@
     inline-size: 100%;
     max-inline-size: var(--mm-size-hero-card);
     padding: var(--mm-space-500);
-    border-radius: var(--mm-radius-500);
+    border-radius: var(--mm-radius-400);
     background: var(--mm-color-bg-surface);
-    box-shadow: var(--mm-shadow-300);
+    box-shadow: var(--mm-shadow-100);
+  }
+
+  /* A setting shown in the hero card (tool mode): quiet text beside the controls. */
+  .hero-card__note {
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  a.hero-card__note:hover {
+    color: var(--mm-color-text-default);
+    text-decoration: underline;
   }
 
   .hero-card__row {
@@ -3604,6 +3772,35 @@
     /* The chevron only shows on mobile, where the chip is a full-width row. */
     & > .icon:last-child:not(:first-child) {
       display: none;
+    }
+  }
+
+  /* The tone of the badge the same fact has elsewhere. */
+  .attention__item--warning {
+    color: var(--mm-color-text-warning);
+    /* The banners' wash: the tone mixed into the surface, not the full fill. */
+    background: color-mix(in srgb, var(--mm-color-bg-warning) 60%, var(--mm-color-bg-surface));
+
+    &:hover {
+      background: var(--mm-color-bg-warning);
+    }
+
+    & > .icon {
+      color: var(--mm-color-icon-warning);
+    }
+  }
+
+  .attention__item--critical {
+    color: var(--mm-color-text-critical);
+    /* The banners' wash: the tone mixed into the surface, not the full fill. */
+    background: color-mix(in srgb, var(--mm-color-bg-critical) 60%, var(--mm-color-bg-surface));
+
+    &:hover {
+      background: var(--mm-color-bg-critical);
+    }
+
+    & > .icon {
+      color: var(--mm-color-icon-critical);
     }
   }
 
@@ -3795,7 +3992,8 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--mm-space-200);
-    font: var(--mm-text-heading-md);
+    /* The size of a card title: a section names a card as its header does. */
+    font: var(--mm-text-heading-lg);
     letter-spacing: var(--mm-tracking-md);
     color: var(--mm-color-text-default);
   }
@@ -3848,6 +4046,21 @@
     overflow-wrap: anywhere;
   }
 
+  /* A row that explains an action (Password, Passkeys, Delete this team) rather than holding a
+     value: the name leads, the sentence under it is secondary, as in a toggle row. */
+  .detail-row__description {
+    /* The description of every row that names a setting: toggle rows, option cards and these. */
+    font: var(--mm-text-body-sm);
+    letter-spacing: var(--mm-tracking-sm);
+    color: var(--mm-color-text-secondary);
+  }
+
+  .detail-row__label:has(+ .detail-row__description) {
+    font: var(--mm-text-body-md-medium);
+    letter-spacing: var(--mm-tracking-md);
+    color: var(--mm-color-text-default);
+  }
+
   @media (width < 48rem) {
     .detail-row {
       flex-direction: column;
@@ -3896,44 +4109,6 @@
   }
 
   /* ============================================================== Analytics */
-
-  /*
-   * Metric strip (Figma: 09 Analytics, KPI Strip): Metrics side by side in one card, a divider
-   * between them. <dl class="card metric-strip"><div class="metric"><dt class="metric__label">…</dt>
-   *   <dd class="metric__value">…</dd></div>…</dl>
-   */
-  .metric-strip {
-    flex-direction: row;
-
-    & > .metric {
-      flex: 1 1 0;
-      padding: var(--mm-space-500);
-
-      & + .metric {
-        border-inline-start: var(--mm-border-width) solid var(--mm-color-border-secondary);
-      }
-    }
-  }
-
-  @media (width < 48rem) {
-    /* Two by two: the dividers follow the grid. */
-    .metric-strip {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-
-      & > .metric {
-        padding: var(--mm-space-400);
-
-        &:nth-child(odd) {
-          border-inline-start: 0;
-        }
-
-        &:nth-child(n + 3) {
-          border-block-start: var(--mm-border-width) solid var(--mm-color-border-secondary);
-        }
-      }
-    }
-  }
 
   /*
    * Line chart (Figma: 09 Analytics, "Calls and errors over time", frame Chart). A section of a
@@ -4323,6 +4498,8 @@
     border-radius: var(--mm-radius-500);
     color: var(--mm-color-text-default);
     background: var(--mm-color-bg-canvas);
+    /* In dark the canvas and the frame are close: a hairline draws the edge. */
+    box-shadow: inset 0 0 0 var(--mm-border-width) var(--mm-color-border-panel);
     scrollbar-width: thin;
     scrollbar-color: var(--mm-color-border-strong) transparent;
   }
@@ -4336,8 +4513,10 @@
     margin-inline: auto;
   }
 
+  /* A single column of text starts where the wide pages start: on their left edge. */
   .page--narrow {
     max-inline-size: var(--mm-size-page-narrow);
+    margin-inline: max(0px, (100% - var(--mm-size-page-max)) / 2) auto;
   }
 
   /* A page that holds one centred block (an error inside the app shell). */

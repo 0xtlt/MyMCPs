@@ -402,7 +402,10 @@ async fn sends_a_refused_token_form_back_with_its_errors() {
     assert!(form.contains(
         "<fieldset class=\"field-group\" data-show-when=\"scopeMode=selected\" aria-describedby=\"create-token-mcps-error\">"
     ));
-    assert!(form.contains(&format!("{} (disabled)", mcp.slug)));
+    assert!(form.contains(&format!(
+        "<span class=\"text-code-sm\">{}</span> <span class=\"badge\">Disabled</span>",
+        mcp.slug
+    )));
     assert!(find_by_name(&app, " ").await.is_none());
 
     // To a browser without the script: the first error, on the page it came from.
@@ -933,6 +936,38 @@ async fn refuses_changes_without_a_csrf_token_and_requests_without_a_session() {
     assert!(page.contains("Member token") && page.contains("Kept token"));
 }
 
+#[tokio::test]
+async fn marks_an_active_token_that_ends_within_a_week_as_expiring() {
+    let app = TestApp::new().await;
+    let admin = create_admin(&app).await;
+    create_token(
+        &app,
+        &admin,
+        "Soon token",
+        &[],
+        Some(Utc::now() + Duration::days(3)),
+    )
+    .await;
+    create_token(
+        &app,
+        &admin,
+        "Later token",
+        &[],
+        Some(Utc::now() + Duration::days(30)),
+    )
+    .await;
+
+    let page = app.get("/tokens").login_as(&admin).send().await.text();
+    assert!(
+        table_row(&page, "Soon token")
+            .contains("<span class=\"badge badge--warning\">Expiring</span>")
+    );
+    assert!(
+        table_row(&page, "Later token")
+            .contains("<span class=\"badge badge--success\">Active</span>")
+    );
+}
+
 // ---------------------------------------------------- access token cleanup
 
 struct CleanupTokens {
@@ -988,10 +1023,7 @@ async fn marks_only_expired_and_revoked_tokens_as_deletable() {
         .collect();
     assert!(names.is_sorted());
     assert!(table_row(&page, "Revoked token").contains("<span class=\"badge\">Revoked</span>"));
-    assert!(
-        table_row(&page, "Expired token")
-            .contains("<span class=\"badge badge--warning\">Expired</span>")
-    );
+    assert!(table_row(&page, "Expired token").contains("<span class=\"badge\">Expired</span>"));
     assert!(
         table_row(&page, "Active token")
             .contains("<span class=\"badge badge--success\">Active</span>")
@@ -1327,7 +1359,7 @@ async fn edits_active_and_expired_tokens_while_keeping_revoked_tokens_immutable(
     )));
     assert_eq!(text_of(&form, "edit-token-title"), "Edit Editable token");
     assert!(form.contains(&format!(
-        "<p class=\"dialog__subtitle\">{}…</p>",
+        "<p class=\"dialog__subtitle\"><span class=\"text-code-md\">{}…</span></p>",
         editable.token_prefix
     )));
     assert!(tag_of(&form, "edit-token-name").contains("value=\"Editable token\""));
@@ -1533,25 +1565,25 @@ async fn builds_copyable_configurations_for_codex_claude_and_cursor() {
         "<form method=\"dialog\" data-bind-scope><button type=\"submit\" disabled hidden></button>"
     ));
 
-    // Each client has its file name and its two steps.
+    // Each client has its file name and its two steps, identifiers as code.
     for (client, title, restart, verify) in [
         (
             "codex",
             "~/.codex/config.toml",
             "Save the file, then restart Codex or restart the IDE extension.",
-            "Open /mcp in Codex and confirm that mymcps is connected.",
+            "Open <code class=\"code\">/mcp</code> in Codex and confirm that <code class=\"code\">mymcps</code> is connected.",
         ),
         (
             "claude",
             "Terminal",
             "Restart Claude Code after the command completes.",
-            "Run /mcp in Claude Code and confirm that mymcps is connected.",
+            "Run <code class=\"code\">/mcp</code> in Claude Code and confirm that <code class=\"code\">mymcps</code> is connected.",
         ),
         (
             "cursor",
             "~/.cursor/mcp.json",
             "Save the file, then restart Cursor.",
-            "Open Cursor MCP settings and confirm that mymcps is enabled.",
+            "Open Cursor MCP settings and confirm that <code class=\"code\">mymcps</code> is enabled.",
         ),
     ] {
         let panel = page
@@ -1568,7 +1600,7 @@ async fn builds_copyable_configurations_for_codex_claude_and_cursor() {
             4
         );
         assert!(panel.contains(&format!(
-            "<ol class=\"steps\"><li class=\"step\">{restart}</li><li class=\"step\">{verify}</li>"
+            "<ol class=\"steps\"><li class=\"step\"><span>{restart}</span></li><li class=\"step\"><span>{verify}</span></li>"
         )));
     }
 }
@@ -1704,7 +1736,7 @@ async fn shows_no_gateway_url_and_no_oauth_while_app_url_is_not_set() {
         assert!(!page.contains("OAuth (recommended)"));
         assert!(page.contains("OAuth is unavailable"));
         assert!(page.contains(
-            "Set APP_URL to this instance's public HTTPS origin to enable OAuth installation."
+            "Set <code class=\"code\">APP_URL</code> to this instance's public HTTPS origin to enable OAuth installation."
         ));
         assert!(!page.contains("data-copy-target=\"#install-"));
         assert_eq!(
@@ -1772,7 +1804,7 @@ async fn renders_dates_day_first_for_the_page_script_to_localize() {
         "<time datetime=\"{}\" data-format=\"minute\">",
         refresh_expires_at.to_iso()
     )));
-    assert!(row.contains("<span class=\"badge badge--info badge--no-dot\">OAuth</span>"));
+    assert!(row.contains("<span class=\"badge badge--no-dot\">OAuth</span>"));
     assert!(row.contains("<td class=\"cell-secondary\">Never</td>"));
     assert!(row.contains(
         "data-confirm=\"Revoking this OAuth connection stops both its access and refresh tokens.\""
@@ -1817,7 +1849,7 @@ async fn pages_through_the_tokens_of_a_view() {
             .count(),
         25
     );
-    assert!(first.contains("<p class=\"table-footer__note\">25 rows per page</p>"));
+    assert!(first.contains("<p class=\"table-footer__note\">25 per page</p>"));
     assert!(first.contains("<span class=\"pagination__range\">1–25 of 30</span>"));
     assert!(first.contains(
         "<a class=\"icon-button icon-button--secondary\" aria-disabled=\"true\" aria-label=\"Previous page\">"

@@ -263,7 +263,8 @@ fn pagination(logs: &Logs, classes: &str) -> Markup {
 /// The chip that opens the choice of how many calls a page lists.
 fn page_size_chip(logs: &Logs) -> Markup {
     html! {
-        button type="button" class="chip" popovertarget="logs-page-size" {
+        // A quiet trigger in the footer, read like the "25 per page" note of the other tables.
+        button type="button" class="range table-footer__note" popovertarget="logs-page-size" {
             (logs.filters.page_size) " per page" (icon("chevron-down"))
         }
     }
@@ -430,7 +431,7 @@ pub fn logs_page(context: &PageContext, logs: &Logs) -> Markup {
         @if logs.logging_off { (logging_off_banner()) }
         header class="page-header" {
             div class="page-header__text" {
-                h1 class="page-header__title" { "MCP call logs" }
+                h1 class="page-header__title" { "Logs" }
                 p class="page-header__subtitle" { "Inspect individual tool calls, failures, arguments, and timing." }
             }
             div class="page-header__actions" { a class="button button--secondary" href="/analytics" { "View analytics" } }
@@ -450,7 +451,7 @@ pub fn logs_page(context: &PageContext, logs: &Logs) -> Markup {
             }
         }
     };
-    app_page(context, "MCP call logs", content, panel)
+    app_page(context, "Logs", content, panel)
 }
 
 /// What was captured of the arguments or of the response of a call, as the
@@ -553,15 +554,15 @@ pub fn call_details(log: Option<&McpCallLog>, zone: &Zone) -> Markup {
                 div class="banner banner--critical" role="alert" {
                     (icon("circle-x"))
                     div class="banner__content" {
-                        p class="banner__title" { (category.as_str().replace('_', " ")) }
+                        p class="banner__title" { (crate::views::label(category.as_str())) }
                         p { (log.error_summary.as_deref().unwrap_or("No error summary available.")) }
                     }
                 }
             }
             dl class="key-values" {
-                div class="key-value" { dt { "Requested tool" } dd { (log.requested_tool_name) } }
+                div class="key-value" { dt { "Requested tool" } dd { span class="text-code-md" { (log.requested_tool_name) } } }
                 div class="key-value" { dt { "MCP" } dd { (mcp_name(log).unwrap_or("Unknown")) } }
-                div class="key-value" { dt { "Access token" } dd { (log.access_token_name) " (" (log.access_token_prefix) "…)" } }
+                div class="key-value" { dt { "Access token" } dd { (log.access_token_name) " " span class="text-code-md" { "(" (log.access_token_prefix) "…)" } } }
                 div class="key-value" { dt { "Caller IP" } dd { (log.caller_ip.as_deref().unwrap_or("Unknown")) } }
                 div class="key-value" { dt { "Started" } dd { (local_time(log.created_at, zone)) } }
                 div class="key-value" { dt { "Duration" } dd { (duration(log)) } }
@@ -582,7 +583,7 @@ pub fn call_details(log: Option<&McpCallLog>, zone: &Zone) -> Markup {
             @if let Some(mcp_id) = log.mcp_id {
                 a class="button button--secondary" href=(format!("/mcps/{mcp_id}/edit")) { "Open MCP" }
             }
-            button type="button" class="button" data-copy-target="#call-json" {
+            button type="button" class="button button--secondary" data-copy-target="#call-json" {
                 (icon("copy")) (icon("check")) span data-copy-label { "Copy as JSON" }
             }
             pre id="call-json" hidden { (call_json(log)) }

@@ -56,6 +56,64 @@ pub fn time_minute(timestamp: Timestamp) -> Markup {
     }
 }
 
+/// A stored value as a label reads: `ready` -> `Ready`. Badges, statuses and
+/// filter options all go through it, so every label of the interface starts
+/// with a capital and the rest stays as written.
+pub fn label(value: &str) -> String {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) => first
+            .to_uppercase()
+            .chain(chars)
+            .collect::<String>()
+            .replace('_', " "),
+        None => String::new(),
+    }
+}
+
+/// A sentence whose `backticked` words are identifiers: they render as code
+/// chips, as identifiers do everywhere else.
+pub fn inline_code(text: &str) -> Markup {
+    html! {
+        @for (index, part) in text.split('`').enumerate() {
+            @if index % 2 == 1 { code class="code" { (part) } } @else { (part) }
+        }
+    }
+}
+
+/// What an MCP's status reads as, in its badge and in the filter of the list.
+pub fn mcp_status_label(status: mymcps_core::models::McpStatus) -> &'static str {
+    use mymcps_core::models::McpStatus;
+    match status {
+        McpStatus::Ready => "Ready",
+        McpStatus::Error => "Error",
+        McpStatus::Draft => "Draft",
+    }
+}
+
+/// The badge of an MCP's status, the same on every page.
+pub fn mcp_status_badge(status: mymcps_core::models::McpStatus) -> Markup {
+    use mymcps_core::models::McpStatus;
+    let tone = match status {
+        McpStatus::Ready => "badge badge--success",
+        McpStatus::Error => "badge badge--critical",
+        McpStatus::Draft => "badge badge--warning",
+    };
+    html! { span class=(tone) { (mcp_status_label(status)) } }
+}
+
+/// The badge of a token, the same on Home and on Access tokens: amber while
+/// it still works but ends within a week, neutral once nothing can use it.
+pub fn token_state_badge(state: crate::routes::home::TokenState) -> Markup {
+    use crate::routes::home::TokenState;
+    match state {
+        TokenState::Active => html! { span class="badge badge--success" { "Active" } },
+        TokenState::Expiring => html! { span class="badge badge--warning" { "Expiring" } },
+        TokenState::Expired => html! { span class="badge" { "Expired" } },
+        TokenState::Revoked => html! { span class="badge" { "Revoked" } },
+    }
+}
+
 /// A count as people read it: `1,284`.
 pub fn grouped(count: usize) -> String {
     let digits = count.to_string();

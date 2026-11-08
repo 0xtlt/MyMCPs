@@ -34,7 +34,7 @@ fn template_card(template: &McpTemplate, query: &McpListQuery) -> Markup {
                     h3 class="template-card__name" { (template.name) }
                     p class="template-card__category" { (template.category.label()) }
                 }
-                @if template.is_builtin() { span class="badge badge--info badge--no-dot" { "Built-in" } }
+                @if template.is_builtin() { span class="badge badge--no-dot" { "Built-in" } }
             }
             p class="template-card__description" { (template.description) }
             // The header has room for one badge: the other one goes with the action.
@@ -42,7 +42,7 @@ fn template_card(template: &McpTemplate, query: &McpListQuery) -> Markup {
                 a class="button button--secondary" href=(href("/mcps/new", query, &[("template", template.id)])) {
                     "Set up " (template.name)
                 }
-                @if template.popular { span class="badge badge--brand badge--no-dot" { "Popular" } }
+                @if template.popular { span class="badge badge--no-dot template-card__popular" { "Popular" } }
             }
         }
     }
