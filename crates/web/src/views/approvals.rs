@@ -10,7 +10,7 @@ use mymcps_gateway::approvals::SavedApprovalSummary;
 use crate::mcp_templates::icon_of;
 use crate::views::icon::icon;
 use crate::views::shell::{PageContext, app_page};
-use crate::views::{relative_time, time};
+use crate::views::{relative_time, time, time_minute};
 
 /// An approval request as the pages list it.
 /// (`app/transformers/approval_request_transformer.ts`)
@@ -86,14 +86,14 @@ impl ApprovalView {
     pub fn title(&self) -> String {
         self.title
             .clone()
-            .unwrap_or_else(|| format!("Run the tool \"{}\"", self.tool_name))
+            .unwrap_or_else(|| format!("Run the tool “{}”", self.tool_name))
     }
 
-    fn origin(&self) -> String {
-        format!(
-            "{} · {} · token {}",
-            self.tool_name, self.mcp_name, self.token_name
-        )
+    /// `create_issue · Linear · token Claude Desktop`, the tool written as code.
+    fn origin(&self) -> Markup {
+        html! {
+            span class="text-code-sm" { (self.tool_name) } " · " (self.mcp_name) " · token " (self.token_name)
+        }
     }
 
     fn path(&self) -> String {
@@ -111,7 +111,7 @@ fn state_badge(state: ApprovalState) -> Markup {
         ApprovalState::Pending => html! { span class="badge badge--warning" { "Waiting" } },
         ApprovalState::Approved => html! { span class="badge badge--success" { "Approved" } },
         ApprovalState::Used => html! { span class="badge badge--success" { "Approved and run" } },
-        ApprovalState::Denied => html! { span class="badge badge--critical" { "Denied" } },
+        ApprovalState::Denied => html! { span class="badge" { "Denied" } },
         ApprovalState::Expired => html! { span class="badge" { "Expired" } },
     }
 }
@@ -152,7 +152,8 @@ fn listing_header(listing: Listing, requests: &[ApprovalView]) -> Markup {
         header class="card__header" {
             div class="card__heading" {
                 h2 class="card__title" { (listing.title()) }
-                @if !requests.is_empty() { p class="card__subtitle" { (counted(requests)) } }
+                // The count stays at 0, so every card header keeps one height.
+                p class="card__subtitle" { (counted(requests)) }
             }
         }
     }
@@ -163,7 +164,7 @@ fn listing_header(listing: Listing, requests: &[ApprovalView]) -> Markup {
 fn expiry_cell(approval: &ApprovalView) -> Markup {
     match approval.state {
         ApprovalState::Denied | ApprovalState::Used => html! { td class="cell-tertiary" { "—" } },
-        _ => html! { td class="cell-secondary" { (time(approval.expires_at)) } },
+        _ => html! { td class="cell-secondary" { (time_minute(approval.expires_at)) } },
     }
 }
 
@@ -192,15 +193,15 @@ fn requests_table(listing: Listing, requests: &[ApprovalView]) -> Markup {
                                         span class="cell-sub" { (approval.origin()) }
                                     }
                                 } }
-                                td class="cell-secondary" { (time(approval.created_at)) }
+                                td class="cell-secondary" { (time_minute(approval.created_at)) }
                                 @if listing == Listing::Waiting {
-                                    td class="cell-secondary" { (time(approval.expires_at)) }
+                                    td class="cell-secondary" { (time_minute(approval.expires_at)) }
                                 } @else {
                                     (expiry_cell(approval))
                                 }
                                 td { (state_badge(approval.state)) }
                                 td class="cell-end" { span class="row-actions" {
-                                    a class=(if listing == Listing::Waiting { "button button--secondary" } else { "button" })
+                                    a class="button"
                                         href=(approval.path()) aria-label=(format!("{}: {title}", listing.action())) { (listing.action()) }
                                 } }
                             }
@@ -343,15 +344,17 @@ fn state_banner(approval: &ApprovalView) -> Markup {
                 "."
             } },
         ),
+        // A request that no longer waits and did not run is a terminal state:
+        // neutral, as its badge is.
         ApprovalState::Denied => banner(
-            "critical",
+            "neutral",
             "circle-x",
             false,
             "Denied",
             html! { p { "Denied by " (decision(approval)) ". The call was not run." } },
         ),
         ApprovalState::Expired => banner(
-            "warning",
+            "neutral",
             "triangle-alert",
             false,
             "Expired",
@@ -400,7 +403,7 @@ fn banners(page: &ApprovalPage) -> Markup {
             }
             None => {
                 (banner("critical", "circle-x", true, "This request can no longer be read", html! {
-                    p { "It was encrypted with another APP_KEY. Deny it and have the agent ask again." }
+                    p { "It was encrypted with another " code class="code" { "APP_KEY" } ". Deny it and have the agent ask again." }
                 }))
             }
         }
@@ -412,7 +415,7 @@ fn details(summary: &SavedApprovalSummary) -> Markup {
     html! {
         div class="stack gap-300" {
             div class="heading" {
-                h2 class="heading__title" { @if summary.interpreted { "What it changes" } @else { "Arguments" } }
+                h2 class="card__title" { @if summary.interpreted { "What it changes" } @else { "Arguments" } }
             }
             @if summary.details.is_empty() {
                 p class="text-secondary" { "The call has no arguments." }
@@ -475,11 +478,11 @@ pub fn approval_page(context: &PageContext, page: &ApprovalPage) -> Markup {
                     @if let Some(summary) = page.summary { (details(summary)) }
 
                     div class="stack gap-300" {
-                        div class="heading" { h2 class="heading__title" { "Request" } }
+                        div class="heading" { h2 class="card__title" { "Request" } }
                         dl class="grid grid--2" {
-                            div class="key-value" { dt { "MCP" } dd { (approval.mcp_name) " (" (approval.mcp_slug) ")" } }
-                            div class="key-value" { dt { "Tool" } dd { (approval.tool_name) } }
-                            div class="key-value" { dt { "Access token" } dd { (approval.token_name) " (" (approval.token_prefix) "…)" } }
+                            div class="key-value" { dt { "MCP" } dd { (approval.mcp_name) " " span class="text-code-md" { "(" (approval.mcp_slug) ")" } } }
+                            div class="key-value" { dt { "Tool" } dd { span class="text-code-md" { (approval.tool_name) } } }
+                            div class="key-value" { dt { "Access token" } dd { (approval.token_name) " " span class="text-code-md" { "(" (approval.token_prefix) "…)" } } }
                             @if is_pending {
                                 div class="key-value" { dt { "Waits until" } dd { (time(approval.expires_at)) } }
                             }

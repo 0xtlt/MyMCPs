@@ -33,16 +33,19 @@ fn range_address(range: Range, time_zone: &str) -> String {
 fn ranges(analytics: &Analytics) -> Markup {
     let current = analytics.config.range;
     html! {
-        nav class="segmented" aria-label="Analytics time range" {
-            @for (range, label) in [(Range::Hours24, "24 hours"), (Range::Days7, "7 days"), (Range::Days30, "30 days")] {
-                a class="segment" href=(range_address(range, &analytics.time_zone))
-                    aria-current=[(range == current).then_some("true")] { (label) }
+        // The same range chip as Home and Logs.
+        @let presets = [(Range::Hours24, "Last 24 hours"), (Range::Days7, "Last 7 days"), (Range::Days30, "Last 30 days")];
+        @let current_label = presets.iter().find(|(range, _)| *range == current).map_or("Custom range", |(_, label)| *label);
+        button type="button" class="chip" popovertarget="analytics-range" { (current_label) (icon("chevron-down")) }
+        nav class="menu menu--start" id="analytics-range" popover aria-label="Analytics time range" {
+            @for (range, label) in presets {
+                a class="menu__item" role="menuitemradio" href=(range_address(range, &analytics.time_zone))
+                    aria-checked=(if range == current { "true" } else { "false" }) { (label) }
             }
+            div class="menu__separator" {}
             // Without script the link draws this page with the dialog open.
-            // `page` and not `true`: the page script takes `true` off the
-            // trigger of a dialog when the dialog closes.
-            a class="segment" href=(range_address(Range::Custom, &analytics.time_zone)) data-dialog-open="#custom-range"
-                aria-current=[(current == Range::Custom).then_some("page")] { "Custom" }
+            a class="menu__item" role="menuitemradio" href=(range_address(Range::Custom, &analytics.time_zone)) data-dialog-open="#custom-range"
+                aria-checked=(if current == Range::Custom { "true" } else { "false" }) { (icon("calendar")) "Custom range…" }
         }
     }
 }
@@ -85,11 +88,19 @@ fn data(analytics: &Analytics) -> Markup {
     let description = "Calls and errors over the selected time range";
     html! {
         div class="page__body" id="analytics-data" {
-            dl class="card metric-strip" {
-                div class="metric" { dt class="metric__label" { "Total calls" } dd class="metric__value" { (number(metrics.total)) } }
-                div class="metric" { dt class="metric__label" { "Success rate" } dd class="metric__value" { (fixed_1(metrics.success_rate())) "%" } }
-                div class="metric" { dt class="metric__label" { "Error rate" } dd class="metric__value" { (fixed_1(metrics.error_rate())) "%" } }
-                div class="metric" { dt class="metric__label" { "Average duration" } dd class="metric__value" { (number(metrics.average_duration_ms)) " ms" } }
+            // The same KPI cards as Home: one component for a figure and its label.
+            dl class="grid grid--4 grid--keep-2" {
+                div class="kpi" { dt class="kpi__label" { "Tool calls" } dd class="kpi__value" { (number(metrics.total)) } }
+                // Without a call to compute it from, a rate is unknown, not zero: "—", as on Home.
+                @if metrics.total == 0 {
+                    @for label in ["Success rate", "Error rate", "Avg. duration"] {
+                        div class="kpi" { dt class="kpi__label" { (label) } dd class="kpi__value kpi__value--empty" { "—" } }
+                    }
+                } @else {
+                    div class="kpi" { dt class="kpi__label" { "Success rate" } dd class="kpi__value" { (fixed_1(metrics.success_rate())) "%" } }
+                    div class="kpi" { dt class="kpi__label" { "Error rate" } dd class="kpi__value" { (fixed_1(metrics.error_rate())) "%" } }
+                    div class="kpi" { dt class="kpi__label" { "Avg. duration" } dd class="kpi__value" { (number(metrics.average_duration_ms)) " ms" } }
+                }
             }
             @if metrics.total == 0 {
                 // One empty state stands for the chart and the three rankings:
@@ -109,7 +120,7 @@ fn data(analytics: &Analytics) -> Markup {
                         div class="card__heading" {
                             h2 class="card__title" id="timeline-title" { "Calls and errors over time" }
                             // The zone the timeline was cut in: a custom range keeps its own.
-                            p class="card__subtitle" { "Successful and failed tool-call attempts in " (analytics.time_zone_label) "." }
+                            p class="card__subtitle" { "Successful and failed tool-call attempts in " (analytics.time_zone_label) }
                         }
                     }
                     (line_chart(description, &analytics.timeline))
@@ -187,7 +198,7 @@ pub fn analytics_page(context: &PageContext, analytics: &Analytics) -> Markup {
         @if analytics.logging_off { (logging_off_banner()) }
         header class="page-header" {
             div class="page-header__text" {
-                h1 class="page-header__title" { "MCP analytics" }
+                h1 class="page-header__title" { "Analytics" }
                 p class="page-header__subtitle" { "Track gateway usage, reliability, and tool-call latency." }
             }
             div class="page-header__actions" { a class="button button--secondary" href="/logs" { "View logs" } }
@@ -221,5 +232,5 @@ pub fn analytics_page(context: &PageContext, analytics: &Analytics) -> Markup {
             }
         }
     };
-    app_page(context, "MCP analytics", content, dialog)
+    app_page(context, "Analytics", content, dialog)
 }

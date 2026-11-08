@@ -349,7 +349,7 @@ async fn shows_what_mymcps_read_in_the_call_and_the_exact_arguments() {
     assert!(page.contains(
         "MyMCPs does not know what this tool does It lists the arguments exactly as the agent sent them. CRM describes the tool as: Delete a contact for good."
     ));
-    assert!(html.contains("<h2 class=\"heading__title\">Arguments</h2>"));
+    assert!(html.contains("<h2 class=\"card__title\">Arguments</h2>"));
     assert!(html.contains("<dt>id</dt><dd class=\"preserve-lines\">42</dd>"));
     assert!(page.contains("MCP CRM (crm) Tool delete_contact Access token Claude (mcp_"));
     assert!(page.contains("Waits until"));
@@ -434,10 +434,13 @@ async fn writes_the_dates_of_a_request_as_instants_whatever_the_time_zone_of_the
         .send()
         .await
         .text();
-    assert!(list.contains(&format!(
-        "<td class=\"cell-secondary\"><time datetime=\"{}\">",
-        request.expires_at.to_iso()
-    )));
+    // The list is written to the minute; the request itself, to the second.
+    for instant in [request.created_at, request.expires_at] {
+        assert!(list.contains(&format!(
+            "<td class=\"cell-secondary\"><time datetime=\"{}\" data-format=\"minute\">",
+            instant.to_iso()
+        )));
+    }
 }
 
 #[tokio::test]
@@ -503,8 +506,8 @@ async fn shows_every_state_a_request_can_be_in() {
     assert!(gateway.decide(&mcp, Decision::Deny, &admin).await);
     let html = show(&gateway, &denied, &admin).await.text();
     let text = text_of(&html);
-    assert!(html.contains("<span class=\"badge badge--critical\">Denied</span>"));
-    assert!(html.contains("<div class=\"banner banner--critical\" role=\"status\">"));
+    assert!(html.contains("<span class=\"badge\">Denied</span>"));
+    assert!(html.contains("<div class=\"banner banner--neutral\" role=\"status\">"));
     assert!(text.contains("Denied Denied by Test User on "));
     assert!(text.contains(". The call was not run."));
     assert!(!html.contains("<form class=\"card__footer\""));
@@ -514,6 +517,7 @@ async fn shows_every_state_a_request_can_be_in() {
     set_expiry(&gateway, &late, Timestamp::now() - Duration::minutes(1)).await;
     let html = show(&gateway, &late, &admin).await.text();
     assert!(html.contains("<span class=\"badge\">Expired</span>"));
+    assert!(html.contains("<div class=\"banner banner--neutral\" role=\"status\">"));
     assert!(text_of(&html).contains(
         "Expired Nobody decided in time. The call was not run, and the agent has to ask again."
     ));
@@ -591,11 +595,12 @@ async fn shows_nothing_of_a_call_it_can_no_longer_decrypt_and_still_lets_it_be_d
 
     // The title falls back to the tool name.
     assert!(html.contains(
-        "<h1 class=\"page-header__title break-anywhere\">Run the tool &quot;delete_contact&quot;</h1>"
+        "<h1 class=\"page-header__title break-anywhere\">Run the tool “delete_contact”</h1>"
     ));
     assert!(html.contains("<div class=\"banner banner--critical\" role=\"alert\">"));
-    assert!(page.contains(
-        "This request can no longer be read It was encrypted with another APP_KEY. Deny it and have the agent ask again."
+    assert!(page.contains("This request can no longer be read"));
+    assert!(html.contains(
+        "<p>It was encrypted with another <code class=\"code\">APP_KEY</code>. Deny it and have the agent ask again.</p>"
     ));
     assert!(!page.contains("MyMCPs does not know what this tool does"));
     assert!(!html.contains("Arguments</h2>"));
@@ -611,7 +616,7 @@ async fn shows_nothing_of_a_call_it_can_no_longer_decrypt_and_still_lets_it_be_d
             .await
             .text(),
     );
-    assert!(list.contains("Run the tool \"delete_contact\" delete_contact · CRM · token Claude"));
+    assert!(list.contains("Run the tool “delete_contact” delete_contact · CRM · token Claude"));
 
     let denied = decision(&gateway, &request, &admin, "deny").send().await;
     assert_eq!(
@@ -910,7 +915,7 @@ async fn lists_what_waits_apart_from_what_was_decided() {
     assert!(third_at < second_at);
     assert!(!waiting.contains(&page_of(&first)));
     assert!(waiting.contains(&format!(
-        "<a class=\"button button--secondary\" href=\"{}\" aria-label=\"Review: Run the tool &quot;delete_contact&quot; of CRM\">Review</a>",
+        "<a class=\"button\" href=\"{}\" aria-label=\"Review: Run the tool &quot;delete_contact&quot; of CRM\">Review</a>",
         page_of(&second)
     )));
     assert!(waiting.contains("<span class=\"badge badge--warning\">Waiting</span>"));
@@ -926,7 +931,7 @@ async fn lists_what_waits_apart_from_what_was_decided() {
         "<a class=\"button\" href=\"{}\" aria-label=\"Open: Run the tool &quot;delete_contact&quot; of CRM\">Open</a>",
         page_of(&first)
     )));
-    assert!(past.contains("<span class=\"badge badge--critical\">Denied</span>"));
+    assert!(past.contains("<span class=\"badge\">Denied</span>"));
     // A denied call has no date it counts until.
     assert!(past.contains("<td class=\"cell-tertiary\">—</td>"));
     assert!(!past.contains(&page_of(&second)));
@@ -964,8 +969,10 @@ async fn shows_an_empty_list_until_a_call_asks() {
         .await
         .text();
 
-    assert!(html.contains("<h2 class=\"card__title\">Waiting for a decision</h2>"));
-    assert!(!html.contains("card__subtitle"));
+    // The count stays, at 0, so every card header keeps one height.
+    assert!(html.contains(
+        "<h2 class=\"card__title\">Waiting for a decision</h2><p class=\"card__subtitle\">0 requests</p>"
+    ));
     assert!(text_of(&html).contains(
         "Nothing is waiting When an agent calls a tool that asks for approval, it gets a link to give you, and the call is listed here."
     ));
@@ -1062,10 +1069,13 @@ fn tool_rows(html: &str) -> Vec<(String, &'static str, Vec<&'static str>)> {
             let runs = row.contains("value=\"auto\" checked");
             assert!(asks != runs, "{row}");
             let mut markers = Vec::new();
-            if row.contains("<span class=\"status\">No longer listed by the MCP</span>") {
+            if row.contains("<span><span class=\"badge\">No longer listed by the MCP</span></span>")
+            {
                 markers.push("unlisted");
             }
-            if row.contains("<span class=\"status status--warning\">Asks by default</span>") {
+            if row.contains(
+                "<span><span class=\"badge badge--warning\">Asks by default</span></span>",
+            ) {
                 markers.push("asks by default");
             }
             (name, if asks { "ask" } else { "auto" }, markers)
@@ -1306,6 +1316,9 @@ async fn stays_saveable_and_makes_a_tool_ask_when_its_name_cannot_be_sent() {
             .count(),
         2
     );
+    assert!(html.contains(
+        "<span class=\"cell-sub cell-sub--warning\">Always asks: no choice can be saved for a name"
+    ));
     // The long name is shown, cut.
     assert!(html.contains(&format!(
         "<span class=\"cell-code\">{}</span>",
@@ -1381,7 +1394,7 @@ async fn keeps_the_saved_choices_in_view_when_the_mcp_cannot_be_reached() {
     let page = text_of(&html);
     assert!(page.contains("CRM did not list its tools"));
     assert!(page.contains("connect ECONNREFUSED"));
-    assert!(page.contains(" Only the tools with a saved choice are shown."));
+    assert!(html.contains("<p>Only the tools with a saved choice are shown.</p><pre class=\"code-block__body banner__code\">"));
     assert!(html.contains("<div class=\"banner banner--critical\" role=\"alert\">"));
     assert!(!html.contains("crm-secret-token"));
 

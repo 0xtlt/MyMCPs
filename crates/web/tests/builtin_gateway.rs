@@ -910,7 +910,7 @@ async fn google_ads_takes_a_person_from_the_link_an_agent_was_given_to_an_approv
         page.contains("An agent using the access token “Claude” wants to do this on Google Ads.")
     );
     // What Google says of the campaign, not what the agent says.
-    assert!(html.contains("<h2 class=\"heading__title\">What it changes</h2>"));
+    assert!(html.contains("<h2 class=\"card__title\">What it changes</h2>"));
     assert!(page.contains("Account Acme Shoes (123-456-7890)"));
     assert!(page.contains("Campaign Spring sale (enabled)"));
     assert!(html.contains(

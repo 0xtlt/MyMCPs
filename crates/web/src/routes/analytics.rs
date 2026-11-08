@@ -575,7 +575,7 @@ pub fn buckets(config: &RangeConfig) -> Vec<Bucket> {
                 }
                 Unit::Day => {
                     let start = config.start.plus_days(index);
-                    (start, start.plus_days(1), start.format("%b %-d"))
+                    (start, start.plus_days(1), start.format("%-d %b"))
                 }
             };
             Bucket {

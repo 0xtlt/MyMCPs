@@ -206,6 +206,7 @@ fn overlays(context: &PageContext) -> Markup {
             dialog class="dialog dialog--sm" role="alertdialog" {
                 div class="dialog__header" {
                     div class="dialog__heading" { h2 class="dialog__title" data-confirm-title-slot { "Are you sure?" } }
+                    button type="button" class="icon-button" data-dialog-close aria-label="Close" { (icon("x")) }
                 }
                 div class="dialog__body" { p class="text-secondary" data-confirm-message-slot {} }
                 div class="dialog__footer" {
@@ -239,7 +240,7 @@ fn team_switcher(context: &PageContext, current: &Membership) -> Markup {
             aria-label=(format!("Team: {}. Switch team", current.team.name)) {
             (icon("chevrons-up-down")) span class="nav-item__label" { (current.team.name) }
         }
-        div class="menu menu--start" id="team-menu" popover role="menu" {
+        div class="menu menu--start menu--nav" id="team-menu" popover role="menu" {
             p class="menu__label" { "Teams" }
             @for membership in &context.teams {
                 @let is_current = membership.team.id == current.team.id;
@@ -315,7 +316,7 @@ fn sidebar(context: &PageContext, user: &User) -> Markup {
                 span class="nav-user__text" {
                     span class="nav-user__name" { (name) }
                     @if let Some(current) = &context.team {
-                        span class="nav-user__role" { (current.role.as_str()) }
+                        span class="nav-user__role" { (crate::views::label(current.role.as_str())) }
                     }
                 }
                 form method="post" action="/logout" {

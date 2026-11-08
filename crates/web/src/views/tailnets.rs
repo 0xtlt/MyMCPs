@@ -59,7 +59,7 @@ impl TailnetRow {
         };
         match &self.state {
             None => plain("neutral", "Unavailable"),
-            Some(TailnetState::Starting) => plain("neutral", "Starting"),
+            Some(TailnetState::Starting) => plain("info", "Starting"),
             Some(TailnetState::NeedsLogin { auth_url }) => Standing {
                 tone: "warning",
                 label: "Needs sign-in",
@@ -351,11 +351,17 @@ fn table_row(context: &PageContext, row: &TailnetRow) -> Markup {
                             button type="submit" class="button" aria-label=(format!("Sign {} in again", row.name)) { "Sign in again" }
                         }
                     }
-                    form method="post" action=(format!("/tailnets/{}?_method=DELETE", row.id))
-                        data-confirm=(format!("Delete {}?", row.name)) data-confirm-label="Delete" data-confirm-tone="critical"
-                        data-confirm-title="Delete this tailnet" {
-                        (context.csrf_field())
-                        button type="submit" class="button" aria-label=(format!("Delete {}", row.name)) { "Delete" }
+                    // A destructive action lives in the row's menu, as on every table.
+                    @let menu = format!("tailnet-{}-menu", row.id);
+                    button type="button" class="icon-button" popovertarget=(menu)
+                        aria-label=(format!("More actions for {}", row.name)) { (icon("ellipsis")) }
+                    div class="menu" id=(menu) popover role="menu" {
+                        form method="post" action=(format!("/tailnets/{}?_method=DELETE", row.id))
+                            data-confirm="This cannot be undone." data-confirm-label="Delete" data-confirm-tone="critical"
+                            data-confirm-title=(format!("Delete {}?", row.name)) {
+                            (context.csrf_field())
+                            button type="submit" class="menu__item menu__item--critical" role="menuitem" { (icon("trash")) "Delete" }
+                        }
                     }
                 }
             }
@@ -384,19 +390,18 @@ fn table(context: &PageContext, page: &TailnetsPage) -> Markup {
     }
 }
 
-fn empty(page: &TailnetsPage) -> Markup {
+fn empty() -> Markup {
     html! {
         div class="card" {
             div class="empty-state" {
                 span class="empty-state__icon" { (icon("network")) }
                 div class="empty-state__text" {
-                    p class="empty-state__title" { "No tailnet yet" }
+                    p class="empty-state__title" { "No tailnets yet" }
                     p class="empty-state__description" {
                         "Connect a Tailscale network, then choose it on an HTTP MCP to reach its devices."
                     }
                 }
-                // Under 768px the header action sits right above the card.
-                @if page.can_connect() { (connect_button(page, "button button--secondary hide-mobile")) }
+                // The page header holds the action: an empty state repeats none.
             }
         }
     }
@@ -425,11 +430,12 @@ fn method_choice(
         SignInMethod::Key => "key",
     };
     html! {
-        label class="choice" {
+        // A choice that has a description is an option card, as everywhere else.
+        label class="option-card" {
             input type="radio" class="radio" name="method" value=(value) checked[form.method == method];
-            span class="choice__text" {
-                span class="choice__label" { (title) }
-                span class="choice__description" { (description) }
+            span class="option-card__text" {
+                span class="option-card__title" { (title) }
+                span class="option-card__description" { (description) }
             }
         }
     }
@@ -489,7 +495,7 @@ fn chosen_origin(typed: &str, origin: &str) -> bool {
 pub fn connect_fragment(context: &PageContext, form: &ConnectForm) -> Markup {
     let keyed = form.method == SignInMethod::Key;
     html! {
-        (dialog_header("Connect a tailnet", "MyMCPs joins it as a device."))
+        (dialog_header("Connect a tailnet", "MyMCPs joins it as a device"))
         form class="dialog__body" id="connect-tailnet-form" method="post" action="/tailnets" data-async {
             (context.csrf_field())
             @for message in form.unshown() {
@@ -511,8 +517,10 @@ pub fn connect_fragment(context: &PageContext, form: &ConnectForm) -> Markup {
             fieldset class="field-group" {
                 legend class="field-group__label" { "Authentication" }
                 div class="stack gap-200" {
-                    (method_choice(form, SignInMethod::Link, "Sign in with Tailscale", "You get a sign-in link after Connect."))
-                    (method_choice(form, SignInMethod::Key, "Auth key", "A key from the Tailscale admin console. Nothing to sign in to."))
+                    div class="option-cards" {
+                        (method_choice(form, SignInMethod::Link, "Sign in with Tailscale", "You get a sign-in link after Connect."))
+                        (method_choice(form, SignInMethod::Key, "Auth key", "A key from the Tailscale admin console. Nothing to sign in to."))
+                    }
                     div class="field" data-show-when="method=key" hidden[!keyed] {
                         label class="visually-hidden" for="connect-tailnet-key" { "Auth key" }
                         div class="input-group" {
@@ -565,7 +573,7 @@ pub fn tailnets_page(context: &PageContext, page: &TailnetsPage) -> Markup {
             div class="page-header__actions" { (connect_button(page, "button button--primary")) }
         }
         @if !page.enabled { (off_banner()) }
-        @if page.rows.is_empty() { (empty(page)) } @else { (table(context, page)) }
+        @if page.rows.is_empty() { (empty()) } @else { (table(context, page)) }
     };
     let overlays = html! {
         @if page.can_connect() { (connect_dialog(context, page)) }

@@ -53,6 +53,11 @@ pub fn too_many_requests(refused: &LimiterResponse) -> Response {
         "x-ratelimit-remaining",
         HeaderValue::from(refused.remaining),
     );
+    // Marked like the other errors, so that a browser gets it drawn as a
+    // page; any other client keeps this plain answer.
+    response
+        .extensions_mut()
+        .insert(crate::error::ErrorStatus(StatusCode::TOO_MANY_REQUESTS));
     response
 }
 

@@ -833,7 +833,7 @@ async fn issues_refreshes_lists_and_revokes_an_oauth_connection() {
         .find(|row| row.contains("Claude Desktop"))
         .expect("a row for the connection");
     assert!(row.contains("<td class=\"cell-strong\">Claude Desktop</td>"));
-    assert!(row.contains("<span class=\"badge badge--info badge--no-dot\">OAuth</span>"));
+    assert!(row.contains("<span class=\"badge badge--no-dot\">OAuth</span>"));
     assert!(row.contains("<span class=\"badge badge--success\">Active</span>"));
     assert!(row.contains(&format!(
         "<form id=\"revoke-token-{}\" method=\"post\" action=\"/tokens/{}/revoke\"",

@@ -107,12 +107,16 @@ pub struct TokenRow {
     pub token: AccessToken,
     pub mcp_ids: Vec<i64>,
     pub status: TokenStatus,
+    /// The status as its badge says it: an active token that ends within a
+    /// week is "Expiring", as on Home.
+    pub state: crate::routes::home::TokenState,
 }
 
 impl TokenRow {
     pub fn new(token: AccessToken, mcp_ids: Vec<i64>, now: Timestamp) -> Self {
         Self {
             status: token.status_at(now),
+            state: crate::routes::home::token_state(&token, now),
             token,
             mcp_ids,
         }
@@ -213,15 +217,11 @@ fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-fn status_badge(status: TokenStatus) -> Markup {
-    match status {
-        TokenStatus::Revoked => html! { span class="badge" { "Revoked" } },
-        TokenStatus::Active => html! { span class="badge badge--success" { "Active" } },
-        TokenStatus::Expired => html! { span class="badge badge--warning" { "Expired" } },
-    }
+fn status_badge(row: &TokenRow) -> Markup {
+    crate::views::token_state_badge(row.state)
 }
 
-fn banner(tone: &str, icon_name: &str, title: &str, text: Option<&str>) -> Markup {
+fn banner(tone: &str, icon_name: &str, title: &str, text: Option<Markup>) -> Markup {
     let class = if tone.is_empty() {
         "banner".to_string()
     } else {
@@ -297,6 +297,8 @@ struct TokenForm<'a> {
     action: String,
     title: String,
     subtitle: String,
+    /// The subtitle is an identifier, written as code like everywhere else.
+    subtitle_code: bool,
     submit: &'a str,
 }
 
@@ -336,7 +338,7 @@ fn token_form(
             div class="dialog__header" {
                 div class="dialog__heading" {
                     h2 class="dialog__title" id=(format!("{id}-title")) { (shape.title) }
-                    p class="dialog__subtitle" { (shape.subtitle) }
+                    p class="dialog__subtitle" { @if shape.subtitle_code { span class="text-code-md" { (shape.subtitle) } } @else { (crate::views::inline_code(&shape.subtitle)) } }
                 }
                 button type="button" class="icon-button" data-dialog-close aria-label="Close" { (icon("x")) }
             }
@@ -352,13 +354,16 @@ fn token_form(
                 fieldset class="field-group" {
                     legend class="field-group__label" { "MCP access" }
                     p class="field-group__help" { "All includes every enabled MCP, including ones added later." }
-                    label class="choice" {
-                        input type="radio" class="radio" name="scopeMode" value="all" checked[!values.selected];
-                        span class="choice__label" { "All MCPs" }
-                    }
-                    label class="choice" {
-                        input type="radio" class="radio" name="scopeMode" value="selected" checked[values.selected];
-                        span class="choice__label" { "Selected MCPs" }
+                    // A choice of a dialog is a pair of option cards, as Transport and Authentication are.
+                    div class="option-cards" {
+                        label class="option-card" {
+                            input type="radio" class="radio" name="scopeMode" value="all" checked[!values.selected];
+                            span class="option-card__text" { span class="option-card__title" { "All MCPs" } }
+                        }
+                        label class="option-card" {
+                            input type="radio" class="radio" name="scopeMode" value="selected" checked[values.selected];
+                            span class="option-card__text" { span class="option-card__title" { "Selected MCPs" } }
+                        }
                     }
                     @if let Some(message) = scope_error { p class="field__error" { (message) } }
                 }
@@ -377,7 +382,7 @@ fn token_form(
                                     span class="choice__text" {
                                         span class="choice__label" { (mcp.name) }
                                         span class="choice__description" {
-                                            (mcp.slug) @if !mcp.enabled { " (disabled)" }
+                                            span class="text-code-sm" { (mcp.slug) } @if !mcp.enabled { " " span class="badge" { "Disabled" } }
                                         }
                                     }
                                 }
@@ -418,7 +423,8 @@ pub fn create_form(context: &PageContext, form: &FormState, mcps: &[Mcp]) -> Mar
             id: "create-token",
             action: "/tokens".to_string(),
             title: "Create token".to_string(),
-            subtitle: "Issue an identifier for the /mcp gateway".to_string(),
+            subtitle: "Issue an identifier for the `/mcp` gateway".to_string(),
+            subtitle_code: false,
             submit: "Create token",
         },
         &values,
@@ -448,6 +454,7 @@ pub fn edit_form(
             action: view.url(&format!("/tokens/{}?_method=PUT", row.token.id)),
             title: format!("Edit {}", row.token.name),
             subtitle: row.identifier(),
+            subtitle_code: true,
             submit: "Save changes",
         },
         &values,
@@ -547,8 +554,8 @@ fn install_panel(state: &InstallState<'_>, client: McpClient, selected: bool) ->
                 }
             }
             ol class="steps" {
-                li class="step" { (config.restart_instruction) }
-                li class="step" { (config.verify_instruction) }
+                li class="step" { span { (crate::views::inline_code(config.restart_instruction)) } }
+                li class="step" { span { (crate::views::inline_code(config.verify_instruction)) } }
             }
         }
     }
@@ -582,7 +589,7 @@ fn install_dialog(page: &TokensPage<'_>, list_url: &str) -> Markup {
                 button type="submit" disabled hidden {}
                 div class="dialog__header" {
                     div class="dialog__heading" {
-                        h2 class="dialog__title" id="install-title" { "Install MyMCPs" }
+                        h2 class="dialog__title" id="install-title" { "Install in a client" }
                         p class="dialog__subtitle" { "Connect this gateway to your MCP client" }
                     }
                     button type="button" class="icon-button" data-dialog-close aria-label="Close" { (icon("x")) }
@@ -602,7 +609,7 @@ fn install_dialog(page: &TokensPage<'_>, list_url: &str) -> Markup {
                     } @else {
                         input type="hidden" name="auth" value="token";
                         (banner("warning", "triangle-alert", "OAuth is unavailable",
-                            Some("Set APP_URL to this instance's public HTTPS origin to enable OAuth installation.")))
+                            Some(html! { "Set " code class="code" { "APP_URL" } " to this instance's public HTTPS origin to enable OAuth installation." })))
                     }
 
                     div class="banner" role="status" data-show-when="auth=oauth" hidden[token_mode] {
@@ -615,7 +622,7 @@ fn install_dialog(page: &TokensPage<'_>, list_url: &str) -> Markup {
 
                     div class="stack gap-300" data-show-when="auth=token" hidden[!token_mode] {
                         (banner("warning", "triangle-alert", "Your token will be stored in plaintext",
-                            Some("These quick-install configurations include the access token directly. Keep the configuration private and revoke the token immediately if it is exposed.")))
+                            Some(html! { "These quick-install configurations include the access token directly. Keep the configuration private and revoke the token immediately if it is exposed." })))
                         div class="field" {
                             label class="field__label" for="install-token" { "Access token" }
                             div class="input-group" {
@@ -643,7 +650,7 @@ fn install_dialog(page: &TokensPage<'_>, list_url: &str) -> Markup {
                         span class="setting-row__text" {
                             span class="setting-row__title" { "Enable lazy tool mode" }
                             span class="setting-row__description" {
-                                "Adds X-MyMCPs-Tool-Mode: lazy so clients discover tools on demand."
+                                "Adds " code class="code" { "X-MyMCPs-Tool-Mode: lazy" } " so clients discover tools on demand."
                             }
                         }
                         input type="checkbox" class="switch" role="switch" name="lazy";
@@ -793,7 +800,7 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                 @if row.is_manual() {
                     span class="badge badge--no-dot" { "Manual" }
                 } @else {
-                    span class="badge badge--info badge--no-dot" { "OAuth" }
+                    span class="badge badge--no-dot" { "OAuth" }
                 }
             }
             td class="cell-code" { (row.identifier()) }
@@ -808,7 +815,7 @@ fn table_row(context: &PageContext, view: &ListView, row: &TokenRow) -> Markup {
                     None => "Never",
                 }
             }
-            td { (status_badge(row.status)) }
+            td { (status_badge(row)) }
             td class="cell-end" {
                 span class="row-actions" {
                     (row_forms(context, view, row))
@@ -826,7 +833,7 @@ fn mobile_row(view: &ListView, row: &TokenRow) -> Markup {
             span class="list-row__text" {
                 span class="cluster" {
                     span class="list-row__title" { (token.name) }
-                    (status_badge(row.status))
+                    (status_badge(row))
                 }
                 span class="list-row__subtitle" {
                     (row.source_label()) " · " (row.identifier()) " · " (row.scope_label())
@@ -925,7 +932,7 @@ fn toolbar(context: &PageContext, page: &TokensPage<'_>) -> Markup {
                     data-confirm-tone="critical" {
                     (context.csrf_field())
                     @for id in page.deletable_ids { input type="hidden" name="ids[]" value=(id); }
-                    button type="submit" class="button" { (icon("trash")) "Delete all" }
+                    button type="submit" class="button button--critical-text" { (icon("trash")) "Delete all" }
                 }
             }
         }
@@ -996,9 +1003,12 @@ fn token_list(context: &PageContext, page: &TokensPage<'_>) -> Markup {
                         tbody { @for row in page.rows { (table_row(context, view, row)) } }
                     }
                 }
+                // The page size sits beside the pagination, where Logs has its page size chip.
                 div class="table-footer" {
-                    p class="table-footer__note" { (ROWS_PER_PAGE) " rows per page" }
-                    (pagination(page))
+                    div class="cluster cluster--nowrap push-end" {
+                        p class="table-footer__note" { (ROWS_PER_PAGE) " per page" }
+                        (pagination(page))
+                    }
                 }
             }
 
@@ -1016,9 +1026,10 @@ fn gateway_card(page: &TokensPage<'_>) -> Markup {
         section class="card" aria-labelledby="gateway-url-title" {
             div class="card__body" {
                 div class="heading" {
-                    h2 class="heading__title" id="gateway-url-title" { "Gateway URL" }
+                    h2 class="card__title" id="gateway-url-title" { "Gateway URL" }
                     p class="heading__description" {
-                        "MCP clients can sign in with OAuth. Manual integrations can still send Authorization: Bearer <token> on every request."
+                        "MCP clients can sign in with OAuth. Manual integrations can still send "
+                        code class="code" { "Authorization: Bearer <token>" } " on every request."
                     }
                 }
                 div class="cluster" {
@@ -1036,10 +1047,14 @@ fn gateway_card(page: &TokensPage<'_>) -> Markup {
                         },
                     }
                     a class="button button--secondary" href=(page.view.url("/tokens/install")) data-dialog-open="#install" {
-                        (icon("download")) "Install MCP"
+                        (icon("download")) "Install in a client"
                     }
                 }
-                (banner("", "info", "Reduce tool-definition overhead", Some("Optional: configure your MCP client to send X-MyMCPs-Tool-Mode: lazy. The gateway then exposes list_mcps, tool_search, and call_tool instead of loading every upstream tool definition.")))
+                (banner("", "info", "Reduce tool-definition overhead", Some(html! {
+                    "Optional: configure your MCP client to send " code class="code" { "X-MyMCPs-Tool-Mode: lazy" }
+                    ". The gateway then exposes " code class="code" { "list_mcps" } ", " code class="code" { "tool_search" } ", and "
+                    code class="code" { "call_tool" } " instead of loading every upstream tool definition."
+                })))
             }
         }
     }

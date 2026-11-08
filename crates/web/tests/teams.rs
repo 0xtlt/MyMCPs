@@ -170,7 +170,7 @@ async fn registration_is_closed_until_someone_who_runs_the_instance_opens_it() {
         assert_eq!(flash(&response, "error").as_deref(), Some(SUPER_ADMIN_ONLY));
         let settings = app.get("/settings").login_as(user).send().await.text();
         assert!(!settings.contains("registrationEnabled"));
-        assert!(!settings.contains("My Instance"));
+        assert!(!settings.contains("My instance"));
     }
     assert!(!registration_open(&app).await);
 
@@ -379,7 +379,7 @@ async fn anyone_creates_a_team_and_goes_from_one_of_theirs_to_another() {
     let elsewhere = app.get("/team").login_as(&stored).send().await.text();
     assert!(elsewhere.contains("<h1 class=\"page-header__title\">Research</h1>"));
     assert!(elsewhere.contains("You own this team"));
-    assert!(elsewhere.contains("<span class=\"nav-user__role\">owner</span>"));
+    assert!(elsewhere.contains("<span class=\"nav-user__role\">Owner</span>"));
     // Both teams are in the switcher, the current one marked.
     assert!(elsewhere.contains(&format!(
         "<input type=\"hidden\" name=\"teamId\" value=\"{}\"><button type=\"submit\" class=\"menu__item\" role=\"menuitemradio\" aria-checked=\"true\">",
@@ -406,7 +406,7 @@ async fn anyone_creates_a_team_and_goes_from_one_of_theirs_to_another() {
         .await
         .text();
     assert!(root.contains("<h1 class=\"page-header__title\">Root Team</h1>"));
-    assert!(root.contains("<span class=\"nav-user__role\">member</span>"));
+    assert!(root.contains("<span class=\"nav-user__role\">Member</span>"));
 
     // A team they are not in is answered like no team, and changes nothing.
     for team_id in [foreign.id.to_string(), "999999".into(), "abc".into()] {
@@ -884,7 +884,7 @@ async fn nobody_changes_someone_ranked_above_them_nor_gives_a_role_above_their_o
     assert!(page.contains(&format!("action=\"/members/{}?_method=PATCH\"", member.id)));
     assert!(!page.contains(&format!("action=\"/members/{}?_method=PATCH\"", owner.id)));
     assert!(!page.contains("name=\"role\" value=\"owner\""));
-    assert!(page.contains("<span class=\"badge badge--brand\">owner</span>"));
+    assert!(page.contains("<span class=\"badge badge--no-dot\">Owner</span>"));
 
     // An owner: anyone, any role, other owners included.
     let made = change(&owner, &admin, "owner").await;
@@ -1360,10 +1360,12 @@ async fn those_who_run_the_instance_see_its_accounts_and_delete_them() {
     }
     // One of them runs the instance, whatever the others are in the Root
     // Team: said once in the table, once in the list of a narrow screen.
-    let badge = "<span class=\"badge badge--info\">Super admin</span>";
+    let badge = "<span class=\"badge badge--no-dot\">Super admin</span>";
     assert_eq!(listed.matches(badge).count(), 2);
     assert_eq!(
-        listed.matches("<span class=\"badge\">User</span>").count(),
+        listed
+            .matches("<span class=\"badge badge--no-dot\">User</span>")
+            .count(),
         6
     );
     assert!(listed.contains("<td class=\"cell-secondary\">Their Team, Root Team</td>"));
@@ -1666,12 +1668,12 @@ async fn a_super_admin_decides_who_else_runs_the_instance() {
     let users = page(&app, &outsider, team.id, "/users").await;
     assert_eq!(
         users
-            .matches("<span class=\"badge badge--info\">Super admin</span>")
+            .matches("<span class=\"badge badge--no-dot\">Super admin</span>")
             .count(),
         4
     );
     let settings = page(&app, &outsider, team.id, "/settings").await;
-    assert!(settings.contains("My Instance") && settings.contains("registrationEnabled"));
+    assert!(settings.contains("My instance") && settings.contains("registrationEnabled"));
     let switched = app
         .post("/teams/switch")
         .login_as(&outsider)
@@ -1795,6 +1797,6 @@ async fn a_role_in_a_team_gives_no_right_over_the_instance() {
     assert!(
         users
             .text()
-            .contains("<span class=\"nav-user__role\">member</span>")
+            .contains("<span class=\"nav-user__role\">Member</span>")
     );
 }

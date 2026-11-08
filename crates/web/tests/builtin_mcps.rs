@@ -276,8 +276,8 @@ async fn strava_creates_the_mcp_with_encrypted_credentials_and_waits_for_authori
     // The registry lists it as a built-in endpoint.
     let row = between(&page, "<tbody>", "</tbody>");
     assert!(row.contains("<td class=\"cell-secondary\">Built-in · Strava API</td>"));
-    assert!(row.contains("<code class=\"code\">oauth</code>"));
-    assert!(row.contains("<span class=\"status status--warning\">draft</span>"));
+    assert!(row.contains("<span class=\"badge badge--no-dot\">OAuth</span>"));
+    assert!(row.contains("<span class=\"badge badge--warning\">Draft</span>"));
 }
 
 #[tokio::test]
@@ -1086,7 +1086,7 @@ async fn icloud_creates_the_mcp_with_an_encrypted_password_and_checks_it_by_sign
     assert!(
         row.contains("<td class=\"cell-secondary\">Built-in · iCloud Mail over IMAP and SMTP</td>")
     );
-    assert!(row.contains("<code class=\"code\">password</code>"));
+    assert!(row.contains("<span class=\"badge badge--no-dot\">Password</span>"));
     // Nothing to authorize on Apple's side.
     assert!(!row.contains("Re-authorize") && !row.contains("Connect"));
 }

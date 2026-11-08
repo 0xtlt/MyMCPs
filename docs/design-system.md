@@ -23,10 +23,29 @@ data goes in a class or a `data-` attribute (see [Dynamic values](#dynamic-value
   `disabled`, `hidden`, `open`, `aria-current="page"`, `aria-selected`, `aria-pressed`,
   `aria-checked`, `aria-invalid`, `aria-busy`, and the `data-` attributes app.js sets.
 - Every value in the CSS is a token. In new CSS use `var(--mm-…)`, never a raw colour or size.
+- One layout per page: a list page stacks full-width cards with their header inside (Team,
+  Users, Approvals); Settings puts each section's title beside its card; a page that reads like a
+  document (an approval to review, a setup) is `.page--narrow`, a 720px column on the left edge.
+- Auth screens (sign in, onboarding, invite, errors without a session) use Large controls (44px)
+  on purpose: one form, often on a phone. The app uses Medium (32px).
 - One primary button per screen. Secondary for supporting actions, tertiary for quiet ones,
   critical for the destructive action of a dialog.
 - Dense data is a table or list rows inside a card. A card is a standalone widget.
-- Status in a table cell is `.status` (dot and plain label). Everywhere else it is `.badge`.
+- A state is a `.badge`, the same on every page, in tables, lists and dialog headers. Its label is
+  sentence case (`Ready`, `Owner`). Tones: green for what works (Active, Ready, Success, Online),
+  amber for what waits for *you* (Waiting, Expiring, Draft, Needs sign-in), blue for what is in
+  progress or waits on someone else (Pending invite, Starting), red for a failure (Error), neutral
+  for a terminal state (Expired, Revoked, Denied, Disabled). Attributes (roles, Manual, OAuth,
+  Auto, Super admin, Built-in, Popular) are neutral `badge--no-dot`. `.status` is only for a note
+  under a title ("No longer listed by the MCP").
+- A row has at most one text action and a ⋯ menu; a destructive action lives in the menu
+  (`.menu__item--critical`). A destructive action written as text elsewhere is
+  `.button--critical-text`; the filled `.button--critical` is for the confirmation itself.
+- An empty state carries an action only when the page header has none.
+- Identifiers (slugs, tool names, header names, env vars, URLs, token prefixes) are code
+  everywhere: `.code` in prose, `.text-code-*` in values, `.input--mono` in fields. A string
+  with `backticks` goes through `views::inline_code`.
+- A choice with a description is an option card; a label-only choice is a plain radio.
 - Controls are 32px (Medium). They become 44px (Large) by themselves under 768px and inside
   `.control-lg` (auth screens); tables, card headers, banners, list rows, pagination, toolbars,
   menus and toasts stay Medium. Force a size with `.button--lg` / `.button--md`.
@@ -41,14 +60,14 @@ Names are the Figma variables' own code syntax. Light and dark values are define
 
 | Group | Tokens |
 | --- | --- |
-| Background | `--mm-color-bg-frame`, `-frame-hover`, `-frame-selected`, `-canvas`, `-page`, `-surface`, `-surface-secondary`, `-surface-tertiary`, `-input`, `-fill-secondary`, `-fill-secondary-hover`, `-fill-brand`, `-fill-brand-hover`, `-fill-critical`, `-fill-critical-hover`, `-fill-disabled`, `-brand-subtle`, `-neutral`, `-success`, `-warning`, `-critical`, `-info` |
+| Background | `--mm-color-bg-frame`, `-frame-hover`, `-frame-selected`, `-canvas`, `-page`, `-surface`, `-surface-secondary`, `-surface-tertiary`, `-input`, `-fill-secondary`, `-fill-secondary-hover`, `-fill-brand`, `-fill-brand-hover`, `-fill-critical`, `-fill-critical-hover`, `-fill-disabled`, `-brand-subtle`, `-neutral`, `-success`, `-warning`, `-critical`, `-info`, `-floating` (menus, side panels), `-segment-selected` |
 | Text | `--mm-color-text-default`, `-secondary`, `-tertiary`, `-disabled`, `-brand`, `-on-brand`, `-on-critical`, `-on-frame`, `-on-frame-active`, `-on-frame-secondary`, `-neutral`, `-success`, `-warning`, `-critical`, `-info` |
 | Icon | `--mm-color-icon-default`, `-secondary`, `-disabled`, `-brand`, `-on-brand`, `-on-frame`, `-on-frame-active`, `-neutral`, `-success`, `-warning`, `-critical`, `-info` |
-| Border | `--mm-color-border-default`, `-secondary`, `-strong`, `-focus`, `-critical`, `-frame` |
+| Border | `--mm-color-border-default`, `-secondary`, `-strong`, `-control` (fields, checkboxes, radios: 3:1), `-focus`, `-critical`, `-frame`, `-floating`, `-panel` |
 | Chart | `--mm-color-chart-primary`, `-secondary`, `-muted`, `-critical` |
 | Space | `--mm-space-0`, `-025` (1), `-050` (2), `-100` (4), `-150` (6), `-200` (8), `-300` (12), `-400` (16), `-500` (20), `-600` (24), `-800` (32), `-1000` (40), `-1200` (48), `-1600` (64) |
 | Radius | `--mm-radius-100` (4), `-150` (6), `-200` (8), `-250` (10), `-300` (12), `-400` (16), `-500` (20), `-full` |
-| Shadow | `--mm-shadow-100` cards and tables, `-300` hero and menus, `-600` dialogs, side panels, toasts, `-button`, `-input` |
+| Shadow | `--mm-shadow-100` cards, KPI cards, the hero card and tables (a hairline and a 1px lift), `-300` menus, `-600` dialogs, side panels, toasts, `-input` |
 | Type | `--mm-text-heading-4xl … -sm`, `--mm-text-body-lg`, `-lg-medium`, `-md`, `-md-medium`, `-sm`, `-sm-medium`, `-xs`, `--mm-text-code-md`, `-sm`, `-sm-medium` (each is a `font` shorthand) |
 | Sizes | `--mm-size-control-md` (32), `--mm-size-control-lg` (44), `--mm-size-icon` (16), `--mm-size-sidebar` (248), … |
 
@@ -238,11 +257,12 @@ takes `plug`.
 <button type="submit" class="button button--primary">ICON plus Add MCP</button>
 <a class="button button--secondary" href="/logs">View logs</a>
 <button type="button" class="button">Edit</button>                      <!-- tertiary -->
-<button type="submit" class="button button--critical">Delete</button>
+<button type="submit" class="button button--critical">Delete</button>        <!-- in a confirmation -->
+<button type="submit" class="button button--critical-text">Delete all</button>   <!-- destructive, as text -->
 <button class="button button--primary button--lg button--block">Sign in</button>
 ```
 
-Variants: `--primary`, `--secondary`, `--critical`, none (tertiary). Sizes: `--lg`, `--md`.
+Variants: `--primary`, `--secondary`, `--critical`, `--critical-text`, none (tertiary). Sizes: `--lg`, `--md`.
 `--block` is full width. `disabled` or `aria-disabled="true"` greys it. `aria-busy="true"`
 (set by app.js while a form is sent) shows a spinner in place of the icon.
 
@@ -255,9 +275,9 @@ Icon button variants: none (tertiary), `--secondary`, `--on-frame`; size `--lg` 
 ### Badge, status, code, kbd, avatar, tile
 
 ```html
-<span class="badge badge--success">Active</span>            <!-- 6px dot by default -->
-<span class="badge badge--info badge--no-dot">Admin only</span>
-<span class="status status--critical">error</span>          <!-- table cells -->
+<span class="badge badge--success">Active</span>            <!-- 6px dot by default: a state -->
+<span class="badge badge--no-dot">Super admin</span>        <!-- an attribute: neutral, no dot -->
+<span class="status status--warning">Asks by default</span> <!-- a note under a title -->
 <span class="status-dot status-dot--success"></span>
 <code class="code">mcp:tools</code>   <code class="code code--info">mcp:tools</code>
 <kbd class="kbd">⌘K</kbd>
@@ -280,7 +300,9 @@ Status tones: neutral (default), `--success`, `--warning`, `--critical`.
 ```
 
 Tones and their icon: none = info (`info`), `--success` (`circle-check`), `--warning`
-(`triangle-alert`), `--critical` (`circle-x`). Use `role="alert"` for errors.
+(`triangle-alert`), `--critical` (`circle-x`), `--neutral` for a terminal state (expired, denied).
+The tone is on the icon, the semibold title and a soft wash; the body text stays secondary.
+Use `role="alert"` for errors.
 
 ```html
 <div class="empty-state">
@@ -398,6 +420,7 @@ the server reads the form in order and takes no file before a valid token.
 <span class="chip chip--active"><button type="button" class="chip__label" popovertarget="filter-outcome">Outcome: error</button>
   <a class="chip__clear" href="/logs" aria-label="Clear outcome filter">ICON x</a></span>
 
+<!-- a time range is always a chip and a menu (Home, Logs, Analytics) -->
 <!-- segments: links, buttons (role="tab"), or radios -->
 <div class="segmented">
   <a class="segment" href="?range=24h">24 hours</a>
@@ -466,7 +489,6 @@ the server reads the form in order and takes no file before a valid token.
 
 <div class="kpi"><p class="kpi__label">MCPs</p><p class="kpi__value">8</p>
   <p class="kpi__footer"><span class="badge badge--success badge--no-dot">+2</span><span>this month</span></p></div>
-<div class="metric"><p class="metric__label">Success rate</p><p class="metric__value">98.6%</p></div>
 <dl class="key-values"><div class="key-value"><dt>Requested tool</dt><dd>sentry__find_issues</dd></div>…</dl>
 
 <div class="detail-row">
@@ -485,10 +507,16 @@ the server reads the form in order and takes no file before a valid token.
 - `.card__footer-note`: a note at the start of a card footer ("2 unsaved changes").
 - `.breadcrumb--truncate`: one line, the current page is cut with an ellipsis.
 - `.tile--critical`, `.tile--round`, `<span class="tile"><img src="…" alt=""></span>`.
-- `<dl class="card metric-strip">` of `.metric` (`<dt class="metric__label">`, `<dd class="metric__value">`):
-  metrics side by side in one card with dividers (Analytics).
+- A KPI card is the one component for a figure and its label, on Home and on Analytics. Only a
+  change is a chip (`+2`); a plain count starts the footer sentence: `<span class="kpi__count">3</span>`.
+  A value that cannot be known is "—" with `.kpi__value--empty` (`.stat__value--empty` in the
+  Home range strip), never a fake 0.
+  Analytics uses the compact variant: no footer line, so its cards are shorter than Home's.
 
 ### Table
+
+Three row heights, on purpose: the default 56px (MCPs, tokens, team), `--dense` 48px (logs,
+where rows are scanned by the hundred) and `--tight` 44px (the ranking tables of Analytics).
 
 A card that holds a real `<table>`. The layout is fixed: give the fixed columns their Figma
 width with `.col-<px>` on the `<th>` (40 to 240, step 4); the columns without a class share the
@@ -543,7 +571,7 @@ On mobile a table scrolls inside its card. For the main lists, render a list too
     <p class="card__subtitle">8 MCPs · 7 enabled</p></div></header>
   <a class="list-row" href="/mcps/1/edit"><span class="tile">ICON notebook-text</span>
     <span class="list-row__text"><span class="list-row__title">Notion</span><span class="list-row__subtitle">notion · HTTP</span></span>
-    <span class="badge badge--success">ready</span></a>
+    <span class="badge badge--success">Ready</span></a>
 </section>
 ```
 
@@ -587,7 +615,7 @@ be read whole (a token shown once, a redirect URI).
 <article class="template-card" data-filter-item data-filter-text="notion productivity notes wiki" data-filter-tags="popular productivity">
   <div class="template-card__header"><span class="tile tile--lg">ICON notebook-text</span>
     <div class="template-card__text"><h3 class="template-card__name">Notion</h3><p class="template-card__category">Productivity</p></div>
-    <span class="badge badge--info badge--no-dot">Built-in</span></div>      <!-- optional -->
+    <span class="badge badge--no-dot">Built-in</span></div>      <!-- optional -->
   <p class="template-card__description">Search, read, and update pages and databases in your Notion workspace.</p>
   <a class="button button--secondary" href="/mcps/new?template=notion">Set up Notion</a>
 </article>
@@ -608,7 +636,7 @@ The gallery is `<div class="grid grid--3">` of template cards.
   </div>
   <div class="dialog__body">…</div>
   <div class="dialog__footer">
-    <button type="submit" class="button button--critical dialog__footer-start" form="delete-mcp">Delete</button>   <!-- optional, left -->
+    <button type="submit" class="button button--critical-text dialog__footer-start" form="delete-mcp">Delete</button>   <!-- optional, left -->
     <button type="button" class="button button--secondary" data-dialog-close>Cancel</button>
     <button type="submit" class="button button--primary">Save changes</button>
   </div>
@@ -707,7 +735,7 @@ team has a tailnet. The MCP list names the tailnet in the second line of the end
 
 ```html
 <div class="context-bar">
-  <button type="button" class="range" popovertarget="range-menu">Last 7 days ICON chevron-down</button>
+  <button type="button" class="chip" popovertarget="range-menu">Last 7 days ICON chevron-down</button>
   <dl class="stats"><div class="stat"><dt class="stat__label">Tool calls</dt><dd class="stat__value">8,412</dd></div>…</dl>
 </div>
 
@@ -747,7 +775,7 @@ team has a tailnet. The MCP list names the tailnet in the second line of the end
 </div>
 
 <section class="section">                           <!-- settings: intro on the left, card on the right -->
-  <div class="section__intro"><h2 class="section__title">My Instance <span class="badge badge--info badge--no-dot">Admin only</span></h2>
+  <div class="section__intro"><h2 class="section__title">My instance <span class="badge badge--no-dot">Super admin</span></h2>
     <p class="section__description">Configure settings that apply to everyone using this MyMCPs instance.</p></div>
   <div class="card">…</div>
 </section>

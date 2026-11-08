@@ -86,7 +86,7 @@ pub fn protection_section(protection: &Protection) -> Markup {
                 div class="detail-row" {
                     div class="detail-row__text" {
                         span class="detail-row__label" { "Authenticator app" }
-                        span class="detail-row__value" {
+                        span class="detail-row__description" {
                             @if let Some(since) = protection.authenticator_since {
                                 "On since " (date(since)) ". A 6-digit code is asked after your password."
                             } @else {
@@ -104,7 +104,7 @@ pub fn protection_section(protection: &Protection) -> Markup {
                     div class="detail-row" {
                         div class="detail-row__text" {
                             span class="detail-row__label" { (passkey.name) }
-                            span class="detail-row__value" {
+                            span class="detail-row__description" {
                                 "Passkey added " (date(passkey.created_at)) ", "
                                 @if let Some(used) = passkey.last_used_at { "last used " (date(used)) "." } @else { "never used." }
                             }
@@ -116,7 +116,7 @@ pub fn protection_section(protection: &Protection) -> Markup {
                 div class="detail-row" {
                     div class="detail-row__text" {
                         span class="detail-row__label" { "Passkeys" }
-                        span class="detail-row__value" {
+                        span class="detail-row__description" {
                             "Sign in with your fingerprint, your face or a security key. A passkey works without your password, and in place of a code."
                         }
                     }
@@ -126,7 +126,7 @@ pub fn protection_section(protection: &Protection) -> Markup {
                     div class="detail-row" {
                         div class="detail-row__text" {
                             span class="detail-row__label" { "Recovery codes" }
-                            span class="detail-row__value" {
+                            span class="detail-row__description" {
                                 (protection.recovery_codes_left) " of " (RECOVERY_CODES)
                                 " left. Each one signs you in once, when you have neither your app nor a passkey at hand."
                             }
@@ -179,7 +179,7 @@ pub fn add_passkey_form(context: &PageContext, form: &FormState) -> Markup {
                     input class="input" id="passkey-name" name="name" type="text" autocomplete="off" maxlength="120" value=(form.old("name"))
                         autofocus[!form.has_errors()] aria-invalid=[error.map(|_| "true")] aria-describedby="passkey-name-help";
                     @if let Some(message) = error { p class="field__error" { (message) } }
-                    p class="field__help" id="passkey-name-help" { "To tell your passkeys apart, such as \"MacBook\" or \"YubiKey\"." }
+                    p class="field__help" id="passkey-name-help" { "To tell your passkeys apart, such as “MacBook” or “YubiKey”." }
                 }
                 (confirm_password(form, "passkey-password", false))
             }

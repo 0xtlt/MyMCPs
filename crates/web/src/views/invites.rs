@@ -75,10 +75,6 @@ fn remove_invite_form(context: &PageContext, invite: &Invite, button: Markup) ->
     }
 }
 
-fn row_button() -> Markup {
-    html! { button type="submit" class="button" { "Remove" } }
-}
-
 fn menu_button(label: &str) -> Markup {
     html! {
         button type="submit" class="menu__item menu__item--critical" role="menuitem" { (icon("trash")) (label) }
@@ -131,7 +127,13 @@ pub(crate) fn invites(context: &PageContext, invites: &[Invite]) -> Markup {
                                                 }
                                             }
                                         }
-                                        (remove_invite_form(context, invite, row_button()))
+                                        // A destructive action lives in the row's menu, as on every table.
+                                        @let actions = format!("invite-{}-actions", invite.id);
+                                        button type="button" class="icon-button" popovertarget=(actions)
+                                            aria-label=(format!("More actions for {}", invite.email)) { (icon("ellipsis")) }
+                                        div class="menu" id=(actions) popover role="menu" {
+                                            (remove_invite_form(context, invite, menu_button("Remove invite")))
+                                        }
                                     }
                                 }
                             }

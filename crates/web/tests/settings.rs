@@ -137,13 +137,11 @@ async fn shows_instance_settings_only_to_admins() {
     let page = admin_page.text();
     assert!(page.contains("<title>Settings · MyMCPs</title>"));
     assert!(page.contains("<h1 class=\"page-header__title\">Settings</h1>"));
-    assert!(page.contains("<span class=\"detail-row__value\">Test User</span>"));
-    assert!(page.contains("<span class=\"detail-row__value\">admin@example.com</span>"));
+    assert!(page.contains("<span class=\"detail-row__description\">Test User</span>"));
+    assert!(page.contains("<span class=\"detail-row__description\">admin@example.com</span>"));
     assert!(page.contains("data-dialog-open=\"#change-email\""));
     assert!(page.contains("data-dialog-open=\"#change-password\""));
-    assert!(page.contains(
-        "My Instance <span class=\"badge badge--info badge--no-dot\">Super admin</span>"
-    ));
+    assert!(page.contains("My instance <span class=\"badge badge--no-dot\">Super admin</span>"));
     assert!(page.contains(
         "<form class=\"card\" method=\"post\" action=\"/settings/mcp-logging?_method=PATCH\">"
     ));
@@ -166,11 +164,11 @@ async fn shows_instance_settings_only_to_admins() {
 
     assert_eq!(member_page.status, StatusCode::OK);
     let page = member_page.text();
-    assert!(page.contains("<span class=\"detail-row__value\">member@example.com</span>"));
+    assert!(page.contains("<span class=\"detail-row__description\">member@example.com</span>"));
     assert!(page.contains("action=\"/settings/email?_method=PATCH\""));
     assert!(page.contains("action=\"/settings/password?_method=PATCH\""));
     for admin_only in [
-        "My Instance",
+        "My instance",
         "Super admin",
         "/settings/mcp-logging",
         "gatewayToolMode",
@@ -204,7 +202,7 @@ async fn says_so_when_the_account_has_no_name() {
         .unwrap();
 
     let page = app.get("/settings").login_as(&member).send().await.text();
-    assert!(page.contains("<span class=\"detail-row__label\">Name</span><span class=\"detail-row__value\">Not set</span>"));
+    assert!(page.contains("<span class=\"detail-row__label\">Name</span><span class=\"detail-row__description\">Not set</span>"));
 }
 
 #[tokio::test]
@@ -229,7 +227,7 @@ async fn updates_the_signed_in_user_email_after_password_confirmation() {
         .await
         .text();
     assert!(page.contains("<p class=\"toast__message\">Email updated</p>"));
-    assert!(page.contains("<span class=\"detail-row__value\">updated@example.com</span>"));
+    assert!(page.contains("<span class=\"detail-row__description\">updated@example.com</span>"));
 }
 
 #[tokio::test]

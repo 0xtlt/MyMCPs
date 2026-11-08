@@ -76,7 +76,9 @@ fn banners(page: &McpToolsPage) -> Markup {
                 (icon("circle-x"))
                 div class="banner__content" {
                     p class="banner__title" { (page.mcp_name) " did not list its tools" }
-                    p { (error) " Only the tools with a saved choice are shown." }
+                    p { "Only the tools with a saved choice are shown." }
+                    // What the server answered is data (status, headers): written as code.
+                    pre class="code-block__body banner__code" { (error) }
                 }
             }
         }
@@ -120,10 +122,10 @@ fn tool_row(index: usize, tool: &ToolRow) -> Markup {
                         span class="cell-sub clamp-3" { (description) }
                     }
                     @if !tool.is_listed {
-                        span class="status" { "No longer listed by the MCP" }
+                        span { span class="badge" { "No longer listed by the MCP" } }
                     }
                     @if tool.default_mode == ToolApprovalMode::Ask {
-                        span class="status status--warning" { "Asks by default" }
+                        span { span class="badge badge--warning" { "Asks by default" } }
                     }
                 }
             }
@@ -146,7 +148,7 @@ fn fixed_row(tool: &ToolRow) -> Markup {
             td class="cell-wrap" {
                 div class="cell-stack cell-stack--wrap gap-050" {
                     span class="cell-code" { (tool.name) }
-                    span class="status status--warning" { "Always asks: no choice can be saved for a name that is blank or this long" }
+                    span class="cell-sub cell-sub--warning" { "Always asks: no choice can be saved for a name that is blank or this long" }
                 }
             }
             td class="cell-end" {}

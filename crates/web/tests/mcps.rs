@@ -139,14 +139,14 @@ async fn lists_the_mcps_by_name_with_what_each_one_is() {
     assert!(rows[2].contains("<span class=\"cell-title\">Shopify Dev</span>"));
     assert!(page.contains("3 MCPs · 2 enabled"));
     assert!(page.contains("1–3 of 3"));
-    assert!(page.contains("25 rows per page"));
+    assert!(page.contains("25 per page"));
 
     // Status, slug, endpoint, sign-in and the icon of its template.
     let notion_row = rows[1];
-    assert!(notion_row.contains("<span class=\"status status--success\">ready</span>"));
+    assert!(notion_row.contains("<span class=\"badge badge--success\">Ready</span>"));
     assert!(notion_row.contains("<span class=\"cell-sub cell-sub--code\">notion</span>"));
     assert!(notion_row.contains("<span class=\"cell-code\">https://mcp.notion.com/mcp</span>"));
-    assert!(notion_row.contains("<code class=\"code\">auto</code>"));
+    assert!(notion_row.contains("<span class=\"badge badge--no-dot\">Auto</span>"));
     assert!(notion_row.contains(&mymcps_web::views::icon("notebook-text").into_string()));
     // No tool was listed since the server started.
     assert!(notion_row.contains("<td class=\"cell-tertiary\">—</td>"));
@@ -169,7 +169,7 @@ async fn lists_the_mcps_by_name_with_what_each_one_is() {
     assert!(menu.contains(&format!("action=\"/mcps/{}/probe\"", notion.id)));
     assert!(menu.contains(&format!("href=\"/mcps/{}/tools\"", notion.id)));
     assert!(menu.contains(&format!(
-        "action=\"/mcps/{}?_method=DELETE\" data-confirm=\"Delete Notion?\" data-confirm-label=\"Delete\" data-confirm-tone=\"critical\"",
+        "action=\"/mcps/{}?_method=DELETE\" data-confirm=\"This cannot be undone.\" data-confirm-title=\"Delete Notion?\" data-confirm-label=\"Delete\" data-confirm-tone=\"critical\"",
         notion.id
     )));
     // Neither OAuth nor an npm package: nothing to connect or to update.
@@ -184,11 +184,12 @@ async fn lists_the_mcps_by_name_with_what_each_one_is() {
     assert!(shopify_row.contains("Update MCP"));
     assert!(shopify_row.contains(&mymcps_web::views::icon("shopping-bag").into_string()));
 
-    // An MCP in error says why, and a disabled one can be enabled.
+    // An MCP in error says why, and a disabled one reads "Disabled" and can be
+    // enabled.
     let broken_row = rows[0];
-    assert!(broken_row.contains("<span class=\"status status--critical\">error</span>"));
-    assert!(broken_row.contains("<code class=\"code\">bearer</code>"));
-    assert!(broken_row.contains("cell-sub--critical\" title=\"connect ECONNREFUSED &lt;b&gt;\">connect ECONNREFUSED &lt;b&gt;</span>"));
+    assert!(broken_row.contains("<span class=\"badge\">Disabled</span>"));
+    assert!(broken_row.contains("<span class=\"badge badge--no-dot\">Bearer</span>"));
+    assert!(broken_row.contains("<span class=\"cell-sub\" title=\"connect ECONNREFUSED &lt;b&gt;\">connect ECONNREFUSED &lt;b&gt;</span>"));
     assert!(
         broken_row.contains("value=\"true\" aria-checked=\"false\" aria-label=\"Broken enabled\"")
     );
@@ -200,8 +201,8 @@ async fn lists_the_mcps_by_name_with_what_each_one_is() {
     assert!(list.contains("<span class=\"list-row__subtitle\">notion · HTTP</span>"));
     assert!(list.contains("<span class=\"list-row__subtitle\">shopify-dev · npm</span>"));
     assert!(list.contains("<span class=\"list-row__subtitle\">broken · HTTP · off</span>"));
-    assert!(list.contains("<span class=\"badge badge--success\">ready</span>"));
-    assert!(list.contains("<span class=\"badge\">error</span>"));
+    assert!(list.contains("<span class=\"badge badge--success\">Ready</span>"));
+    assert!(list.contains("<span class=\"badge\">Disabled</span>"));
     assert!(list.contains(&format!(
         "<a class=\"list-row\" href=\"/mcps/{}/edit\" data-dialog-open=\"#edit-mcp\"",
         broken.id
@@ -218,7 +219,7 @@ async fn a_member_reads_the_registry_and_changes_nothing_of_it() {
     // The same registry, without the controls that change it.
     let page = page(&app, &member, "/mcps").await.text();
     assert!(page.contains("<span class=\"cell-title\">Shared</span>"));
-    assert!(page.contains("<span class=\"status status--success\">on</span>"));
+    assert!(page.contains("<span class=\"badge badge--success\">On</span>"));
     for control in [
         "Add MCP",
         "/mcps/new",
@@ -395,9 +396,9 @@ async fn searches_and_filters_the_registry() {
         "<button type=\"button\" class=\"chip hide-mobile\" popovertarget=\"filter-status\">Status"
     ));
     assert!(all.contains("<a class=\"menu__item\" role=\"menuitemradio\" aria-checked=\"true\" href=\"/mcps\">All statuses</a>"));
-    assert!(all.contains("<a class=\"menu__item\" role=\"menuitemradio\" aria-checked=\"false\" href=\"/mcps?status=error\">error</a>"));
+    assert!(all.contains("<a class=\"menu__item\" role=\"menuitemradio\" aria-checked=\"false\" href=\"/mcps?status=error\">Error</a>"));
     assert!(all.contains("href=\"/mcps?transport=builtin\">Built-in</a>"));
-    assert!(all.contains("href=\"/mcps?auth=password\">password</a>"));
+    assert!(all.contains("href=\"/mcps?auth=password\">Password</a>"));
 
     // The search looks at the name, the slug, the description and the endpoint.
     assert_eq!(names(&listed("/mcps?q=NOTION").await), ["Notion"]);
@@ -412,7 +413,7 @@ async fn searches_and_filters_the_registry() {
     let errors = listed("/mcps?status=error").await;
     assert_eq!(names(&errors), ["Everything"]);
     assert!(errors.contains("1 MCP · 0 enabled"));
-    assert!(errors.contains("<button type=\"button\" class=\"chip__label\" popovertarget=\"filter-status\">Status: error</button>"));
+    assert!(errors.contains("<button type=\"button\" class=\"chip__label\" popovertarget=\"filter-status\">Status: Error</button>"));
     assert!(
         errors.contains(
             "<a class=\"chip__clear\" href=\"/mcps\" aria-label=\"Clear status filter\">"
@@ -494,7 +495,7 @@ async fn shows_25_mcps_a_page() {
     // A filter starts again on its first page, and pages keep the filter.
     let filtered = listed("/mcps?transport=http&page=2").await;
     assert!(filtered.contains("href=\"/mcps?transport=http\" aria-label=\"Previous page\">"));
-    assert!(filtered.contains("href=\"/mcps?status=ready&amp;transport=http\">ready</a>"));
+    assert!(filtered.contains("href=\"/mcps?status=ready&amp;transport=http\">Ready</a>"));
 }
 
 // --- the actions of a row ---
@@ -754,7 +755,10 @@ async fn opens_the_edit_dialog_at_its_own_address() {
     assert!(full.contains("<span class=\"cell-title\">Other</span>"));
     assert!(full.contains("data-dialog-return=\"/mcps?transport=http\" data-open"));
     let dialog = between(&full, "id=\"edit-mcp\"", "</dialog>");
-    assert!(dialog.contains("<p class=\"dialog__subtitle\">docs</p>"));
+    assert!(
+        dialog
+            .contains("<p class=\"dialog__subtitle\"><span class=\"text-code-md\">docs</span></p>")
+    );
     assert!(dialog.contains(&format!(
         "<form class=\"dialog__body\" id=\"edit-mcp-form\" method=\"post\" action=\"/mcps/{}?_method=PUT\" data-async>",
         mcp.id
@@ -765,14 +769,14 @@ async fn opens_the_edit_dialog_at_its_own_address() {
     assert!(dialog.contains("name=\"httpUrl\" type=\"text\" value=\"https://docs.example/mcp\""));
     assert!(dialog.contains("name=\"authType\" value=\"auto\" checked"));
     assert!(dialog.contains("name=\"enabled\" checked"));
-    assert!(dialog.contains("<span class=\"status status--success push-end\">ready</span>"));
+    assert!(dialog.contains("<span class=\"badge badge--success push-end\">Ready</span>"));
     // The other requests of the dialog are forms of their own.
     assert!(dialog.contains(&format!(
         "<form id=\"edit-mcp-probe\" method=\"post\" action=\"/mcps/{}/probe\" data-async hidden>",
         mcp.id
     )));
     assert!(dialog.contains(&format!(
-        "<form id=\"edit-mcp-delete\" method=\"post\" action=\"/mcps/{}?_method=DELETE\" data-confirm=\"Delete Docs?\"",
+        "<form id=\"edit-mcp-delete\" method=\"post\" action=\"/mcps/{}?_method=DELETE\" data-confirm=\"This cannot be undone.\" data-confirm-title=\"Delete Docs?\"",
         mcp.id
     )));
     assert!(dialog.contains("form=\"edit-mcp-delete\">Delete</button>"));
@@ -834,7 +838,7 @@ async fn opens_on_the_last_error_and_says_it_once() {
     assert!(dialog.contains(
         "<p class=\"banner__title\">Last connection error</p><p>HTTP 503 from upstream</p>"
     ));
-    assert!(dialog.contains("<span class=\"status status--critical push-end\">error</span>"));
+    assert!(dialog.contains("<span class=\"badge badge--critical push-end\">Error</span>"));
     // The banner says it: no toast repeats it.
     assert!(!page.contains("<p class=\"toast__message\">HTTP 503 from upstream</p>"));
 
@@ -924,7 +928,7 @@ async fn offers_the_templates_of_the_gallery() {
     assert!(shopify.contains("data-filter-tags=\"popular commerce\""));
     assert!(shopify.contains("<p class=\"template-card__category\">Commerce</p>"));
     // A popular template says so next to its action, where a badge has room.
-    assert!(shopify.contains("<a class=\"button button--secondary\" href=\"/mcps/new?template=shopify-dev\">Set up Shopify Dev</a><span class=\"badge badge--brand badge--no-dot\">Popular</span>"));
+    assert!(shopify.contains("<a class=\"button button--secondary\" href=\"/mcps/new?template=shopify-dev\">Set up Shopify Dev</a><span class=\"badge badge--no-dot template-card__popular\">Popular</span>"));
     assert!(!shopify.contains("Built-in"));
     let stripe = between(gallery, "data-filter-text=\"stripe", "</article>");
     assert!(stripe.contains("data-filter-tags=\"commerce\" hidden"));
@@ -946,11 +950,15 @@ async fn offers_the_templates_of_the_gallery() {
         );
         assert!(
             card.contains(&format!(
-                "<p class=\"template-card__category\">{category}</p></div><span class=\"badge badge--info badge--no-dot\">Built-in</span>"
+                "<p class=\"template-card__category\">{category}</p></div><span class=\"badge badge--no-dot\">Built-in</span>"
             )),
             "{text}"
         );
-        assert!(card.contains("<span class=\"badge badge--brand badge--no-dot\">Popular</span>"));
+        assert!(
+            card.contains(
+                "<span class=\"badge badge--no-dot template-card__popular\">Popular</span>"
+            )
+        );
     }
     assert_eq!(gallery.matches(">Built-in</span>").count(), 3);
     assert_eq!(gallery.matches(">Popular</span>").count(), 11);
@@ -1155,7 +1163,7 @@ async fn reopens_the_dialog_of_an_mcp_that_wants_oauth() {
         "<a class=\"button button--secondary\" href=\"/mcps/{}/oauth/start\">Connect</a>",
         mcp.id
     )));
-    assert!(dialog.contains("<span class=\"status status--warning push-end\">draft</span>"));
+    assert!(dialog.contains("<span class=\"badge badge--warning push-end\">Draft</span>"));
     // The row offers it too.
     assert!(table_rows(&page)[0].contains(&format!(
         "<a class=\"menu__item\" role=\"menuitem\" href=\"/mcps/{}/oauth/start\">",

@@ -150,7 +150,7 @@ pub fn create_mcp_install_config(
                 title: "~/.codex/config.toml",
                 code: lines.join("\n"),
                 restart_instruction: "Save the file, then restart Codex or restart the IDE extension.",
-                verify_instruction: "Open /mcp in Codex and confirm that mymcps is connected.",
+                verify_instruction: "Open `/mcp` in Codex and confirm that `mymcps` is connected.",
             }
         }
         McpClient::Claude => {
@@ -181,7 +181,7 @@ pub fn create_mcp_install_config(
                 title: "Terminal",
                 code: lines.join("\n"),
                 restart_instruction: "Restart Claude Code after the command completes.",
-                verify_instruction: "Run /mcp in Claude Code and confirm that mymcps is connected.",
+                verify_instruction: "Run `/mcp` in Claude Code and confirm that `mymcps` is connected.",
             }
         }
         McpClient::Cursor => {
@@ -205,7 +205,7 @@ pub fn create_mcp_install_config(
                 // Two spaces of indentation, as `JSON.stringify(value, null, 2)`.
                 code: serde_json::to_string_pretty(&document).unwrap_or_default(),
                 restart_instruction: "Save the file, then restart Cursor.",
-                verify_instruction: "Open Cursor MCP settings and confirm that mymcps is enabled.",
+                verify_instruction: "Open Cursor MCP settings and confirm that `mymcps` is enabled.",
             }
         }
     }
@@ -357,7 +357,7 @@ mod tests {
         );
         assert_eq!(
             codex.verify_instruction,
-            "Open /mcp in Codex and confirm that mymcps is connected."
+            "Open `/mcp` in Codex and confirm that `mymcps` is connected."
         );
 
         let claude = config(McpClient::Claude);
@@ -369,7 +369,7 @@ mod tests {
         );
         assert_eq!(
             claude.verify_instruction,
-            "Run /mcp in Claude Code and confirm that mymcps is connected."
+            "Run `/mcp` in Claude Code and confirm that `mymcps` is connected."
         );
 
         let cursor = config(McpClient::Cursor);
@@ -381,7 +381,7 @@ mod tests {
         );
         assert_eq!(
             cursor.verify_instruction,
-            "Open Cursor MCP settings and confirm that mymcps is enabled."
+            "Open Cursor MCP settings and confirm that `mymcps` is enabled."
         );
     }
 
