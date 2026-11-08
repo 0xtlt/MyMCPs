@@ -765,10 +765,19 @@ impl ImapClient {
                 continue;
             }
             return match response.command.to_uppercase().as_str() {
-                "OK" | "BYE" => Ok(Exchange {
+                "OK" => Ok(Exchange {
                     untagged,
                     tagged: response,
                 }),
+                // The server answered, and hung up: no command goes through after it.
+                "BYE" => {
+                    self.is_closed = true;
+                    self.mailbox = None;
+                    Ok(Exchange {
+                        untagged,
+                        tagged: response,
+                    })
+                }
                 status @ ("NO" | "BAD") => {
                     let text = response.text();
                     // A message deleted in the meantime is not a reason to fail the others.
@@ -1163,7 +1172,8 @@ impl ImapClient {
         let mut mailbox = SelectedMailbox {
             path: path.to_owned(),
             exists: 0,
-            read_only: false,
+            // A server that does not say how it opened the mailbox opened it as it was asked.
+            read_only,
             permanent_flags: None,
         };
         for response in &exchange.untagged {
@@ -1190,8 +1200,10 @@ impl ImapClient {
             }
         }
         // The server says how it opened the mailbox, which is not always how it was asked to.
-        if let Some(access) = exchange.tagged.code_name() {
-            mailbox.read_only = access == "READ-ONLY";
+        match exchange.tagged.code_name().as_deref() {
+            Some("READ-ONLY") => mailbox.read_only = true,
+            Some("READ-WRITE") => mailbox.read_only = false,
+            _ => {}
         }
         self.mailbox = Some(mailbox);
         Ok(())

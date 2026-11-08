@@ -17,12 +17,13 @@ mod team;
 mod two_factor;
 mod user;
 
-pub use access_token::{AccessToken, ScopeMode, TokenSource};
+pub use access_token::{AccessToken, ScopeMode, TokenSource, TokenStatus};
 pub use approval_request::{ApprovalDecision, ApprovalRequest, ApprovalState};
 pub use instance_setting::{GatewayToolMode, InstanceSetting, McpLogLevel};
 pub use invite::Invite;
 pub use mcp::{
-    DEFAULT_TOOL_TIMEOUT_SECONDS, Mcp, McpAuthType, McpOauthBasis, McpStatus, McpTransport,
+    AWAITING_SIGN_IN_ERROR, DEFAULT_TOOL_TIMEOUT_SECONDS, Mcp, McpAuthType, McpHealth,
+    McpOauthBasis, McpProbeBasis, McpStatus, McpTransport, ProbeOutcome,
 };
 pub use mcp_call_log::{CallErrorCategory, CallOutcome, McpCallLog};
 pub use oauth::{OauthAuthorizationCode, OauthClient};

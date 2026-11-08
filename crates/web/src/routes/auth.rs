@@ -146,9 +146,14 @@ pub(crate) fn signed_in_destination(session: &Session, query: Option<&str>) -> S
             .validate_as::<String>(session.pull(key).as_ref())
             .ok()
     };
-    return_to(&OAUTH_RETURN_TO_VALIDATOR, "oauthReturnTo")
-        .or_else(|| return_to(&APPROVAL_RETURN_TO_VALIDATOR, "approvalReturnTo"))
-        .or_else(|| return_to(&INVITE_RETURN_TO_VALIDATOR, INVITE_RETURN_TO_KEY))
+    // All three are taken out of the session, whichever wins: one left
+    // behind would send a later sign-in somewhere it did not ask to go.
+    let oauth = return_to(&OAUTH_RETURN_TO_VALIDATOR, "oauthReturnTo");
+    let approval = return_to(&APPROVAL_RETURN_TO_VALIDATOR, "approvalReturnTo");
+    let invite = return_to(&INVITE_RETURN_TO_VALIDATOR, INVITE_RETURN_TO_KEY);
+    oauth
+        .or(approval)
+        .or(invite)
         .unwrap_or_else(|| with_query("/", query))
 }
 

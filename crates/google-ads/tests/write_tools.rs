@@ -176,6 +176,54 @@ async fn describes_a_budget_change_from_what_google_says_not_from_what_the_agent
 }
 
 #[tokio::test]
+async fn runs_only_the_change_a_person_approved_and_nothing_the_account_turned_it_into() {
+    let shared = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let google = Google::new(FakeGoogleAds::responding({
+        let shared = shared.clone();
+        move |request| {
+            let is_campaign = request.url.path().ends_with("/googleAds:search")
+                && request.query().contains(" FROM campaign ");
+            (is_campaign && shared.load(std::sync::atomic::Ordering::SeqCst)).then(|| {
+                // Someone moved the campaign to a budget it shares with others.
+                let mut campaign = fixtures::campaign();
+                campaign["campaignBudget"]["referenceCount"] = json!("3");
+                google_json(&json!({ "results": [campaign] }), 200)
+            })
+        }
+    }))
+    .await;
+    let call = json!({ "customer_id": "123-456-7890", "campaign_id": "111", "daily_budget": 5 });
+
+    google
+        .describe("update_campaign_budget", call.clone(), &[])
+        .await
+        .unwrap()
+        .unwrap();
+    shared.store(true, std::sync::atomic::Ordering::SeqCst);
+    let error = google
+        .call("update_campaign_budget", call.clone(), &[])
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, BuiltinError::Tool(message) if message.contains("since this call was approved")),
+        "{error}"
+    );
+    assert!(google.fake.mutations().is_empty());
+
+    // Approved again as the account now is, it runs.
+    google
+        .describe("update_campaign_budget", call.clone(), &[])
+        .await
+        .unwrap()
+        .unwrap();
+    google
+        .call("update_campaign_budget", call, &[])
+        .await
+        .unwrap();
+    assert_eq!(google.fake.mutations().len(), 1);
+}
+
+#[tokio::test]
 async fn does_not_ask_anyone_to_approve_what_google_would_refuse() {
     let google = Google::new(FakeGoogleAds::responding(|request| {
         let checked = request.url.path().ends_with("/googleAds:mutate")

@@ -561,14 +561,15 @@ async fn says_when_a_waiting_call_can_no_longer_run() {
         .execute(&**gateway.db())
         .await
         .unwrap();
+    // A call whose access token no longer works has ended: nobody decides it.
     let revoked = page().await;
-    assert!(revoked.contains(warning));
-    // It can still be decided, which is how it leaves the list.
-    assert!(revoked.contains("Deny Approve"));
-
-    // Once decided, the page says what was decided and no more.
-    assert!(gateway.decide(&mcp, Decision::Deny, &admin).await);
-    assert!(!page().await.contains(warning));
+    assert!(
+        revoked.contains(
+            "Its access token was revoked or has expired, so the call can no longer run."
+        )
+    );
+    assert!(!revoked.contains("Deny Approve"));
+    assert!(!gateway.decide(&mcp, Decision::Deny, &admin).await);
 }
 
 #[tokio::test]

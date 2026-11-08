@@ -405,6 +405,32 @@ async fn saves_a_healthy_connection_without_undoing_what_changed_meanwhile() {
     assert_eq!(saved.name, "Renamed");
 }
 
+#[tokio::test]
+async fn drops_the_test_of_an_mcp_that_was_edited_while_it_ran() {
+    let core = TestCore::new().await;
+    let (upstream, _) = mcp_server(&core, json!({}));
+    let mut mcp = create_mcp(&core, |mcp| {
+        mcp.http_url = Some("https://mcp.example/mcp".into());
+        mcp.auth_type = McpAuthType::Bearer;
+    })
+    .await;
+    // Another request gave it another secret after this one read it, and
+    // left it untested: what this test finds was found with the old one.
+    let mut other = find_mcp(&core, mcp.id).await;
+    other.auth_bearer = encrypt(&core, "another-token");
+    other.status = McpStatus::Draft;
+    other.save(&*core.db).await.unwrap();
+
+    upstream.test_and_update_status(&mut mcp).await.unwrap();
+
+    let saved = find_mcp(&core, mcp.id).await;
+    assert_eq!(saved.status, McpStatus::Draft);
+    assert_eq!(saved.auth_bearer, other.auth_bearer);
+    // The copy is read again: the caller reports the MCP as it is.
+    assert_eq!(mcp.status, McpStatus::Draft);
+    assert_eq!(mcp.auth_bearer, other.auth_bearer);
+}
+
 fn unauthorized_after_the_handshake(call: &Call) -> CannedResponse {
     if call.json()["method"] == "tools/list" {
         return status(401).body("token expired");

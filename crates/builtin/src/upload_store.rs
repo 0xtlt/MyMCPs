@@ -1,9 +1,10 @@
 //! Files that agents send to upload links, kept on disk until a tool uses
 //! them or an hour has passed.
 
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
@@ -123,10 +124,142 @@ struct Kept {
     bytes: u64,
 }
 
+/// The uploads under way, which the files on disk do not tell the size of
+/// yet, so that uploads sent at the same time for one MCP share its room.
+#[derive(Debug, Default)]
+struct Ledger {
+    /// Taken to count what an MCP keeps and reserve a place in it, and to
+    /// settle a finished upload: a count never misses a file in between.
+    counting: tokio::sync::Mutex<()>,
+    usage: Mutex<HashMap<i64, Usage>>,
+}
+
+#[derive(Debug, Default)]
+struct Usage {
+    /// The files that were whole, or stale, at the last count, and the uploads
+    /// that finished since.
+    kept: Kept,
+    /// The bytes received so far by each upload under way, by its id.
+    arriving: HashMap<String, u64>,
+}
+
+impl Usage {
+    fn bytes(&self) -> u64 {
+        self.kept.bytes + self.arriving.values().sum::<u64>()
+    }
+}
+
+impl Ledger {
+    fn usage(&self) -> MutexGuard<'_, HashMap<i64, Usage>> {
+        self.usage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The ids of the uploads under way for one MCP.
+    fn arriving(&self, mcp_id: i64) -> Vec<String> {
+        self.usage()
+            .get(&mcp_id)
+            .map(|usage| usage.arriving.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether one more upload fits in what one MCP keeps, `kept` counted
+    /// from its directory, and the uploads under way.
+    fn check_room(&self, mcp_id: i64, kept: Kept, id: &str) -> Result<(), UploadRefusal> {
+        let usage = self.usage();
+        let (files, bytes) = match usage.get(&mcp_id) {
+            Some(entry) if entry.arriving.contains_key(id) => return Err(UploadRefusal::Taken),
+            Some(entry) => (entry.arriving.len(), entry.arriving.values().sum::<u64>()),
+            None => (0, 0),
+        };
+        if kept.files + files >= MAX_STORED_FILES || kept.bytes + bytes >= MAX_STORED_BYTES {
+            return Err(UploadRefusal::Full);
+        }
+        Ok(())
+    }
+
+    /// Count an upload as under way, with nothing received yet. Called with
+    /// `counting` held, so `kept` is still what the MCP keeps.
+    fn begin(&self, mcp_id: i64, kept: Kept, id: &str) {
+        let mut usage = self.usage();
+        let entry = usage.entry(mcp_id).or_default();
+        entry.kept = kept;
+        entry.arriving.insert(id.to_owned(), 0);
+    }
+
+    /// Forget an upload under way; `size` is what it now keeps on disk.
+    fn settle(&self, mcp_id: i64, id: &str, size: Option<u64>) {
+        let mut usage = self.usage();
+        let Some(entry) = usage.get_mut(&mcp_id) else {
+            return;
+        };
+        entry.arriving.remove(id);
+        if let Some(size) = size {
+            entry.kept.files += 1;
+            entry.kept.bytes += size;
+        }
+        if entry.arriving.is_empty() {
+            // Counted again from the disk by the next upload.
+            usage.remove(&mcp_id);
+        }
+    }
+}
+
+/// An upload under way: its file and its place in the ledger. Dropped
+/// before [`Reservation::commit`], by a failure or a request that was
+/// abandoned halfway, it deletes what it wrote and gives its place back.
+struct Reservation<'a> {
+    ledger: &'a Ledger,
+    mcp_id: i64,
+    id: String,
+    path: PathBuf,
+    is_committed: bool,
+}
+
+impl Reservation<'_> {
+    /// Count `bytes` more for this upload. `false` when the MCP has no room left for them.
+    fn grow(&self, bytes: u64) -> bool {
+        let mut usage = self.ledger.usage();
+        let Some(entry) = usage.get_mut(&self.mcp_id) else {
+            return false;
+        };
+        let total = entry.bytes() + bytes;
+        if total > MAX_STORED_BYTES {
+            return false;
+        }
+        if let Some(received) = entry.arriving.get_mut(&self.id) {
+            *received += bytes;
+        }
+        true
+    }
+
+    async fn commit(mut self, size: u64) {
+        let _counting = self.ledger.counting.lock().await;
+        self.ledger.settle(self.mcp_id, &self.id, Some(size));
+        self.is_committed = true;
+    }
+}
+
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        if self.is_committed {
+            return;
+        }
+        // Nothing is kept of a failed upload, so its link can be tried again.
+        let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::remove_file(UploadStore::metadata_path(&self.path));
+        self.ledger.settle(self.mcp_id, &self.id, None);
+    }
+}
+
 /// The directory uploads are kept in, one sub-directory for each MCP.
+/// Clones share what they know of the uploads under way: make one store for
+/// a directory and clone it.
 #[derive(Debug, Clone)]
 pub struct UploadStore {
     root: PathBuf,
+    ledger: Arc<Ledger>,
 }
 
 impl UploadStore {
@@ -135,7 +268,10 @@ impl UploadStore {
     }
 
     pub fn at(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            ledger: Arc::default(),
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -176,9 +312,11 @@ impl UploadStore {
     /// Delete the files of one MCP that have expired, and count what is
     /// left. A file without metadata is still arriving, or was left by a
     /// server that stopped halfway: it is given as long as a finished one.
+    /// An upload under way is left alone, and not counted: the ledger counts it.
     async fn sweep(&self, mcp_id: i64, now: i64) -> Result<Kept, UploadError> {
         let directory = self.directory(mcp_id)?;
         let mut kept = Kept::default();
+        let arriving = self.ledger.arriving(mcp_id);
 
         let mut entries = match fs::read_dir(&directory).await {
             Ok(entries) => entries,
@@ -190,6 +328,9 @@ impl UploadStore {
             let Some(name) = name.to_str().filter(|name| is_builtin_upload_id(name)) else {
                 continue;
             };
+            if arriving.iter().any(|id| id == name) {
+                continue;
+            }
             let path = directory.join(name);
             let stat = match fs::metadata(&path).await {
                 Ok(stat) => stat,
@@ -238,18 +379,30 @@ impl UploadStore {
         builder.mode(0o700);
         builder.create(&directory).await?;
 
-        let stored = self.sweep(mcp_id, now_ms()).await?;
-        if stored.files >= MAX_STORED_FILES || stored.bytes >= MAX_STORED_BYTES {
-            return Err(UploadError::Refused(UploadRefusal::Full));
-        }
-        let room = MAX_STORED_BYTES - stored.bytes;
-
-        let mut file = match private_open_options().open(&path).await {
-            Ok(file) => file,
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                return Err(UploadError::Refused(UploadRefusal::Taken));
-            }
-            Err(error) => return Err(error.into()),
+        // Counting and reserving are one step, so that uploads sent at the
+        // same time cannot each take the room that is left.
+        let (mut file, reservation) = {
+            let _counting = self.ledger.counting.lock().await;
+            let stored = self.sweep(mcp_id, now_ms()).await?;
+            self.ledger
+                .check_room(mcp_id, stored, &target.id)
+                .map_err(UploadError::Refused)?;
+            let file = match private_open_options().open(&path).await {
+                Ok(file) => file,
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                    return Err(UploadError::Refused(UploadRefusal::Taken));
+                }
+                Err(error) => return Err(error.into()),
+            };
+            self.ledger.begin(mcp_id, stored, &target.id);
+            let reservation = Reservation {
+                ledger: &self.ledger,
+                mcp_id,
+                id: target.id.clone(),
+                path: path.clone(),
+                is_committed: false,
+            };
+            (file, reservation)
         };
 
         let written = async {
@@ -261,7 +414,7 @@ impl UploadStore {
                 if size > target.max_bytes {
                     return Err(UploadError::Refused(UploadRefusal::TooLarge));
                 }
-                if size > room {
+                if !reservation.grow(chunk.len() as u64) {
                     return Err(UploadError::Refused(UploadRefusal::Full));
                 }
                 file.write_all(&chunk).await?;
@@ -293,9 +446,9 @@ impl UploadStore {
         }
         .await;
 
-        if written.is_err() {
-            // Nothing is kept of a failed upload, so its link can be tried again.
-            Self::discard(&path).await;
+        // Dropped without being committed, the reservation deletes the file.
+        if let Ok(upload) = &written {
+            reservation.commit(upload.size).await;
         }
         written
     }

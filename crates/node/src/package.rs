@@ -215,12 +215,14 @@ pub(crate) fn inspect(directory: &Path, spec: &PackageSpec) -> Result<InstalledP
 
 /// Make `installed`, in the directory `install` of `packages_dir`, the
 /// install in use, and delete the ones before the one it replaces. The one it
-/// replaces is kept: a request that started before the update still runs it.
+/// replaces is kept, and so are the ones `in_use` names, which processes
+/// run: a request that started before the update still runs its install.
 pub(crate) async fn make_current(
     packages_dir: &Path,
     install: &str,
     spec: &PackageSpec,
     installed: &InstalledPackage,
+    in_use: &[String],
 ) -> Result<(), NodeError> {
     let entry = installed
         .entry
@@ -255,7 +257,8 @@ pub(crate) async fn make_current(
         let name = entry.file_name();
         let kept = name == CURRENT
             || name == install
-            || previous.as_deref().is_some_and(|previous| name == previous);
+            || previous.as_deref().is_some_and(|previous| name == previous)
+            || in_use.iter().any(|install| name == install.as_str());
         if !kept {
             // Left for the next install to try again.
             let _ = remove_recursively(&entry.path()).await;
@@ -511,8 +514,9 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let packages_dir = directory.path();
         let latest = spec("@example/fake-mcp", None);
-        let install = |name: &'static str, version: &'static str| {
+        let install = |name: &'static str, version: &'static str, in_use: &'static [&str]| {
             let latest = latest.clone();
+            let in_use: Vec<String> = in_use.iter().map(|name| name.to_string()).collect();
             async move {
                 let manifest = json!({ "version": version, "bin": "server.js" });
                 installed_files(
@@ -522,7 +526,7 @@ mod tests {
                     &["server.js"],
                 );
                 let installed = inspect(&packages_dir.join(name), &latest).unwrap();
-                make_current(packages_dir, name, &latest, &installed)
+                make_current(packages_dir, name, &latest, &installed, &in_use)
                     .await
                     .unwrap();
             }
@@ -538,7 +542,7 @@ mod tests {
 
         assert_eq!(read_current(packages_dir, &latest), None);
 
-        install("first", "1.0.0").await;
+        install("first", "1.0.0", &[]).await;
         let current = read_current(packages_dir, &latest).unwrap();
         assert_eq!(current.version, "1.0.0");
         assert_eq!(
@@ -548,15 +552,23 @@ mod tests {
 
         // What a failed install left behind goes with the next one.
         std::fs::create_dir_all(packages_dir.join("abandoned")).unwrap();
-        install("second", "1.1.0").await;
+        install("second", "1.1.0", &[]).await;
         assert_eq!(
             read_current(packages_dir, &latest).unwrap().version,
             "1.1.0"
         );
         assert_eq!(present(), ["current.json", "first", "second"]);
 
-        install("third", "1.2.0").await;
+        install("third", "1.2.0", &[]).await;
         assert_eq!(present(), ["current.json", "second", "third"]);
+
+        // An install a process still runs is kept, however many updates follow.
+        install("fourth", "1.3.0", &["second"]).await;
+        assert_eq!(present(), ["current.json", "fourth", "second", "third"]);
+        install("fifth", "1.4.0", &["second"]).await;
+        assert_eq!(present(), ["current.json", "fifth", "fourth", "second"]);
+        install("third", "1.2.0", &[]).await;
+        assert_eq!(present(), ["current.json", "fifth", "third"]);
 
         // Another package or another version is not what is installed.
         assert_eq!(

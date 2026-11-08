@@ -7,9 +7,11 @@
 //! what the person asked to approve them reads.
 
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::future::Future;
-use std::sync::{Arc, LazyLock};
-use std::time::Duration;
+use std::hash::{BuildHasher, Hash, RandomState};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -77,8 +79,84 @@ struct Plan {
     result: Box<dyn FnOnce(&Created) -> Value + Send>,
 }
 
+/// How long what a person was shown is remembered: the time they have to
+/// decide, then the time the agent has to run the approved call.
+const DESCRIBED_FOR: Duration = Duration::from_secs(48 * 60 * 60);
+/// What one tool remembers at most, the oldest forgotten first.
+const MAX_DESCRIBED: usize = 1_000;
+
+/// The plans that tools showed people to approve, so that a call runs the
+/// changes that were approved and not others. Between the approval and the
+/// run, the account may change: a budget another campaign now shares, a
+/// bidding strategy changed by someone else. `run` reads the account again,
+/// and its plan is the plan that was shown, or nothing is changed.
+///
+/// A call is known by its MCP and its arguments, and a plan by a hash of its
+/// changes and of its summary. Without a plan shown for the call, which is
+/// how a tool that needs no approval runs, the call runs as it is planned.
+#[derive(Default)]
+struct Described {
+    hashing: RandomState,
+    plans: Mutex<HashMap<u64, (u64, Instant)>>,
+}
+
+impl Described {
+    fn plans(&self) -> std::sync::MutexGuard<'_, HashMap<u64, (u64, Instant)>> {
+        self.plans
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn hash(&self, value: impl Hash) -> u64 {
+        self.hashing.hash_one(value)
+    }
+
+    /// The call: its MCP and its arguments, as the validator read them.
+    fn call(&self, mcp_id: i64, input: &impl Debug) -> u64 {
+        self.hash((mcp_id, format!("{input:?}")))
+    }
+
+    fn plan(
+        &self,
+        customer: &str,
+        operations: &[GoogleAdsOperation],
+        summary: &ApprovalSummary,
+    ) -> u64 {
+        self.hash((
+            customer,
+            serde_json::to_string(operations).unwrap_or_default(),
+            serde_json::to_string(summary).unwrap_or_default(),
+        ))
+    }
+
+    fn remember(&self, call: u64, plan: u64) {
+        let now = Instant::now();
+        let mut plans = self.plans();
+        plans.retain(|_, (_, at)| now.duration_since(*at) < DESCRIBED_FOR);
+        if plans.len() >= MAX_DESCRIBED
+            && let Some(oldest) = plans
+                .iter()
+                .min_by_key(|(_, (_, at))| *at)
+                .map(|(call, _)| *call)
+        {
+            plans.remove(&oldest);
+        }
+        plans.insert(call, (plan, now));
+    }
+
+    /// Whether `plan` is the one shown for `call`, if one was. The plan shown
+    /// is forgotten either way: an approval lets one call through.
+    fn is_shown(&self, call: u64, plan: u64) -> bool {
+        match self.plans().remove(&call) {
+            Some((shown, at)) if at.elapsed() < DESCRIBED_FOR => shown == plan,
+            _ => true,
+        }
+    }
+}
+
 /// A tool that changes an account. Before anyone is asked to approve a call,
-/// Google checks the very changes it would make, without making them.
+/// Google checks the very changes it would make, without making them. The
+/// call runs only the changes that were shown: see [`Described`].
 fn write_tool<I, F, Fut>(
     name: &'static str,
     description: impl Into<String>,
@@ -87,25 +165,34 @@ fn write_tool<I, F, Fut>(
     plan: F,
 ) -> Tool
 where
-    I: DeserializeOwned + Send + 'static,
+    I: DeserializeOwned + Debug + Send + 'static,
     F: Fn(I, Arc<BuiltinToolContext>) -> Fut + Clone + Send + Sync + 'static,
     Fut: Future<Output = BuiltinResult<Plan>> + Send + 'static,
 {
-    let described = plan.clone();
+    let described_plan = plan.clone();
+    let shown = Arc::new(Described::default());
+    let described = shown.clone();
     BuiltinTool::new(
         name,
         description,
         input_schema,
         input,
         move |input: I, context: Arc<BuiltinToolContext>| {
+            let call = shown.call(context.mcp_id, &input);
             let planned = plan(input, context.clone());
+            let shown = shown.clone();
             async move {
                 let Plan {
                     customer,
                     operations,
+                    summary,
                     result,
-                    ..
                 } = planned.await?;
+                if !shown.is_shown(call, shown.plan(&customer, &operations, &summary)) {
+                    return Err(BuiltinError::tool(format!(
+                        "Nothing was changed: the account changed since this call was approved, and {name} would now do something else than what the person approved. Make the call again to ask for a new approval."
+                    )));
+                }
                 let created = mutate_google_ads(&context, &customer, &operations, false).await?;
                 Ok(result(&created))
             }
@@ -113,7 +200,9 @@ where
     )
     .write()
     .describe(move |input: I, context: Arc<BuiltinToolContext>| {
-        let planned = described(input, context.clone());
+        let call = described.call(context.mcp_id, &input);
+        let planned = described_plan(input, context.clone());
+        let described = described.clone();
         async move {
             let Plan {
                 customer,
@@ -122,6 +211,7 @@ where
                 ..
             } = planned.await?;
             mutate_google_ads(&context, &customer, &operations, true).await?;
+            described.remember(call, described.plan(&customer, &operations, &summary));
             Ok(Some(summary))
         }
     })

@@ -207,34 +207,25 @@ impl Tailnet {
 }
 
 /// Clears the secrets and the OAuth sign-in of every MCP on tailnet `id`:
-/// they were entered for the tailnet it was before.
+/// they were entered for the tailnet it was before. Each one is signed out
+/// by [`Mcp::sign_out`], the rule every sign-out follows: one that held an
+/// OAuth sign-in waits for its account again, so Connect stays available.
+///
+/// The transaction already wrote the tailnet, so it holds the write lock:
+/// the rows read here are the latest, and no write can come between the
+/// read and the write of each.
 async fn sign_out_mcps(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     id: i64,
 ) -> Result<u64, sqlx::Error> {
-    // `random() & (2^52 - 1)`: a new generation, as `renew_oauth_generation`.
-    // An MCP that held OAuth tokens is left waiting for its account, as
-    // `forget_oauth_tokens` leaves it, so Connect stays available: the
-    // right-hand sides read the row as it was before this update.
-    let mcps = sqlx::query(
-        "update `mcps` set `auth_bearer` = null, `auth_header_value` = null, \
-         `oauth_authorize_url` = null, `oauth_token_url` = null, `oauth_scopes` = null, \
-         `oauth_client_id` = null, `oauth_client_secret` = null, \
-         `oauth_access_token` = null, `oauth_refresh_token` = null, \
-         `oauth_token_expires_at` = null, `oauth_issuer` = null, `oauth_resource` = null, \
-         `oauth_redirect_uri` = null, `oauth_client_auth_method` = null, \
-         `oauth_token_type` = null, \
-         `oauth_required` = (`auth_type` = 'auto' and \
-             (coalesce(`oauth_access_token`, '') != '' or coalesce(`oauth_refresh_token`, '') != '')), \
-         `oauth_generation` = (random() & 4503599627370495), \
-         `status` = 'error', `last_error` = ?, `updated_at` = ? \
-         where `tailnet_id` = ?",
-    )
-    .bind(SIGNED_OUT_FOR_ANOTHER_TAILNET)
-    .bind(Timestamp::now())
-    .bind(id)
-    .execute(&mut **transaction)
-    .await?
-    .rows_affected();
-    Ok(mcps)
+    let mcps: Vec<Mcp> = sqlx::query_as("select * from `mcps` where `tailnet_id` = ?")
+        .bind(id)
+        .fetch_all(&mut **transaction)
+        .await?;
+    let count = mcps.len() as u64;
+    for mut mcp in mcps {
+        mcp.sign_out(SIGNED_OUT_FOR_ANOTHER_TAILNET);
+        mcp.save(&mut **transaction).await?;
+    }
+    Ok(count)
 }

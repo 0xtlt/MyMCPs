@@ -437,6 +437,62 @@ mod npm_mcp_process {
     }
 
     #[tokio::test]
+    async fn keeps_the_install_a_process_runs_through_any_number_of_updates() {
+        let sandbox = Sandbox::new().await;
+        let runner = sandbox.runner();
+        let mcp = sandbox.npm_mcp(&[]);
+
+        let running = runner.connect(&mcp).await.unwrap();
+        let first = sandbox.install_dir(&runner, &mcp);
+        let second = runner.install_npm_package(&mcp).await.unwrap().directory;
+        let third = runner.install_npm_package(&mcp).await.unwrap().directory;
+        // Neither in use nor the one before it, but still run.
+        assert!(first.is_dir() && second.is_dir() && third.is_dir());
+
+        running.close().await;
+        drop(running);
+        runner.install_npm_package(&mcp).await.unwrap();
+        assert!(!first.exists() && !second.exists() && third.is_dir());
+    }
+
+    #[tokio::test]
+    async fn makes_nothing_again_for_a_request_that_started_before_a_removal() {
+        let sandbox = Sandbox::new().await;
+        let runner = sandbox.runner();
+        let mcp = sandbox.npm_mcp(&[("FAKE_BEHAVIOUR", "slow-install")]);
+
+        // An install holds the MCP; the removal waits for it, then the request.
+        let installing = tokio::spawn({
+            let (runner, mcp) = (runner.clone(), mcp.clone());
+            async move { runner.install_npm_package(&mcp).await }
+        });
+        while !runner.packages_root_for(mcp.id).exists() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let removing = tokio::spawn({
+            let runner = runner.clone();
+            async move { runner.remove_sandbox(7).await }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let request = runner.list_tools(&mcp).await;
+
+        installing.await.unwrap().unwrap();
+        removing.await.unwrap().unwrap();
+        assert!(
+            request
+                .unwrap_err()
+                .to_string()
+                .contains("while the request started"),
+        );
+        assert!(!runner.packages_root_for(mcp.id).exists());
+        assert!(!runner.sandbox_root_for(mcp.id).exists());
+
+        // The next request installs it again.
+        runner.list_tools(&mcp).await.unwrap();
+        assert!(runner.sandbox_root_for(mcp.id).is_dir());
+    }
+
+    #[tokio::test]
     async fn starts_npm_and_the_package_through_the_launcher_of_the_sandbox() {
         let sandbox = Sandbox::new().await;
         let launcher = executable(&sandbox.path().join("launcher"), "mymcps", FAKE_LAUNCHER);

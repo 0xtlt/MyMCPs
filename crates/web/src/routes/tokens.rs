@@ -198,7 +198,11 @@ async fn mcp_ids_of(db: &Db, token_id: i64) -> Result<Vec<i64>, sqlx::Error> {
 }
 
 /// Every token of the scope, newest first, with the MCPs it is limited to.
-async fn load_rows(db: &Db, scope: TokenScope) -> Result<Vec<TokenRow>, sqlx::Error> {
+async fn load_rows(
+    db: &Db,
+    scope: TokenScope,
+    now: Timestamp,
+) -> Result<Vec<TokenRow>, sqlx::Error> {
     let mut tokens = QueryBuilder::<Sqlite>::new("select * from `access_tokens` where ");
     scope.push_filter(&mut tokens);
     tokens.push(" order by `created_at` desc, `id` desc");
@@ -218,9 +222,9 @@ async fn load_rows(db: &Db, scope: TokenScope) -> Result<Vec<TokenRow>, sqlx::Er
     }
     Ok(tokens
         .into_iter()
-        .map(|token| TokenRow {
-            mcp_ids: mcp_ids.remove(&token.id).unwrap_or_default(),
-            token,
+        .map(|token| {
+            let ids = mcp_ids.remove(&token.id).unwrap_or_default();
+            TokenRow::new(token, ids, now)
         })
         .collect())
 }
@@ -260,13 +264,13 @@ async fn render(
     open: Open,
 ) -> Result<Response, AppError> {
     let db = &state.core.db;
-    let rows = load_rows(db, scope).await?;
+    let rows = load_rows(db, scope, Timestamp::now()).await?;
     let mcps = load_mcps(db, scope).await?;
 
     let counts = Counts {
         all: rows.len(),
-        active: rows.iter().filter(|row| row.token.is_active()).count(),
-        inactive: rows.iter().filter(|row| !row.token.is_active()).count(),
+        active: rows.iter().filter(|row| row.is_active()).count(),
+        inactive: rows.iter().filter(|row| !row.is_active()).count(),
     };
     let deletable_ids: Vec<i64> = rows
         .iter()
@@ -275,10 +279,7 @@ async fn render(
         .collect();
 
     let mut view = list_view(input);
-    let in_view: Vec<&TokenRow> = rows
-        .iter()
-        .filter(|row| view.status.shows(&row.token))
-        .collect();
+    let in_view: Vec<&TokenRow> = rows.iter().filter(|row| view.status.shows(row)).collect();
     let total = in_view.len();
     // A page past the end, such as the last one after its tokens were deleted.
     view.page = view.page.min(total.div_ceil(ROWS_PER_PAGE).max(1));
@@ -409,10 +410,8 @@ pub async fn edit(
         )
         .await;
     }
-    let row = TokenRow {
-        mcp_ids: mcp_ids_of(db, token.id).await?,
-        token,
-    };
+    let ids = mcp_ids_of(db, token.id).await?;
+    let row = TokenRow::new(token, ids, Timestamp::now());
     let mcps = load_mcps(db, scope).await?;
     Ok(no_store(fragment(
         StatusCode::OK,
@@ -532,10 +531,8 @@ pub async fn update(
             Ok(payload) => payload,
             Err(error) => {
                 let form = FormState::new(&refusal(error)?, &input);
-                let row = TokenRow {
-                    mcp_ids: mcp_ids_of(db, token.id).await?,
-                    token,
-                };
+                let ids = mcp_ids_of(db, token.id).await?;
+                let row = TokenRow::new(token, ids, Timestamp::now());
                 let mcps = load_mcps(db, scope).await?;
                 return Ok(invalid_form(
                     &headers,
@@ -583,11 +580,11 @@ pub async fn revoke(
         session.flash("error", TOKEN_NOT_FOUND);
         return Ok(navigate(&headers, &index));
     };
-    if token.is_revoked() {
+    // Of two revocations sent at once, the second finds it revoked.
+    if token.is_revoked() || !access_token::revoke(db, &mut token).await? {
         session.flash("error", "Token already revoked");
         return Ok(navigate(&headers, &index));
     }
-    access_token::revoke(db, &mut token).await?;
     session.flash("success", "Token revoked");
     Ok(navigate(&headers, &index))
 }
@@ -656,22 +653,9 @@ async fn delete_inactive(
     for id in ids {
         list.push_bind(*id);
     }
-    removal
-        .push(
-            ") and (`revoked_at` is not null \
-             or (`source` = 'manual' and `expires_at` is not null and `expires_at` < ",
-        )
-        .push_bind(now)
-        .push(
-            ") or (`source` = 'oauth' and `revoked_at` is null \
-             and ((`oauth_refresh_expires_at` is not null and `oauth_refresh_expires_at` < ",
-        )
-        .push_bind(now)
-        .push(
-            ") or (`oauth_refresh_expires_at` is null and `expires_at` is not null and `expires_at` < ",
-        )
-        .push_bind(now)
-        .push("))))");
+    // What the page offers to delete: the tokens that are not active.
+    removal.push(") and not ");
+    AccessToken::push_active_condition(&mut removal, "access_tokens", now);
     let deleted = removal
         .build()
         .execute(&mut *transaction)

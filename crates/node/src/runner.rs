@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use mymcps_core::Core;
@@ -36,6 +37,8 @@ const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 pub struct ConnectedNodeUpstream {
     pub client: Client,
     pub transport: StdioClientTransport,
+    /// The install it runs, which no update deletes while it does.
+    _install: InstallLease,
 }
 
 impl ConnectedNodeUpstream {
@@ -58,16 +61,110 @@ pub enum SandboxStatus {
     Off,
 }
 
-type InstallLocks = Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>;
+/// What the runner keeps for one MCP while a request, an install or a
+/// removal is under way for it. Dropped from [`Slots`] once nothing holds it.
+#[derive(Debug, Default)]
+struct McpSlot {
+    /// One install at a time for an MCP: requests that arrive together for a
+    /// package that is not installed yet wait for the first to install it.
+    /// A removal takes it too.
+    installing: tokio::sync::Mutex<()>,
+    /// How many times the MCP was removed. A request that started before a
+    /// removal neither installs its package again nor makes its sandbox.
+    removals: AtomicU64,
+    /// The installs that processes run, and how many run each.
+    leases: Mutex<HashMap<String, usize>>,
+}
+
+impl McpSlot {
+    fn leases(&self) -> MutexGuard<'_, HashMap<String, usize>> {
+        self.leases
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+type Slots = Mutex<HashMap<i64, Arc<McpSlot>>>;
+
+fn locked(slots: &Slots) -> MutexGuard<'_, HashMap<i64, Arc<McpSlot>>> {
+    slots
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// A hold on the slot of one MCP: the last one dropped removes the slot.
+#[derive(Debug)]
+struct SlotHandle {
+    slots: Arc<Slots>,
+    mcp_id: i64,
+    slot: Arc<McpSlot>,
+}
+
+impl SlotHandle {
+    /// Keep the install `directory` names from being deleted by an update
+    /// for as long as the lease lives.
+    fn lease(&self, directory: &Path) -> InstallLease {
+        let install = directory
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        *self.slot.leases().entry(install.clone()).or_default() += 1;
+        InstallLease {
+            install,
+            handle: SlotHandle {
+                slots: self.slots.clone(),
+                mcp_id: self.mcp_id,
+                slot: self.slot.clone(),
+            },
+        }
+    }
+
+    fn removals(&self) -> u64 {
+        self.slot.removals.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for SlotHandle {
+    fn drop(&mut self) {
+        let mut slots = locked(&self.slots);
+        // The map and this handle: no other handle holds the slot. Every
+        // clone of it outside the map is in a handle.
+        if Arc::strong_count(&self.slot) == 2
+            && slots
+                .get(&self.mcp_id)
+                .is_some_and(|slot| Arc::ptr_eq(slot, &self.slot))
+        {
+            slots.remove(&self.mcp_id);
+        }
+    }
+}
+
+/// An install that a process of the MCP runs. See [`SlotHandle::lease`].
+#[derive(Debug)]
+struct InstallLease {
+    install: String,
+    handle: SlotHandle,
+}
+
+impl Drop for InstallLease {
+    fn drop(&mut self) {
+        let mut leases = self.handle.slot.leases();
+        if let Some(count) = leases.get_mut(&self.install) {
+            *count -= 1;
+            if *count == 0 {
+                leases.remove(&self.install);
+            }
+        }
+    }
+}
 
 /// Runs the npm MCPs of one server. Clones share its configuration.
 #[derive(Clone, Debug)]
 pub struct NodeRunner {
     core: Arc<Core>,
     runtime: Arc<NodeRuntime>,
-    /// One install at a time for an MCP: requests that arrive together for a
-    /// package that is not installed yet wait for the first to install it.
-    installing: Arc<InstallLocks>,
+    /// What is under way for each MCP: see [`McpSlot`].
+    slots: Arc<Slots>,
 }
 
 impl NodeRunner {
@@ -85,7 +182,7 @@ impl NodeRunner {
         Self {
             core,
             runtime: Arc::new(runtime),
-            installing: Arc::default(),
+            slots: Arc::default(),
         }
     }
 
@@ -303,10 +400,17 @@ impl NodeRunner {
     /// package. Called when the MCP is deleted or runs another package, so
     /// nothing is inherited by different code or by a later MCP that reuses
     /// the id.
+    ///
+    /// No install runs meanwhile, and a request that started before the
+    /// removal fails instead of making either directory again. Processes
+    /// that already run are not ended here.
     pub async fn remove_sandbox(&self, mcp_id: i64) -> Result<(), NodeError> {
         if !(1..=MAX_SAFE_INTEGER).contains(&mcp_id) {
             return Ok(());
         }
+        let handle = self.slot(mcp_id);
+        let _installing = handle.slot.installing.lock().await;
+        handle.slot.removals.fetch_add(1, Ordering::SeqCst);
         for directory in [
             self.sandbox_root_for(mcp_id),
             self.packages_root_for(mcp_id),
@@ -326,13 +430,25 @@ impl NodeRunner {
         Ok(sandbox_dir)
     }
 
-    fn install_lock(&self, mcp_id: i64) -> Arc<tokio::sync::Mutex<()>> {
-        self.installing
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .entry(mcp_id)
-            .or_default()
-            .clone()
+    fn slot(&self, mcp_id: i64) -> SlotHandle {
+        let slot = locked(&self.slots).entry(mcp_id).or_default().clone();
+        SlotHandle {
+            slots: self.slots.clone(),
+            mcp_id,
+            slot,
+        }
+    }
+
+    /// Fails when the MCP was removed since `removals` was read.
+    fn assert_not_removed(handle: &SlotHandle, removals: u64) -> Result<(), NodeError> {
+        if handle.removals() == removals {
+            Ok(())
+        } else {
+            Err(NodeError::Other(
+                "The npm MCP was deleted or changed while the request started. Try again."
+                    .to_owned(),
+            ))
+        }
     }
 
     /// Install the package of an npm MCP again, at the version the MCP asks
@@ -341,23 +457,40 @@ impl NodeRunner {
     /// started with; the next ones run the new one.
     pub async fn install_npm_package(&self, mcp: &Mcp) -> Result<InstalledPackage, NodeError> {
         let spec = PackageSpec::of(mcp)?;
-        let lock = self.install_lock(mcp.id);
-        let _installing = lock.lock().await;
-        self.install(mcp, &spec).await
+        let handle = self.slot(mcp.id);
+        let removals = handle.removals();
+        let _installing = handle.slot.installing.lock().await;
+        Self::assert_not_removed(&handle, removals)?;
+        self.install(mcp, &spec, &handle).await
     }
 
-    /// The install in use for the MCP, made first when there is none.
-    async fn installed(&self, mcp: &Mcp) -> Result<InstalledPackage, NodeError> {
+    /// The install in use for the MCP, made first when there is none, and
+    /// its sandbox, leased for a process to run: no update deletes the
+    /// install until the lease is dropped.
+    async fn prepare(
+        &self,
+        mcp: &Mcp,
+    ) -> Result<(InstalledPackage, PathBuf, InstallLease), NodeError> {
         let spec = PackageSpec::of(mcp)?;
-        let lock = self.install_lock(mcp.id);
-        let _installing = lock.lock().await;
-        match read_current(&self.packages_root_for(mcp.id), &spec) {
-            Some(installed) => Ok(installed),
-            None => self.install(mcp, &spec).await,
-        }
+        let handle = self.slot(mcp.id);
+        let removals = handle.removals();
+        let _installing = handle.slot.installing.lock().await;
+        Self::assert_not_removed(&handle, removals)?;
+        let installed = match read_current(&self.packages_root_for(mcp.id), &spec) {
+            Some(installed) => installed,
+            None => self.install(mcp, &spec, &handle).await?,
+        };
+        let sandbox_dir = self.create_sandbox(mcp).await?;
+        let lease = handle.lease(&installed.directory);
+        Ok((installed, sandbox_dir, lease))
     }
 
-    async fn install(&self, mcp: &Mcp, spec: &PackageSpec) -> Result<InstalledPackage, NodeError> {
+    async fn install(
+        &self,
+        mcp: &Mcp,
+        spec: &PackageSpec,
+        handle: &SlotHandle,
+    ) -> Result<InstalledPackage, NodeError> {
         let node = self.runtime.resolve_binary()?;
         let npm_cli = self.runtime.resolve_npm_cli(&node)?;
         // The whole of npm, which is what its `bin/npm-cli.js` loads.
@@ -403,7 +536,8 @@ impl NodeRunner {
             let _ = remove_recursively(&scratch).await;
 
             let installed = inspect(&install_dir, spec)?;
-            make_current(&packages_dir, &install, spec, &installed).await?;
+            let in_use: Vec<String> = handle.slot.leases().keys().cloned().collect();
+            make_current(&packages_dir, &install, spec, &installed, &in_use).await?;
             // As every reader of `current.json` names it.
             Ok(InstalledPackage {
                 entry: install_dir.join(
@@ -427,8 +561,7 @@ impl NodeRunner {
     /// package is installed first when it is not yet.
     pub async fn connect(&self, mcp: &Mcp) -> Result<ConnectedNodeUpstream, NodeError> {
         let node = self.runtime.resolve_binary()?;
-        let installed = self.installed(mcp).await?;
-        let sandbox_dir = self.create_sandbox(mcp).await?;
+        let (installed, sandbox_dir, lease) = self.prepare(mcp).await?;
 
         let policy = Policy::default()
             .read(&node)
@@ -455,7 +588,11 @@ impl NodeRunner {
         }
         stderr.discard();
 
-        Ok(ConnectedNodeUpstream { client, transport })
+        Ok(ConnectedNodeUpstream {
+            client,
+            transport,
+            _install: lease,
+        })
     }
 
     /// The tools of an npm MCP: start it, ask, end it.

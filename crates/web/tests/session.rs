@@ -353,6 +353,37 @@ async fn returns_to_the_pending_authorization_request_without_the_login_query_st
 }
 
 #[tokio::test]
+async fn the_return_paths_that_lost_are_forgotten_with_the_one_that_won() {
+    let app = TestApp::new().await;
+    create_admin_with(&app, "admin@example.com").await;
+    let return_to = "/authorize?client_id=abc&state=xyz";
+    let mut session = Map::new();
+    session.insert("oauthReturnTo".into(), json!(return_to));
+    session.insert(
+        "approvalReturnTo".into(),
+        json!(format!("/approvals/{}", "a".repeat(32))),
+    );
+    session.insert(
+        "inviteReturnTo".into(),
+        json!(format!("/invite/{}", "b".repeat(64))),
+    );
+
+    let response = app
+        .post("/login")
+        .csrf()
+        .session(session)
+        .form(&[("email", "admin@example.com"), ("password", "password123")])
+        .send()
+        .await;
+
+    assert_eq!(response.location(), Some(return_to));
+    let left = response.session();
+    for key in ["oauthReturnTo", "approvalReturnTo", "inviteReturnTo"] {
+        assert!(!left.contains_key(key), "{key} was left behind");
+    }
+}
+
+#[tokio::test]
 async fn returns_to_an_approval_link_but_nowhere_else() {
     let app = TestApp::new().await;
     create_admin_with(&app, "admin@example.com").await;

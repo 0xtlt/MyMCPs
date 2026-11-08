@@ -34,6 +34,10 @@ pub struct ApprovalView {
     /// account is gone.
     pub decided_by: Option<String>,
     pub consumed_at: Option<Timestamp>,
+    /// The access token that made the request was revoked or has expired
+    /// before the call ran: the request then counts as expired, and nobody
+    /// can decide it any more.
+    pub token_ended: bool,
 }
 
 impl ApprovalView {
@@ -43,10 +47,18 @@ impl ApprovalView {
         access_token: &AccessToken,
         decider: Option<&User>,
         summary: Option<&SavedApprovalSummary>,
+        now: Timestamp,
     ) -> Self {
+        let state = request.state_at(now);
+        let token_ended = matches!(state, ApprovalState::Pending | ApprovalState::Approved)
+            && !access_token.status_at(now).is_active();
         Self {
             id: request.public_id.clone(),
-            state: request.state(),
+            state: if token_ended {
+                ApprovalState::Expired
+            } else {
+                state
+            },
             tool_name: request.tool_name.clone(),
             title: summary.map(|summary| summary.title.clone()),
             mcp_name: mcp.name.clone(),
@@ -65,6 +77,7 @@ impl ApprovalView {
                     .unwrap_or_else(|| decider.email.clone())
             }),
             consumed_at: request.consumed_at,
+            token_ended,
         }
     }
 
@@ -343,7 +356,9 @@ fn state_banner(approval: &ApprovalView) -> Markup {
             false,
             "Expired",
             html! { p {
-                @if approval.decided_at.is_some() {
+                @if approval.token_ended {
+                    "Its access token was revoked or has expired, so the call can no longer run. It was not run, and nobody can decide it any more."
+                } @else if approval.decided_at.is_some() {
                     "Approved by " (decision(approval))
                     ", but the agent did not run the call in time. It was not run."
                 } @else {

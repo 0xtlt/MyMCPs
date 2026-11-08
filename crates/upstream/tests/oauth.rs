@@ -135,7 +135,8 @@ async fn discovers_registers_redirects_exchanges_and_refreshes_a_notion_style_mc
     assert_eq!(mcp.oauth_scopes.as_deref(), Some("notion"));
     assert!(!mcp.oauth_required);
     assert!(mcp.oauth_token_expires_at.is_some());
-    assert_eq!(mcp.status, McpStatus::Ready);
+    // Signed in, and not tested yet.
+    assert_eq!(mcp.status, McpStatus::Draft);
 
     mcp.oauth_token_expires_at = Some(Timestamp::now() - Duration::minutes(1));
     mcp.save(&*core.db).await.unwrap();
@@ -473,7 +474,7 @@ async fn names_its_metadata_document_to_a_provider_without_registration() {
     let exchange = &calls.to("https://api.example/token")[0];
     assert_eq!(exchange.form("client_id").as_deref(), Some(CLIENT_DOCUMENT));
     assert_eq!(exchange.header("authorization"), None);
-    assert_eq!(mcp.status, McpStatus::Ready);
+    assert_eq!(mcp.status, McpStatus::Draft);
 
     // Connecting again names the same client.
     calls.clear();

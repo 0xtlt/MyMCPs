@@ -157,13 +157,18 @@ async fn resolve_teams(
 ) -> Result<(Vec<Membership>, Membership), sqlx::Error> {
     let mut teams = Team::memberships(&*core.db, user.id).await?;
     if teams.is_empty() {
+        // Read again under the write lock: two requests of the same
+        // teamless account would otherwise each create a personal team.
         let mut transaction = core.db.begin().await?;
-        let team = Team::create_personal(&mut transaction, user).await?;
+        teams = Team::memberships(&mut *transaction, user.id).await?;
+        if teams.is_empty() {
+            let team = Team::create_personal(&mut transaction, user).await?;
+            teams.push(Membership {
+                team,
+                role: TeamRole::Owner,
+            });
+        }
         transaction.commit().await?;
-        teams.push(Membership {
-            team,
-            role: TeamRole::Owner,
-        });
     }
 
     let wanted = [

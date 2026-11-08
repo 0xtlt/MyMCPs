@@ -900,6 +900,42 @@ mod lifecycle {
         assert!(fixture.tailnets.handle(1).is_none());
         assert!(!fixture.tailnet_dir(1).exists());
     }
+
+    #[tokio::test]
+    async fn a_login_that_comes_after_a_removal_is_refused() {
+        let fixture = Fixture::new(0);
+        let api = fixture.with_api(1, status_in("NeedsLogin")).await;
+        fixture.tailnets.remove(1).await.unwrap();
+
+        let error = fixture
+            .tailnets
+            .connect(1, options("mymcps", None))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::Removed(1)), "{error}");
+        let error = fixture
+            .tailnets
+            .sign_in_again(1, options("mymcps", None))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::Removed(1)), "{error}");
+        assert!(api.requests_to("/localapi/v0/login-interactive").is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_lock_of_a_tailnet_is_forgotten_once_nobody_holds_it() {
+        let fixture = Fixture::new(0);
+        let _api = fixture.with_api(1, status_in("NeedsLogin")).await;
+        // A login and a stop at once: one waits for the other. The login
+        // may find no daemon any more, which is not what this is about.
+        let _ = tokio::join!(
+            fixture.tailnets.connect(1, options("mymcps", None)),
+            fixture.tailnets.stop(1),
+        );
+        fixture.tailnets.ensure_running(2).await.unwrap();
+        fixture.tailnets.remove(2).await.unwrap();
+        assert_eq!(fixture.tailnets.turn_count(), 0);
+    }
 }
 
 mod route_and_dial {

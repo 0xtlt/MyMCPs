@@ -108,6 +108,35 @@ struct Entry {
     client: LocalClient,
 }
 
+/// The turn of one tailnet, held. Its lock leaves `turns` when the last
+/// holder or waiter is done: the map holds one reference, this turn one,
+/// and each waiter one more.
+struct Turn {
+    inner: Arc<Inner>,
+    id: i64,
+    lock: Arc<tokio::sync::Mutex<()>>,
+    guard: Option<tokio::sync::OwnedMutexGuard<()>>,
+}
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        // The guard holds a reference of its own: it goes first.
+        self.guard.take();
+        let mut turns = self
+            .inner
+            .turns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if Arc::strong_count(&self.lock) == 2
+            && turns
+                .get(&self.id)
+                .is_some_and(|lock| Arc::ptr_eq(lock, &self.lock))
+        {
+            turns.remove(&self.id);
+        }
+    }
+}
+
 impl Tailnets {
     pub fn new(config: TailnetsConfig) -> Self {
         Self::with_settings(config, Backoff::default(), crate::localapi::STATUS_TTL)
@@ -138,10 +167,11 @@ impl Tailnets {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// The turn of tailnet `id`: held while its daemon is started, stopped or
-    /// removed, so that these never overlap.
-    async fn turn(&self, id: i64) -> tokio::sync::OwnedMutexGuard<()> {
-        let turn = Arc::clone(
+    /// The turn of tailnet `id`: held while its daemon is started, stopped,
+    /// connected or removed, so that these never overlap. The lock of a
+    /// tailnet is forgotten once nobody holds it or waits for it.
+    async fn turn(&self, id: i64) -> Turn {
+        let lock = Arc::clone(
             self.inner
                 .turns
                 .lock()
@@ -149,7 +179,23 @@ impl Tailnets {
                 .entry(id)
                 .or_default(),
         );
-        turn.lock_owned().await
+        let guard = Arc::clone(&lock).lock_owned().await;
+        Turn {
+            inner: Arc::clone(&self.inner),
+            id,
+            lock,
+            guard: Some(guard),
+        }
+    }
+
+    /// How many tailnets have a lock: those someone holds or waits for.
+    #[cfg(test)]
+    pub(crate) fn turn_count(&self) -> usize {
+        self.inner
+            .turns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
     }
 
     fn removed(&self) -> std::sync::MutexGuard<'_, HashSet<i64>> {
@@ -248,6 +294,12 @@ impl Tailnets {
     /// until a login is started. Calling it again on a node that is logged in
     /// applies the new options without a new login.
     pub async fn connect(&self, id: i64, options: ConnectOptions) -> Result<(), Error> {
+        // One login at a time, and none while the tailnet is stopped or
+        // removed.
+        let _turn = self.turn(id).await;
+        if self.removed().contains(&id) {
+            return Err(Error::Removed(id));
+        }
         let (options, client) = self.start_node(id, options).await?;
         // With an auth key the login uses it and no URL is shown; without one
         // the daemon makes the URL. A node that is already logged in is left
@@ -268,6 +320,10 @@ impl Tailnets {
     /// `NeedsLogin`. Any `auth_key` of the options is ignored: this is the way
     /// back for a tailnet that has no usable key, not a new way to join.
     pub async fn sign_in_again(&self, id: i64, options: ConnectOptions) -> Result<(), Error> {
+        let _turn = self.turn(id).await;
+        if self.removed().contains(&id) {
+            return Err(Error::Removed(id));
+        }
         let (_, client) = self
             .start_node(
                 id,

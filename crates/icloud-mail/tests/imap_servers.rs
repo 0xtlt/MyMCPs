@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 use mymcps_icloud_mail::message::{Address, BodyStructure, Envelope};
 use mymcps_icloud_mail::testing::{
-    FakeMessage, FakeOptions, PASSWORD, SignInAttempt, USERNAME, attached, leaf, multipart,
+    FakeMessage, FakeOptions, PASSWORD, Selection, SignInAttempt, USERNAME, attached, leaf,
+    multipart,
 };
 use serde_json::json;
 use support::{Scenario, assert_same_json};
@@ -142,6 +143,44 @@ async fn does_without_the_extensions_icloud_has() {
         scenario.icloud.mailbox("INBOX").messages[0].flags,
         ["\\Answered"]
     );
+}
+
+#[tokio::test]
+async fn marks_a_reply_answered_on_a_server_that_does_not_say_how_it_opened_a_mailbox() {
+    let scenario = Scenario::with(FakeOptions {
+        omit_access_code: true,
+        ..FakeOptions::default()
+    })
+    .await;
+    let sent = scenario
+        .data(
+            &scenario.full_access(),
+            "send_message",
+            json!({ "reply_to_uid": 11, "text": "Yes." }),
+        )
+        .await;
+
+    // The EXAMINE that read the original does not let the flag be written:
+    // the mailbox is selected again to write it.
+    assert_eq!(
+        scenario.icloud.selections(),
+        [
+            Selection {
+                path: "INBOX".into(),
+                read_only: true
+            },
+            Selection {
+                path: "INBOX".into(),
+                read_only: false
+            }
+        ]
+    );
+    assert_eq!(
+        scenario.icloud.mailbox("INBOX").messages[0].flags,
+        ["\\Answered"]
+    );
+    assert_eq!(sent["saved_to"], "Sent Messages");
+    assert!(sent.get("warning").is_none());
 }
 
 fn message(uid: u32, body_structure: BodyStructure) -> FakeMessage {

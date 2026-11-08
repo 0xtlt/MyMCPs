@@ -114,6 +114,7 @@ pub struct McpView {
 
 impl McpView {
     pub fn of(upstream: &Upstream, mcp: &Mcp, tool_count: Option<usize>) -> Self {
+        let health = mcp.health();
         let definition = upstream.builtin_mcp(mcp.builtin_key.as_deref());
         let builtin = mcp.transport == McpTransport::Builtin;
         Self {
@@ -130,8 +131,10 @@ impl McpView {
             npm_version: mcp.npm_version.clone(),
             auth_type: mcp.auth_type,
             auth_header_name: mcp.auth_header_name.clone(),
-            status: mcp.status,
-            last_error: mcp.last_error.clone(),
+            // Read through its health, so that the view never shows two
+            // states at once, whatever an older version left in the row.
+            status: health.status(),
+            last_error: health.reason().map(str::to_owned),
             enabled: mcp.enabled,
             npm_args: mcp.npm_args_list().join(" "),
             npm_env: mcp.npm_env_names(),
@@ -151,7 +154,7 @@ impl McpView {
             builtin_write_enabled: mcp.builtin_write_enabled,
             builtin_write_granted: definition.is_some()
                 && upstream.builtin_write_granted(mcp).unwrap_or(false),
-            oauth_required: mcp.oauth_required,
+            oauth_required: health.awaits_sign_in(),
             oauth_pasted_callback: upstream.uses_pasted_oauth_callback(mcp),
             npm_installed_version: match mcp.transport {
                 McpTransport::Npm => upstream.installed_npm_package_version(mcp),

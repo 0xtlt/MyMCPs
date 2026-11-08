@@ -4,7 +4,7 @@
 mod support;
 
 use chrono::Duration;
-use mymcps_core::models::{ScopeMode, TokenSource};
+use mymcps_core::models::{AccessToken, ScopeMode, TokenSource};
 use mymcps_core::{Db, Timestamp};
 use mymcps_gateway::access_token::{self, AccessTokenUpdate, NewAccessToken};
 use support::*;
@@ -273,6 +273,91 @@ async fn revokes_a_token() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn keeps_the_time_a_token_was_first_revoked() {
+    let gateway = TestGateway::new().await;
+    let db = gateway.db();
+    let admin = create_admin(db).await;
+    let created = create_access_token(db, admin.id, ScopeMode::All, &[]).await;
+    let mut first = find_token(db, created.token.id).await;
+    // A copy read before the first revocation, as a second request holds it.
+    let mut stale = find_token(db, created.token.id).await;
+
+    assert!(access_token::revoke(db, &mut first).await.unwrap());
+    let revoked_at = find_token(db, first.id).await.revoked_at;
+    assert!(revoked_at.is_some());
+
+    assert!(!access_token::revoke(db, &mut stale).await.unwrap());
+    assert_eq!(find_token(db, first.id).await.revoked_at, revoked_at);
+    assert_eq!(stale.revoked_at, revoked_at, "the copy is read again");
+    // Nothing a later save of that copy writes changes the time either.
+    stale.name = "Renamed".into();
+    stale.save(&**db).await.unwrap();
+    assert_eq!(find_token(db, first.id).await.revoked_at, revoked_at);
+}
+
+#[tokio::test]
+async fn the_active_condition_says_what_the_status_of_a_token_says() {
+    let gateway = TestGateway::new().await;
+    let db = gateway.db();
+    let admin = create_admin(db).await;
+    let now = Timestamp::now();
+    let (past, future) = (
+        Some(now - Duration::hours(1)),
+        Some(now + Duration::hours(1)),
+    );
+    // Source, access token expiry, refresh token expiry, revocation.
+    type Shape = (
+        TokenSource,
+        Option<Timestamp>,
+        Option<Timestamp>,
+        Option<Timestamp>,
+    );
+    let shapes: [Shape; 11] = [
+        (TokenSource::Manual, None, None, None),
+        (TokenSource::Manual, future, None, None),
+        (TokenSource::Manual, past, None, None),
+        (TokenSource::Manual, Some(now), None, None),
+        (TokenSource::Manual, future, None, Some(now)),
+        (TokenSource::Oauth, past, future, None),
+        (TokenSource::Oauth, past, past, None),
+        (TokenSource::Oauth, future, past, None),
+        // A client that cannot refresh.
+        (TokenSource::Oauth, future, None, None),
+        (TokenSource::Oauth, past, None, None),
+        (TokenSource::Oauth, past, future, Some(now)),
+    ];
+    let mut expected = Vec::new();
+    for (index, (source, expires_at, refresh, revoked_at)) in shapes.into_iter().enumerate() {
+        let token = create_stored_access_token(db, admin.id, |token| {
+            token.token_hash = format!("stored-token-hash-{index}");
+            token.source = source;
+            token.expires_at = expires_at;
+            token.oauth_refresh_expires_at = refresh;
+            token.revoked_at = revoked_at;
+        })
+        .await;
+        expected.push((token.id, token.status_at(now).is_active()));
+    }
+
+    for active in [true, false] {
+        let mut query =
+            sqlx::QueryBuilder::<sqlx::Sqlite>::new("select `id` from `access_tokens` where ");
+        if !active {
+            query.push("not ");
+        }
+        AccessToken::push_active_condition(&mut query, "access_tokens", now);
+        query.push(" order by `id`");
+        let found: Vec<i64> = query.build_query_scalar().fetch_all(&**db).await.unwrap();
+        let wanted: Vec<i64> = expected
+            .iter()
+            .filter(|(_, is_active)| *is_active == active)
+            .map(|(id, _)| *id)
+            .collect();
+        assert_eq!(found, wanted, "active = {active}");
+    }
 }
 
 #[tokio::test]
