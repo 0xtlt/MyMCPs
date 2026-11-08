@@ -36,6 +36,9 @@ model! {
         /// until someone who runs the instance turns it on: an invite is
         /// then the only way in.
         pub is_registration_enabled: bool,
+        /// Whether npm MCPs may be added and run. Off: no package is
+        /// installed, started or updated, whatever the team that added it.
+        pub is_npm_enabled: bool,
     }
 }
 
@@ -53,6 +56,20 @@ impl InstanceSetting {
         .fetch_optional(db)
         .await?;
         Ok(enabled.unwrap_or(false))
+    }
+
+    /// Whether npm MCPs may be added and run. Read before every start of a
+    /// package: turning them off stops the next one, without a restart.
+    pub async fn npm_enabled<'e, E>(db: E) -> Result<bool, sqlx::Error>
+    where
+        E: sqlx::sqlite::SqliteExecutor<'e>,
+    {
+        let enabled: Option<bool> =
+            sqlx::query_scalar("select `is_npm_enabled` from `instance_settings` where `id` = 1")
+                .fetch_optional(db)
+                .await?;
+        // A missing row is created with the default of the column.
+        Ok(enabled.unwrap_or(true))
     }
 
     /// The one row of settings, created with the defaults when missing.

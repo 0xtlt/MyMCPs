@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use mymcps_core::Core;
-use mymcps_core::models::Mcp;
+use mymcps_core::models::{InstanceSetting, Mcp};
 use mymcps_mcp::client::{
     Client, StdioClientTransport, StdioServerParameters, StdioStderr, Transport,
     get_default_environment,
@@ -439,6 +439,19 @@ impl NodeRunner {
         }
     }
 
+    /// Fails when npm MCPs are turned off on the instance: nothing of a
+    /// package is installed or started then. Read on each request, so that
+    /// turning them off holds from the next one.
+    async fn assert_enabled(&self) -> Result<(), NodeError> {
+        match InstanceSetting::npm_enabled(&*self.core.db).await {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(NodeError::Disabled),
+            Err(error) => Err(NodeError::Other(format!(
+                "Could not read whether npm MCPs are turned on: {error}"
+            ))),
+        }
+    }
+
     /// Fails when the MCP was removed since `removals` was read.
     fn assert_not_removed(handle: &SlotHandle, removals: u64) -> Result<(), NodeError> {
         if handle.removals() == removals {
@@ -456,6 +469,7 @@ impl NodeRunner {
     /// this is its update. Requests under way finish on the install they
     /// started with; the next ones run the new one.
     pub async fn install_npm_package(&self, mcp: &Mcp) -> Result<InstalledPackage, NodeError> {
+        self.assert_enabled().await?;
         let spec = PackageSpec::of(mcp)?;
         let handle = self.slot(mcp.id);
         let removals = handle.removals();
@@ -560,6 +574,7 @@ impl NodeRunner {
     /// Start the package of an npm MCP in its sandbox and connect to it. The
     /// package is installed first when it is not yet.
     pub async fn connect(&self, mcp: &Mcp) -> Result<ConnectedNodeUpstream, NodeError> {
+        self.assert_enabled().await?;
         let node = self.runtime.resolve_binary()?;
         let (installed, sandbox_dir, lease) = self.prepare(mcp).await?;
 

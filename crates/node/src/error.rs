@@ -7,10 +7,18 @@ use mymcps_mcp::client::ClientError;
 
 use crate::paths::file_system_message;
 
+/// What an npm MCP says while npm MCPs are turned off on the instance.
+pub const NPM_DISABLED: &str =
+    "npm MCPs are turned off on this instance. A super admin can turn them back on in Settings.";
+
 /// Why an npm MCP could not be reached. Callers redact the message
 /// (`sanitize_mcp_diagnostic`) and show it to administrators.
 #[derive(Debug, thiserror::Error)]
 pub enum NodeError {
+    /// The super admin turned npm MCPs off for the whole instance.
+    #[error("{NPM_DISABLED}")]
+    Disabled,
+
     #[error("npm MCP is missing a package name")]
     MissingPackage,
 

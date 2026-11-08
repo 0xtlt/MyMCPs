@@ -12,7 +12,7 @@ mod mcps_support;
 
 use http::StatusCode;
 use mcps_support::*;
-use mymcps_core::models::{Mcp, McpAuthType, McpStatus, McpTransport};
+use mymcps_core::models::{InstanceSetting, Mcp, McpAuthType, McpStatus, McpTransport};
 use mymcps_core::secrets::{EnvironmentInput, merge_environment};
 use mymcps_node::{NodeRunner, NodeRuntime};
 use mymcps_upstream::Upstream;
@@ -1944,4 +1944,87 @@ async fn disables_oauth_actions_without_a_public_address() {
     assert_eq!(response.flashed("editingMcpId"), Some(json!(mcp.id)));
     assert!(calls.is_empty());
     assert_eq!(find_mcp(&app, mcp.id).await.oauth_client_id, None);
+}
+
+async fn turn_npm_mcps_off(app: &TestApp) {
+    let mut settings = InstanceSetting::current(&*app.core.db).await.unwrap();
+    settings.is_npm_enabled = false;
+    settings.save(&*app.core.db).await.unwrap();
+}
+
+#[tokio::test]
+async fn adds_no_npm_mcp_while_they_are_turned_off() {
+    let app = app_without_node().await;
+    let admin = create_admin(&app).await;
+    turn_npm_mcps_off(&app).await;
+
+    // The gallery offers no template that runs a package, and the form no npm transport.
+    let gallery = page_of(&app, &admin, "/mcps/new").await;
+    assert!(!gallery.contains("template=shopify-dev"));
+    assert!(gallery.contains("template=atlassian-rovo"));
+    let shopify = page_of(&app, &admin, "/mcps/new?template=shopify-dev").await;
+    assert!(!shopify.contains("id=\"new-mcp\""));
+    let custom = page_of(&app, &admin, "/mcps/new?template=custom").await;
+    assert!(!custom.contains("name=\"transport\" value=\"npm\""));
+    assert!(custom.contains("npm MCPs are turned off on this instance by a super admin."));
+
+    // A form that asks for one anyway is refused, and nothing is saved.
+    let response = app
+        .post("/mcps")
+        .login_as(&admin)
+        .csrf()
+        .form(&npm_form(&[]))
+        .send()
+        .await;
+    assert_redirect(&response, "/mcps");
+    assert_eq!(
+        response.flashed("error"),
+        Some(json!(
+            "npm MCPs are turned off on this instance. Choose HTTP, or ask a super admin to turn them on."
+        ))
+    );
+    assert_eq!(count_mcps(&app).await, 0);
+
+    // Nor does an HTTP MCP become one.
+    let http = create_mcp(&app, admin.id, |mcp| mcp.name = "Docs".into()).await;
+    let response = app
+        .put(&format!("/mcps/{}", http.id))
+        .login_as(&admin)
+        .csrf()
+        .form(&npm_form(&[("name", "Docs")]))
+        .send()
+        .await;
+    assert_redirect(&response, "/mcps");
+    assert_eq!(find_mcp(&app, http.id).await.transport, McpTransport::Http);
+
+    // An HTTP MCP is still added.
+    let response = app
+        .post("/mcps")
+        .login_as(&admin)
+        .csrf()
+        .form(&http_form(&[("name", "Wiki")]))
+        .send()
+        .await;
+    assert_eq!(response.flashed("success"), Some(json!("MCP created")));
+}
+
+#[tokio::test]
+async fn says_that_the_npm_mcps_of_a_team_do_not_run_while_they_are_turned_off() {
+    let app = app_without_node().await;
+    let admin = create_admin(&app).await;
+    let npm = create_mcp(&app, admin.id, |mcp| {
+        mcp.name = "Package".into();
+        mcp.transport = McpTransport::Npm;
+    })
+    .await;
+    let banner = "npm MCPs are turned off on this instance</p>";
+    assert!(!page_of(&app, &admin, "/mcps").await.contains(banner));
+
+    turn_npm_mcps_off(&app).await;
+    let list = page_of(&app, &admin, "/mcps").await;
+    assert!(list.contains(banner));
+    assert!(list.contains("The npm MCP of this team does not run, and agents do not see it"));
+    // The MCP keeps its transport in its form, to be changed or turned into an HTTP one.
+    let edit = page_of(&app, &admin, &format!("/mcps/{}/edit", npm.id)).await;
+    assert!(edit.contains("name=\"transport\" value=\"npm\" checked"));
 }

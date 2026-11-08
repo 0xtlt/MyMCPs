@@ -251,6 +251,9 @@ pub struct McpForm {
     pub values: FormValues,
     /// The tailnets of the team, to choose the network of an HTTP MCP from.
     pub tailnets: Vec<TailnetChoice>,
+    /// npm MCPs are turned off on the instance: the form offers no npm
+    /// package, unless the MCP it edits runs one already.
+    pub npm_off: bool,
     /// The first message of each field that was refused, in field order.
     errors: Vec<(String, String)>,
     /// The fields whose message a control has shown. The others are shown
@@ -272,6 +275,12 @@ impl McpForm {
         self
     }
 
+    /// The form while npm MCPs are turned off on the instance, or not.
+    pub fn with_npm_off(mut self, npm_off: bool) -> Self {
+        self.npm_off = npm_off;
+        self
+    }
+
     /// A form sent back with what is wrong with it.
     pub fn refused(values: FormValues, error: &ValidationError) -> Self {
         let mut errors: Vec<(String, String)> = Vec::new();
@@ -283,6 +292,7 @@ impl McpForm {
         Self {
             values,
             tailnets: Vec::new(),
+            npm_off: false,
             errors,
             shown: RefCell::default(),
         }
@@ -774,12 +784,20 @@ fn custom_fields(prefix: &str, form: &McpForm, saved: Option<&Saved>) -> Markup 
     let values = &form.values;
     let http = values.transport == McpTransport::Http;
     let installed = saved.and_then(|saved| saved.mcp.npm_installed_version.as_deref());
+    // An MCP that runs a package keeps its choice while npm MCPs are off, so
+    // that it can still be changed; no other becomes one.
+    let offers_npm = !form.npm_off || values.transport == McpTransport::Npm;
     html! {
         fieldset class="field-group" {
             legend class="field-group__label" { "Transport" }
             div class="option-cards" {
                 (option_card("transport", "http", http, "HTTP", "Remote Streamable HTTP URL"))
-                (option_card("transport", "npm", !http, "npm package", "Runs in a Node.js sandbox"))
+                @if offers_npm {
+                    (option_card("transport", "npm", !http, "npm package", "Runs in a Node.js sandbox"))
+                }
+            }
+            @if form.npm_off {
+                p class="field-group__help" { "npm MCPs are turned off on this instance by a super admin." }
             }
         }
 

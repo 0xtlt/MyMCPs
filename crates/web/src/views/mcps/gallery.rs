@@ -50,11 +50,13 @@ fn template_card(template: &McpTemplate, query: &McpListQuery) -> Markup {
 
 /// The dialog of the "Add MCP" action. It is in every page of the MCPs, so
 /// the button opens it at once; `/mcps/new` is the page it is open on.
-pub(super) fn gallery_dialog(query: &McpListQuery, open: bool) -> Markup {
-    let popular = MCP_TEMPLATES
+/// While npm MCPs are off, it offers none of the templates that run one.
+pub(super) fn gallery_dialog(query: &McpListQuery, open: bool, npm_enabled: bool) -> Markup {
+    let templates: Vec<&McpTemplate> = MCP_TEMPLATES
         .iter()
-        .filter(|template| template.popular)
-        .count();
+        .filter(|template| npm_enabled || !template.is_npm())
+        .collect();
+    let popular = templates.iter().filter(|template| template.popular).count();
     html! {
         dialog class="dialog dialog--xl" id="add-mcp" aria-labelledby="add-mcp-title" data-open[open]
             data-dialog-return=(href("/mcps", query, &[])) {
@@ -81,7 +83,7 @@ pub(super) fn gallery_dialog(query: &McpListQuery, open: bool) -> Markup {
                     (popular) " templates"
                 }
                 div class="grid grid--3" {
-                    @for template in MCP_TEMPLATES { (template_card(template, query)) }
+                    @for template in &templates { (template_card(template, query)) }
                 }
                 div class="empty-state" data-filter-empty hidden {
                     span class="empty-state__icon" { (icon("search")) }

@@ -283,6 +283,7 @@ struct InstanceValues {
     auto_update: bool,
     cron: String,
     registration: bool,
+    npm: bool,
 }
 
 impl InstanceValues {
@@ -302,6 +303,7 @@ impl InstanceValues {
                     form.old("registrationEnabled").as_str(),
                     "on" | "true" | "1"
                 ),
+                npm: matches!(form.old("npmEnabled").as_str(), "on" | "true" | "1"),
             };
         }
         let cron = if settings.mcp_auto_update_cron.is_empty() {
@@ -315,6 +317,7 @@ impl InstanceValues {
             retention_days: settings.mcp_log_retention_days.to_string(),
             auto_update: settings.mcp_auto_update_enabled,
             registration: settings.is_registration_enabled,
+            npm: settings.is_npm_enabled,
             cron: cron.to_string(),
         }
     }
@@ -441,6 +444,14 @@ fn instance_section(context: &PageContext, settings: &InstanceSetting, form: &Fo
                             span class="setting-row__description" { "Anyone who reaches this instance can create an account, with a team of its own. Off: an invite is the only way in." }
                         }
                         input type="checkbox" class="switch" role="switch" name="registrationEnabled" checked[values.registration];
+                    }
+
+                    label class="setting-row" {
+                        span class="setting-row__text" {
+                            span class="setting-row__title" { "Allow npm MCPs" }
+                            span class="setting-row__description" { "Teams can add MCPs that run an npm package on this server. Off: no package is installed, started or updated, and agents do not see the npm MCPs that exist." }
+                        }
+                        input type="checkbox" class="switch" role="switch" name="npmEnabled" checked[values.npm];
                     }
 
                     label class="setting-row" {

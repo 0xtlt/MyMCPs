@@ -1074,3 +1074,31 @@ mod requests_of_an_npm_mcp {
         );
     }
 }
+
+#[tokio::test]
+async fn installs_and_starts_nothing_while_npm_mcps_are_turned_off() {
+    let sandbox = Sandbox::new().await;
+    let runner = sandbox.runner();
+    let installs = sandbox.path().join("installs.txt");
+    let mcp = sandbox.npm_mcp(&[("FAKE_INSTALLS", &display(&installs))]);
+    let db = &*sandbox.core.db;
+    let mut settings = mymcps_core::models::InstanceSetting::current(db)
+        .await
+        .unwrap();
+    settings.is_npm_enabled = false;
+    settings.save(db).await.unwrap();
+
+    let listed = runner.list_tools(&mcp).await.unwrap_err();
+    assert!(matches!(listed, NodeError::Disabled), "{listed}");
+    assert_eq!(listed.to_string(), mymcps_node::NPM_DISABLED);
+    let installed = runner.install_npm_package(&mcp).await.unwrap_err();
+    assert!(matches!(installed, NodeError::Disabled), "{installed}");
+    assert!(!installs.exists());
+    assert!(!sandbox.core.config.data_dir.join("mcp-packages/7").exists());
+
+    // On again: the next request installs and starts it.
+    settings.is_npm_enabled = true;
+    settings.save(db).await.unwrap();
+    runner.list_tools(&mcp).await.unwrap();
+    assert_eq!(std::fs::read_to_string(&installs).unwrap(), "installed\n");
+}

@@ -8,7 +8,9 @@
 
 use chrono::Duration;
 use mymcps_core::crypto::{random_base64url, sha256_hex};
-use mymcps_core::models::{AccessToken, Mcp, ScopeMode, TokenSource};
+use mymcps_core::models::{
+    AccessToken, InstanceSetting, Mcp, McpTransport, ScopeMode, TokenSource,
+};
 use mymcps_core::{Db, Timestamp};
 use sqlx::sqlite::SqliteExecutor;
 use sqlx::{QueryBuilder, Sqlite, Transaction};
@@ -420,8 +422,17 @@ pub async fn touch_last_used(db: &Db, token: &mut AccessToken) -> Result<(), sql
 
 /// Resolve MCPs allowed for this token: MCPs of its team, and of no other.
 /// scope_mode=all → every enabled MCP of the team (including ones added
-/// after token creation).
+/// after token creation). While npm MCPs are turned off on the instance,
+/// none of them is: an agent neither sees nor calls them.
 pub async fn resolve_allowed_mcps(db: &Db, token: &AccessToken) -> Result<Vec<Mcp>, sqlx::Error> {
+    let mut mcps = enabled_mcps(db, token).await?;
+    if !InstanceSetting::npm_enabled(&**db).await? {
+        mcps.retain(|mcp| mcp.transport != McpTransport::Npm);
+    }
+    Ok(mcps)
+}
+
+async fn enabled_mcps(db: &Db, token: &AccessToken) -> Result<Vec<Mcp>, sqlx::Error> {
     if token.scope_mode == ScopeMode::All {
         return sqlx::query_as(
             "select * from `mcps` where `team_id` = ? and `enabled` = ? order by `name` asc",

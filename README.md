@@ -207,6 +207,8 @@ Every sandboxed process reads the directories of the system, such as `/usr`. Kee
 
 The network stays open: a package reaches whatever the server reaches, the server itself and its private network included. Restrict that at the level of the network when you let strangers add packages.
 
+A super admin who does not want packages on the instance at all turns **Allow npm MCPs** off under **Settings → My Instance**. No team can then add an npm MCP, and no package is installed, started or updated. The npm MCPs that exist stay saved but do not run, and agents do not see them, until the switch is turned back on.
+
 The sandbox needs no privilege and works in a container without capabilities. It needs Linux 5.13 or later with Landlock enabled, which the kernels of current distributions are (Ubuntu 22.04, Debian 12 and later). The server says what it found when it starts: `npm MCPs run in a sandbox`, with the version of Landlock in use, or `npm MCPs cannot start` and the reason. A server that cannot sandbox a package does not start it. `NPM_SANDBOX=off` starts npm MCPs without a sandbox, with every right of the server: that is for development on another system than Linux, not for an instance other people use.
 
 ## Tailscale tailnets

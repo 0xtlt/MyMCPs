@@ -734,6 +734,51 @@ async fn saves_every_instance_setting() {
 }
 
 #[tokio::test]
+async fn turns_npm_mcps_off_and_on_for_the_whole_instance() {
+    let app = TestApp::new().await;
+    let admin = create_super_admin(&app).await;
+    let base = [
+        ("gatewayToolMode", "eager"),
+        ("mcpLogLevel", "metadata"),
+        ("mcpLogRetentionDays", "14"),
+    ];
+
+    // On for a new instance.
+    assert!(
+        InstanceSetting::current(&*app.core.db)
+            .await
+            .unwrap()
+            .is_npm_enabled
+    );
+    let page = app.get("/settings").login_as(&admin).send().await.text();
+    assert!(page.contains("<span class=\"setting-row__title\">Allow npm MCPs</span>"));
+    assert!(page.contains("name=\"npmEnabled\" checked>"));
+
+    // An unchecked switch is not sent: npm MCPs are off.
+    let response = save_instance(&app, &admin, &base).await;
+    assert_redirect(&response, "/settings");
+    assert!(
+        !InstanceSetting::current(&*app.core.db)
+            .await
+            .unwrap()
+            .is_npm_enabled
+    );
+    let page = app.get("/settings").login_as(&admin).send().await.text();
+    assert!(page.contains("name=\"npmEnabled\">"));
+
+    let mut on = base.to_vec();
+    on.push(("npmEnabled", "on"));
+    let response = save_instance(&app, &admin, &on).await;
+    assert_redirect(&response, "/settings");
+    assert!(
+        InstanceSetting::current(&*app.core.db)
+            .await
+            .unwrap()
+            .is_npm_enabled
+    );
+}
+
+#[tokio::test]
 async fn sends_the_instance_form_back_with_what_is_wrong() {
     let app = TestApp::new().await;
     let admin = create_super_admin(&app).await;
