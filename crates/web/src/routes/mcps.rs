@@ -11,7 +11,9 @@ use axum::routing::{get, post, put};
 use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use mymcps_builtin::{BuiltinMcpDefinition, BuiltinOauthConfig, BuiltinPasswordConfig};
-use mymcps_core::models::{Mcp, McpAuthType, McpHealth, McpStatus, McpTransport, Tailnet};
+use mymcps_core::models::{
+    InstanceSetting, Mcp, McpAuthType, McpHealth, McpStatus, McpTransport, Tailnet,
+};
 use mymcps_core::redaction::{
     sanitize_diagnostic, sanitize_diagnostic_with, sanitize_mcp_diagnostic,
     sanitize_mcp_diagnostic_with,
@@ -59,6 +61,10 @@ const MAX_BUILTIN_ALIASES: usize = 20;
 const EDITING_KEY: &str = "editingMcpId";
 
 const NOT_FOUND: &str = "MCP not found";
+
+/// Why a form that adds an npm MCP is refused while they are off.
+const NPM_MCPS_OFF: &str =
+    "npm MCPs are turned off on this instance. Choose HTTP, or ask a super admin to turn them on.";
 
 pub fn routes() -> FeatureRoutes {
     FeatureRoutes {
@@ -556,6 +562,13 @@ pub async fn assign_mcp_from_payload(
     // What it connected to and with before this edit.
     let before = mcp.probe_basis();
     let transport = payload.transport;
+    // While npm MCPs are off, none is added: neither a new one nor one that
+    // was something else. One that exists can still be changed.
+    let becomes_npm = transport == McpTransport::Npm
+        && (!mcp.is_persisted() || mcp.transport != McpTransport::Npm);
+    if becomes_npm && !InstanceSetting::npm_enabled(&*core.db).await? {
+        return Err(ValidationError::single("transport", "npmDisabled", NPM_MCPS_OFF).into());
+    }
     let next_http_url = match transport {
         McpTransport::Http => Some(normalized_http_url(
             payload.http_url.as_deref().unwrap_or_default(),
@@ -803,6 +816,7 @@ async fn registry_page(
             .await?;
     let tool_counts = state.known_tool_counts();
     let tailnets = tailnet_choices(&state.core.db, team.team.id).await?;
+    let npm_enabled = InstanceSetting::npm_enabled(&*state.core.db).await?;
     let views: Vec<McpView> = mcps
         .iter()
         .map(|mcp| {
@@ -832,6 +846,11 @@ async fn registry_page(
                 matching: matching.len(),
                 matching_enabled,
                 registered: views.len(),
+                npm_enabled,
+                npm_registered: mcps
+                    .iter()
+                    .filter(|mcp| mcp.transport == McpTransport::Npm)
+                    .count(),
                 dialog,
             },
         ))
@@ -841,7 +860,8 @@ async fn registry_page(
         Open::Gallery => render(Dialog::Gallery),
         Open::Create(template) => {
             let form = McpForm::new(template.map(FormValues::from_template).unwrap_or_default())
-                .with_tailnets(tailnets.clone());
+                .with_tailnets(tailnets.clone())
+                .with_npm_off(!npm_enabled);
             render(Dialog::Create(&CreateDialog {
                 template,
                 form: &form,
@@ -851,7 +871,9 @@ async fn registry_page(
         }
         Open::Edit(id) => match views.iter().find(|mcp| mcp.id == id) {
             Some(mcp) => {
-                let form = McpForm::new(FormValues::from_mcp(mcp)).with_tailnets(tailnets.clone());
+                let form = McpForm::new(FormValues::from_mcp(mcp))
+                    .with_tailnets(tailnets.clone())
+                    .with_npm_off(!npm_enabled);
                 render(Dialog::Edit(&EditDialog {
                     mcp,
                     form: &form,
@@ -890,9 +912,14 @@ pub async fn new(
     let query = McpListQuery::read(&input);
     let open = match query.template.as_deref() {
         Some("custom") => Open::Create(None),
-        Some(id) => {
-            find_template(id).map_or(Open::Gallery, |template| Open::Create(Some(template)))
-        }
+        Some(id) => match find_template(id) {
+            Some(template)
+                if !template.is_npm() || InstanceSetting::npm_enabled(&*state.core.db).await? =>
+            {
+                Open::Create(Some(template))
+            }
+            _ => Open::Gallery,
+        },
         None => Open::Gallery,
     };
     registry_page(&state, &context, query, open).await
@@ -926,7 +953,10 @@ pub async fn edit(
     let tool_count = state.known_tool_counts().get(&mcp.id).copied();
     let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
     let view = McpView::of(&state.upstream, &mcp, tool_count).through(&tailnets);
-    let form = McpForm::new(FormValues::from_mcp(&view)).with_tailnets(tailnets);
+    let npm_enabled = InstanceSetting::npm_enabled(&*state.core.db).await?;
+    let form = McpForm::new(FormValues::from_mcp(&view))
+        .with_tailnets(tailnets)
+        .with_npm_off(!npm_enabled);
     Ok(fragment(
         StatusCode::OK,
         edit_fragment(
@@ -963,10 +993,8 @@ fn refused_create(
     session: &Session,
     headers: &HeaderMap,
     input: &Map<String, Value>,
-    error: &ValidationError,
-    tailnets: Vec<TailnetChoice>,
+    form: McpForm,
 ) -> Response {
-    let form = McpForm::refused(FormValues::from_input(input), error).with_tailnets(tailnets);
     // The form says which template it started from. A built-in MCP has one
     // of its own whatever the form says.
     let template = match form.values.transport {
@@ -1006,14 +1034,25 @@ pub async fn store(
 ) -> Result<Response, AppError> {
     let team = context.current_team()?;
     let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
+    let npm_enabled = InstanceSetting::npm_enabled(&*state.core.db).await?;
     list_environment_rows(&mut input);
+    let refused_form = |error: &ValidationError| {
+        McpForm::refused(FormValues::from_input(&input), error)
+            .with_tailnets(tailnets.clone())
+            .with_npm_off(!npm_enabled)
+    };
     let payload: McpPayload = match CREATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
         Ok(payload) => payload,
         Err(error) => {
             let error = refusal(error)?;
             return Ok(refused_create(
-                &state, &context, &session, &headers, &input, &error, tailnets,
+                &state,
+                &context,
+                &session,
+                &headers,
+                &input,
+                refused_form(&error),
             ));
         }
     };
@@ -1028,7 +1067,12 @@ pub async fn store(
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
             return Ok(refused_create(
-                &state, &context, &session, &headers, &input, &error, tailnets,
+                &state,
+                &context,
+                &session,
+                &headers,
+                &input,
+                refused_form(&error),
             ));
         }
         Err(AssignError::Database(error)) => return Err(error.into()),
@@ -1092,14 +1136,16 @@ pub async fn update(
     };
 
     let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
+    let npm_enabled = InstanceSetting::npm_enabled(&*state.core.db).await?;
     list_environment_rows(&mut input);
     let payload: McpPayload = match UPDATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
     {
         Ok(payload) => payload,
         Err(error) => {
             let error = refusal(error)?;
-            let form =
-                McpForm::refused(FormValues::from_input(&input), &error).with_tailnets(tailnets);
+            let form = McpForm::refused(FormValues::from_input(&input), &error)
+                .with_tailnets(tailnets)
+                .with_npm_off(!npm_enabled);
             return Ok(refused_update(
                 &state, &context, &session, &headers, &saved, form,
             ));
@@ -1113,8 +1159,9 @@ pub async fn update(
     match assign_mcp_from_payload(&state.upstream, &mut mcp, &payload, Some(saved.id)).await {
         Ok(()) => {}
         Err(AssignError::Refused(error)) => {
-            let form =
-                McpForm::refused(FormValues::from_input(&input), &error).with_tailnets(tailnets);
+            let form = McpForm::refused(FormValues::from_input(&input), &error)
+                .with_tailnets(tailnets)
+                .with_npm_off(!npm_enabled);
             return Ok(refused_update(
                 &state, &context, &session, &headers, &saved, form,
             ));

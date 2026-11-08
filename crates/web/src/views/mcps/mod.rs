@@ -307,6 +307,10 @@ pub struct McpsPage<'a> {
     pub matching_enabled: usize,
     /// How many MCPs are registered at all.
     pub registered: usize,
+    /// Whether npm MCPs are turned on for the instance, and how many of the
+    /// team's MCPs run one: they do not run while npm MCPs are off.
+    pub npm_enabled: bool,
+    pub npm_registered: usize,
     pub dialog: Dialog<'a>,
 }
 
@@ -370,12 +374,27 @@ pub fn mcps_page(context: &PageContext, page: &McpsPage) -> Markup {
                 }
             }
         }
+        @if !page.npm_enabled && page.npm_registered > 0 {
+            div class="banner banner--warning" role="status" {
+                (icon("triangle-alert"))
+                div class="banner__content" {
+                    p class="banner__title" { "npm MCPs are turned off on this instance" }
+                    p {
+                        @if page.npm_registered == 1 {
+                            "The npm MCP of this team does not run, and agents do not see it, until a super admin turns npm MCPs back on."
+                        } @else {
+                            "The " (page.npm_registered) " npm MCPs of this team do not run, and agents do not see them, until a super admin turns npm MCPs back on."
+                        }
+                    }
+                }
+            }
+        }
         (list::registry(context, page))
     };
     // The dialogs that add and change an MCP are for those who may.
     let overlays = html! {
         @if context.is_team_admin() {
-            (gallery::gallery_dialog(page.query, matches!(page.dialog, Dialog::Gallery)))
+            (gallery::gallery_dialog(page.query, matches!(page.dialog, Dialog::Gallery), page.npm_enabled))
             @if let Dialog::Create(dialog) = page.dialog { (create_dialog(context, page, dialog)) }
             (edit_dialog(context, page))
         }

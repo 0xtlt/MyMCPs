@@ -295,6 +295,7 @@ struct InstanceChange {
     mcp_auto_update_enabled: Option<bool>,
     mcp_auto_update_cron: Option<String>,
     registration_enabled: Option<bool>,
+    npm_enabled: Option<bool>,
 }
 
 /// `PATCH /settings/mcp-logging`
@@ -327,9 +328,12 @@ pub async fn update_mcp_logging(
     }
     // A switch submits nothing when unchecked: registration is then closed.
     settings.is_registration_enabled = payload.registration_enabled.unwrap_or(false);
+    settings.is_npm_enabled = payload.npm_enabled.unwrap_or(false);
     settings.updated_by = Some(user.id);
     settings.save(&**db).await?;
-    // A shorter retention applies at once.
+    // A shorter retention applies at once. So does turning npm MCPs off: the
+    // auto-update job stops with the resync below, and the runner refuses
+    // the next package to start.
     state.gateway.call_log.prune_expired(true).await;
     state.instance_settings_changed().await?;
 

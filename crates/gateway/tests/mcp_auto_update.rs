@@ -519,6 +519,25 @@ async fn follows_the_settings_when_they_are_saved() {
 }
 
 #[tokio::test]
+async fn schedules_nothing_while_npm_mcps_are_turned_off() {
+    let server = Scheduled::new(Environment::Production).await;
+    server.configure(true, "*/30 * * * *").await;
+    let mut settings = InstanceSetting::current(&**server.db()).await.unwrap();
+    settings.is_npm_enabled = false;
+    settings.save(&**server.db()).await.unwrap();
+
+    server.scheduler.start().await.unwrap();
+    assert!(!server.scheduler.is_scheduled());
+    server.clock.advance(chrono::Duration::days(1));
+    server.still_ran(0).await;
+
+    settings.is_npm_enabled = true;
+    settings.save(&**server.db()).await.unwrap();
+    server.scheduler.resync().await.unwrap();
+    assert!(server.scheduler.is_scheduled());
+}
+
+#[tokio::test]
 async fn skips_a_run_while_the_previous_one_is_still_reloading() {
     let server = Scheduled::new(Environment::Production).await;
     server.configure(true, "*/5 * * * *").await;

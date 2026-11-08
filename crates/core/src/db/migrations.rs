@@ -317,4 +317,12 @@ pub const MIGRATIONS: &[Migration] = &[
             r#"alter table `mcps` add column `oauth_generation` integer not null default '0'"#,
         ],
     },
+    // Whether npm MCPs may run on the instance at all. On by default: the
+    // instances that already run some keep them.
+    Migration {
+        name: "database/migrations/1794100000000_add_npm_enabled_to_instance_settings",
+        statements: &[
+            r#"alter table `instance_settings` add column `is_npm_enabled` boolean not null default '1'"#,
+        ],
+    },
 ];

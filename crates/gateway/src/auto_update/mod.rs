@@ -113,7 +113,8 @@ impl McpAutoUpdateScheduler {
     }
 
     /// Replace the running job with whatever instance settings currently say.
-    /// Stops the job when auto-update is off or the cron expression is invalid.
+    /// Stops the job when auto-update or npm MCPs are off, or the cron
+    /// expression is invalid.
     /// Resyncs run one after the other, each reading the settings after
     /// the one before it ended: the last to start has the last word.
     pub async fn resync(&self) -> Result<(), sqlx::Error> {
@@ -125,7 +126,8 @@ impl McpAutoUpdateScheduler {
         }
 
         let settings = InstanceSetting::current(&*self.upstream.core().db).await?;
-        if !settings.mcp_auto_update_enabled {
+        // No package is installed while npm MCPs are turned off.
+        if !settings.mcp_auto_update_enabled || !settings.is_npm_enabled {
             return Ok(());
         }
 

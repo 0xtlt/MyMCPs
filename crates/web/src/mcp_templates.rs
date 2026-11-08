@@ -143,6 +143,11 @@ impl McpTemplate {
         self.values.transport == McpTransport::Builtin
     }
 
+    /// Whether the MCP it sets up runs an npm package.
+    pub fn is_npm(&self) -> bool {
+        self.values.transport == McpTransport::Npm
+    }
+
     /// What the gallery's search looks through, in lower case.
     pub fn searchable_text(&self) -> String {
         let mut parts = vec![self.name, self.description, self.category.label()];

@@ -920,7 +920,7 @@ async fn a_backup_of_an_older_version_is_migrated_before_its_rows_are_copied() {
                 .ends_with("add_session_version_to_users_table")
         })
         .unwrap();
-    assert_eq!(MIGRATIONS.len() - older, 8);
+    assert_eq!(MIGRATIONS.len() - older, 9);
     let old_key = generate_app_key();
     let old_encryption = Encryption::new(&old_key);
     let dir = tempfile::tempdir().unwrap();

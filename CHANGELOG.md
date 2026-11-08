@@ -4,6 +4,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 ## 2026-11-08
 
+### Added
+
+- **Allow npm MCPs**: a super admin can turn npm MCPs off for the whole instance under **Settings → My Instance**. While they are off, no team can add one or turn an MCP into one, the gallery hides the templates that run a package, and no package is installed, started or updated. The npm MCPs that exist are kept: agents no longer see them, the MCPs page says they do not run, and they work again once npm MCPs are turned back on. On by default, so existing instances keep running theirs.
+
 ### Changed
 
 - An MCP whose address, network, package, secrets or sign-in is edited shows as not tested until its next test, instead of keeping the status of its old settings. After an OAuth sign-in it shows **draft** until the test that follows has finished.

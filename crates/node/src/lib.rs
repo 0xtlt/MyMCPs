@@ -60,7 +60,7 @@ mod startup;
 mod text;
 
 pub use environment_policy::{is_reserved_environment_name, reserved_environment_name_reason};
-pub use error::NodeError;
+pub use error::{NPM_DISABLED, NodeError};
 pub use package::{InstalledPackage, PackageSpec, is_registry_package_name, is_version_request};
 pub use runner::{ConnectedNodeUpstream, NodeRunner, SandboxStatus};
 pub use runtime::{

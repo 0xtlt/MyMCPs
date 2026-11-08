@@ -64,6 +64,7 @@ pub static UPDATE_MCP_LOGGING_VALIDATOR: LazyLock<vine::Validator> = LazyLock::n
         "mcpAutoUpdateEnabled" => vine::boolean().optional(),
         "mcpAutoUpdateCron" => vine::string().trim().max_length(64).optional().use_rule(five_field_cron()),
         "registrationEnabled" => vine::boolean().optional(),
+        "npmEnabled" => vine::boolean().optional(),
     })
 });
 

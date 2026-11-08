@@ -4,7 +4,7 @@
 mod support;
 
 use chrono::Duration;
-use mymcps_core::models::{AccessToken, ScopeMode, TokenSource};
+use mymcps_core::models::{AccessToken, InstanceSetting, ScopeMode, TokenSource};
 use mymcps_core::{Db, Timestamp};
 use mymcps_gateway::access_token::{self, AccessTokenUpdate, NewAccessToken};
 use support::*;
@@ -422,4 +422,42 @@ async fn a_token_reaches_the_mcps_of_its_team_and_of_no_other() {
     );
     assert_eq!(allowed(&everything).await, [ours.id]);
     assert_eq!(token_mcp_ids(db, limited.id).await, [ours.id]);
+}
+
+#[tokio::test]
+async fn a_token_reaches_no_npm_mcp_while_they_are_turned_off() {
+    let gateway = TestGateway::new().await;
+    let db = gateway.db();
+    let admin = create_admin(db).await;
+    let http = create_mcp(db, admin.id, |mcp| mcp.name = "Docs".into()).await;
+    let npm = create_mcp(db, admin.id, |mcp| {
+        mcp.name = "Package".into();
+        mcp.transport = mymcps_core::models::McpTransport::Npm;
+    })
+    .await;
+    let everything = create_access_token(db, admin.id, ScopeMode::All, &[])
+        .await
+        .token;
+    let selected = create_access_token(db, admin.id, ScopeMode::Selected, &[http.id, npm.id])
+        .await
+        .token;
+    let allowed = async |token: &AccessToken| -> Vec<i64> {
+        access_token::resolve_allowed_mcps(db, token)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|mcp| mcp.id)
+            .collect()
+    };
+    assert_eq!(allowed(&everything).await, [http.id, npm.id]);
+
+    let mut settings = InstanceSetting::current(&**db).await.unwrap();
+    settings.is_npm_enabled = false;
+    settings.save(&**db).await.unwrap();
+    assert_eq!(allowed(&everything).await, [http.id]);
+    assert_eq!(allowed(&selected).await, [http.id]);
+    // The token keeps its MCPs: they are back with npm MCPs.
+    settings.is_npm_enabled = true;
+    settings.save(&**db).await.unwrap();
+    assert_eq!(allowed(&selected).await, [http.id, npm.id]);
 }
