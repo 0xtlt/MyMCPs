@@ -1202,6 +1202,7 @@ fn ads() -> BuiltinMcpDefinition {
             sends_redirect_uri_with_code: true,
             client_id_pattern: None,
             client_id_hint: None,
+            credential_provider: None,
         },
     }
 }

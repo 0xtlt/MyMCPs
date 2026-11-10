@@ -12,7 +12,8 @@ use http::header::ALLOW;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use mymcps_builtin::{BuiltinMcpDefinition, BuiltinOauthConfig, BuiltinPasswordConfig};
 use mymcps_core::models::{
-    InstanceSetting, Mcp, McpAuthType, McpHealth, McpStatus, McpTransport, Tailnet,
+    InstanceSetting, Mcp, McpAuthType, McpHealth, McpStatus, McpTransport, ProviderCredential,
+    Tailnet,
 };
 use mymcps_core::redaction::{
     sanitize_diagnostic, sanitize_diagnostic_with, sanitize_mcp_diagnostic,
@@ -48,8 +49,9 @@ use crate::validators::mcp::{
 use crate::validators::route_params::record_id;
 use crate::validators::session::FLASHED_RECORD_ID_VALIDATOR;
 use crate::views::mcps::{
-    CreateDialog, Dialog, EDIT_DIALOG_ID, EditDialog, FormValues, McpForm, McpView, McpsPage,
-    PublicApp, ROWS_PER_PAGE, TailnetChoice, create_fragment, edit_fragment, mcps_page,
+    CreateDialog, CredentialChoice, Dialog, EDIT_DIALOG_ID, EditDialog, FormValues, McpForm,
+    McpView, McpsPage, PublicApp, ROWS_PER_PAGE, TailnetChoice, create_fragment, edit_fragment,
+    mcps_page,
 };
 use crate::views::shell::PageContext;
 
@@ -253,7 +255,28 @@ fn assign_oauth_application(
     payload: &McpPayload,
     name: &str,
     oauth: &BuiltinOauthConfig,
+    credential: Option<&CredentialPick>,
 ) -> Vec<FieldError> {
+    match credential {
+        Some(CredentialPick::Saved(credential)) => {
+            let secret = credential.secret(&core.encryption);
+            let saved_secret = core.decrypt_secret(mcp.oauth_client_secret.as_deref());
+            if mcp.oauth_client_id.as_deref() != Some(credential.client_id.as_str())
+                || saved_secret != secret
+            {
+                forget_oauth_connection(mcp);
+            }
+            mcp.provider_credential_id = Some(credential.id);
+            mcp.oauth_client_id = Some(credential.client_id.clone());
+            mcp.oauth_client_secret =
+                core.encrypt_secret_keeping(mcp.oauth_client_secret.as_deref(), secret.as_deref());
+            return Vec::new();
+        }
+        Some(CredentialPick::Refused(failure)) => return vec![failure.clone()],
+        // A new one: the client ID and secret below, which the caller saves
+        // as a credential once everything else passed.
+        Some(CredentialPick::New { .. }) | None => mcp.provider_credential_id = None,
+    }
     let client_id = payload.oauth_client_id.clone().unwrap_or_default();
     let saved_secret = core.decrypt_secret(mcp.oauth_client_secret.as_deref());
     let client_secret = filled(&payload.oauth_client_secret)
@@ -453,6 +476,7 @@ fn assign_builtin_credentials(
     upstream: &Upstream,
     mcp: &mut Mcp,
     payload: &McpPayload,
+    credential: Option<&CredentialPick>,
 ) -> Result<(), ValidationError> {
     let core = upstream.core();
     let definition = if payload.transport == McpTransport::Builtin {
@@ -466,6 +490,9 @@ fn assign_builtin_credentials(
         mcp.builtin_permissions = None;
         mcp.builtin_aliases = None;
     }
+    if definition.is_none_or(|definition| definition.oauth().is_none()) {
+        mcp.provider_credential_id = None;
+    }
     let Some(definition) = definition else {
         mcp.builtin_settings = None;
         return Ok(());
@@ -473,7 +500,9 @@ fn assign_builtin_credentials(
 
     // Everything wrong is reported at once: it all comes from the same setup.
     let mut failures = match (definition.oauth(), definition.password()) {
-        (Some(oauth), _) => assign_oauth_application(core, mcp, payload, definition.name(), oauth),
+        (Some(oauth), _) => {
+            assign_oauth_application(core, mcp, payload, definition.name(), oauth, credential)
+        }
         (None, Some(sign_in)) => {
             assign_password_sign_in(core, mcp, payload, definition.name(), sign_in)
         }
@@ -484,6 +513,161 @@ fn assign_builtin_credentials(
         Ok(())
     } else {
         Err(ValidationError::new(failures))
+    }
+}
+
+/// The OAuth client a built-in MCP whose provider shares its clients
+/// ([`BuiltinOauthConfig::credential_provider`]) signs in with.
+#[derive(Debug, Clone)]
+pub enum CredentialPick {
+    /// A credential of the team.
+    Saved(ProviderCredential),
+    /// The client ID and secret of the form, to save as a credential with
+    /// this name once the form passed.
+    New {
+        provider: &'static str,
+        name: String,
+    },
+    /// Why the choice is refused.
+    Refused(FieldError),
+}
+
+/// What [`CredentialPick::New`] is called when the form names nothing: the
+/// first of "Google Cloud", "Google Cloud 2"… the team does not use.
+fn unused_credential_name(saved: &[ProviderCredential], base: &str) -> String {
+    let taken = |name: &str| {
+        saved
+            .iter()
+            .any(|saved| saved.name.eq_ignore_ascii_case(name))
+    };
+    (1..)
+        .map(|index| match index {
+            1 => base.to_owned(),
+            index => format!("{base} {index}"),
+        })
+        .find(|name| !taken(name))
+        .expect("a name is free")
+}
+
+/// Which credential the form chose, for a provider that shares its clients:
+/// the one it names, the one of the team that holds the client ID it was
+/// given, or a new one. A form that names none and gives no client keeps
+/// the MCP's.
+async fn pick_credential(
+    core: &Core,
+    mcp: &Mcp,
+    payload: &McpPayload,
+    provider: &'static str,
+) -> Result<CredentialPick, sqlx::Error> {
+    let db = &*core.db;
+    let refused = |field: &str, message: &str| {
+        CredentialPick::Refused(FieldError::new(field, "credential", message))
+    };
+    let chosen = payload.oauth_credential_id.as_deref();
+    let in_team = |credential: Option<ProviderCredential>| {
+        credential.filter(|credential| credential.provider == provider)
+    };
+    if let Some(id) = chosen.and_then(record_id) {
+        return Ok(
+            match in_team(ProviderCredential::find_in_team(db, mcp.team_id, id).await?) {
+                Some(credential) => CredentialPick::Saved(credential),
+                None => refused(
+                    "oauthCredentialId",
+                    "Choose an OAuth client saved for this team, or add one",
+                ),
+            },
+        );
+    }
+    let client_id = filled(&payload.oauth_client_id);
+    if chosen.is_none()
+        && client_id.is_none()
+        && let Some(id) = mcp.provider_credential_id
+        && let Some(credential) =
+            in_team(ProviderCredential::find_in_team(db, mcp.team_id, id).await?)
+    {
+        return Ok(CredentialPick::Saved(credential));
+    }
+    if let Some(client_id) = client_id
+        && let Some(credential) =
+            ProviderCredential::find_by_client_id(db, mcp.team_id, provider, client_id).await?
+    {
+        // The secret of a shared client is changed on the Credentials page,
+        // where every MCP that uses it is told.
+        return Ok(match filled(&payload.oauth_client_secret) {
+            Some(secret) if credential.secret(&core.encryption).as_deref() != Some(secret) => {
+                refused(
+                    "oauthClientSecret",
+                    &format!(
+                        "This Client ID is already saved as \"{}\" with another Client Secret. Choose it, or change its secret on the Credentials page",
+                        credential.name
+                    ),
+                )
+            }
+            _ => CredentialPick::Saved(credential),
+        });
+    }
+    let saved = ProviderCredential::of_team(db, mcp.team_id, None).await?;
+    let name = match filled(&payload.credential_name) {
+        Some(name)
+            if saved
+                .iter()
+                .any(|saved| saved.name.eq_ignore_ascii_case(name)) =>
+        {
+            return Ok(refused(
+                "credentialName",
+                "This team already has a credential with this name",
+            ));
+        }
+        Some(name) => name.to_owned(),
+        None => unused_credential_name(&saved, credential_base_name(provider)),
+    };
+    Ok(CredentialPick::New { provider, name })
+}
+
+/// What a credential of a provider is called by default.
+pub fn credential_base_name(provider: &str) -> &'static str {
+    match provider {
+        "google" => "Google Cloud",
+        _ => "OAuth client",
+    }
+}
+
+/// Save the client the form entered as a credential of the team, and point
+/// the MCP to it. A credential with the same client ID or name saved
+/// meanwhile refuses the form.
+async fn save_new_credential(
+    core: &Core,
+    mcp: &mut Mcp,
+    provider: &str,
+    name: &str,
+) -> Result<(), AssignError> {
+    let mut credential = ProviderCredential {
+        team_id: mcp.team_id,
+        provider: provider.to_owned(),
+        name: name.to_owned(),
+        client_id: mcp.oauth_client_id.clone().unwrap_or_default(),
+        client_secret: mcp.oauth_client_secret.clone().unwrap_or_default(),
+        created_by: mcp.created_by,
+        ..Default::default()
+    };
+    match credential.insert(&*core.db).await {
+        Ok(()) => {
+            mcp.provider_credential_id = Some(credential.id);
+            Ok(())
+        }
+        Err(error)
+            if error
+                .as_database_error()
+                .is_some_and(|error| error.is_unique_violation()) =>
+        {
+            Err(ValidationError::single(
+                "oauthClientId",
+                "credential",
+                "This OAuth client was just saved for this team: choose it",
+            )
+            .into())
+        }
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -668,7 +852,21 @@ pub async fn assign_mcp_from_payload(
     mcp.enabled = payload.enabled.unwrap_or(false);
     clear_unused_auth_secrets(mcp, was_auto);
     apply_secrets(core, mcp, payload);
-    assign_builtin_credentials(upstream, mcp, payload)?;
+    let credential_provider = match transport {
+        McpTransport::Builtin => upstream
+            .builtin_mcp(payload.builtin_key.as_deref())
+            .and_then(|definition| definition.oauth())
+            .and_then(|oauth| oauth.credential_provider),
+        _ => None,
+    };
+    let credential = match credential_provider {
+        Some(provider) => Some(pick_credential(core, mcp, payload, provider).await?),
+        None => None,
+    };
+    assign_builtin_credentials(upstream, mcp, payload, credential.as_ref())?;
+    if let Some(CredentialPick::New { provider, name }) = &credential {
+        save_new_credential(core, mcp, provider, name).await?;
+    }
     // What was known of it was found with what it connected to and with
     // before: it holds no longer. A new name or a switch keeps it.
     if mcp.probe_basis() != before {
@@ -734,6 +932,20 @@ async fn tailnet_choices(db: &Db, team_id: i64) -> Result<Vec<TailnetChoice>, sq
         .map(|tailnet| TailnetChoice {
             id: tailnet.id,
             name: tailnet.name,
+        })
+        .collect())
+}
+
+/// The saved OAuth clients of a team, for the built-in MCPs whose provider
+/// shares them.
+async fn credential_choices(db: &Db, team_id: i64) -> Result<Vec<CredentialChoice>, sqlx::Error> {
+    Ok(ProviderCredential::of_team(&**db, team_id, None)
+        .await?
+        .into_iter()
+        .map(|credential| CredentialChoice {
+            id: credential.id,
+            name: credential.name,
+            client_id: credential.client_id,
         })
         .collect())
 }
@@ -816,6 +1028,7 @@ async fn registry_page(
             .await?;
     let tool_counts = state.known_tool_counts();
     let tailnets = tailnet_choices(&state.core.db, team.team.id).await?;
+    let credentials = credential_choices(&state.core.db, team.team.id).await?;
     let npm_enabled = InstanceSetting::npm_enabled(&*state.core.db).await?;
     let views: Vec<McpView> = mcps
         .iter()
@@ -861,6 +1074,7 @@ async fn registry_page(
         Open::Create(template) => {
             let form = McpForm::new(template.map(FormValues::from_template).unwrap_or_default())
                 .with_tailnets(tailnets.clone())
+                .with_credentials(credentials.clone())
                 .with_npm_off(!npm_enabled);
             render(Dialog::Create(&CreateDialog {
                 template,
@@ -873,6 +1087,7 @@ async fn registry_page(
             Some(mcp) => {
                 let form = McpForm::new(FormValues::from_mcp(mcp))
                     .with_tailnets(tailnets.clone())
+                    .with_credentials(credentials.clone())
                     .with_npm_off(!npm_enabled);
                 render(Dialog::Edit(&EditDialog {
                     mcp,
@@ -952,10 +1167,12 @@ pub async fn edit(
 
     let tool_count = state.known_tool_counts().get(&mcp.id).copied();
     let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
+    let credentials = credential_choices(&state.core.db, team.id()).await?;
     let view = McpView::of(&state.upstream, &mcp, tool_count).through(&tailnets);
     let npm_enabled = InstanceSetting::npm_enabled(&*state.core.db).await?;
     let form = McpForm::new(FormValues::from_mcp(&view))
         .with_tailnets(tailnets)
+        .with_credentials(credentials)
         .with_npm_off(!npm_enabled);
     Ok(fragment(
         StatusCode::OK,
@@ -1034,11 +1251,13 @@ pub async fn store(
 ) -> Result<Response, AppError> {
     let team = context.current_team()?;
     let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
+    let credentials = credential_choices(&state.core.db, team.id()).await?;
     let npm_enabled = InstanceSetting::npm_enabled(&*state.core.db).await?;
     list_environment_rows(&mut input);
     let refused_form = |error: &ValidationError| {
         McpForm::refused(FormValues::from_input(&input), error)
             .with_tailnets(tailnets.clone())
+            .with_credentials(credentials.clone())
             .with_npm_off(!npm_enabled)
     };
     let payload: McpPayload = match CREATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
@@ -1136,6 +1355,8 @@ pub async fn update(
     };
 
     let tailnets = tailnet_choices(&state.core.db, team.id()).await?;
+
+    let credentials = credential_choices(&state.core.db, team.id()).await?;
     let npm_enabled = InstanceSetting::npm_enabled(&*state.core.db).await?;
     list_environment_rows(&mut input);
     let payload: McpPayload = match UPDATE_MCP_VALIDATOR.validate_as(&Value::Object(input.clone()))
@@ -1145,6 +1366,7 @@ pub async fn update(
             let error = refusal(error)?;
             let form = McpForm::refused(FormValues::from_input(&input), &error)
                 .with_tailnets(tailnets)
+                .with_credentials(credentials)
                 .with_npm_off(!npm_enabled);
             return Ok(refused_update(
                 &state, &context, &session, &headers, &saved, form,
@@ -1161,6 +1383,7 @@ pub async fn update(
         Err(AssignError::Refused(error)) => {
             let form = McpForm::refused(FormValues::from_input(&input), &error)
                 .with_tailnets(tailnets)
+                .with_credentials(credentials)
                 .with_npm_off(!npm_enabled);
             return Ok(refused_update(
                 &state, &context, &session, &headers, &saved, form,

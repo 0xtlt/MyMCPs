@@ -7,7 +7,7 @@ use maud::{Markup, html};
 use crate::assets::asset_url;
 use crate::views::icon::icon;
 use crate::views::mcps::PublicApp;
-use crate::views::mcps::form::{Field, McpForm, banner, choice, optional_mark};
+use crate::views::mcps::form::{CredentialChoice, Field, McpForm, banner, choice, optional_mark};
 
 /// Something the provider needs beyond the sign-in, such as the account to act through.
 pub struct SettingGuide {
@@ -44,6 +44,10 @@ pub struct OauthGuide {
     /// The provider has one permission for reading and writing, so allowing
     /// write access needs no new authorization.
     pub write_applies_on_save: bool,
+    /// The client is a saved credential of the team, chosen here and shared
+    /// with its other MCPs of the provider: what
+    /// `BuiltinOauthConfig::credential_provider` says.
+    pub shares_credentials: bool,
 }
 
 /// The admin creates a password for apps on the provider's site and pastes it here.
@@ -171,6 +175,7 @@ static STRAVA: SetupGuide = SetupGuide {
         read_access: "MyMCPs reads your profile, activities, routes, and segments, including private ones. Permissions you uncheck on Strava hide the matching tools.",
         write_access: "Lets agents create manual activities, edit activity details, star segments, and update your weight.",
         write_applies_on_save: false,
+        shares_credentials: false,
     }),
 };
 
@@ -203,6 +208,45 @@ static GOOGLE_ADS: SetupGuide = SetupGuide {
         read_access: "MyMCPs reads the accounts, campaigns, ads, keywords, and statistics that your Google sign-in can open.",
         write_access: "Lets agents create and change campaigns, budgets, ad groups, keywords, ads, and image assets. The tools that commit money or put a campaign live ask for your approval first, which you can change under Tool approvals.",
         write_applies_on_save: true,
+        shares_credentials: true,
+    }),
+};
+
+fn google_search_console_application(public_app: &PublicApp) -> Markup {
+    html! {
+        p {
+            "Already have a Google Cloud OAuth client for Google Ads? Enable the "
+            (external_link("https://console.cloud.google.com/apis/library/searchconsole.googleapis.com", "Google Search Console API"))
+            " in the same project and choose that client in the next step. Otherwise, set up the OAuth consent screen and create an OAuth client of the type Web application with this redirect URI:"
+        }
+        (copy_field("Authorized redirect URI", &format!("{}/mcps/oauth/callback", public_app.url), "Copy authorized redirect URI"))
+        p class="text-body-sm" {
+            "Publish the consent screen to production: while it is in testing, Google ends every authorization after 7 days. The Google account you connect must be a user of the Search Console properties."
+        }
+    }
+}
+
+static GOOGLE_SEARCH_CONSOLE: SetupGuide = SetupGuide {
+    provider: "Google Search Console",
+    endpoint: "Google Search Console API",
+    requirement: "Runs inside MyMCPs with an OAuth client from your own Google Cloud project",
+    sign_in: SignIn::Oauth(OauthGuide {
+        create_application_label: Some("Enable the API in a Google Cloud project"),
+        create_application: google_search_console_application,
+        credentials_label: Some("Choose the OAuth client and the properties"),
+        client_id_placeholder: "1234567890-abc123.apps.googleusercontent.com",
+        credentials_hint: "Google shows both when the OAuth client is created. The Client Secret can only be copied then.",
+        settings: &[SettingGuide {
+            key: "siteUrls",
+            label: "Properties agents may use",
+            placeholder: Some("sc-domain:example.com, https://www.example.com/"),
+            description: "Limits every tool to these Search Console properties. Left blank, agents reach every property your Google account can open.",
+            optional: true,
+        }],
+        read_access: "MyMCPs reads the properties, search performance, URL inspections, and sitemaps that your Google account can open.",
+        write_access: "Lets agents submit and delete sitemaps.",
+        write_applies_on_save: false,
+        shares_credentials: true,
     }),
 };
 
@@ -252,6 +296,7 @@ pub fn builtin_setup_guide(builtin_key: Option<&str>) -> Option<&'static SetupGu
     match builtin_key? {
         "strava" => Some(&STRAVA),
         "google-ads" => Some(&GOOGLE_ADS),
+        "google-search-console" => Some(&GOOGLE_SEARCH_CONSOLE),
         "icloud-mail" => Some(&ICLOUD_MAIL),
         _ => None,
     }
@@ -303,14 +348,96 @@ fn kebab(key: &str) -> String {
     text
 }
 
+/// The saved OAuth clients of the team as the select names them: the name,
+/// and the start of the client ID to tell two apart.
+fn credential_label(credential: &CredentialChoice) -> String {
+    let client: String = credential.client_id.chars().take(18).collect();
+    let more = if credential.client_id.chars().count() > 18 {
+        "…"
+    } else {
+        ""
+    };
+    format!("{} · {client}{more}", credential.name)
+}
+
+/// The OAuth client of a provider that shares them: one of the team's, or a
+/// new one, saved with a name on the Credentials page as the form is.
+fn shared_client_fields(fields: &BuiltinFields, oauth: &OauthGuide) -> Markup {
+    let BuiltinFields { prefix, form, .. } = *fields;
+    let values = &form.values;
+    let saved = &form.credentials;
+    let chosen = if values.oauth_credential_id.is_empty() {
+        saved
+            .first()
+            .map_or_else(|| "new".to_string(), |credential| credential.id.to_string())
+    } else {
+        values.oauth_credential_id.clone()
+    };
+    let adding = chosen == "new" || saved.is_empty();
+    let select_id = format!("{prefix}-credential");
+    // Without a select, a refused choice is said above the form.
+    let select_error = (!saved.is_empty())
+        .then(|| form.error("oauthCredentialId"))
+        .flatten();
+    let new_client = html! {
+        p class="text-body-sm" { (oauth.credentials_hint) }
+        (Field::new(format!("{prefix}-credential-name"), "credentialName", html! { "Name " (optional_mark()) })
+            .value(&values.credential_name)
+            .placeholder("Google Cloud")
+            .help(html! { "What the Credentials page calls this client." })
+            .error(form.error("credentialName"))
+            .render())
+        (Field::new(format!("{prefix}-client-id"), "oauthClientId", html! { "Client ID" })
+            .value(if adding { values.oauth_client_id.as_str() } else { "" })
+            .placeholder(oauth.client_id_placeholder)
+            .verbatim()
+            .error(form.error("oauthClientId"))
+            .render())
+        (Field::new(format!("{prefix}-client-secret"), "oauthClientSecret", html! { "Client Secret" })
+            .password()
+            .value(&values.oauth_client_secret)
+            .help(html! { "Encrypted at rest and only sent to the provider." })
+            .error(form.error("oauthClientSecret"))
+            .render())
+    };
+    html! {
+        @if saved.is_empty() {
+            input type="hidden" name="oauthCredentialId" value="new";
+            (new_client)
+        } @else {
+            div class="field" {
+                label class="field__label" for=(select_id) { "OAuth client" }
+                div class="select" {
+                    select class="input" id=(select_id) name="oauthCredentialId" aria-invalid=[select_error.map(|_| "true")]
+                        aria-describedby=(format!("{select_id}-help")) {
+                        @for credential in saved {
+                            option value=(credential.id) selected[chosen == credential.id.to_string()] { (credential_label(credential)) }
+                        }
+                        option value="new" selected[adding] { "Add another OAuth client" }
+                    }
+                    (icon("chevron-down"))
+                }
+                @if let Some(message) = select_error { p class="field__error" { (message) } }
+                p class="field__help" id=(format!("{select_id}-help")) {
+                    "Saved on the " a class="link" href="/credentials" { "Credentials" } " page, where a change applies to every MCP that uses it."
+                }
+            }
+            div class="stack" data-show-when="oauthCredentialId=new" hidden[!adding] { (new_client) }
+        }
+    }
+}
+
 fn oauth_steps(fields: &BuiltinFields, guide: &SetupGuide, oauth: &OauthGuide) -> Markup {
     let BuiltinFields { prefix, form, .. } = *fields;
     let values = &form.values;
-    // Saved credentials still wait for Connect.
+    // Saved credentials still wait for Connect. A saved client of the team
+    // means the first step was done for another MCP.
     let active = if fields.is_connected {
         3
     } else if fields.has_saved_client_secret {
         2
+    } else if oauth.shares_credentials && !form.credentials.is_empty() {
+        1
     } else {
         0
     };
@@ -330,19 +457,23 @@ fn oauth_steps(fields: &BuiltinFields, guide: &SetupGuide, oauth: &OauthGuide) -
         @if fields.has_saved_client_secret { "Client Secret (leave blank to keep) " (optional_mark()) } @else { "Client Secret" }
     };
     let credentials = html! {
-        p class="text-body-sm" { (oauth.credentials_hint) }
-        (Field::new(format!("{prefix}-client-id"), "oauthClientId", html! { "Client ID" })
-            .value(&values.oauth_client_id)
-            .placeholder(oauth.client_id_placeholder)
-            .verbatim()
-            .error(form.error("oauthClientId"))
-            .render())
-        (Field::new(format!("{prefix}-client-secret"), "oauthClientSecret", secret_label)
-            .password()
-            .value(&values.oauth_client_secret)
-            .help(html! { "Encrypted at rest and only sent to the provider." })
-            .error(form.error("oauthClientSecret"))
-            .render())
+        @if oauth.shares_credentials {
+            (shared_client_fields(fields, oauth))
+        } @else {
+            p class="text-body-sm" { (oauth.credentials_hint) }
+            (Field::new(format!("{prefix}-client-id"), "oauthClientId", html! { "Client ID" })
+                .value(&values.oauth_client_id)
+                .placeholder(oauth.client_id_placeholder)
+                .verbatim()
+                .error(form.error("oauthClientId"))
+                .render())
+            (Field::new(format!("{prefix}-client-secret"), "oauthClientSecret", secret_label)
+                .password()
+                .value(&values.oauth_client_secret)
+                .help(html! { "Encrypted at rest and only sent to the provider." })
+                .error(form.error("oauthClientSecret"))
+                .render())
+        }
         @for setting in oauth.settings {
             @let label = html! { (setting.label) @if setting.optional { " " (optional_mark()) } };
             (Field::new(format!("{prefix}-{}", kebab(setting.key)), &format!("builtinSettings[{}]", setting.key), label)
@@ -511,6 +642,22 @@ mod tests {
                 .label(),
             "password"
         );
+    }
+
+    #[test]
+    fn offers_saved_clients_exactly_for_the_providers_that_share_them() {
+        for definition in crate::state::builtins().keys() {
+            let registry = crate::state::builtins();
+            let definition = registry.get(Some(definition)).unwrap();
+            let shares = match &builtin_setup_guide(Some(definition.key())).unwrap().sign_in {
+                SignIn::Oauth(oauth) => oauth.shares_credentials,
+                SignIn::Password(_) => false,
+            };
+            let provider = definition
+                .oauth()
+                .and_then(|oauth| oauth.credential_provider);
+            assert_eq!(shares, provider.is_some(), "{}", definition.key());
+        }
     }
 
     #[test]

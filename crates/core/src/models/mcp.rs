@@ -131,6 +131,10 @@ model! {
         /// longer the MCP's: a destination that was left and come back to is
         /// not the one the sign-in began on.
         pub oauth_generation: i64,
+        /// The saved OAuth client of its team that a built-in MCP signs in
+        /// with. `oauth_client_id` and `oauth_client_secret` hold a copy of
+        /// it, which a change of the credential rewrites.
+        pub provider_credential_id: Option<i64>,
     }
 }
 

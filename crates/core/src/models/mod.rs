@@ -12,6 +12,7 @@ mod mcp;
 mod mcp_call_log;
 mod oauth;
 mod passkey;
+mod provider_credential;
 mod tailnet;
 mod team;
 mod two_factor;
@@ -28,6 +29,7 @@ pub use mcp::{
 pub use mcp_call_log::{CallErrorCategory, CallOutcome, McpCallLog};
 pub use oauth::{OauthAuthorizationCode, OauthClient};
 pub use passkey::Passkey;
+pub use provider_credential::{CredentialChange, ProviderCredential};
 pub use tailnet::{SIGNED_OUT_FOR_ANOTHER_TAILNET, Tailnet, TailnetIdentity};
 pub use team::{AccountRemovalRefusal, Membership, Team, TeamMember, TeamRole};
 pub use two_factor::{RECOVERY_CODES, RecoveryCode};

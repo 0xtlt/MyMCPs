@@ -731,6 +731,30 @@ The MCP form shows a **Network** select (`name="tailnetId"`, first option "Inter
 team has a tailnet. The MCP list names the tailnet in the second line of the endpoint cell
 ("via tailnet pro"), and in the subtitle of its row under 768px.
 
+### Credentials page and the OAuth client field
+
+`/credentials` (owners and admins of the team, `views/credentials.rs`) lists the OAuth clients a
+team saves once for its built-in MCPs, such as one Google Cloud client for Google Ads and Google
+Search Console. It is a page header with **Add OAuth client**, and one `.card` with a table or an
+empty state. The table has the columns Name (`.cell-stack`, the Client ID in `.cell-sub`),
+Provider, Used by (the names of the MCPs in its `title`) and Actions (`.col-96`, `.col-96`,
+`.col-200`): **Edit** is a link to `/credentials/{id}/edit`, the page with the dialog open, and
+**Delete** lives in the row's ⋯ menu, refused with a flash message while an MCP uses it.
+
+- The dialog "Add an OAuth client" / "Edit <name>" is a form in a `[data-fragment]` like the
+  tailnet dialog: Name, Client ID, and the Client Secret as an `.input-group` with the
+  `data-password-toggle` eye, never given a `value`. On edit a blank secret keeps the saved one,
+  and a warning banner says how many MCPs use the client: a new secret applies to them at once, a
+  new Client ID disconnects them. The redirect URI to register is a `.copy-field` once `APP_URL`
+  is set.
+
+In the dialog of a built-in MCP whose provider shares its clients (Google), the credentials step
+shows an **OAuth client** select (`name="oauthCredentialId"`): the team's clients as
+"<name> · <start of the Client ID>", then "Add another OAuth client" (`value="new"`), whose Name,
+Client ID and Client Secret fields are in a `data-show-when="oauthCredentialId=new"` block. A team
+with no saved client gets the three fields and a hidden `oauthCredentialId=new`. The first step
+counts as done once the team has a client.
+
 ### Home and settings blocks
 
 ```html

@@ -4,6 +4,7 @@
 pub mod access_token;
 pub mod backup;
 pub mod builtin_files;
+pub mod credential;
 pub mod cron;
 pub mod mcp;
 pub mod route_params;

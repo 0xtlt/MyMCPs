@@ -280,7 +280,10 @@ fn sidebar(context: &PageContext, user: &User) -> Markup {
                 (nav_item(context, "/mcps", "plug", "MCPs"))
                 (nav_item(context, "/tokens", "key-round", "Access tokens"))
                 // Connecting a network and signing in to it is for those who manage the team.
-                @if context.is_team_admin() { (nav_item(context, "/tailnets", "network", "Tailnets")) }
+                @if context.is_team_admin() {
+                    (nav_item(context, "/credentials", "lock", "Credentials"))
+                    (nav_item(context, "/tailnets", "network", "Tailnets"))
+                }
                 @if context.pending_approvals > 0 {
                     a class="nav-item" href="/approvals" aria-current=[approvals_current.then_some("page")]
                         aria-label=(format!("Approvals, {} waiting", context.pending_approvals)) {

@@ -486,6 +486,29 @@ pub const MCP_TEMPLATES: &[McpTemplate] = &[
             "google-ads",
         ),
     },
+    McpTemplate {
+        id: "google-search-console",
+        name: "Google Search Console",
+        description: "Read clicks, impressions, CTR, and positions by query, page, country, and device, inspect how Google indexes a URL, and manage sitemaps. Runs inside MyMCPs with the Google Cloud OAuth client your Google Ads MCP already uses, or a new one.",
+        category: TemplateCategory::Marketing,
+        popular: false,
+        icon: "search",
+        keywords: &[
+            "seo",
+            "search",
+            "webmasters",
+            "gsc",
+            "indexing",
+            "sitemaps",
+            "queries",
+            "built-in",
+        ],
+        values: builtin(
+            "Google Search Console",
+            "Read Search Console performance, inspect URLs, and manage sitemaps.",
+            "google-search-console",
+        ),
+    },
 ];
 
 /// The template with this id.
@@ -546,7 +569,7 @@ mod tests {
 
     #[test]
     fn lists_the_gallery_of_the_app() {
-        assert_eq!(MCP_TEMPLATES.len(), 20);
+        assert_eq!(MCP_TEMPLATES.len(), 21);
         let ids: HashSet<&str> = MCP_TEMPLATES.iter().map(|template| template.id).collect();
         assert_eq!(ids.len(), MCP_TEMPLATES.len(), "ids are unique");
         assert_eq!(

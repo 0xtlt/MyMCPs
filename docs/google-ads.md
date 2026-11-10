@@ -31,7 +31,7 @@ Setup takes about fifteen minutes, most of it in the Google Cloud console.
 ## 2. Add the MCP in MyMCPs
 
 1. Open **MCPs**, select **Add MCP**, and choose **Google Ads** (under **Popular** or **Marketing**).
-2. Paste the **Client ID** and **Client Secret**.
+2. Paste the **Client ID** and **Client Secret**. They are saved as an OAuth client of the team on the **Credentials** page, which the next Google MCP, such as [Google Search Console](google-search-console.md), chooses instead of asking again. Once the team has one, the dialog offers an **OAuth client** select: choose a saved client, or **Add another OAuth client**.
 3. Optionally fill in:
    - **Manager account ID**: only when your Google account reaches the advertiser accounts through a manager account. Enter the ID of that manager, such as `123-456-7890`. MyMCPs then sends it with every request, as Google requires.
    - **Accounts agents may use**: the IDs of the Google Ads accounts the tools are limited to, separated by commas. Left blank, agents reach every account your sign-in does. A tool called for another account is refused before Google is contacted.
@@ -47,6 +47,15 @@ The secret and both account settings are encrypted with the instance's `APP_KEY`
 3. Google returns you to MyMCPs, which exchanges the code for tokens and checks them with one request. The MCP status becomes **ready**.
 
 Google Ads has a single permission, which both reads and writes. What agents may change is decided in MyMCPs, by write access and tool approvals. Access tokens last an hour: MyMCPs renews them automatically.
+
+## Credentials page
+
+**Credentials**, in the sidebar for the owners and admins of a team, lists the Google OAuth clients of the team and the MCPs that use each one. Edit one there to change it for all of them at once:
+
+- A new **Client Secret** applies to every MCP that uses the client, which stays connected.
+- A new **Client ID** disconnects them: Google's tokens belong to the client that issued them. Select **Connect** on each one again.
+
+A client cannot be deleted while an MCP uses it. MCPs created before this page existed were given a client named **Google Cloud** (then **Google Cloud 2**, and so on) for each Client ID of the team.
 
 ## Write access
 

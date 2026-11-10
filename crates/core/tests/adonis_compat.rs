@@ -583,3 +583,83 @@ fn hashes_tokens_like_the_node_app() {
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
 }
+
+#[tokio::test]
+async fn google_ads_mcps_get_a_saved_credential_for_each_client_of_their_team() {
+    let (db, _dir) = fresh_database().await;
+    let last = MIGRATIONS.len() - 1;
+    assert_eq!(
+        MIGRATIONS[last].name,
+        "database/migrations/1794500000000_add_provider_credentials"
+    );
+    apply(&db, &MIGRATIONS[..last]).await;
+    sqlx::query("insert into `users` (`id`, `email`, `password`, `created_at`) values (7, 'a@example.com', 'x', '2026-01-01 00:00:00')")
+        .execute(&*db)
+        .await
+        .unwrap();
+    sqlx::query("insert into `teams` (`id`, `name`, `created_at`) values (2, 'Other', '2026-01-01 00:00:00')")
+        .execute(&*db)
+        .await
+        .unwrap();
+    // Two MCPs of team 1 share a client, a third has its own, team 2 has the
+    // first client too, and an MCP with no secret or of another provider gets none.
+    for (id, team, key, client, secret) in [
+        (1, 1, "google-ads", "a.apps.googleusercontent.com", "sa1"),
+        (2, 1, "google-ads", "a.apps.googleusercontent.com", "sa2"),
+        (3, 1, "google-ads", "b.apps.googleusercontent.com", "sb"),
+        (4, 2, "google-ads", "a.apps.googleusercontent.com", "sa3"),
+        (5, 1, "google-ads", "c.apps.googleusercontent.com", ""),
+        (6, 1, "strava", "123456", "ss"),
+    ] {
+        sqlx::query("insert into `mcps` (`id`, `name`, `slug`, `transport`, `builtin_key`, `oauth_client_id`, `oauth_client_secret`, `created_by`, `created_at`, `team_id`) values (?, 'm', ?, 'builtin', ?, ?, ?, 7, '2026-01-01 00:00:00', ?)")
+            .bind(id)
+            .bind(format!("m{id}"))
+            .bind(key)
+            .bind(client)
+            .bind(secret)
+            .bind(team)
+            .execute(&*db)
+            .await
+            .unwrap();
+    }
+
+    apply(&db, &MIGRATIONS[last..]).await;
+
+    let credentials: Vec<(i64, i64, String, String, String)> = sqlx::query_as(
+        "select `id`, `team_id`, `name`, `client_id`, `client_secret` from `provider_credentials` order by `id`",
+    )
+    .fetch_all(&*db)
+    .await
+    .unwrap();
+    let described: Vec<(i64, &str, &str, &str)> = credentials
+        .iter()
+        .map(|(_, team, name, client, secret)| {
+            (*team, name.as_str(), client.as_str(), secret.as_str())
+        })
+        .collect();
+    assert_eq!(
+        described,
+        [
+            (1, "Google Cloud", "a.apps.googleusercontent.com", "sa1"),
+            (1, "Google Cloud 2", "b.apps.googleusercontent.com", "sb"),
+            (2, "Google Cloud", "a.apps.googleusercontent.com", "sa3"),
+        ]
+    );
+    let links: Vec<(i64, Option<i64>)> =
+        sqlx::query_as("select `id`, `provider_credential_id` from `mcps` order by `id`")
+            .fetch_all(&*db)
+            .await
+            .unwrap();
+    let id = |index: usize| Some(credentials[index].0);
+    assert_eq!(
+        links,
+        [
+            (1, id(0)),
+            (2, id(0)),
+            (3, id(1)),
+            (4, id(2)),
+            (5, None),
+            (6, None)
+        ]
+    );
+}

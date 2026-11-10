@@ -5,7 +5,7 @@ MyMCPs is a self-hosted [Model Context Protocol (MCP)](https://modelcontextproto
 ## What it does
 
 - Connects HTTP and npm-based MCP servers.
-- Includes built-in MCPs for services with no MCP a self-hosted gateway can use: Strava, iCloud Mail, and Google Ads.
+- Includes built-in MCPs for services with no MCP a self-hosted gateway can use: Strava, iCloud Mail, Google Ads, and Google Search Console.
 - Holds the tool calls you choose until a person approves them, for any MCP.
 - Supports bearer tokens, custom headers, and OAuth.
 - Lets MCP clients sign in through OAuth, with manual access tokens as a fallback.
@@ -87,6 +87,8 @@ Some services have no MCP that a self-hosted gateway is allowed to use. MyMCPs i
 **iCloud Mail** signs in over IMAP and SMTP with an app-specific password, because Apple has no mail API. Choose **iCloud Mail** in the **Add MCP** gallery, create the password at [account.apple.com](https://account.apple.com/account/manage) under **Sign-In and Security → App-Specific Passwords**, and paste it with your iCloud Mail address. Apple cannot limit what that password reaches, so you choose the permissions in the same dialog and MyMCPs enforces them: **Read mail**, **Save drafts**, **Send mail**, and **Organize mail**. Only **Read mail** is allowed to begin with. Attachments are downloaded, and files to attach are uploaded, through temporary signed links, and you can list the aliases and custom domain addresses agents may send from. See [docs/icloud-mail.md](docs/icloud-mail.md) for the full walkthrough, the permissions, the list of tools, and troubleshooting.
 
 **Google Ads** signs in through an OAuth client from your own Google Cloud project. Choose **Google Ads** in the **Add MCP** gallery and follow the steps in the dialog: enable the Google Ads API in a project, create a **Web application** OAuth client with `APP_URL/mcps/oauth/callback` as its redirect URI, paste the Client ID and Client Secret, then select **Connect**. Google retired developer tokens in September 2026, so there is none to enter: what the API reaches is the access level of the Cloud project. The MCP monitors accounts, campaigns, ads, keywords, and search terms, and with **Allow write access** builds and runs Search and Display campaigns, including image assets uploaded through temporary signed links. You can limit it to the accounts you list. The tools that set a budget, change bidding, or enable a campaign ask for your approval first. See [docs/google-ads.md](docs/google-ads.md) for the full walkthrough, the list of tools, access levels, and troubleshooting.
+
+**Google Search Console** signs in with the same kind of Google Cloud OAuth client. The client entered for one Google MCP is saved on the **Credentials** page and chosen for the next, so a team that has Google Ads only enables the Google Search Console API in the same project, chooses that client, and selects **Connect**. The MCP reads clicks, impressions, click-through rate, and position by query, page, country, device, or day, inspects how Google indexed a URL, and reads sitemaps; with **Allow write access** it submits and deletes them. You can limit it to the properties you list. See [docs/google-search-console.md](docs/google-search-console.md).
 
 ### Tool approvals
 

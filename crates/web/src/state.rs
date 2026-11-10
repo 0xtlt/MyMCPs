@@ -75,6 +75,7 @@ pub fn builtins() -> BuiltinRegistry {
         mymcps_strava::definition(),
         mymcps_icloud_mail::definition(),
         mymcps_google_ads::definition(),
+        mymcps_google_search_console::definition(),
     ])
 }
 
