@@ -5,6 +5,7 @@ pub mod analytics;
 pub mod approvals;
 pub mod auth;
 pub mod charts;
+pub mod credentials;
 pub mod home;
 pub mod icon;
 pub mod invites;

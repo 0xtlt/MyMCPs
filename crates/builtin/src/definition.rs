@@ -92,6 +92,10 @@ pub struct BuiltinOauthConfig {
     /// Catches a secret pasted into the client ID field before the provider does.
     pub client_id_pattern: Option<Regex>,
     pub client_id_hint: Option<&'static str>,
+    /// The client is a credential of the team, saved once and shared by the
+    /// built-in MCPs of this provider, such as `google`: its MCPs choose
+    /// one instead of holding their own. `None`: each MCP holds its own.
+    pub credential_provider: Option<&'static str>,
 }
 
 /// Sign-in with an account name and a password the provider issues for apps,

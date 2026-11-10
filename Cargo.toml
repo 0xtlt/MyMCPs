@@ -22,6 +22,7 @@ mymcps-builtin = { path = "crates/builtin" }
 mymcps-strava = { path = "crates/strava" }
 mymcps-icloud-mail = { path = "crates/icloud-mail" }
 mymcps-google-ads = { path = "crates/google-ads" }
+mymcps-google-search-console = { path = "crates/google-search-console" }
 mymcps-node = { path = "crates/node" }
 mymcps-tailnet = { path = "crates/tailnet" }
 mymcps-upstream = { path = "crates/upstream" }

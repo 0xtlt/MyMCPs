@@ -325,4 +325,21 @@ pub const MIGRATIONS: &[Migration] = &[
             r#"alter table `instance_settings` add column `is_npm_enabled` boolean not null default '1'"#,
         ],
     },
+    // The OAuth clients a team saves once and signs its built-in MCPs in
+    // with, such as one Google Cloud client for Google Ads and Google Search
+    // Console. An MCP keeps a copy of the client it was saved with, which a
+    // change of the credential rewrites. Each Google Ads MCP that holds a
+    // client gets one, shared by those of its team with the same Client ID.
+    Migration {
+        name: "database/migrations/1794500000000_add_provider_credentials",
+        statements: &[
+            r#"create table `provider_credentials` (`id` integer not null primary key autoincrement, `team_id` integer not null, `provider` varchar(32) not null, `name` varchar(120) not null, `client_id` varchar(254) not null, `client_secret` text not null, `created_by` integer not null, `created_at` datetime not null, `updated_at` datetime null, foreign key(`team_id`) references `teams`(`id`) on delete CASCADE)"#,
+            r#"create unique index `provider_credentials_team_id_name_unique` on `provider_credentials` (`team_id`, `name` collate nocase)"#,
+            r#"create unique index `provider_credentials_team_id_provider_client_id_unique` on `provider_credentials` (`team_id`, `provider`, `client_id`)"#,
+            r#"alter table `mcps` add column `provider_credential_id` integer null references `provider_credentials`(`id`) on delete SET NULL"#,
+            r#"create index `mcps_provider_credential_id_index` on `mcps` (`provider_credential_id`)"#,
+            r#"insert into `provider_credentials` (`team_id`, `provider`, `name`, `client_id`, `client_secret`, `created_by`, `created_at`) select `team_id`, 'google', case when `rank` = 1 then 'Google Cloud' else 'Google Cloud ' || `rank` end, `oauth_client_id`, `oauth_client_secret`, `created_by`, strftime('%Y-%m-%d %H:%M:%S', 'now') from (select `team_id`, `oauth_client_id`, `oauth_client_secret`, `created_by`, row_number() over (partition by `team_id` order by `id`) as `rank` from `mcps` where `id` in (select min(`id`) from `mcps` where `builtin_key` = 'google-ads' and coalesce(`oauth_client_id`, '') <> '' and coalesce(`oauth_client_secret`, '') <> '' group by `team_id`, `oauth_client_id`)) order by `team_id`, `rank`"#,
+            r#"update `mcps` set `provider_credential_id` = (select `provider_credentials`.`id` from `provider_credentials` where `provider_credentials`.`team_id` = `mcps`.`team_id` and `provider_credentials`.`provider` = 'google' and `provider_credentials`.`client_id` = `mcps`.`oauth_client_id`) where `builtin_key` = 'google-ads' and coalesce(`oauth_client_secret`, '') <> ''"#,
+        ],
+    },
 ];

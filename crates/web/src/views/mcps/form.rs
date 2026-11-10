@@ -28,6 +28,14 @@ pub struct TailnetChoice {
     pub name: String,
 }
 
+/// A saved OAuth client of the team a built-in MCP can sign in with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialChoice {
+    pub id: i64,
+    pub name: String,
+    pub client_id: String,
+}
+
 /// One row of the environment editor.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EnvRow {
@@ -55,6 +63,10 @@ pub struct FormValues {
     pub builtin_key: String,
     pub oauth_client_id: String,
     pub oauth_client_secret: String,
+    /// `new`, or the id of the saved OAuth client chosen. Empty: the first.
+    pub oauth_credential_id: String,
+    /// What a new saved OAuth client is called. Empty: a name of its own.
+    pub credential_name: String,
     pub builtin_username: String,
     pub builtin_password: String,
     pub builtin_aliases: String,
@@ -86,6 +98,8 @@ impl Default for FormValues {
             builtin_key: String::new(),
             oauth_client_id: String::new(),
             oauth_client_secret: String::new(),
+            oauth_credential_id: String::new(),
+            credential_name: String::new(),
             builtin_username: String::new(),
             builtin_password: String::new(),
             builtin_aliases: String::new(),
@@ -175,6 +189,10 @@ impl FormValues {
                 .unwrap_or_default(),
             builtin_key: mcp.builtin_key.clone().unwrap_or_default(),
             oauth_client_id: mcp.oauth_client_id.clone().unwrap_or_default(),
+            oauth_credential_id: mcp
+                .provider_credential_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
             builtin_username: mcp.builtin_username.clone().unwrap_or_default(),
             builtin_aliases: mcp.builtin_aliases.join(", "),
             builtin_permissions: mcp.builtin_permissions.clone(),
@@ -230,6 +248,8 @@ impl FormValues {
             builtin_key: text(input, "builtinKey"),
             oauth_client_id: text(input, "oauthClientId"),
             oauth_client_secret: text(input, "oauthClientSecret"),
+            oauth_credential_id: text(input, "oauthCredentialId"),
+            credential_name: text(input, "credentialName"),
             builtin_username: text(input, "builtinUsername"),
             builtin_password: text(input, "builtinPassword"),
             builtin_aliases: text(input, "builtinAliases"),
@@ -251,6 +271,9 @@ pub struct McpForm {
     pub values: FormValues,
     /// The tailnets of the team, to choose the network of an HTTP MCP from.
     pub tailnets: Vec<TailnetChoice>,
+    /// The saved OAuth clients of the team, for a built-in MCP whose
+    /// provider shares them.
+    pub credentials: Vec<CredentialChoice>,
     /// npm MCPs are turned off on the instance: the form offers no npm
     /// package, unless the MCP it edits runs one already.
     pub npm_off: bool,
@@ -275,6 +298,12 @@ impl McpForm {
         self
     }
 
+    /// The form with the saved OAuth clients a built-in MCP can choose.
+    pub fn with_credentials(mut self, credentials: Vec<CredentialChoice>) -> Self {
+        self.credentials = credentials;
+        self
+    }
+
     /// The form while npm MCPs are turned off on the instance, or not.
     pub fn with_npm_off(mut self, npm_off: bool) -> Self {
         self.npm_off = npm_off;
@@ -292,6 +321,7 @@ impl McpForm {
         Self {
             values,
             tailnets: Vec::new(),
+            credentials: Vec::new(),
             npm_off: false,
             errors,
             shown: RefCell::default(),

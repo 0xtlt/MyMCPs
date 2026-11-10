@@ -150,6 +150,9 @@ pub fn definition() -> BuiltinMcpDefinition {
             sends_redirect_uri_with_code: true,
             client_id_pattern: Some(pattern(r"^[\w-]+\.apps\.googleusercontent\.com$")),
             client_id_hint: Some("The Google Client ID ends in .apps.googleusercontent.com"),
+            // The Google Cloud OAuth client is saved once on the Credentials page
+            // and shared with the other Google MCPs of the team.
+            credential_provider: Some("google"),
         },
     }
 }

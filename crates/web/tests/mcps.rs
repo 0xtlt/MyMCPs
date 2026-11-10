@@ -873,7 +873,7 @@ async fn offers_the_templates_of_the_gallery() {
     assert!(gallery.contains("Start from a trusted template or configure your own server"));
     assert_eq!(
         gallery.matches("<article class=\"template-card\"").count(),
-        20
+        21
     );
     // Without the page script the gallery shows its first tab: Popular.
     assert_eq!(
@@ -960,7 +960,7 @@ async fn offers_the_templates_of_the_gallery() {
             )
         );
     }
-    assert_eq!(gallery.matches(">Built-in</span>").count(), 3);
+    assert_eq!(gallery.matches(">Built-in</span>").count(), 4);
     assert_eq!(gallery.matches(">Popular</span>").count(), 11);
 
     assert!(gallery.contains("No templates found"));

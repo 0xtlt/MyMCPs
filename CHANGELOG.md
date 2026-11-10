@@ -2,6 +2,17 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-11-10
+
+### Added
+
+- **Google Search Console**: a built-in MCP that reads search performance (clicks, impressions, click-through rate, and position by query, page, country, device, search appearance, or day), inspects how Google indexes a URL, lists sitemaps, and, with **Allow write access**, submits and deletes them. It can be limited to the properties you list. See [docs/google-search-console.md](docs/google-search-console.md).
+- **Credentials**: a page for the owners and admins of a team that saves Google Cloud OAuth clients once and shares them between the team's Google MCPs. The dialog of Google Ads and Google Search Console chooses a saved client or adds one, and a client typed again is the saved one. Editing a client applies to every MCP that uses it: a new Client Secret keeps them connected, a new Client ID disconnects them. A client cannot be deleted while an MCP uses it.
+
+### Changed
+
+- Existing Google Ads MCPs are given a saved OAuth client named **Google Cloud** (then **Google Cloud 2**…) for each Client ID of their team, so a team that has Google Ads only chooses that client to add Google Search Console.
+
 ## 2026-11-08
 
 ### Added

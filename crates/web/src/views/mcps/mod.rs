@@ -22,8 +22,8 @@ use crate::views::shell::{PageContext, app_page};
 
 pub use builtin::{SetupGuide, SignIn, builtin_provider_name, builtin_setup_guide};
 pub use form::{
-    CreateDialog, EditDialog, EnvRow, FormValues, McpForm, TailnetChoice, create_fragment,
-    edit_fragment, keeps_saved_credentials,
+    CreateDialog, CredentialChoice, EditDialog, EnvRow, FormValues, McpForm, TailnetChoice,
+    create_fragment, edit_fragment, keeps_saved_credentials,
 };
 
 /// How many MCPs a page of the list holds.
@@ -96,6 +96,8 @@ pub struct McpView {
     /// Other transports register their OAuth client automatically.
     pub oauth_client_id: Option<String>,
     pub has_oauth_client_secret: bool,
+    /// The saved OAuth client of the team it signs in with.
+    pub provider_credential_id: Option<i64>,
     pub builtin_username: Option<String>,
     pub has_builtin_password: bool,
     pub builtin_permissions: Vec<String>,
@@ -144,6 +146,7 @@ impl McpView {
             has_oauth_access_token: is_set(&mcp.oauth_access_token),
             oauth_client_id: mcp.oauth_client_id.clone().filter(|_| builtin),
             has_oauth_client_secret: builtin && is_set(&mcp.oauth_client_secret),
+            provider_credential_id: mcp.provider_credential_id.filter(|_| builtin),
             builtin_username: mcp.builtin_username.clone().filter(|_| builtin),
             has_builtin_password: is_set(&mcp.builtin_password),
             builtin_permissions: words(&mcp.builtin_permissions),

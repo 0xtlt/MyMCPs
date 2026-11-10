@@ -219,6 +219,14 @@ fn mcp_payload() -> vine::VineObject {
         // Credentials of the API application the admin registered for a built-in MCP.
         "oauthClientId" => vine::string().trim().max_length(254).optional(),
         "oauthClientSecret" => vine::string().trim().max_length(4000).optional(),
+        // The saved OAuth client of the team a built-in MCP signs in with: the
+        // id of one, which the handler looks up, or `new` for the client ID
+        // and secret above, saved as a credential called `credentialName`.
+        "oauthCredentialId" => vine::string()
+            .trim()
+            .regex(vine::js::regex(r"^(new|[1-9][0-9]{0,15})$", "").expect("a static pattern"))
+            .optional(),
+        "credentialName" => crate::validators::credential::credential_name().optional(),
         // Sign-in of a built-in MCP whose provider issues passwords for apps.
         "builtinUsername" => vine::string().trim().max_length(254).optional(),
         "builtinPassword" => vine::string().trim().max_length(4000).optional(),
@@ -316,6 +324,11 @@ pub struct McpPayload {
     pub oauth_client_id: Option<String>,
     #[serde(default)]
     pub oauth_client_secret: Option<String>,
+    /// `new`, or the id of a saved credential of the team.
+    #[serde(default)]
+    pub oauth_credential_id: Option<String>,
+    #[serde(default)]
+    pub credential_name: Option<String>,
     #[serde(default)]
     pub builtin_username: Option<String>,
     #[serde(default)]

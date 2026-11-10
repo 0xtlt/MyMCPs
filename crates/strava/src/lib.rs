@@ -54,6 +54,7 @@ pub fn definition() -> BuiltinMcpDefinition {
             sends_redirect_uri_with_code: false,
             client_id_pattern: Some(client_id_pattern.as_regex().clone()),
             client_id_hint: Some("The Strava Client ID is a number, such as 123456"),
+            credential_provider: None,
         },
     }
 }

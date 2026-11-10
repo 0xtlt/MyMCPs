@@ -11,6 +11,7 @@ pub mod approvals;
 pub mod auth;
 pub mod backup;
 pub mod builtin_files;
+pub mod credentials;
 pub mod gateway;
 pub mod home;
 pub mod invites;
@@ -80,6 +81,7 @@ pub fn all() -> FeatureRoutes {
         auth::routes(),
         backup::routes(),
         builtin_files::routes(),
+        credentials::routes(),
         gateway::routes(),
         home::routes(),
         invites::routes(),

@@ -21,6 +21,7 @@ mymcps-builtin.workspace = true
 mymcps-strava.workspace = true
 mymcps-icloud-mail.workspace = true
 mymcps-google-ads.workspace = true
+mymcps-google-search-console.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 futures.workspace = true
