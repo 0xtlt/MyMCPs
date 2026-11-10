@@ -13,6 +13,10 @@ Notable project changes are recorded here in English. Sections are organized by 
 
 - Existing Google Ads MCPs are given a saved OAuth client named **Google Cloud** (then **Google Cloud 2**…) for each Client ID of their team, so a team that has Google Ads only chooses that client to add Google Search Console.
 
+### Security
+
+- The dependency audit accepts RUSTSEC-2026-0459 (SQLite before 3.54 can return uninitialised memory for a database opened with a crafted `-wal` file) until SQLx releases support for the fixed `libsqlite3-sys`: the server only opens its own database and the one a backup restore decrypts into a new private directory, where no `-wal` file can be planted.
+
 ## 2026-11-08
 
 ### Added

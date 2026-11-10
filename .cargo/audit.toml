@@ -1,0 +1,12 @@
+# What `cargo audit` lets through, each with why. Remove an entry once the
+# dependency behind it can be updated.
+[advisories]
+ignore = [
+    # libsqlite3-sys 0.37 bundles SQLite 3.53, which can return uninitialised
+    # memory for a database opened with a crafted `-wal` file beside it. The
+    # fixed 0.39 cannot be locked yet: sqlx-sqlite 0.9.0, the latest release,
+    # requires `<0.38` (its main branch allows `<0.40`). The server only opens
+    # its own database and the one a backup restore decrypts into a new
+    # private directory, where nobody else can place a `-wal` file.
+    "RUSTSEC-2026-0459",
+]
