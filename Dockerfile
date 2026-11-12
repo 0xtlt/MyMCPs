@@ -96,7 +96,7 @@ ENV APP_ENV=production \
   PORT=3333 \
   DATA_DIR=/app/tmp \
   NODE_BINARY=/usr/local/bin/node \
-  NODE_VERSION=24.22.0 \
+  NODE_VERSION=26.13.0 \
   TAILSCALED_BINARY=/usr/local/bin/tailscaled \
   TAILSCALE_VERSION=1.104.2
 
