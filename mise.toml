@@ -9,7 +9,7 @@
 [tools]
 rust = { version = "1.99.1", profile = "minimal", components = "clippy,rustfmt" }
 # Runs npm MCPs, and the tests that start a real Node.
-node = "24.22.0"
+node = "26.13.0"
 # The advisory check of the Security workflow, as the prebuilt binary of its
 # release: nothing is compiled. The repository releases several tools, each
 # under tags of its own.

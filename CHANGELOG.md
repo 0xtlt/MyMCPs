@@ -2,6 +2,13 @@
 
 Notable project changes are recorded here in English. Sections are organized by UTC merge date, newest first.
 
+## 2026-11-12
+
+### Changed
+
+- **Image**: Node.js 26.13.0 (was 24.22.0) runs npm MCPs; the Rust, Debian, and Tailscale base images move to their latest patches (Tailscale v1.104.4).
+- Dependencies: aws-lc-rs 1.19.0, encoding_rs 0.8.44, fancy-regex 0.20.0, rustix 1.1.6, uuid 1.29.2, and the latest patches of the GitHub Actions used by CI and releases.
+
 ## 2026-11-10
 
 ### Added

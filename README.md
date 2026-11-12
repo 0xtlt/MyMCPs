@@ -29,7 +29,7 @@ Accounts, teams, and permissions work as they do in Coolify, with one difference
 
 ## Run locally
 
-You need a C compiler, and [mise](https://mise.jdx.dev/) with [rustup](https://rustup.rs/): `mise install` sets up the versions the releases are built with, listed in `mise.toml` (Rust 1.99.1, Node.js 24.22.0 for npm-based MCPs, and cargo-audit).
+You need a C compiler, and [mise](https://mise.jdx.dev/) with [rustup](https://rustup.rs/): `mise install` sets up the versions the releases are built with, listed in `mise.toml` (Rust 1.99.1, Node.js 26.13.0 for npm-based MCPs, and cargo-audit).
 
 ```bash
 mise install

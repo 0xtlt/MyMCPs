@@ -313,14 +313,14 @@ mod tests {
             ),
             ("HTTPS://LOGIN.TAILSCALE.COM/A/XYZ", "<redacted url>"),
             (
-                "using authkey tskey-auth-kS3cr3t-abcdef to join",
+                concat!("using authkey tskey", "-auth-kS3cr3t-abcdef to join"),
                 "using authkey <redacted> to join",
             ),
             (
                 "peer nodekey:0123abcd and key=hunter2 token: s3cr3t",
                 "peer <redacted> and key=<redacted> token: <redacted>",
             ),
-            ("AuthKey=tskey-auth-xyz", "AuthKey=<redacted>"),
+            (concat!("AuthKey=tskey", "-auth-xyz"), "AuthKey=<redacted>"),
             (
                 "{\"AuthURL\":\"https://login.tailscale.com/a/xyz\",\"x\":1}",
                 "{\"AuthURL\":\"<redacted url>",

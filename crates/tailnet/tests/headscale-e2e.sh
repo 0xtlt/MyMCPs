@@ -29,8 +29,8 @@
 set -eu
 
 HEADSCALE_TAG="${HEADSCALE_TAG:-v0.26.1}"
-TAILSCALE_TAG="${TAILSCALE_TAG:-v1.104.2}"
-NODE_IMAGE="${NODE_IMAGE:-node:24.22.0-trixie-slim}"
+TAILSCALE_TAG="${TAILSCALE_TAG:-v1.104.4}"
+NODE_IMAGE="${NODE_IMAGE:-node:26.13.0-trixie-slim}"
 MCP_PORT=8931
 SUFFIX="tailnet.test"
 DEVICE_NAME="e2e-device"

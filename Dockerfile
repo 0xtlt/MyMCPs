@@ -18,13 +18,13 @@
 # Official Node.js image (multi-arch), for its `node` binary and its npm. It is
 # built on the Debian release of the runtime stage, whose C++ library the
 # binary loads.
-FROM node:24.22.0-trixie-slim@sha256:a6155384446670e9719bdc4fd0ebe4d4b29fb32a8d6aa523da3547a6cfbcf22c AS node
+FROM node:26.13.0-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS node
 
 # Official Tailscale image (multi-arch), for its `tailscaled` daemon. The
 # binary is a static Go program: it runs on the Debian runtime although the
 # image is built on Alpine. Only `tailscaled` is copied: not the `tailscale`
 # command, not `containerboot`.
-FROM tailscale/tailscale:v1.104.2@sha256:b11583ad2e93e4671128538c88cf11f460444a5d7e449311dd1933a400ab849d AS tailscale
+FROM tailscale/tailscale:v1.104.4@sha256:ed6480b33c6eb67c9cbd203ed42b9fb57e361986725b6856def71b7a3d9e276c AS tailscale
 
 # ---------------------------------------------------------------------------
 # Compile the server
@@ -35,7 +35,7 @@ FROM tailscale/tailscale:v1.104.2@sha256:b11583ad2e93e4671128538c88cf11f460444a5
 # The Rust version in this tag is the toolchain of the project: the workflows
 # install the same one (crates/xtask/tests/container_image.rs checks it), and
 # its Debian release is the one the runtime stage runs on.
-FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-trixie@sha256:e6cd1d294a300601eaaa4a294b337e5f0826f427fb2d481e9f76e69e7981e244 AS build
+FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-trixie@sha256:b8e062b1c3a80183df83d9ba187cadd2b5ab84bc78d453dbfeb2fccd5f982247 AS build
 
 ARG TARGETARCH
 
@@ -86,7 +86,7 @@ RUN --mount=type=cache,id=mymcps-cargo-registry,target=/usr/local/cargo/registry
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS runtime
 
 # NODE_VERSION and TAILSCALE_VERSION must name the versions in the node and
 # tailscale tags above; Dependabot only edits the FROM lines
@@ -96,9 +96,9 @@ ENV APP_ENV=production \
   PORT=3333 \
   DATA_DIR=/app/tmp \
   NODE_BINARY=/usr/local/bin/node \
-  NODE_VERSION=24.22.0 \
+  NODE_VERSION=26.13.0 \
   TAILSCALED_BINARY=/usr/local/bin/tailscaled \
-  TAILSCALE_VERSION=1.104.2
+  TAILSCALE_VERSION=1.104.4
 
 # ca-certificates: the server verifies upstream MCPs and OAuth providers
 # against the system trust store. dumb-init: see ENTRYPOINT.
