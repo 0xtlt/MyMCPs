@@ -98,7 +98,7 @@ ENV APP_ENV=production \
   NODE_BINARY=/usr/local/bin/node \
   NODE_VERSION=26.13.0 \
   TAILSCALED_BINARY=/usr/local/bin/tailscaled \
-  TAILSCALE_VERSION=1.104.2
+  TAILSCALE_VERSION=1.104.4
 
 # ca-certificates: the server verifies upstream MCPs and OAuth providers
 # against the system trust store. dumb-init: see ENTRYPOINT.

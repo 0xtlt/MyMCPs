@@ -7,7 +7,7 @@
 #   crates/tailnet/tests/smoke.sh
 set -eu
 
-TAILSCALE_TAG="${TAILSCALE_TAG:-v1.104.2}"
+TAILSCALE_TAG="${TAILSCALE_TAG:-v1.104.4}"
 RUST_IMAGE="${RUST_IMAGE:-rust:1.99.1-slim-trixie}"
 
 root=$(cd "$(dirname "$0")/../../.." && pwd)
