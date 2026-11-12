@@ -86,7 +86,7 @@ RUN --mount=type=cache,id=mymcps-cargo-registry,target=/usr/local/cargo/registry
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
-FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS runtime
 
 # NODE_VERSION and TAILSCALE_VERSION must name the versions in the node and
 # tailscale tags above; Dependabot only edits the FROM lines
