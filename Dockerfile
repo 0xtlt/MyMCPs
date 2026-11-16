@@ -24,7 +24,7 @@ FROM node:26.13.0-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68
 # binary is a static Go program: it runs on the Debian runtime although the
 # image is built on Alpine. Only `tailscaled` is copied: not the `tailscale`
 # command, not `containerboot`.
-FROM tailscale/tailscale:v1.104.4@sha256:ed6480b33c6eb67c9cbd203ed42b9fb57e361986725b6856def71b7a3d9e276c AS tailscale
+FROM tailscale/tailscale:v1.104.7@sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4 AS tailscale
 
 # ---------------------------------------------------------------------------
 # Compile the server
